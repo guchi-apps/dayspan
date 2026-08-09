@@ -45,6 +45,9 @@ export type EventDraft = {
   start: string;
   end: string;
   allDay: boolean;
+  /** 簡易入力から引き継いだ入力途中の値。新規作成のときだけ意味を持つ。 */
+  title?: string;
+  calendarId?: string;
 };
 
 export function EventDialog({
@@ -66,7 +69,7 @@ export function EventDialog({
 }) {
   const editing = draft.event;
 
-  const [title, setTitle] = useState(editing?.title ?? "");
+  const [title, setTitle] = useState(editing?.title ?? draft.title ?? "");
   const [allDay, setAllDay] = useState(draft.allDay);
   const [start, setStart] = useState(draft.start);
   const [end, setEnd] = useState(draft.end);
@@ -75,6 +78,7 @@ export function EventDialog({
   const [recurrenceRule, setRecurrenceRule] = useState<string>("none");
   const [calendarId, setCalendarId] = useState(
     editing?.calendarId ??
+      draft.calendarId ??
       calendars.find((calendar) => calendar.isCreateDefault)?.calendarId ??
       calendars[0]?.calendarId ??
       "",
