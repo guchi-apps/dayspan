@@ -74,6 +74,30 @@ export function EventDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 開始を動かしたら、それまでの所要時間を保ったまま終了も動かす。
+  // Google Calendarと同じ挙動にして、終了が開始より前になる状態を作りにくくする。
+  const changeStart = (value: string) => {
+    const previous = inputToDate(start, allDay);
+    const next = inputToDate(value, allDay);
+
+    if (previous && next) {
+      const durationMs = Math.max((inputToDate(end, allDay)?.getTime() ?? 0) - previous.getTime(), 0);
+      const nextEnd = new Date(next.getTime() + durationMs);
+      setEnd(dateToInput(nextEnd, allDay));
+    }
+
+    setStart(value);
+  };
+
+  // 文字列は同じ書式でゼロ埋めされているため、そのまま比較して前後関係が判定できる。
+  const rangeError = (() => {
+    if (!start || !end) return "開始日時と終了日時を入力してください。";
+    if (allDay) {
+      return end < start ? "終了日が開始日より前になっています。" : null;
+    }
+    return end <= start ? "終了日時が開始日時より後になるようにしてください。" : null;
+  })();
+
   // 終日と時刻指定では入力欄の形式が違う（date と datetime-local）。切り替え時に値を作り直す。
   const toggleAllDay = (next: boolean) => {
     if (next) {
@@ -186,7 +210,7 @@ export function EventDialog({
                 id="event-start"
                 type={allDay ? "date" : "datetime-local"}
                 value={start}
-                onChange={(e) => setStart(e.target.value)}
+                onChange={(e) => changeStart(e.target.value)}
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -268,6 +292,7 @@ export function EventDialog({
             />
           </div>
 
+          {rangeError && <p className="text-sm text-destructive">{rangeError}</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
@@ -284,7 +309,10 @@ export function EventDialog({
             <Button variant="ghost" disabled={busy} onClick={onClose}>
               やめる
             </Button>
-            <Button disabled={busy || !title.trim() || !calendarId} onClick={save}>
+            <Button
+              disabled={busy || !title.trim() || !calendarId || rangeError !== null}
+              onClick={save}
+            >
               保存
             </Button>
           </div>
@@ -292,6 +320,18 @@ export function EventDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** 入力欄の値をDateへ。終日は日付のみなのでUTC正午として扱い、日付のずれを避ける。 */
+function inputToDate(value: string, allDay: boolean): Date | null {
+  if (!value) return null;
+  const date = new Date(allDay ? `${value}T12:00:00Z` : `${value}:00Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateToInput(date: Date, allDay: boolean): string {
+  const iso = date.toISOString();
+  return allDay ? iso.slice(0, 10) : iso.slice(0, 16);
 }
 
 /** 編集用の初期値。ISO 8601 を入力欄の形式へ直す。 */
