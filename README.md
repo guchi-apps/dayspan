@@ -1,6 +1,6 @@
 # DaySpan
 
-Google Calendar の予定と Notion のタスクを、1つのカレンダーUIで統合して確認・操作するWebアプリです。
+Google Calendar の予定、Notion のタスクと日付リマインドを、1つのカレンダーUIで統合して確認するWebアプリです。
 
 ## 概要
 
@@ -8,6 +8,7 @@ Google Calendar の予定と Notion のタスクを、1つのカレンダーUI�
 - Google Calendar の予定を作成・編集・削除
 - Notion をタスクの一次情報源として利用
 - Notion タスクを作成・編集・完了・期限変更
+- Notion の記念日・更新日など、完了を持たない日付リマインドを月カレンダーと専用一覧に表示
 - 月表示と、0:00〜24:00 の時間グリッド表示
 - スマートフォンは月 / 1日表示、PCは月 / 3日 / 7日表示
 - Supabase Auth + Google OAuth による認証
