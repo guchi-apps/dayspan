@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
+import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { Button } from "@/components/ui/button";
 import {
   parseDateKey,
@@ -187,8 +188,10 @@ export function CalendarShell({
       <header className="flex items-center gap-2 border-b px-3 py-2">
         <div className="flex items-center gap-1 font-semibold">
           <CalendarDays className="size-5 text-primary" />
-          <span className="hidden sm:inline">DaySpan</span>
+          <span className="hidden lg:inline">DaySpan</span>
         </div>
+
+        <HeaderNav current="calendar" />
 
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon" onClick={() => move(-1)} aria-label="前へ">
@@ -271,6 +274,8 @@ export function CalendarShell({
         />
       )}
 
+      <BottomNav current="calendar" />
+
       <AddButton
         open={addMenuOpen}
         canAddEvent={data.calendars.length > 0}
@@ -334,7 +339,7 @@ function AddButton({
   if (!canAddEvent && !canAddTask) return null;
 
   return (
-    <div className="fixed right-4 bottom-4 flex flex-col items-end gap-2">
+    <div className="fixed right-4 bottom-20 flex flex-col items-end gap-2 md:bottom-4">
       {open && (
         <div className="flex flex-col gap-2">
           {canAddEvent && (
