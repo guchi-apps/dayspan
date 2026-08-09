@@ -1,9 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // WSLのIPはWSL再起動のたびに変わるため、個別IPではなくsslip.ioサブドメイン全体を許可する
-  // （Next.jsのallowedDevOriginsは "*.example.com" 形式のワイルドカードに対応している）。
-  allowedDevOrigins: ["*.sslip.io"],
+  // スマートフォンからは <IP>.sslip.io で開く。IPは変わりうるためホスト名を直書きしない。
+  //
+  // ワイルドカードは "*" が1ラベル、"**" が複数ラベルに対応する。sslip.ioのホスト名は
+  // IPがそのままラベルになる（192.168.2.114.sslip.io）ため、"*.sslip.io" では一致せず、
+  // dev サーバーがJSチャンクをブロックしてハイドレーションが完了しなくなる。
+  allowedDevOrigins: ["**.sslip.io"],
 };
 
 export default nextConfig;
