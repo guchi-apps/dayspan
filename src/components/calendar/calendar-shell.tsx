@@ -214,7 +214,7 @@ export function CalendarShell({
   };
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
         {/* 狭い画面ではアプリ名を出さない。現在地は下部のナビゲーションバーが示している。 */}
         <div className="hidden items-center gap-1 font-semibold md:flex">
@@ -381,7 +381,7 @@ function AddButton({
   if (!canAddEvent && !canAddTask) return null;
 
   return (
-    <div className="fixed right-4 bottom-24 z-30 flex flex-col items-end gap-2 md:bottom-6">
+    <div className="fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-30 flex flex-col items-end gap-2 md:bottom-6">
       {open && (
         <div className="flex flex-col gap-2">
           {canAddEvent && (

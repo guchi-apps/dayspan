@@ -18,7 +18,11 @@ export type NavKey = (typeof ITEMS)[number]["key"];
  */
 export function BottomNav({ current }: { current: NavKey }) {
   return (
-    <nav className="flex h-20 shrink-0 items-start justify-around bg-surface-container px-2 pt-3 md:hidden">
+    // viewport-fit=cover でページがブラウザのツールバーやホームインジケーターの下まで
+    // 広がるため、その分を内側へ確保しないとタップがブラウザ側に取られる。
+    <nav
+      className="flex shrink-0 items-start justify-around bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
+    >
       {ITEMS.map((item) => {
         const active = item.key === current;
         const Icon = item.icon;

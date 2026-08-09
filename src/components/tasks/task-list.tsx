@@ -70,7 +70,7 @@ export function TaskList({
   };
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
         <h1 className="type-title-large flex items-center gap-2 px-2">
           <ListChecks className="size-5" />
@@ -179,7 +179,7 @@ export function TaskList({
 
       <Button
         size="icon"
-        className="elevation-3 fixed right-4 bottom-24 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
+        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
         aria-label="タスクを追加"
         onClick={() =>
           setDraft({ dueMode: "date", due: utils.todayKey() })
