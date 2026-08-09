@@ -4,9 +4,11 @@ import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
 import { listTasksInRange } from "@/services/notion/tasks";
+import { listRemindersInRange } from "@/services/notion/reminders";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
+  ReminderItem,
   TaskItem,
   WritableCalendar,
 } from "@/types/calendar";
@@ -20,17 +22,18 @@ export async function loadCalendarData(
   userId: string,
   range: { timeMin: string; timeMax: string },
 ): Promise<CalendarLoadResult> {
-  const [events, tasks] = await Promise.all([
+  const [events, notion] = await Promise.all([
     loadGoogleEvents(userId, range),
-    loadNotionTasks(userId, range),
+    loadNotionItems(userId, range),
   ]);
 
   return {
     events: events.items,
-    tasks: tasks.items,
+    tasks: notion.tasks,
+    reminders: notion.reminders,
     calendars: events.calendars,
-    notionReady: tasks.ready,
-    errors: [...events.errors, ...tasks.errors],
+    notionReady: notion.ready,
+    errors: [...events.errors, ...notion.errors],
   };
 }
 
@@ -127,25 +130,33 @@ async function loadGoogleEvents(
   return { items, calendars, errors };
 }
 
-async function loadNotionTasks(
+async function loadNotionItems(
   userId: string,
   range: { timeMin: string; timeMax: string },
-): Promise<{ items: TaskItem[]; ready: boolean; errors: CalendarLoadResult["errors"] }> {
+): Promise<{ tasks: TaskItem[]; reminders: ReminderItem[]; ready: boolean; errors: CalendarLoadResult["errors"] }> {
   const connection = await db.notionConnection.findUnique({ where: { userId } });
-  if (!connection?.taskDataSourceId) return { items: [], ready: false, errors: [] };
+  if (!connection?.taskDataSourceId && !connection?.reminderDataSourceId) {
+    return { tasks: [], reminders: [], ready: false, errors: [] };
+  }
 
   try {
-    const tasks = await listTasksInRange(createNotionClient(connection), connection, {
+    const notion = createNotionClient(connection);
+    const dateRange = {
       // Notionの日付フィルタは日付境界で比較するため、日付部分だけを渡す。
       from: range.timeMin.slice(0, 10),
       to: range.timeMax.slice(0, 10),
-    });
-    return { items: tasks, ready: true, errors: [] };
+    };
+    const [tasks, reminders] = await Promise.all([
+      connection.taskDataSourceId ? listTasksInRange(notion, connection, dateRange) : [],
+      connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],
+    ]);
+    return { tasks, reminders, ready: Boolean(connection.taskDataSourceId), errors: [] };
   } catch {
     return {
-      items: [],
-      ready: true,
-      errors: [{ source: "notion", reason: "Notionのタスクを取得できませんでした。" }],
+      tasks: [],
+      reminders: [],
+      ready: Boolean(connection.taskDataSourceId),
+      errors: [{ source: "notion", reason: "Notionのタスクまたは日付リマインドを取得できませんでした。" }],
     };
   }
 }

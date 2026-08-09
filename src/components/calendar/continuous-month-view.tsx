@@ -4,10 +4,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { weekMonthKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
-import type { CalendarEventItem, CalendarItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/types/calendar";
 
 import { eventColors } from "./calendar-color";
 import { isAllDayItem, type CalendarDateUtils } from "./item-layout";
+import { useLongPress } from "./use-long-press";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -64,18 +65,21 @@ export function ContinuousMonthView({
   weeks,
   events,
   tasks,
+  reminders,
   weekStartsOn,
   utils,
   scrollTarget,
   pendingMonths,
   onVisibleMonthChange,
   onSelectDay,
+  onQuickAdd,
   onOpenEvent,
   onOpenTask,
 }: {
   weeks: string[][];
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   weekStartsOn: number;
   utils: CalendarDateUtils;
   /** 指定の月へ寄せる指示。同じ月を続けて指しても効くよう nonce を持たせる。 */
@@ -84,12 +88,17 @@ export function ContinuousMonthView({
   pendingMonths: ReadonlySet<string>;
   onVisibleMonthChange: (monthKey: string) => void;
   onSelectDay: (dateKey: string) => void;
+  /** その日に予定を足す。指・ペンでの長押しから呼ばれる。 */
+  onQuickAdd: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const visibleMonthRef = useRef(scrollTarget.month);
   const [todayKey] = useState(() => utils.todayKey());
+
+  // 日のセルは、押せばその日の時間グリッドへ移り、長押しならその日へ予定を足す。
+  const dayPress = useLongPress<string>({ onPress: onSelectDay, onLongPress: onQuickAdd });
 
   // 画面の先頭にある週。窓を張り直したあと、同じ位置へ戻すために覚えておく。
   const anchorRef = useRef<{ weekKey: string; offset: number } | null>(null);
@@ -161,6 +170,11 @@ export function ContinuousMonthView({
       push(dateKey, dateKey, task);
     }
 
+    for (const reminder of reminders) {
+      const dateKey = utils.itemDateKey(reminder.date);
+      push(dateKey, dateKey, reminder);
+    }
+
     return rawByWeek.map((raw) => {
       raw.sort((a, b) => {
         // 帯（日をまたぐ・終日）を先に置く。後から来た1日ぶんの予定が、
@@ -213,7 +227,7 @@ export function ContinuousMonthView({
 
       return { segments, hiddenByColumn };
     });
-  }, [events, tasks, utils, weeks]);
+  }, [events, tasks, reminders, utils, weeks]);
 
   const rememberAnchor = useCallback(
     (container: HTMLDivElement) => {
@@ -319,17 +333,30 @@ export function ContinuousMonthView({
                 return (
                   <div
                     key={dateKey}
-                    className="flex min-w-0 flex-col border-r border-outline-variant p-0.5 last:border-r-0 sm:p-1"
+                    className="relative flex min-w-0 flex-col border-r border-outline-variant p-0.5 last:border-r-0 sm:p-1"
                   >
+                    {/*
+                      日付の数字だけでなく、日のどこを押しても移動できるようにする。
+                      予定の帯はこのセルの上に重ねて描いているため、帯を押したときに
+                      こちらへ抜けることはない。
+                    */}
                     <button
                       type="button"
-                      onClick={() => onSelectDay(dateKey)}
+                      aria-label={`${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日の1日表示へ移動`}
+                      className="absolute inset-0 cursor-default select-none"
+                      {...dayPress(dateKey)}
+                    />
+
+                    {/* 重ねた面より後ろに沈まないよう、数字の側も配置対象にしておく。 */}
+                    <button
+                      type="button"
                       className={cn(
-                        "grid h-7 min-w-7 shrink-0 place-items-center self-start rounded-full px-2 text-[11px] sm:h-6 sm:min-w-6 sm:px-1.5 sm:text-xs",
+                        "relative grid h-7 min-w-7 shrink-0 place-items-center self-start rounded-full px-2 text-[11px] select-none sm:h-6 sm:min-w-6 sm:px-1.5 sm:text-xs",
                         dateKey === todayKey
                           ? "bg-primary font-semibold text-primary-foreground"
                           : "font-medium hover:bg-muted",
                       )}
+                      {...dayPress(dateKey)}
                     >
                       {/* 月替わりは日付の並びだけでは分からないため、1日にだけ月を添える。 */}
                       {isFirstOfMonth
@@ -415,7 +442,27 @@ function renderChip(
     );
   }
 
+  if (item.kind === "reminder") return <ReminderChip reminder={item} utils={utils} />;
+
   return <TaskChip task={item} utils={utils} onOpen={() => onOpenTask(item)} />;
+}
+
+function ReminderChip({ reminder, utils }: { reminder: ReminderItem; utils: CalendarDateUtils }) {
+  const content = (
+    <>
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
+      {reminder.hasTime && (
+        <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
+      )}
+      <span className="clip-nowrap">{reminder.title}</span>
+    </>
+  );
+  const className = "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4";
+  return reminder.url ? (
+    <a href={reminder.url} target="_blank" rel="noreferrer" className={className} title={reminder.title}>{content}</a>
+  ) : (
+    <span className={className} title={reminder.title}>{content}</span>
+  );
 }
 
 /** 予定は占有した時間の「幅」。塗りつぶした帯で表す。 */
@@ -461,7 +508,7 @@ function EventChip({
         週の境界で切れた続きの側にもタイトルを出す。その週だけを見ている人には
         前の週の帯が見えず、名前の無い帯だけが残ってしまうため。
       */}
-      <span className="truncate">{event.title}</span>
+      <span className="clip-nowrap">{event.title}</span>
     </button>
   );
 }
@@ -496,7 +543,7 @@ function TaskChip({
       {task.hasTime && task.due && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(task.due)}</span>
       )}
-      <span className="truncate">{task.title}</span>
+      <span className="clip-nowrap">{task.title}</span>
     </button>
   );
 }

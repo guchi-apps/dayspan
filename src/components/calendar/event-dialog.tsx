@@ -1,9 +1,11 @@
 "use client";
 
+import { useOffline } from "next/offline";
 import { useState } from "react";
 
 import { Trash2 } from "lucide-react";
 
+import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -25,6 +27,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
+import { CalendarChipSelect } from "./calendar-chip-select";
+import { DateTimeInput } from "./date-time-input";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import type { TouchedRange } from "./use-calendar-chunks";
 
@@ -41,6 +45,9 @@ export type EventDraft = {
   start: string;
   end: string;
   allDay: boolean;
+  /** 簡易入力から引き継いだ入力途中の値。新規作成のときだけ意味を持つ。 */
+  title?: string;
+  calendarId?: string;
 };
 
 export function EventDialog({
@@ -62,7 +69,7 @@ export function EventDialog({
 }) {
   const editing = draft.event;
 
-  const [title, setTitle] = useState(editing?.title ?? "");
+  const [title, setTitle] = useState(editing?.title ?? draft.title ?? "");
   const [allDay, setAllDay] = useState(draft.allDay);
   const [start, setStart] = useState(draft.start);
   const [end, setEnd] = useState(draft.end);
@@ -71,12 +78,16 @@ export function EventDialog({
   const [recurrenceRule, setRecurrenceRule] = useState<string>("none");
   const [calendarId, setCalendarId] = useState(
     editing?.calendarId ??
+      draft.calendarId ??
       calendars.find((calendar) => calendar.isCreateDefault)?.calendarId ??
       calendars[0]?.calendarId ??
       "",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
+  const offline = useOffline();
 
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
@@ -126,13 +137,20 @@ export function EventDialog({
       setStart(start.slice(0, 10));
       setEnd(end.slice(0, 10));
     } else {
-      setStart(`${start.slice(0, 10)}T09:00`);
-      setEnd(`${end.slice(0, 10)}T10:00`);
+      // 日付が空のまま時刻だけを足すと datetime として成立しない。空欄は空欄のまま渡す。
+      setStart(start ? `${start.slice(0, 10)}T09:00` : "");
+      setEnd(end ? `${end.slice(0, 10)}T10:00` : "");
     }
     setAllDay(next);
   };
 
   const save = async () => {
+    // 開いている最中に通信が落ちることもある。押せない状態にするだけでなく、ここでも断つ。
+    if (offline) {
+      setError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
@@ -181,6 +199,10 @@ export function EventDialog({
 
   const remove = async () => {
     if (!editing) return;
+    if (offline) {
+      setError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -213,7 +235,10 @@ export function EventDialog({
           )}
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
+        {/* DialogContentはgrid。grid itemは既定でmin-width:autoのため、中に縮まない要素
+            （保存先カレンダーのチップ列）があるとダイアログ自体が横に広がる。min-w-0で
+            中身より狭くなれるようにし、はみ出す分はチップ列の中だけでスクロールさせる。 */}
+        <div className="flex min-w-0 flex-col gap-4">
           <Input
             id="event-title"
             label="タイトル"
@@ -228,36 +253,51 @@ export function EventDialog({
           </label>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
-            <Input
-              id="event-start"
-              label="開始"
-              type={allDay ? "date" : "datetime-local"}
-              value={start}
-              onChange={(e) => changeStart(e.target.value)}
-            />
-            <Input
-              id="event-end"
-              label="終了"
-              type={allDay ? "date" : "datetime-local"}
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-            />
+            {allDay ? (
+              <>
+                <Input
+                  id="event-start"
+                  label="開始"
+                  type="date"
+                  value={start}
+                  onChange={(e) => changeStart(e.target.value)}
+                />
+                <Input
+                  id="event-end"
+                  label="終了"
+                  type="date"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                />
+              </>
+            ) : (
+              <>
+                <DateTimeInput
+                  id="event-start"
+                  dateLabel="開始日"
+                  timeLabel="開始時刻"
+                  value={start}
+                  onChange={changeStart}
+                />
+                <DateTimeInput
+                  id="event-end"
+                  dateLabel="終了日"
+                  timeLabel="終了時刻"
+                  value={end}
+                  onChange={setEnd}
+                />
+              </>
+            )}
           </div>
 
           {!editing && (
             <>
-              <Select value={calendarId} onValueChange={setCalendarId}>
-                <SelectTrigger label="保存先カレンダー">
-                  <SelectValue placeholder="カレンダーを選択" />
-                </SelectTrigger>
-                <SelectContent>
-                  {calendars.map((calendar) => (
-                    <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                      {calendar.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CalendarChipSelect
+                label="保存先カレンダー"
+                value={calendarId}
+                calendars={calendars}
+                onChange={setCalendarId}
+              />
 
               <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
                 <SelectTrigger label="繰り返し">
@@ -298,7 +338,7 @@ export function EventDialog({
 
         <DialogFooter className="sm:justify-between">
           {editing ? (
-            <Button variant="ghost" size="sm" disabled={busy} onClick={remove}>
+            <Button variant="ghost" size="sm" disabled={busy || offline} onClick={remove}>
               <Trash2 className="size-4" />
               削除
             </Button>
@@ -310,7 +350,7 @@ export function EventDialog({
               やめる
             </Button>
             <Button
-              disabled={busy || !title.trim() || !calendarId || rangeError !== null}
+              disabled={busy || offline || !title.trim() || !calendarId || rangeError !== null}
               onClick={save}
             >
               保存

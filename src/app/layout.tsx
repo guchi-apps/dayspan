@@ -6,6 +6,8 @@ import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/noto-sans-jp";
 import "./globals.css";
 
+import { ServiceWorkerRegistration } from "@/components/offline/service-worker";
+
 export const metadata: Metadata = {
   title: "DaySpan",
   description: "Google Calendarの予定とNotionのタスクを1つのカレンダーUIで統合して確認・操作するWebアプリ",
@@ -33,7 +35,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <ServiceWorkerRegistration />
+      </body>
     </html>
   );
 }

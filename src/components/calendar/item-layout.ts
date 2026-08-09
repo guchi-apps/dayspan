@@ -104,7 +104,8 @@ export function createCalendarDateUtils(timeZone: string) {
   const itemSortTime = (item: CalendarItem): number => {
     if (isAllDayItem(item)) return -1;
     if (item.kind === "event") return minutesFromMidnight(item.start);
-    return item.due ? minutesFromMidnight(item.due) : -1;
+    if (item.kind === "task") return item.due ? minutesFromMidnight(item.due) : -1;
+    return minutesFromMidnight(item.date);
   };
 
   /** 日ごとの表示順。終日→時刻順→同時刻はタイトル順に並べる。 */
@@ -181,5 +182,6 @@ export function createCalendarDateUtils(timeZone: string) {
 /** 時刻のないタスクは時間グリッド上の位置が決まらないため、終日エリアへ入れる（docs/spec.md §6）。 */
 export function isAllDayItem(item: CalendarItem): boolean {
   if (item.kind === "event") return item.allDay;
+  if (item.kind === "reminder") return !item.hasTime;
   return !item.hasTime;
 }

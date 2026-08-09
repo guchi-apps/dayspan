@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 
+import { ClearOfflineCache } from "@/components/offline/clear-offline-cache";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -18,6 +18,8 @@ export default async function LoginPage({
 
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-8 bg-surface-container-low p-4">
+      <ClearOfflineCache />
+
       <div className="type-headline-small flex items-center gap-2">
         <CalendarDays className="size-7 text-primary" />
         DaySpan
@@ -44,9 +46,10 @@ export default async function LoginPage({
 
           {/* スマートフォンでも押しやすい高さにする。既定のボタン高さ(32px)はタップ対象として小さい。 */}
           <Button asChild className="h-11 w-full text-base">
-            <Link href={`/auth/signin?next=${encodeURIComponent(next)}`} prefetch={false}>
+            {/* OAuthは外部サイトへリダイレクトするため、オフライン再送対象のNext.jsクライアント遷移を使わない。 */}
+            <a href={`/auth/signin?next=${encodeURIComponent(next)}`}>
               Googleでログイン
-            </Link>
+            </a>
           </Button>
         </CardContent>
       </Card>

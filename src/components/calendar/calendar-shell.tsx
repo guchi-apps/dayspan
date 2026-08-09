@@ -2,10 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useOffline } from "next/offline";
 import { Suspense, use, useMemo, useOptimistic, useState, useTransition } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
+import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
+import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { Button } from "@/components/ui/button";
 import { LinearProgress } from "@/components/ui/linear-progress";
 import {
@@ -30,11 +33,15 @@ import { EventDetailDialog } from "./event-detail-dialog";
 import { EventDialog, toEventDraft, type EventDraft } from "./event-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { ContinuousMonthView } from "./continuous-month-view";
+import { QuickEventSheet, toQuickEventDraft, type QuickEventDraft } from "./quick-event-sheet";
 import { TaskDetailDialog } from "./task-detail-dialog";
 import { TaskDialog, toTaskDraft, type TaskDraft } from "./task-dialog";
 import { TimeGridView } from "./time-grid-view";
 import { monthsOfRanges, useCalendarChunks, type TouchedRange } from "./use-calendar-chunks";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
+
+// 日付だけが決まっている追加（右下の「＋」・月表示の長押し）で使う開始時刻。
+const DEFAULT_START_MINUTES = 9 * 60;
 
 const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[] = [
   { view: "month", label: "月" },
@@ -65,6 +72,11 @@ export function CalendarShell({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
+  // オフライン中は書き込みを止める（docs/spec.md §21）。ここで判定した結果を、
+  // 追加ボタン・ドラッグ・編集への入口すべてへ配って、送る前に断つ。
+  const offline = useOffline();
+  useReconnectRefresh();
+
   // 月のデータを取りにいっているか。取得はSuspense境界の内側で起きるが、
   // 進行の表示はヘッダー直下（境界の外）にあるため、ここまで上げてもらう。
   const [windowLoading, setWindowLoading] = useState(false);
@@ -93,6 +105,8 @@ export function CalendarShell({
   const serverMonths = useMemo(() => monthsOfWeeks(weeks), [weeks]);
 
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
+  // 空いているところを押したときの簡易入力。詳細な項目は「詳細」から eventDraft へ引き継ぐ。
+  const [quickDraft, setQuickDraft] = useState<QuickEventDraft | null>(null);
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
   // クリックした直後は表示専用画面を開く。編集アイコンを押したときだけ draft へ切り替える。
   const [viewingEvent, setViewingEvent] = useState<CalendarEventItem | null>(null);
@@ -101,6 +115,7 @@ export function CalendarShell({
 
   const closeDialogs = () => {
     setEventDraft(null);
+    setQuickDraft(null);
     setTaskDraft(null);
     setViewingEvent(null);
     setViewingTask(null);
@@ -119,6 +134,13 @@ export function CalendarShell({
    */
   const commitDrag = async (commit: DragCommit) => {
     setDragError(null);
+
+    // ドラッグ自体もオフラインでは始まらないようにしてあるが、通信が落ちるのは操作の途中でも
+    // 起こる。送る直前でもう一度見て、保存できたつもりのまま画面だけ動くことを防ぐ。
+    if (offline) {
+      setDragError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
 
     const startIso = localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.startMinutes), timeZone);
 
@@ -164,6 +186,11 @@ export function CalendarShell({
   const commitAllDayDrag = async (commit: AllDayDragCommit) => {
     setDragError(null);
 
+    if (offline) {
+      setDragError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
+
     try {
       let response: Response;
 
@@ -202,11 +229,13 @@ export function CalendarShell({
   const openEvent = (event: CalendarEventItem) => setViewingEvent(event);
 
   const editEvent = (event: CalendarEventItem) => {
+    if (offline) return;
     setViewingEvent(null);
     setEventDraft(toEventDraft(event, timeZone));
   };
 
   const editTask = (task: TaskItem) => {
+    if (offline) return;
     setViewingTask(null);
     setTaskDraft(toTaskDraft(task, timeZone));
   };
@@ -222,16 +251,17 @@ export function CalendarShell({
         );
   const openTask = (task: TaskItem) => setViewingTask(task);
 
-  /** 新規作成の初期値。時間グリッドの空き時間を選んだ場合はその日時から1時間で開く。 */
-  const newEventDraft = (dateKey: string, minutes: number | null): EventDraft => {
-    if (minutes === null) {
-      return { allDay: true, start: dateKey, end: dateKey };
-    }
-    return {
-      allDay: false,
-      start: dateKeyPlusMinutes(dateKey, minutes),
-      end: dateKeyPlusMinutes(dateKey, Math.min(minutes + 60, 23 * 60 + 30)),
-    };
+  /** 新規作成の初期値。指定の日時から1時間ぶんで開く。 */
+  const newEventDraft = (dateKey: string, minutes: number): EventDraft => ({
+    allDay: false,
+    start: dateKeyPlusMinutes(dateKey, minutes),
+    end: dateKeyPlusMinutes(dateKey, Math.min(minutes + 60, 23 * 60 + 30)),
+  });
+
+  /** 簡易入力から通常の入力画面へ移る。入力済みの値はそのまま引き継ぐ。 */
+  const openEventForm = (draft: EventDraft) => {
+    setQuickDraft(null);
+    setEventDraft(draft);
   };
 
   const navigate = (nextView: CalendarView, nextAnchorKey: string) => {
@@ -318,7 +348,8 @@ export function CalendarShell({
 
         <HeaderNav current="calendar" />
 
-        <div className="flex items-center">
+        {/* スマートフォンはスワイプで移動できるため、年月の表示幅を優先する。 */}
+        <div className="hidden items-center md:flex">
           <Button
             variant="ghost"
             size="icon"
@@ -372,7 +403,9 @@ export function CalendarShell({
           variant="ghost"
           size="icon"
           className="size-10 md:size-9"
-          disabled={pending}
+          // オフライン中に押しても、再接続まで終わらない読み込みが始まるだけになる。
+          // 通信が戻った時点の取り直しは useReconnectRefresh が行う。
+          disabled={pending || offline}
           aria-label="再取得"
           onClick={() => startTransition(() => router.refresh())}
         >
@@ -386,6 +419,8 @@ export function CalendarShell({
       </header>
 
       <LinearProgress active={pending || windowLoading} />
+
+      <OfflineNotice />
 
       {/*
         予定とタスクの到着を待つ必要があるのはグリッドだけ。どの期間を見ているかは
@@ -406,9 +441,11 @@ export function CalendarShell({
           serverMonths={serverMonths}
           scrollTarget={scrollTarget}
           autoRefreshSeconds={autoRefreshSeconds}
+          offline={offline}
           dragError={dragError}
           addMenuOpen={addMenuOpen}
           eventDraft={eventDraft}
+          quickDraft={quickDraft}
           taskDraft={taskDraft}
           viewingEvent={viewingEvent}
           viewingTask={viewingTask}
@@ -419,13 +456,21 @@ export function CalendarShell({
           onOpenTask={openTask}
           onEditEvent={editEvent}
           onEditTask={editTask}
-          onSelectSlot={(dateKey, minutes) => setEventDraft(newEventDraft(dateKey, minutes))}
+          onSelectSlot={(dateKey, minutes) => {
+            if (offline) return;
+            setQuickDraft(toQuickEventDraft(dateKey, minutes));
+          }}
+          onQuickAddOnDay={(dateKey) => {
+            if (offline) return;
+            setQuickDraft(toQuickEventDraft(dateKey, DEFAULT_START_MINUTES));
+          }}
+          onOpenEventForm={openEventForm}
           onDragCommit={commitDrag}
           onAllDayDragCommit={commitAllDayDrag}
           onToggleAddMenu={() => setAddMenuOpen((prev) => !prev)}
           onAddEvent={() => {
             setAddMenuOpen(false);
-            setEventDraft(newEventDraft(defaultDayKey, 9 * 60));
+            setEventDraft(newEventDraft(defaultDayKey, DEFAULT_START_MINUTES));
           }}
           onAddTask={() => {
             setAddMenuOpen(false);
@@ -464,9 +509,11 @@ function CalendarBody({
   serverMonths,
   scrollTarget,
   autoRefreshSeconds,
+  offline,
   dragError,
   addMenuOpen,
   eventDraft,
+  quickDraft,
   taskDraft,
   viewingEvent,
   viewingTask,
@@ -478,6 +525,8 @@ function CalendarBody({
   onEditEvent,
   onEditTask,
   onSelectSlot,
+  onQuickAddOnDay,
+  onOpenEventForm,
   onDragCommit,
   onAllDayDragCommit,
   onToggleAddMenu,
@@ -498,9 +547,11 @@ function CalendarBody({
   serverMonths: string[];
   scrollTarget: { month: string; nonce: number };
   autoRefreshSeconds: number;
+  offline: boolean;
   dragError: string | null;
   addMenuOpen: boolean;
   eventDraft: EventDraft | null;
+  quickDraft: QuickEventDraft | null;
   taskDraft: TaskDraft | null;
   viewingEvent: CalendarEventItem | null;
   viewingTask: TaskItem | null;
@@ -511,7 +562,9 @@ function CalendarBody({
   onOpenTask: (task: TaskItem) => void;
   onEditEvent: (event: CalendarEventItem) => void;
   onEditTask: (task: TaskItem) => void;
-  onSelectSlot: (dateKey: string, minutes: number | null) => void;
+  onSelectSlot: (dateKey: string, minutes: number) => void;
+  onQuickAddOnDay: (dateKey: string) => void;
+  onOpenEventForm: (draft: EventDraft) => void;
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
   onToggleAddMenu: () => void;
@@ -552,6 +605,8 @@ function CalendarBody({
 
   /** 表示画面のままの完了切り替え。編集フォームを経由しないため保存とは別経路で送る。 */
   const handleToggleTaskDone = async (task: TaskItem, done: boolean) => {
+    if (offline) throw new Error(OFFLINE_WRITE_MESSAGE);
+
     const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -589,12 +644,14 @@ function CalendarBody({
           weeks={weeks}
           events={data.events}
           tasks={data.tasks}
+          reminders={data.reminders}
           weekStartsOn={weekStartsOn}
           utils={utils}
           scrollTarget={scrollTarget}
           pendingMonths={data.pendingMonths}
           onVisibleMonthChange={onVisibleMonthChange}
           onSelectDay={onSelectDay}
+          onQuickAdd={onQuickAddOnDay}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
         />
@@ -610,13 +667,14 @@ function CalendarBody({
           onDragCommit={onDragCommit}
           onAllDayDragCommit={onAllDayDragCommit}
           onSwipe={onSwipe}
+          readOnly={offline}
         />
       )}
 
       <AddButton
         open={addMenuOpen}
-        canAddEvent={data.calendars.length > 0}
-        canAddTask={data.notionReady}
+        canAddEvent={!offline && data.calendars.length > 0}
+        canAddTask={!offline && data.notionReady}
         onToggle={onToggleAddMenu}
         onAddEvent={onAddEvent}
         onAddTask={onAddTask}
@@ -629,6 +687,18 @@ function CalendarBody({
           timeZone={timeZone}
           onClose={onCloseDialogs}
           onSaved={handleSaved}
+        />
+      )}
+
+      {/* 保存先が1つも無いと入力しても保存できない。押しても何も起きない画面は出さない。 */}
+      {quickDraft && data.calendars.length > 0 && (
+        <QuickEventSheet
+          draft={quickDraft}
+          calendars={data.calendars}
+          timeZone={timeZone}
+          onClose={onCloseDialogs}
+          onSaved={handleSaved}
+          onOpenDetail={onOpenEventForm}
         />
       )}
 
@@ -645,6 +715,7 @@ function CalendarBody({
         <EventDetailDialog
           event={viewingEvent}
           timeZone={timeZone}
+          readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditEvent(viewingEvent)}
         />
@@ -654,6 +725,7 @@ function CalendarBody({
         <TaskDetailDialog
           task={viewingTask}
           timeZone={timeZone}
+          readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditTask(viewingTask)}
           onToggleDone={handleToggleTaskDone}

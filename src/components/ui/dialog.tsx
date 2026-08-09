@@ -47,13 +47,27 @@ function DialogOverlay({
   )
 }
 
+// 中央に浮かべる通常のダイアログと、画面下端に寄せるボトムシート。
+// 位置・角丸・出方が組で決まるため、className での上書きではなく位置ごとに持たせる。
+// 上書きにすると、基底の角丸や拡大の指定が残って打ち消し合う。
+const DIALOG_POSITIONS = {
+  center:
+    "top-1/2 left-1/2 max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl sm:max-w-sm data-open:zoom-in-95 data-closed:zoom-out-95",
+  // 画面の下側を使い、入力欄と保存ボタンを指の届く範囲へ置く。
+  // 下端の余白はホームバーの領域を避けて確保する。
+  bottom:
+    "bottom-0 left-1/2 max-w-full -translate-x-1/2 rounded-t-2xl pb-[calc(1.5rem_+_env(safe-area-inset-bottom))] sm:max-w-lg data-open:slide-in-from-bottom-8 data-closed:slide-out-to-bottom-8",
+} as const
+
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  position = "center",
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  position?: keyof typeof DIALOG_POSITIONS
 }) {
   return (
     <DialogPortal>
@@ -61,7 +75,8 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 elevation-3 gap-4 rounded-xl bg-surface-container-high p-6 text-sm text-on-surface duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed z-50 grid w-full elevation-3 gap-4 bg-surface-container-high p-6 text-sm text-on-surface duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+          DIALOG_POSITIONS[position],
           className
         )}
         {...props}
