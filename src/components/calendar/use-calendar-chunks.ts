@@ -6,6 +6,7 @@ import { shiftMonthKey } from "@/lib/calendar-range";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
+  ReminderItem,
   TaskItem,
   WritableCalendar,
 } from "@/types/calendar";
@@ -19,6 +20,7 @@ import type {
 type MonthChunk = {
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   /** 取得時刻。一定時間経った月は、窓に入り直したときに取り直す。 */
   fetchedAt: number;
 };
@@ -62,12 +64,12 @@ export function monthsOfRanges(ranges: TouchedRange[]): string[] {
 
 /** 取得結果を月ごとに仕分ける。月をまたぐ予定は、かかる月すべてに入る。 */
 function splitByMonth(
-  data: Pick<CalendarLoadResult, "events" | "tasks">,
+  data: Pick<CalendarLoadResult, "events" | "tasks" | "reminders">,
   months: string[],
   fetchedAt: number,
 ): Map<string, MonthChunk> {
   const chunks = new Map<string, MonthChunk>();
-  for (const month of months) chunks.set(month, { events: [], tasks: [], fetchedAt });
+  for (const month of months) chunks.set(month, { events: [], tasks: [], reminders: [], fetchedAt });
 
   for (const event of data.events) {
     for (const month of monthKeysBetween(event.start, event.end)) {
@@ -78,6 +80,9 @@ function splitByMonth(
   for (const task of data.tasks) {
     if (!task.due) continue;
     chunks.get(task.due.slice(0, 7))?.tasks.push(task);
+  }
+  for (const reminder of data.reminders) {
+    chunks.get(reminder.date.slice(0, 7))?.reminders.push(reminder);
   }
 
   return chunks;
@@ -106,6 +111,7 @@ function pruneToWindow(
 export type CalendarWindowData = {
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   calendars: WritableCalendar[];
   notionReady: boolean;
   errors: CalendarLoadResult["errors"];
@@ -220,6 +226,7 @@ export function useCalendarChunks({
           next.set(month, {
             events: existing?.events ?? [],
             tasks: existing?.tasks ?? [],
+            reminders: existing?.reminders ?? [],
             fetchedAt,
           });
         }
@@ -253,11 +260,13 @@ export function useCalendarChunks({
   }, [enabled, windowMonths, chunks, autoRefreshSeconds, fetchMonths]);
 
   // 窓のぶんを1つに束ねる。月をまたぐ予定は複数の月に入っているため、ここで重複を落とす。
-  const { events, tasks } = useMemo(() => {
+  const { events, tasks, reminders } = useMemo(() => {
     const events: CalendarEventItem[] = [];
     const tasks: TaskItem[] = [];
+    const reminders: ReminderItem[] = [];
     const seenEvents = new Set<string>();
     const seenTasks = new Set<string>();
+    const seenReminders = new Set<string>();
 
     for (const month of windowMonths) {
       const chunk = chunks.get(month);
@@ -278,9 +287,14 @@ export function useCalendarChunks({
         seenTasks.add(task.id);
         tasks.push(task);
       }
+      for (const reminder of chunk.reminders) {
+        if (seenReminders.has(reminder.id)) continue;
+        seenReminders.add(reminder.id);
+        reminders.push(reminder);
+      }
     }
 
-    return { events, tasks };
+    return { events, tasks, reminders };
   }, [chunks, windowMonths]);
 
   // 一度も取得できていない月だけを「読み込み中」とする。取り直し中の月まで含めると、
@@ -316,6 +330,7 @@ export function useCalendarChunks({
     return {
       events: initial.events,
       tasks: initial.tasks,
+      reminders: initial.reminders,
       calendars: initial.calendars,
       notionReady: initial.notionReady,
       errors: initial.errors,
@@ -328,6 +343,7 @@ export function useCalendarChunks({
   return {
     events,
     tasks,
+    reminders,
     calendars: meta.calendars,
     notionReady: meta.notionReady,
     errors: meta.errors,
