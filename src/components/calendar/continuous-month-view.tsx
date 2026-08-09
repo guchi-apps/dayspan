@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { weekMonthKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
-import type { CalendarEventItem, CalendarItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/types/calendar";
 
 import { eventColors } from "./calendar-color";
 import { isAllDayItem, type CalendarDateUtils } from "./item-layout";
@@ -65,6 +65,7 @@ export function ContinuousMonthView({
   weeks,
   events,
   tasks,
+  reminders,
   weekStartsOn,
   utils,
   scrollTarget,
@@ -78,6 +79,7 @@ export function ContinuousMonthView({
   weeks: string[][];
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   weekStartsOn: number;
   utils: CalendarDateUtils;
   /** 指定の月へ寄せる指示。同じ月を続けて指しても効くよう nonce を持たせる。 */
@@ -168,6 +170,11 @@ export function ContinuousMonthView({
       push(dateKey, dateKey, task);
     }
 
+    for (const reminder of reminders) {
+      const dateKey = utils.itemDateKey(reminder.date);
+      push(dateKey, dateKey, reminder);
+    }
+
     return rawByWeek.map((raw) => {
       raw.sort((a, b) => {
         // 帯（日をまたぐ・終日）を先に置く。後から来た1日ぶんの予定が、
@@ -220,7 +227,7 @@ export function ContinuousMonthView({
 
       return { segments, hiddenByColumn };
     });
-  }, [events, tasks, utils, weeks]);
+  }, [events, tasks, reminders, utils, weeks]);
 
   const rememberAnchor = useCallback(
     (container: HTMLDivElement) => {
@@ -435,7 +442,27 @@ function renderChip(
     );
   }
 
+  if (item.kind === "reminder") return <ReminderChip reminder={item} utils={utils} />;
+
   return <TaskChip task={item} utils={utils} onOpen={() => onOpenTask(item)} />;
+}
+
+function ReminderChip({ reminder, utils }: { reminder: ReminderItem; utils: CalendarDateUtils }) {
+  const content = (
+    <>
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
+      {reminder.hasTime && (
+        <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
+      )}
+      <span className="clip-nowrap">{reminder.title}</span>
+    </>
+  );
+  const className = "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4";
+  return reminder.url ? (
+    <a href={reminder.url} target="_blank" rel="noreferrer" className={className} title={reminder.title}>{content}</a>
+  ) : (
+    <span className={className} title={reminder.title}>{content}</span>
+  );
 }
 
 /** 予定は占有した時間の「幅」。塗りつぶした帯で表す。 */
