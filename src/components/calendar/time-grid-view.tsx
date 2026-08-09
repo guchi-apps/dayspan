@@ -456,10 +456,10 @@ function DayColumn({
               }}
               title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
             >
-              <div className="truncate font-semibold">{event.title}</div>
+              <div className="clip-nowrap font-semibold">{event.title}</div>
               {/* 短い予定で時刻まで出すと文字が潰れるため、高さに余裕があるときだけ添える。 */}
               {height >= 40 && (
-                <div className="truncate opacity-75">
+                <div className="clip-nowrap opacity-75">
                   {eventPreview
                     ? formatMinutes(eventPreview.startMinutes)
                     : utils.formatTime(event.start)}
@@ -532,7 +532,7 @@ function DayColumn({
           />
           <span
             className={cn(
-              "type-label-small max-w-[78%] truncate rounded-xs border border-outline bg-surface-container-lowest px-1",
+              "type-label-small clip-nowrap max-w-[78%] rounded-xs border border-outline bg-surface-container-lowest px-1",
               task.done && "text-muted-foreground line-through",
             )}
           >
@@ -676,7 +676,7 @@ const AllDayPane = memo(function AllDayPane({
                   onOpenEvent(event);
                 }}
                 className={cn(
-                  "truncate rounded-sm border px-1.5 text-left text-[11px] leading-5 font-medium",
+                  "clip-nowrap rounded-sm border px-1.5 text-left text-[11px] leading-5 font-medium",
                   preview?.id === event.id && "ring-2 ring-foreground/50",
                 )}
                 style={{
@@ -699,7 +699,7 @@ const AllDayPane = memo(function AllDayPane({
                   onOpenTask(task);
                 }}
                 className={cn(
-                  "type-label-small flex items-center gap-1 truncate rounded-xs border border-outline bg-surface-container-lowest px-1.5 py-0.5 text-left",
+                  "type-label-small clip-nowrap flex items-center gap-1 rounded-xs border border-outline bg-surface-container-lowest px-1.5 py-0.5 text-left",
                   task.done && "text-muted-foreground line-through",
                   preview?.id === task.id && "ring-2 ring-foreground/50",
                 )}
@@ -712,7 +712,7 @@ const AllDayPane = memo(function AllDayPane({
                     task.done ? "bg-on-surface-variant/60" : "bg-primary",
                   )}
                 />
-                <span className="truncate">{task.title}</span>
+                <span className="clip-nowrap">{task.title}</span>
               </button>
             ))}
           </div>

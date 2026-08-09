@@ -285,6 +285,15 @@
   letter-spacing: 0.5px;
 }
 
+/* 予定・タスクの項目名を、枠に収まらないときは省略記号を出さずにそのまま切る。
+   truncate（text-overflow: ellipsis）は「…」の幅だけ文字が減るため、
+   枠が狭いほど読める文字が少なくなる（issue #46）。 */
+@utility clip-nowrap {
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
 /* M3のエレベーション。面の重なりで奥行きを示す。 */
 @utility elevation-1 {
   box-shadow:
