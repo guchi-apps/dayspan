@@ -25,6 +25,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
+import { DateTimeInput } from "./date-time-input";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import type { TouchedRange } from "./use-calendar-chunks";
 
@@ -126,8 +127,9 @@ export function EventDialog({
       setStart(start.slice(0, 10));
       setEnd(end.slice(0, 10));
     } else {
-      setStart(`${start.slice(0, 10)}T09:00`);
-      setEnd(`${end.slice(0, 10)}T10:00`);
+      // 日付が空のまま時刻だけを足すと datetime として成立しない。空欄は空欄のまま渡す。
+      setStart(start ? `${start.slice(0, 10)}T09:00` : "");
+      setEnd(end ? `${end.slice(0, 10)}T10:00` : "");
     }
     setAllDay(next);
   };
@@ -228,20 +230,41 @@ export function EventDialog({
           </label>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
-            <Input
-              id="event-start"
-              label="開始"
-              type={allDay ? "date" : "datetime-local"}
-              value={start}
-              onChange={(e) => changeStart(e.target.value)}
-            />
-            <Input
-              id="event-end"
-              label="終了"
-              type={allDay ? "date" : "datetime-local"}
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-            />
+            {allDay ? (
+              <>
+                <Input
+                  id="event-start"
+                  label="開始"
+                  type="date"
+                  value={start}
+                  onChange={(e) => changeStart(e.target.value)}
+                />
+                <Input
+                  id="event-end"
+                  label="終了"
+                  type="date"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                />
+              </>
+            ) : (
+              <>
+                <DateTimeInput
+                  id="event-start"
+                  dateLabel="開始日"
+                  timeLabel="開始時刻"
+                  value={start}
+                  onChange={changeStart}
+                />
+                <DateTimeInput
+                  id="event-end"
+                  dateLabel="終了日"
+                  timeLabel="終了時刻"
+                  value={end}
+                  onChange={setEnd}
+                />
+              </>
+            )}
           </div>
 
           {!editing && (

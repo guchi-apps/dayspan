@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { RECURRENCE_PRESETS } from "@/services/notion/recurrence";
 import type { TaskItem } from "@/types/calendar";
 
+import { DateTimeInput } from "./date-time-input";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import type { TouchedRange } from "./use-calendar-chunks";
 
@@ -85,9 +86,21 @@ export function TaskDialog({
     setTimeout(() => onSaved(touched), 150);
   };
 
+  // 期限を選ぶモードなのに空欄のままだと、保存時の日時変換で失敗する。先に画面で知らせる。
+  const dueError =
+    dueMode !== "none" && !due
+      ? dueMode === "datetime"
+        ? "期限の日付と時刻を入力してください。"
+        : "期限の日付を入力してください。"
+      : null;
+
   const changeDueMode = (next: DueMode) => {
-    if (next === "datetime" && !due.includes("T")) setDue(`${due.slice(0, 10)}T18:00`);
-    if (next === "date" && due.includes("T")) setDue(due.slice(0, 10));
+    if (next !== "none") {
+      // 期限未設定から切り替えた直後は日付を持っていない。設定タイムゾーンでの今日を入れる。
+      // 実行環境のローカル時刻ではなく設定タイムゾーンで求めるのは、他の日時と揃えるため。
+      const date = due.slice(0, 10) || isoToLocalInput(new Date().toISOString(), timeZone).slice(0, 10);
+      setDue(next === "datetime" ? `${date}T${due.slice(11, 16) || "18:00"}` : date);
+    }
     setDueMode(next);
   };
 
@@ -179,10 +192,20 @@ export function TaskDialog({
                 </Button>
               ))}
             </div>
-            {dueMode !== "none" && (
+            {dueMode === "datetime" && (
+              <DateTimeInput
+                id="task-due"
+                dateLabel="期限の日付"
+                timeLabel="期限の時刻"
+                value={due}
+                onChange={setDue}
+              />
+            )}
+            {dueMode === "date" && (
               <Input
-                label={dueMode === "datetime" ? "期限の日時" : "期限の日付"}
-                type={dueMode === "datetime" ? "datetime-local" : "date"}
+                id="task-due-date"
+                label="期限の日付"
+                type="date"
                 value={due}
                 onChange={(e) => setDue(e.target.value)}
               />
@@ -257,6 +280,7 @@ export function TaskDialog({
             </a>
           )}
 
+          {dueError && <p className="text-sm text-destructive">{dueError}</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
@@ -264,7 +288,7 @@ export function TaskDialog({
           <Button variant="ghost" disabled={busy} onClick={close}>
             やめる
           </Button>
-          <Button disabled={busy || !title.trim()} onClick={save}>
+          <Button disabled={busy || !title.trim() || dueError !== null} onClick={save}>
             保存
           </Button>
         </DialogFooter>
