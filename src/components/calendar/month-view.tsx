@@ -10,17 +10,9 @@ import type { CalendarDateUtils } from "./item-layout";
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
 // 1日のマスに詰め込みすぎると月全体が読めなくなるため、上限を超えた分は件数で畳む。
+// 行の高さは画面の高さを6分割した値で決まるため、狭い画面では1件少なくする。
 const MAX_ITEMS_PER_DAY = 4;
-
-// 狭い画面は帯と点で示すため、文字を出す場合より多く並べられる。
-const MOBILE_MAX_BARS = 4;
-const MOBILE_MAX_DOTS = 5;
-
-function mobileHiddenCount(eventCount: number, taskCount: number): number {
-  return (
-    Math.max(eventCount - MOBILE_MAX_BARS, 0) + Math.max(taskCount - MOBILE_MAX_DOTS, 0)
-  );
-}
+const MOBILE_MAX_ITEMS = 3;
 
 export function MonthView({
   weeks,
@@ -79,6 +71,7 @@ export function MonthView({
 
               const visible = dayItems.slice(0, MAX_ITEMS_PER_DAY);
               const hiddenCount = dayItems.length - visible.length;
+              const mobileHidden = dayItems.length - MOBILE_MAX_ITEMS;
               const inMonth = dateKey.slice(0, 7) === anchorMonth;
               const isToday = dateKey === todayKey;
 
@@ -105,58 +98,15 @@ export function MonthView({
                     {Number(dateKey.slice(8, 10))}
                   </button>
 
-                  {/*
-                    狭い画面: 帯と点は数px しかなく指では押せないため、表示専用にする。
-                    タップ対象はセル全体とし、その日の詳細へ移動する。
-                  */}
-                  <button
-                    type="button"
-                    onClick={() => onSelectDay(dateKey)}
-                    aria-label={`${Number(dateKey.slice(8, 10))}日 予定${dayEvents.length}件 タスク${dayTasks.length}件`}
-                    className="flex min-w-0 flex-1 flex-col items-stretch gap-[3px] sm:hidden"
-                  >
-                    {dayEvents.slice(0, MOBILE_MAX_BARS).map((event) => (
-                      <span
-                        key={event.id}
-                        aria-hidden
-                        className="h-1 w-full rounded-xs border"
-                        style={{
-                          backgroundColor: eventColors(event.color).background,
-                          borderColor: eventColors(event.color).border,
-                        }}
-                      />
-                    ))}
-
-                    {dayTasks.length > 0 && (
-                      <span aria-hidden className="flex flex-wrap items-center gap-[3px] pt-px">
-                        {dayTasks.slice(0, MOBILE_MAX_DOTS).map((task) => (
-                          <span
-                            key={task.id}
-                            className={cn(
-                              "size-1.5 rounded-full",
-                              task.done ? "bg-on-surface-variant/50" : "bg-primary",
-                            )}
-                          />
-                        ))}
-                      </span>
-                    )}
-
-                    {mobileHiddenCount(dayEvents.length, dayTasks.length) > 0 && (
-                      <span aria-hidden className="type-label-small text-left text-on-surface-variant">
-                        +{mobileHiddenCount(dayEvents.length, dayTasks.length)}
-                      </span>
-                    )}
-                  </button>
-
-                  {/* 広い画面: 時刻とタイトルまで読める。 */}
-                  <div className="hidden min-w-0 flex-col gap-0.5 sm:flex">
-                    {visible.map((item) =>
+                  <div className="flex min-w-0 flex-col gap-px sm:gap-0.5">
+                    {visible.map((item, index) =>
                       item.kind === "event" ? (
                         <EventChip
                           key={item.id}
                           event={item}
                           utils={utils}
                           onOpen={() => onOpenEvent(item)}
+                          desktopOnly={index >= MOBILE_MAX_ITEMS}
                         />
                       ) : (
                         <TaskChip
@@ -164,14 +114,26 @@ export function MonthView({
                           task={item}
                           utils={utils}
                           onOpen={() => onOpenTask(item)}
+                          desktopOnly={index >= MOBILE_MAX_ITEMS}
                         />
                       ),
                     )}
+
+                    {mobileHidden > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectDay(dateKey)}
+                        className="px-0.5 text-left text-[10px] whitespace-nowrap text-on-surface-variant sm:hidden"
+                      >
+                        +{mobileHidden}
+                      </button>
+                    )}
+
                     {hiddenCount > 0 && (
                       <button
                         type="button"
                         onClick={() => onSelectDay(dateKey)}
-                        className="truncate px-1 text-left text-[10px] whitespace-nowrap text-on-surface-variant hover:text-foreground"
+                        className="hidden truncate px-1 text-left text-[10px] whitespace-nowrap text-on-surface-variant hover:text-foreground sm:block"
                       >
                         ほか {hiddenCount}件
                       </button>
@@ -192,10 +154,12 @@ function EventChip({
   event,
   utils,
   onOpen,
+  desktopOnly,
 }: {
   event: CalendarEventItem;
   utils: CalendarDateUtils;
   onOpen: () => void;
+  desktopOnly: boolean;
 }) {
   const colors = eventColors(event.color);
 
@@ -203,7 +167,10 @@ function EventChip({
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small flex w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border px-1 py-px text-left"
+      className={cn(
+        "flex h-4 w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border px-0.5 text-left text-[10px] leading-4 font-medium sm:type-label-small sm:h-auto sm:px-1 sm:py-px",
+        desktopOnly && "hidden sm:flex",
+      )}
       style={{
         backgroundColor: colors.background,
         color: colors.foreground,
@@ -211,7 +178,12 @@ function EventChip({
       }}
       title={event.title}
     >
-      {!event.allDay && <span className="shrink-0 opacity-75">{utils.formatTime(event.start)}</span>}
+      {/* 狭い列では時刻が本文の幅を奪う。時刻は日表示で確認できるので、ここでは題名を優先する。 */}
+      {!event.allDay && (
+        <span className="hidden shrink-0 opacity-75 sm:inline">
+          {utils.formatTime(event.start)}
+        </span>
+      )}
       <span className="truncate">{event.title}</span>
     </button>
   );
@@ -222,18 +194,21 @@ function TaskChip({
   task,
   utils,
   onOpen,
+  desktopOnly,
 }: {
   task: TaskItem;
   utils: CalendarDateUtils;
   onOpen: () => void;
+  desktopOnly: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex h-1.5 w-full min-w-0 items-center gap-1 overflow-hidden rounded-full border border-primary/60 bg-surface-container-lowest text-left text-[11px] leading-4 font-medium sm:h-auto sm:rounded-sm sm:border-outline sm:px-1",
-        task.done && "border-outline-variant text-on-surface-variant line-through",
+        "flex h-4 w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-outline bg-surface-container-lowest px-0.5 text-left text-[10px] leading-4 font-medium sm:type-label-small sm:h-auto sm:px-1 sm:py-px",
+        task.done && "text-on-surface-variant line-through",
+        desktopOnly && "hidden sm:flex",
       )}
       title={task.title}
     >
@@ -245,7 +220,7 @@ function TaskChip({
         )}
       />
       {task.hasTime && task.due && (
-        <span className="shrink-0 opacity-70">{utils.formatTime(task.due)}</span>
+        <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(task.due)}</span>
       )}
       <span className="truncate">{task.title}</span>
     </button>

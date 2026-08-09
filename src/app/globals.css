@@ -226,78 +226,78 @@
 }
 
 /* --- M3 タイプスケール ---
-   役割ごとにサイズ・行間・字間が決まっている。見出しと本文とラベルを混ぜないための土台。 */
-@layer components {
-  .type-headline-small {
-    font-size: 24px;
-    line-height: 32px;
-    font-weight: 400;
-  }
-  .type-title-large {
-    font-size: 22px;
-    line-height: 28px;
-    font-weight: 400;
-  }
-  .type-title-medium {
-    font-size: 16px;
-    line-height: 24px;
-    font-weight: 500;
-    letter-spacing: 0.15px;
-  }
-  .type-title-small {
-    font-size: 14px;
-    line-height: 20px;
-    font-weight: 500;
-    letter-spacing: 0.1px;
-  }
-  .type-body-large {
-    font-size: 16px;
-    line-height: 24px;
-    letter-spacing: 0.5px;
-  }
-  .type-body-medium {
-    font-size: 14px;
-    line-height: 20px;
-    letter-spacing: 0.25px;
-  }
-  .type-body-small {
-    font-size: 12px;
-    line-height: 16px;
-    letter-spacing: 0.4px;
-  }
-  .type-label-large {
-    font-size: 14px;
-    line-height: 20px;
-    font-weight: 500;
-    letter-spacing: 0.1px;
-  }
-  .type-label-medium {
-    font-size: 12px;
-    line-height: 16px;
-    font-weight: 500;
-    letter-spacing: 0.5px;
-  }
-  .type-label-small {
-    font-size: 11px;
-    line-height: 16px;
-    font-weight: 500;
-    letter-spacing: 0.5px;
-  }
+   役割ごとにサイズ・行間・字間が決まっている。見出しと本文とラベルを混ぜないための土台。
+   @layer components ではなく @utility で定義する。前者では sm: などのバリアントが生成されず、
+   画面幅に応じて字の大きさを変えられないため。 */
+@utility type-headline-small {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 400;
+}
+@utility type-title-large {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 400;
+}
+@utility type-title-medium {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  letter-spacing: 0.15px;
+}
+@utility type-title-small {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+@utility type-body-large {
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: 0.5px;
+}
+@utility type-body-medium {
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: 0.25px;
+}
+@utility type-body-small {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.4px;
+}
+@utility type-label-large {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+@utility type-label-medium {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+@utility type-label-small {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
 
-  /* M3のエレベーション。影ではなく面の重なりで奥行きを出す。 */
-  .elevation-1 {
-    box-shadow:
-      0 1px 2px 0 rgb(0 0 0 / 0.3),
-      0 1px 3px 1px rgb(0 0 0 / 0.15);
-  }
-  .elevation-2 {
-    box-shadow:
-      0 1px 2px 0 rgb(0 0 0 / 0.3),
-      0 2px 6px 2px rgb(0 0 0 / 0.15);
-  }
-  .elevation-3 {
-    box-shadow:
-      0 4px 8px 3px rgb(0 0 0 / 0.15),
-      0 1px 3px 0 rgb(0 0 0 / 0.3);
-  }
+/* M3のエレベーション。面の重なりで奥行きを示す。 */
+@utility elevation-1 {
+  box-shadow:
+    0 1px 2px 0 rgb(0 0 0 / 0.3),
+    0 1px 3px 1px rgb(0 0 0 / 0.15);
+}
+@utility elevation-2 {
+  box-shadow:
+    0 1px 2px 0 rgb(0 0 0 / 0.3),
+    0 2px 6px 2px rgb(0 0 0 / 0.15);
+}
+@utility elevation-3 {
+  box-shadow:
+    0 4px 8px 3px rgb(0 0 0 / 0.15),
+    0 1px 3px 0 rgb(0 0 0 / 0.3);
 }
