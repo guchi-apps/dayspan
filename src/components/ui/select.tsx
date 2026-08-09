@@ -4,6 +4,7 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { fieldShell, fieldLabel } from "@/components/ui/field"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
 function Select({
@@ -34,18 +35,30 @@ function SelectValue({
 function SelectTrigger({
   className,
   size = "default",
+  label,
+  id,
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
+  /** 渡すとテキストフィールドと同じ枠になり、見出しを枠の中の上部に置く。 */
+  label?: string
 }) {
-  return (
+  const autoId = React.useId()
+  const triggerId = id ?? autoId
+
+  const trigger = (
     <SelectPrimitive.Trigger
+      id={triggerId}
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        // トリガーはOutlinedテキストフィールドと同じ枠（角丸4dp、outlineの縁）に揃える。
-        "flex w-fit items-center justify-between gap-1.5 rounded-xs border border-outline bg-transparent py-2 pr-2 pl-3 text-sm whitespace-nowrap transition-colors outline-none select-none hover:border-on-surface focus-visible:border-primary focus-visible:shadow-[inset_0_0_0_1px_var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-38 aria-invalid:border-destructive aria-invalid:shadow-[inset_0_0_0_1px_var(--color-destructive)] data-placeholder:text-muted-foreground data-[size=default]:h-10 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        // 枠を外側が持つ場合（label付き）、トリガー自身は線も背景も持たない中身だけの行になる。
+        label
+          ? "flex h-6 w-full min-w-0 items-center justify-between gap-1.5 bg-transparent text-base whitespace-nowrap outline-none select-none disabled:cursor-not-allowed data-placeholder:text-muted-foreground md:text-sm"
+          : // トリガーはOutlinedテキストフィールドと同じ枠（角丸4dp、outlineの縁）に揃える。
+            "flex w-fit items-center justify-between gap-1.5 rounded-xs border border-outline bg-transparent py-2 pr-2 pl-3 text-sm whitespace-nowrap transition-colors outline-none select-none hover:border-on-surface focus-visible:border-primary focus-visible:shadow-[inset_0_0_0_1px_var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-38 aria-invalid:border-destructive aria-invalid:shadow-[inset_0_0_0_1px_var(--color-destructive)] data-placeholder:text-muted-foreground data-[size=default]:h-10 data-[size=sm]:h-8",
+        "*:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -55,6 +68,17 @@ function SelectTrigger({
         <ChevronDownIcon className="pointer-events-none size-4 text-muted-foreground" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
+  )
+
+  if (!label) return trigger
+
+  return (
+    <div data-slot="field" className={fieldShell("filled", "h-14")}>
+      <label htmlFor={triggerId} className={fieldLabel}>
+        {label}
+      </label>
+      {trigger}
+    </div>
   )
 }
 

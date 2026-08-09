@@ -149,7 +149,7 @@ export function TaskDialog({
           <DialogTitle>{editing ? "タスクを編集" : "タスクを追加"}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <Input
             id="task-title"
             label="タイトル"
@@ -181,6 +181,7 @@ export function TaskDialog({
             </div>
             {dueMode !== "none" && (
               <Input
+                label={dueMode === "datetime" ? "期限の日時" : "期限の日付"}
                 type={dueMode === "datetime" ? "datetime-local" : "date"}
                 value={due}
                 onChange={(e) => setDue(e.target.value)}
@@ -188,45 +189,39 @@ export function TaskDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1.5">
-              <Label>優先度</Label>
-              <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger>
-                  <SelectValue placeholder="未設定" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_VALUE}>未設定</SelectItem>
-                  {PRIORITY_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
+            <Select value={priority} onValueChange={setPriority}>
+              <SelectTrigger label="優先度">
+                <SelectValue placeholder="未設定" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_VALUE}>未設定</SelectItem>
+                {PRIORITY_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-            <div className="flex flex-col gap-1.5">
-              <Label>繰り返し</Label>
-              <Select value={recurrence} onValueChange={setRecurrence}>
-                <SelectTrigger>
-                  <SelectValue placeholder="なし" />
-                </SelectTrigger>
-                <SelectContent>
-                  {RECURRENCE_PRESETS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                  {/* 曜日指定はNotion側で「毎週(月・水・金)」の形で保存されている。
-                      既存の値をそのまま選び直せるよう、選択肢に足しておく。 */}
-                  {editing?.recurrence &&
-                    !RECURRENCE_PRESETS.includes(editing.recurrence) && (
-                      <SelectItem value={editing.recurrence}>{editing.recurrence}</SelectItem>
-                    )}
-                </SelectContent>
-              </Select>
-            </div>
+            <Select value={recurrence} onValueChange={setRecurrence}>
+              <SelectTrigger label="繰り返し">
+                <SelectValue placeholder="なし" />
+              </SelectTrigger>
+              <SelectContent>
+                {RECURRENCE_PRESETS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+                {/* 曜日指定はNotion側で「毎週(月・水・金)」の形で保存されている。
+                    既存の値をそのまま選び直せるよう、選択肢に足しておく。 */}
+                {editing?.recurrence &&
+                  !RECURRENCE_PRESETS.includes(editing.recurrence) && (
+                    <SelectItem value={editing.recurrence}>{editing.recurrence}</SelectItem>
+                  )}
+              </SelectContent>
+            </Select>
           </div>
 
           <Input
@@ -237,17 +232,15 @@ export function TaskDialog({
             onChange={(e) => setTags(e.target.value)}
           />
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="task-memo">メモ</Label>
-            <Textarea
-              id="task-memo"
-              rows={3}
-              value={memo}
-              onChange={(e) => setMemo(e.target.value)}
-            />
-          </div>
+          <Textarea
+            id="task-memo"
+            label="メモ"
+            rows={3}
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+          />
 
-          <label className="flex items-center gap-2 text-sm">
+          <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
             <Checkbox checked={done} onCheckedChange={(v) => setDone(v === true)} />
             完了
           </label>
