@@ -12,6 +12,7 @@ import {
   type PropertyMap,
   type SharedPageSummary,
 } from "@/services/notion/task-database";
+import type { ReminderPropertyMap } from "@/services/notion/reminder-database";
 
 export default async function NotionSettingsPage() {
   const user = await getCurrentUser();
@@ -41,6 +42,9 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
       taskDataSourceId: null,
       taskTitle: null,
       propertyMap: null,
+      reminderDataSourceId: null,
+      reminderTitle: null,
+      reminderPropertyMap: null,
       dataSources: [],
       sharedPages: [],
       dataSourcesFailed: false,
@@ -68,6 +72,9 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
     taskDataSourceId: connection.taskDataSourceId,
     taskTitle: connection.taskTitle,
     propertyMap: (connection.propertyMap as PropertyMap | null) ?? null,
+    reminderDataSourceId: connection.reminderDataSourceId,
+    reminderTitle: connection.reminderTitle,
+    reminderPropertyMap: (connection.reminderPropertyMap as ReminderPropertyMap | null) ?? null,
     dataSources,
     sharedPages,
     dataSourcesFailed,
