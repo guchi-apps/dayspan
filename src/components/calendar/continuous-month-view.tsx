@@ -461,7 +461,7 @@ function EventChip({
         週の境界で切れた続きの側にもタイトルを出す。その週だけを見ている人には
         前の週の帯が見えず、名前の無い帯だけが残ってしまうため。
       */}
-      <span className="truncate">{event.title}</span>
+      <span className="clip-nowrap">{event.title}</span>
     </button>
   );
 }
@@ -496,7 +496,7 @@ function TaskChip({
       {task.hasTime && task.due && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(task.due)}</span>
       )}
-      <span className="truncate">{task.title}</span>
+      <span className="clip-nowrap">{task.title}</span>
     </button>
   );
 }

@@ -155,7 +155,7 @@ export function TaskList({
                     >
                       <div
                         className={cn(
-                          "type-body-large truncate",
+                          "type-body-large clip-nowrap",
                           task.done && "text-on-surface-variant line-through",
                         )}
                       >
