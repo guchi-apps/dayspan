@@ -8,8 +8,10 @@ export function AccountSection({ email, name }: { email: string | null; name: st
     <Card>
       <CardContent className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col">
-          {name && <span className="truncate text-sm font-medium">{name}</span>}
-          <span className="truncate text-sm text-muted-foreground">{email ?? "ログイン中"}</span>
+          {name && <span className="type-body-large truncate font-medium">{name}</span>}
+          <span className="type-body-medium truncate text-on-surface-variant">
+            {email ?? "ログイン中"}
+          </span>
         </div>
 
         {/* JSの読み込みを待たずに押せるよう、fetchではなく素のフォーム送信にする。 */}

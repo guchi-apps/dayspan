@@ -97,16 +97,16 @@ function MenuItem({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 px-4 py-3.5 transition-colors not-last:border-b not-last:border-outline-variant hover:bg-muted/50"
+      className="flex items-center gap-3 px-4 py-3.5 transition-colors not-last:border-b not-last:border-outline-variant hover:bg-on-surface/8"
     >
-      <Icon className="size-5 shrink-0 text-muted-foreground" />
+      <Icon className="size-5 shrink-0 text-on-surface-variant" />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-sm font-medium">{label}</span>
-        <span className="truncate text-xs text-muted-foreground">{value}</span>
+        <span className="type-body-large">{label}</span>
+        <span className="type-body-small truncate text-on-surface-variant">{value}</span>
       </div>
 
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+      <ChevronRight className="size-4 shrink-0 text-on-surface-variant" />
     </Link>
   );
 }
