@@ -5,14 +5,18 @@ import { useEffect, useRef, useState } from "react";
 // 日表示の左右スワイプ。前後の期間を左右に並べておき、指が動いたぶんだけ横へずらす。
 // 送ると決まったら残りをアニメーションで詰め、期間そのものの切り替えは呼び出し側に任せる。
 //
+// 動かす単位は期間ではなく1日。3日表示で3日ずつしか動けないと、
+// 「今日を真ん中に置く」「明日から3日を見る」といった見方に切り替えられないため。
+// 前後の期間は日付列の幅がそろって並んでいるので、1列ぶんずらせば1日ぶん動く。
+//
 // 縦スクロール・予定のドラッグと同じ面の上で起きる操作なので、どちらに動かしたのかが
 // はっきりするまでは何もしない。取り違えると、スクロールのつもりで日付が変わってしまう。
 
 /** 横に振ったと判断する最小移動量。これ未満は縦スクロールやタップの揺れと区別できない。 */
 const AXIS_LOCK_PX = 12;
 
-/** 日付を送るのに必要な移動量（表示幅に対する割合）。 */
-const COMMIT_RATIO = 0.22;
+/** 次の日へ送るのに必要な移動量（日付列1つぶんの幅に対する割合）。 */
+const COMMIT_RATIO = 0.35;
 
 /** 大きく動かさなくても送れるようにするための速度（px/ms）。素早く払う操作を拾う。 */
 const COMMIT_VELOCITY = 0.4;
@@ -24,7 +28,7 @@ export const SWIPE_SNAP_MS = 220;
 export const SWIPE_SNAP_EASING = "cubic-bezier(0.05, 0.7, 0.1, 1)";
 
 export type DaySwipe = {
-  /** 表示の横位置。1で1期間ぶん右（＝前の期間が見えている状態）。 */
+  /** 表示の横位置。1期間ぶんを1とした割合で、1日ぶんは 1/step にあたる。 */
   offset: number;
   /** 指を離したあとの吸着中か。trueのあいだだけCSSのトランジションを効かせる。 */
   snapping: boolean;
@@ -40,6 +44,40 @@ export type DaySwipe = {
   };
 };
 
+/**
+ * 指を離した時点で、何日ぶん送るかを決める。
+ *
+ * dx は指の移動量（px、左が負）、trackWidth は1期間ぶんの幅、step はその期間に並ぶ日数。
+ * 正の戻り値で先の日付へ進む。
+ */
+export function swipeDeltaDays({
+  dx,
+  velocity,
+  trackWidth,
+  step,
+}: {
+  dx: number;
+  /** px/ms。左向きが負。 */
+  velocity: number;
+  trackWidth: number;
+  step: number;
+}): number {
+  // 動かした量を「何日ぶんか」に直す。指を左へ動かすと先の日付へ進むので符号を反転する。
+  const moved = (-dx / trackWidth) * step;
+  const whole = Math.trunc(moved);
+  const fraction = moved - whole;
+
+  // 列の切れ目を越えていれば次の日まで送り、届いていなければ手前の切れ目へ戻す。
+  let deltaDays = Math.abs(fraction) >= COMMIT_RATIO ? whole + Math.sign(fraction) : whole;
+
+  // 素早く払ったときは、移動量が足りなくてもその向きへ1日は送る。
+  if (velocity <= -COMMIT_VELOCITY) deltaDays = Math.max(deltaDays, 1);
+  else if (velocity >= COMMIT_VELOCITY) deltaDays = Math.min(deltaDays, -1);
+
+  // 手元にあるのは前後1期間ぶんまで。それより先へは一度に送らない。
+  return Math.min(Math.max(deltaDays, -step), step);
+}
+
 type Origin = {
   x: number;
   y: number;
@@ -49,14 +87,18 @@ type Origin = {
 
 export function useDaySwipe({
   daysKey,
+  step,
   enabled,
   onSwipe,
 }: {
   /** 表示中の期間を表す値。これが変わったら送り先が画面に出たとみなす。 */
   daysKey: string;
+  /** 表示中の期間に並んでいる日数。1日ぶんの幅を割り出すために使う。 */
+  step: number;
   /** 予定のドラッグ中など、横の動きを日付の移動として扱ってはいけない間は false。 */
   enabled: boolean;
-  onSwipe: (direction: 1 | -1) => void;
+  /** 送る日数。正で先の日付へ。 */
+  onSwipe: (deltaDays: number) => void;
 }): DaySwipe {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -136,11 +178,11 @@ export function useDaySwipe({
     setOffset(Math.min(Math.max(ratio, -1), 1));
   };
 
-  /** 吸着させる。direction が 0 なら元の位置へ戻す。 */
-  const settle = (direction: 1 | -1 | 0) => {
+  /** 日付列の切れ目まで吸着させる。deltaDays が 0 なら元の位置へ戻す。 */
+  const settle = (deltaDays: number) => {
     setSnapping(true);
 
-    if (direction === 0) {
+    if (deltaDays === 0) {
       setOffset(0);
       snapTimerRef.current = setTimeout(() => {
         snapTimerRef.current = null;
@@ -149,11 +191,11 @@ export function useDaySwipe({
       return;
     }
 
-    // 隣の期間が画面いっぱいに来るまで動かしきってから、期間そのものを切り替える。
-    setOffset(-direction);
+    // 送り先の日付が定位置に来るまで動かしきってから、表示中の期間そのものを切り替える。
+    setOffset(-deltaDays / step);
     snapTimerRef.current = setTimeout(() => {
       snapTimerRef.current = null;
-      onSwipe(direction);
+      onSwipe(deltaDays);
     }, SWIPE_SNAP_MS);
   };
 
@@ -165,19 +207,15 @@ export function useDaySwipe({
     if (!origin || !wasHorizontal) return;
 
     const dx = event.clientX - origin.x;
-    const ratio = dx / origin.width;
-    const velocity = dx / Math.max(event.timeStamp - origin.time, 1);
 
-    // 移動量か速度のどちらかが足りていれば送る。ゆっくり大きく動かす操作と、
-    // 素早く払う操作のどちらでも同じように日付が変わるようにする。
-    const direction: 1 | -1 | 0 =
-      ratio <= -COMMIT_RATIO || velocity <= -COMMIT_VELOCITY
-        ? 1
-        : ratio >= COMMIT_RATIO || velocity >= COMMIT_VELOCITY
-          ? -1
-          : 0;
-
-    settle(direction);
+    settle(
+      swipeDeltaDays({
+        dx,
+        velocity: dx / Math.max(event.timeStamp - origin.time, 1),
+        trackWidth: origin.width,
+        step,
+      }),
+    );
   };
 
   // 端末側のジェスチャーなどで取り上げられた場合。どこまで動かすつもりだったかは

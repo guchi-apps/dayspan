@@ -9,6 +9,7 @@ import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { Button } from "@/components/ui/button";
 import { LinearProgress } from "@/components/ui/linear-progress";
 import {
+  addDays,
   getContinuousMonthWeeks,
   getVisibleDays,
   monthDistance,
@@ -243,6 +244,14 @@ export function CalendarShell({
     navigate(nav.view, toDateKey(shiftAnchor(nav.view, parseDateKey(nav.anchorKey), direction)));
   };
 
+  /**
+   * スワイプでの移動。前へ・次へと違い、期間ではなく日数で動かす。
+   * 3日ずつしか動けないと、今日を真ん中に置くような見方に切り替えられないため。
+   */
+  const moveDays = (deltaDays: number) => {
+    navigate(nav.view, toDateKey(addDays(parseDateKey(nav.anchorKey), deltaDays)));
+  };
+
   const goToday = () => {
     if (nav.view === "month") {
       goToMonth(utils.todayKey().slice(0, 7));
@@ -385,7 +394,7 @@ export function CalendarShell({
           eventDraft={eventDraft}
           taskDraft={taskDraft}
           onVisibleMonthChange={handleVisibleMonthChange}
-          onSwipe={move}
+          onSwipe={moveDays}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
           onOpenEvent={openEvent}
           onOpenTask={openTask}
@@ -469,7 +478,7 @@ function CalendarBody({
   eventDraft: EventDraft | null;
   taskDraft: TaskDraft | null;
   onVisibleMonthChange: (monthKey: string) => void;
-  onSwipe: (direction: 1 | -1) => void;
+  onSwipe: (deltaDays: number) => void;
   onSelectDay: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
