@@ -2,11 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { NotebookPen, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -133,16 +133,6 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <NotebookPen className="size-5" />
-          Notion
-        </CardTitle>
-        <CardDescription>
-          タスクの一次情報源です。Notion側で用意したタスクDBをDaySpanから選択します。
-        </CardDescription>
-      </CardHeader>
-
       <CardContent className="flex flex-col gap-4">
         {message && (
           <p

@@ -1,95 +1,112 @@
+import type { ComponentType } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronRight,
+  History,
+  LayoutGrid,
+  NotebookPen,
+  UserRound,
+} from "lucide-react";
 
-import { GoogleCalendarSection } from "@/components/settings/google-calendar-section";
-import { NotionSection, type NotionSectionState } from "@/components/settings/notion-section";
-import { Button } from "@/components/ui/button";
+import { SettingsShell } from "@/components/settings/settings-shell";
+import { Card } from "@/components/ui/card";
+import { APP_VERSION } from "@/lib/app-version";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { loadCalendarSettings } from "@/services/google-calendar/settings";
-import { createNotionClient } from "@/services/notion/client";
-import {
-  listCandidateDataSources,
-  listSharedPages,
-  type DataSourceSummary,
-  type PropertyMap,
-  type SharedPageSummary,
-} from "@/services/notion/task-database";
+import { weekStartLabel } from "@/lib/week-start";
 
-export default async function SettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ google?: string }>;
-}) {
+export default async function SettingsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const { google } = await searchParams;
-
-  const [calendarResult, notionState] = await Promise.all([
-    loadCalendarSettings(user.id),
-    loadNotionState(user.id),
+  // 一覧では外部APIを叩かない。カレンダー一覧やタスクDB一覧の取得はそれぞれの画面へ入って
+  // からで足り、ここで待たせるとGoogle / Notionが遅い日は設定を開くこと自体ができなくなる。
+  const [googleAccounts, notionConnection, uiSetting] = await Promise.all([
+    db.googleAccount.findMany({ where: { userId: user.id }, select: { email: true } }),
+    db.notionConnection.findUnique({ where: { userId: user.id } }),
+    db.uiSetting.findUnique({ where: { userId: user.id } }),
   ]);
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/calendar">
-            <ArrowLeft className="size-4" />
-            カレンダー
-          </Link>
-        </Button>
-      </div>
-
-      <h1 className="text-xl font-semibold">設定</h1>
-
-      <GoogleCalendarSection result={calendarResult} connectResult={google} />
-      <NotionSection state={notionState} />
-    </div>
+    <SettingsShell title="設定" backHref="/calendar" backLabel="カレンダー">
+      <Card className="gap-0 py-0">
+        <MenuItem
+          href="/settings/google"
+          icon={CalendarDays}
+          label="Google Calendar"
+          value={
+            googleAccounts.length === 0
+              ? "未接続"
+              : googleAccounts.length === 1
+                ? googleAccounts[0].email
+                : `${googleAccounts.length}件のアカウント`
+          }
+        />
+        <MenuItem
+          href="/settings/notion"
+          icon={NotebookPen}
+          label="Notion"
+          value={
+            !notionConnection
+              ? "未接続"
+              : !notionConnection.taskDataSourceId
+                ? "タスクDB未選択"
+                : (notionConnection.taskTitle ?? "接続済み")
+          }
+        />
+        <MenuItem
+          href="/settings/display"
+          icon={LayoutGrid}
+          label="表示"
+          value={`週の開始日: ${weekStartLabel(uiSetting?.weekStartsOn ?? 0)}`}
+        />
+        <MenuItem
+          href="/settings/account"
+          icon={UserRound}
+          label="アカウント"
+          value={user.email ?? "ログイン中"}
+        />
+        <MenuItem
+          href="/settings/changelog"
+          icon={History}
+          label="更新履歴"
+          value={`v${APP_VERSION}`}
+        />
+      </Card>
+    </SettingsShell>
   );
 }
 
-async function loadNotionState(userId: string): Promise<NotionSectionState> {
-  const connection = await db.notionConnection.findUnique({ where: { userId } });
+/**
+ * 一覧の1行。現在の値を行に出しておき、開かなくても設定の状態が分かるようにする。
+ * 行全体をリンクにするのは、指で押す対象を文字幅ではなく行の高さで確保するため。
+ */
+function MenuItem({
+  href,
+  icon: Icon,
+  label,
+  value,
+}: {
+  href: string;
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-3 px-4 py-3.5 transition-colors not-last:border-b not-last:border-outline-variant hover:bg-muted/50"
+    >
+      <Icon className="size-5 shrink-0 text-muted-foreground" />
 
-  if (!connection) {
-    return {
-      connected: false,
-      workspaceName: null,
-      taskDataSourceId: null,
-      taskTitle: null,
-      propertyMap: null,
-      dataSources: [],
-      sharedPages: [],
-      dataSourcesFailed: false,
-    };
-  }
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="text-sm font-medium">{label}</span>
+        <span className="truncate text-xs text-muted-foreground">{value}</span>
+      </div>
 
-  // 候補一覧の取得に失敗しても設定画面自体は開けるようにする。
-  // トークン失効時にここで例外を投げると、接続の解除もできなくなるため。
-  let dataSources: DataSourceSummary[] = [];
-  let sharedPages: SharedPageSummary[] = [];
-  let dataSourcesFailed = false;
-  try {
-    const notion = createNotionClient(connection);
-    [dataSources, sharedPages] = await Promise.all([
-      listCandidateDataSources(notion),
-      listSharedPages(notion),
-    ]);
-  } catch {
-    dataSourcesFailed = true;
-  }
-
-  return {
-    connected: true,
-    workspaceName: connection.workspaceName,
-    taskDataSourceId: connection.taskDataSourceId,
-    taskTitle: connection.taskTitle,
-    propertyMap: (connection.propertyMap as PropertyMap | null) ?? null,
-    dataSources,
-    sharedPages,
-    dataSourcesFailed,
-  };
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+    </Link>
+  );
 }

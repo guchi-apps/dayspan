@@ -2,11 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { CalendarSettingsResult, CalendarSummary } from "@/services/google-calendar/settings";
@@ -52,16 +52,6 @@ export function GoogleCalendarSection({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <CalendarDays className="size-5" />
-          Google Calendar
-        </CardTitle>
-        <CardDescription>
-          表示するカレンダーを選びます。ログインとは別に、カレンダーの読み書き権限を接続します。
-        </CardDescription>
-      </CardHeader>
-
       <CardContent className="flex flex-col gap-4">
         {connectResult && <ConnectResultMessage result={connectResult} />}
 
