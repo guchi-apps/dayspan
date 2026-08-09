@@ -12,7 +12,7 @@
 | スタイリング | Tailwind CSS v4 + shadcn/ui（`components.json` の style は `radix-nova`） |
 | ORM / DB | Prisma 6 + MariaDB（`app_dayspan`） |
 | 認証 | Supabase Auth + Google OAuth（`@supabase/ssr`。ミドルウェアは `src/proxy.ts`） |
-| パッケージマネージャ | pnpm |
+| パッケージマネージャ | pnpm 10 系（`packageManager` で固定） |
 | 検証コマンド | `pnpm lint` / `pnpm typecheck` / `pnpm build`（`pnpm test` は lint + typecheck） |
 | 開発サーバー | `pnpm dev`（既定ポート3000。`PORT` で変更可） |
 | デプロイ | `main` への push で `deploy.yml` が VPS へ SSH デプロイ（PM2、プロセス名 `dayspan`、ポート3113） |
@@ -63,6 +63,9 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | 繰り返しの曜日指定は `毎週(月・水・金)` の形で保存 | Notion の select プロパティ1つで表現する必要があるため |
 
 ## デプロイ
+
+pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 系で、pnpm 11 は Node 22.13 以上を
+要求する（`node:sqlite` を使うため起動できない）。他アプリと同じ `pnpm@10.34.5` に揃えている。
 
 `deploy.yml` は成果物を `tar` で固める際に `public` を含める。静的ファイルを置いていなくても
 ディレクトリ自体が存在しないと `tar` が失敗するため、`public/.gitkeep` を追跡対象に残している。
