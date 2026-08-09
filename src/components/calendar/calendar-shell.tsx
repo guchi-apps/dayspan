@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useCallback, useMemo, useOptimistic, useState, useTransition } from "react";
+import { useMemo, useOptimistic, useState, useTransition } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
@@ -194,17 +194,6 @@ export function CalendarShell({
     });
   };
 
-  // 連続スクロールで読み込み済みの端に達したとき、その月を中心に取り直す。
-  // 見出しはスクロール側で更新済みなので、履歴には積まずに置き換える。
-  const recenter = useCallback(
-    (monthKey: string) => {
-      startTransition(() => {
-        router.replace(`/calendar?view=month&date=${monthKey}-01`, { scroll: false });
-      });
-    },
-    [router],
-  );
-
   const move = (direction: 1 | -1) => {
     navigate(nav.view, toDateKey(shiftAnchor(nav.view, parseDateKey(nav.anchorKey), direction)));
   };
@@ -225,11 +214,23 @@ export function CalendarShell({
         <HeaderNav current="calendar" />
 
         <div className="flex items-center">
-          <Button variant="ghost" size="icon-sm" onClick={() => move(-1)} aria-label="前へ">
-            <ChevronLeft className="size-4" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-10 md:size-9"
+            onClick={() => move(-1)}
+            aria-label="前へ"
+          >
+            <ChevronLeft className="size-5" />
           </Button>
-          <Button variant="ghost" size="icon-sm" onClick={() => move(1)} aria-label="次へ">
-            <ChevronRight className="size-4" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-10 md:size-9"
+            onClick={() => move(1)}
+            aria-label="次へ"
+          >
+            <ChevronRight className="size-5" />
           </Button>
         </div>
 
@@ -238,7 +239,8 @@ export function CalendarShell({
           {headerLabel}
         </h1>
 
-        <Button variant="outline" size="xs" className="md:h-8 md:px-4" onClick={goToday}>
+        {/* M3のタップ対象は最低48dp。狭い画面では見た目より当たり判定を優先して高さを取る。 */}
+        <Button variant="outline" size="xs" className="h-10 px-3 md:h-8 md:px-4" onClick={goToday}>
           今日
         </Button>
 
@@ -250,7 +252,7 @@ export function CalendarShell({
               variant={nav.view === item.view ? "secondary" : "ghost"}
               size="xs"
               className={cn(
-                "type-label-medium h-7 rounded-none px-2.5 md:type-label-large md:h-8 md:px-3",
+                "type-label-medium h-10 rounded-none px-3 md:type-label-large md:h-8",
                 nav.view === item.view && "text-on-secondary-container",
                 item.desktopOnly && "hidden md:inline-flex",
               )}
@@ -263,12 +265,13 @@ export function CalendarShell({
 
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
+          className="size-10 md:size-9"
           disabled={pending}
           aria-label="再取得"
           onClick={() => startTransition(() => router.refresh())}
         >
-          <RefreshCw className="size-4" />
+          <RefreshCw className="size-5" />
         </Button>
         <Button variant="ghost" size="icon-sm" asChild aria-label="設定" className="hidden md:inline-flex">
           <Link href="/settings">
@@ -297,7 +300,6 @@ export function CalendarShell({
           utils={utils}
           initialMonth={anchorKey.slice(0, 7)}
           onVisibleMonthChange={setScrolledMonth}
-          onReachEdge={recenter}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
           onOpenEvent={openEvent}
           onOpenTask={openTask}

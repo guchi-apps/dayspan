@@ -30,7 +30,7 @@ export function CalendarSkeleton() {
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {Array.from({ length: 6 }, (_, week) => (
-          <div key={week} className="grid grid-cols-7 border-b border-outline-variant" style={{ height: 108 }}>
+          <div key={week} className="grid grid-cols-7 border-b border-outline-variant" style={{ height: 112 }}>
             {Array.from({ length: 7 }, (_, day) => (
               <div key={day} className="flex flex-col gap-1 border-r border-outline-variant p-1 last:border-r-0">
                 <SkeletonBlock className="size-5 rounded-full" />

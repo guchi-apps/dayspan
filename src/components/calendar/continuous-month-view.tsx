@@ -13,7 +13,7 @@ const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
 // 週の高さは固定にする。可変にすると、月をまたいで読み込み直したときに
 // スクロール位置を同じ場所へ戻せなくなるため。
-const WEEK_HEIGHT = 108;
+const WEEK_HEIGHT = 112;
 
 const MAX_ITEMS_PER_DAY = 4;
 const MOBILE_MAX_ITEMS = 3;
@@ -26,7 +26,6 @@ export function ContinuousMonthView({
   utils,
   initialMonth,
   onVisibleMonthChange,
-  onReachEdge,
   onSelectDay,
   onOpenEvent,
   onOpenTask,
@@ -38,34 +37,22 @@ export function ContinuousMonthView({
   utils: CalendarDateUtils;
   initialMonth: string;
   onVisibleMonthChange: (monthKey: string) => void;
-  /** 読み込み済みの端に達したとき、その月を中心に読み直してもらう。 */
-  onReachEdge: (monthKey: string) => void;
   onSelectDay: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const visibleMonthRef = useRef(initialMonth);
-  // 読み込み直しでweeksが差し替わったとき、同じ週が画面の上に来るように戻すための目印。
-  const anchorWeekRef = useRef<string | null>(null);
   const [todayKey] = useState(() => utils.todayKey());
 
-  const monthKeys = weeks.map(weekMonthKey);
-  const firstMonth = monthKeys[0];
-  const lastMonth = monthKeys[monthKeys.length - 1];
-
-  // 初期表示位置と、読み込み直し後の位置合わせ。
+  // 初期表示は、指定された月の先頭週に合わせる。
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
 
-    const target = anchorWeekRef.current
-      ? weeks.findIndex((week) => week[0] === anchorWeekRef.current)
-      : weeks.findIndex((week) => weekMonthKey(week) === visibleMonthRef.current);
-
+    const target = weeks.findIndex((week) => weekMonthKey(week) === initialMonth);
     if (target >= 0) container.scrollTop = target * WEEK_HEIGHT;
-    anchorWeekRef.current = null;
-  }, [weeks]);
+  }, [weeks, initialMonth]);
 
   const handleScroll = useCallback(() => {
     const container = scrollRef.current;
@@ -78,17 +65,14 @@ export function ContinuousMonthView({
     );
     const month = weekMonthKey(weeks[index]);
 
+    // 見出しの更新だけを行う。スクロールを契機に読み込み直すと、開いていたメニューや
+    // ダイアログが再描画で閉じてしまい、操作を受け付けていないように見える。
+    // 読み込み済みの範囲の外へ行くときは、ヘッダーの前へ・次へで移動する。
     if (month !== visibleMonthRef.current) {
       visibleMonthRef.current = month;
       onVisibleMonthChange(month);
-
-      // 読み込み済みの端の月まで来たら、その月を中心に取り直す。
-      if (month === firstMonth || month === lastMonth) {
-        anchorWeekRef.current = weeks[index][0];
-        onReachEdge(month);
-      }
     }
-  }, [firstMonth, lastMonth, onReachEdge, onVisibleMonthChange, weeks]);
+  }, [onVisibleMonthChange, weeks]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -144,7 +128,7 @@ export function ContinuousMonthView({
                     type="button"
                     onClick={() => onSelectDay(dateKey)}
                     className={cn(
-                      "grid h-5 shrink-0 place-items-center self-start rounded-full px-1.5 text-[11px] sm:h-6 sm:text-xs",
+                      "grid h-7 min-w-7 shrink-0 place-items-center self-start rounded-full px-2 text-[11px] sm:h-6 sm:min-w-6 sm:px-1.5 sm:text-xs",
                       dateKey === todayKey
                         ? "bg-primary font-semibold text-primary-foreground"
                         : "font-medium hover:bg-muted",
@@ -226,7 +210,7 @@ function EventChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex h-4 w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border px-0.5 text-left text-[10px] leading-4 font-medium sm:type-label-small sm:h-auto sm:px-1 sm:py-px",
+        "flex h-5 w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border px-1 text-left text-[10px] leading-5 font-medium sm:type-label-small sm:h-auto sm:px-1 sm:py-px",
         desktopOnly && "hidden sm:flex",
       )}
       style={{
@@ -263,7 +247,7 @@ function TaskChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex h-4 w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-outline bg-surface-container-lowest px-0.5 text-left text-[10px] leading-4 font-medium sm:type-label-small sm:h-auto sm:px-1 sm:py-px",
+        "flex h-5 w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-outline bg-surface-container-lowest px-1 text-left text-[10px] leading-5 font-medium sm:type-label-small sm:h-auto sm:px-1 sm:py-px",
         task.done && "text-on-surface-variant line-through",
         desktopOnly && "hidden sm:flex",
       )}
