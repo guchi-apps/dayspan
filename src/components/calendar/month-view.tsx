@@ -37,7 +37,7 @@ export function MonthView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid grid-cols-7 border-b border-rule">
+      <div className="grid grid-cols-7 border-b border-outline-variant">
         {Array.from({ length: 7 }, (_, index) => {
           const weekday = (weekStartsOn + index) % 7;
 
@@ -61,7 +61,7 @@ export function MonthView({
 
       <div className="grid min-h-0 flex-1 grid-rows-6">
         {weeks.map((week) => (
-          <div key={week[0]} className="grid grid-cols-7 border-b border-rule last:border-b-0">
+          <div key={week[0]} className="grid grid-cols-7 border-b border-outline-variant last:border-b-0">
             {week.map((dateKey) => {
               const dayItems = [
                 ...events.filter((event) => utils.eventCoversDay(event, dateKey)),
@@ -77,8 +77,8 @@ export function MonthView({
                 <div
                   key={dateKey}
                   className={cn(
-                    "flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-rule p-0.5 last:border-r-0 sm:gap-1 sm:p-1",
-                    !inMonth && "bg-muted/25",
+                    "flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-outline-variant p-0.5 last:border-r-0 sm:gap-1 sm:p-1",
+                    !inMonth && "bg-surface-container-low",
                   )}
                 >
                   <button
@@ -87,7 +87,7 @@ export function MonthView({
                     className={cn(
                       "grid size-5 shrink-0 place-items-center self-start rounded-full text-[11px] sm:size-6 sm:text-xs",
                       isToday
-                        ? "bg-foreground font-semibold text-background"
+                        ? "bg-primary font-semibold text-primary-foreground"
                         : inMonth
                           ? "font-medium hover:bg-muted"
                           : "text-muted-foreground hover:bg-muted",
@@ -185,8 +185,8 @@ function TaskChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex h-1.5 w-full min-w-0 items-center gap-1 overflow-hidden rounded-full border border-foreground/45 bg-background text-left text-[11px] leading-4 font-medium sm:h-auto sm:rounded-sm sm:border-rule-strong sm:px-1",
-        task.done && "border-muted-foreground/40 text-muted-foreground line-through",
+        "flex h-1.5 w-full min-w-0 items-center gap-1 overflow-hidden rounded-full border border-primary/60 bg-surface-container-lowest text-left text-[11px] leading-4 font-medium sm:h-auto sm:rounded-sm sm:border-outline sm:px-1",
+        task.done && "border-outline-variant text-on-surface-variant line-through",
       )}
       title={task.title}
     >
@@ -194,7 +194,7 @@ function TaskChip({
         aria-hidden
         className={cn(
           "h-full w-1 shrink-0 sm:h-2.5 sm:w-0.5",
-          task.done ? "bg-muted-foreground" : "bg-foreground",
+          task.done ? "bg-on-surface-variant/60" : "bg-primary",
         )}
       />
       {task.hasTime && task.due && (

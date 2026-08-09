@@ -70,11 +70,11 @@ export function TaskList({
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex items-center gap-2 border-b border-rule px-3 py-2">
-        <div className="flex items-center gap-1 font-semibold">
-          <ListChecks className="size-5 text-primary" />
+      <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
+        <h1 className="type-title-large flex items-center gap-2 px-2">
+          <ListChecks className="size-5" />
           <span className="hidden sm:inline">タスク</span>
-        </div>
+        </h1>
 
         <HeaderNav current="tasks" />
 
@@ -100,7 +100,7 @@ export function TaskList({
       </header>
 
       {(loadError || error) && (
-        <div className="border-b border-rule bg-destructive/10 px-3 py-2 text-xs">{loadError ?? error}</div>
+        <div className="bg-error-container/70 text-on-error-container px-3 py-2 text-xs">{loadError ?? error}</div>
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-20">
@@ -118,7 +118,7 @@ export function TaskList({
 
               <ul>
                 {items.map((task) => (
-                  <li key={task.id} className="flex items-start gap-2 border-b border-rule px-3 py-2.5">
+                  <li key={task.id} className="flex items-start gap-3 px-4 py-3">
                     <Checkbox
                       className="mt-0.5"
                       checked={task.done}
@@ -134,14 +134,14 @@ export function TaskList({
                     >
                       <div
                         className={cn(
-                          "truncate text-sm font-medium",
-                          task.done && "font-normal text-muted-foreground line-through",
+                          "type-body-large truncate",
+                          task.done && "text-on-surface-variant line-through",
                         )}
                       >
                         {task.title}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                      <div className="type-body-small flex flex-wrap items-center gap-1.5 text-on-surface-variant">
                         {task.due && (
                           <span className={cn(key === "overdue" && "text-destructive")}>
                             {formatDue(task, utils)}
@@ -176,7 +176,7 @@ export function TaskList({
 
       <Button
         size="icon"
-        className="fixed right-4 bottom-20 size-12 rounded-full shadow-lg md:bottom-4"
+        className="elevation-3 fixed right-4 bottom-24 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
         aria-label="タスクを追加"
         onClick={() =>
           setDraft({ dueMode: "date", due: utils.todayKey() })

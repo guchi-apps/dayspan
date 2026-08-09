@@ -2,132 +2,212 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* =========================================================================
+   Material 3 をこのアプリの設計基盤とする。
+   色はシードカラーから導いたトーナルパレットのロール、形はシェイプスケール、
+   文字はタイプスケールで扱う。shadcn/ui のトークンはM3ロールへの別名として定義し、
+   既存コンポーネントがそのままM3の配色に乗るようにしている。
+   ========================================================================= */
+
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* --- M3 カラーロール --- */
+  --color-primary: var(--md-primary);
+  --color-primary-foreground: var(--md-on-primary);
+  --color-primary-container: var(--md-primary-container);
+  --color-on-primary-container: var(--md-on-primary-container);
+
+  --color-secondary: var(--md-secondary-container);
+  --color-secondary-foreground: var(--md-on-secondary-container);
+  --color-secondary-container: var(--md-secondary-container);
+  --color-on-secondary-container: var(--md-on-secondary-container);
+
+  --color-tertiary-container: var(--md-tertiary-container);
+  --color-on-tertiary-container: var(--md-on-tertiary-container);
+
+  --color-surface: var(--md-surface);
+  --color-on-surface: var(--md-on-surface);
+  --color-surface-variant: var(--md-surface-variant);
+  --color-on-surface-variant: var(--md-on-surface-variant);
+  --color-surface-container-lowest: var(--md-surface-container-lowest);
+  --color-surface-container-low: var(--md-surface-container-low);
+  --color-surface-container: var(--md-surface-container);
+  --color-surface-container-high: var(--md-surface-container-high);
+  --color-surface-container-highest: var(--md-surface-container-highest);
+
+  --color-outline: var(--md-outline);
+  --color-outline-variant: var(--md-outline-variant);
+
+  --color-background: var(--md-surface);
+  --color-foreground: var(--md-on-surface);
+  --color-card: var(--md-surface-container-low);
+  --color-card-foreground: var(--md-on-surface);
+  --color-popover: var(--md-surface-container);
+  --color-popover-foreground: var(--md-on-surface);
+  --color-muted: var(--md-surface-container-highest);
+  --color-muted-foreground: var(--md-on-surface-variant);
+  --color-accent: var(--md-secondary-container);
+  --color-accent-foreground: var(--md-on-secondary-container);
+  --color-destructive: var(--md-error);
+  --color-destructive-foreground: var(--md-on-error);
+  --color-error-container: var(--md-error-container);
+  --color-on-error-container: var(--md-on-error-container);
+  --color-border: var(--md-outline-variant);
+  --color-input: var(--md-outline);
+  --color-ring: var(--md-primary);
+
+  /* カレンダーの罫線。M3のアウトラインを、目盛りの強弱2段として使う。 */
+  --color-rule: var(--md-outline-variant);
+  --color-rule-strong: var(--md-outline);
+
+  --color-sidebar: var(--md-surface-container-low);
+  --color-sidebar-foreground: var(--md-on-surface);
+  --color-sidebar-primary: var(--md-primary);
+  --color-sidebar-primary-foreground: var(--md-on-primary);
+  --color-sidebar-accent: var(--md-secondary-container);
+  --color-sidebar-accent-foreground: var(--md-on-secondary-container);
+  --color-sidebar-border: var(--md-outline-variant);
+  --color-sidebar-ring: var(--md-primary);
+
+  --color-chart-1: var(--md-primary);
+  --color-chart-2: var(--md-secondary-container);
+  --color-chart-3: var(--md-tertiary-container);
+  --color-chart-4: var(--md-outline);
+  --color-chart-5: var(--md-on-surface-variant);
+
+  /* --- M3 シェイプスケール --- */
+  --radius-none: 0px;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
+  --radius-2xl: 28px;
+  --radius-3xl: 28px;
+  --radius-4xl: 28px;
+
+  /* --- 書体 --- */
   --font-sans: var(--font-sans-stack);
   --font-mono: var(--font-mono-stack);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-rule: var(--rule);
-  --color-rule-strong: var(--rule-strong);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
-  /* 追加のフォントパッケージを持たず、OS標準の日本語フォントへ素直にフォールバックする。
-     カレンダーは数字が密に並ぶため、字面の癖が少ないUI標準フォントを優先する。 */
+  /* Roboto（M3の標準書体）は追加パッケージが要るため、いまはOS標準の日本語フォントに
+     フォールバックする。字面の癖が少なく、数字が密に並ぶカレンダーに向く並びにしている。 */
   --font-sans-stack:
-    "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", "Segoe UI", Roboto,
-    "Noto Sans JP", "Helvetica Neue", Arial, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    "Roboto", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic",
+    "Segoe UI", "Noto Sans JP", "Helvetica Neue", Arial, system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
   --font-mono-stack:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  /* 罫線はカレンダーの骨格。目盛りの強弱を2段で持ち、時間の区切りを線の濃さで表す。 */
-  --rule: oklch(0.918 0.002 260);
-  --rule-strong: oklch(0.84 0.004 260);
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+
+  /* --- M3 ベースラインのトーナルパレット（ライト） --- */
+  --md-primary: #6750a4;
+  --md-on-primary: #ffffff;
+  --md-primary-container: #eaddff;
+  --md-on-primary-container: #21005d;
+
+  --md-secondary: #625b71;
+  --md-on-secondary: #ffffff;
+  --md-secondary-container: #e8def8;
+  --md-on-secondary-container: #1d192b;
+
+  --md-tertiary: #7d5260;
+  --md-on-tertiary: #ffffff;
+  --md-tertiary-container: #ffd8e4;
+  --md-on-tertiary-container: #31111d;
+
+  --md-error: #b3261e;
+  --md-on-error: #ffffff;
+  --md-error-container: #f9dedc;
+  --md-on-error-container: #410e0b;
+
+  --md-surface: #fef7ff;
+  --md-on-surface: #1d1b20;
+  --md-surface-variant: #e7e0ec;
+  --md-on-surface-variant: #49454f;
+
+  --md-surface-container-lowest: #ffffff;
+  --md-surface-container-low: #f7f2fa;
+  --md-surface-container: #f3edf7;
+  --md-surface-container-high: #ece6f0;
+  --md-surface-container-highest: #e6e0e9;
+
+  --md-outline: #79747e;
+  --md-outline-variant: #cac4d0;
+
+  --md-inverse-surface: #322f35;
+  --md-inverse-on-surface: #f5eff7;
+
+  /* shadcn/ui が参照するトークンをM3ロールへ寄せる */
+  --background: var(--md-surface);
+  --foreground: var(--md-on-surface);
+  --card: var(--md-surface-container-low);
+  --card-foreground: var(--md-on-surface);
+  --popover: var(--md-surface-container);
+  --popover-foreground: var(--md-on-surface);
+  --primary: var(--md-primary);
+  --primary-foreground: var(--md-on-primary);
+  --secondary: var(--md-secondary-container);
+  --secondary-foreground: var(--md-on-secondary-container);
+  --muted: var(--md-surface-container-highest);
+  --muted-foreground: var(--md-on-surface-variant);
+  --accent: var(--md-secondary-container);
+  --accent-foreground: var(--md-on-secondary-container);
+  --destructive: var(--md-error);
+  --border: var(--md-outline-variant);
+  --input: var(--md-outline);
+  --ring: var(--md-primary);
+  --radius: 12px;
+
+  --sidebar: var(--md-surface-container-low);
+  --sidebar-foreground: var(--md-on-surface);
+  --sidebar-primary: var(--md-primary);
+  --sidebar-primary-foreground: var(--md-on-primary);
+  --sidebar-accent: var(--md-secondary-container);
+  --sidebar-accent-foreground: var(--md-on-secondary-container);
+  --sidebar-border: var(--md-outline-variant);
+  --sidebar-ring: var(--md-primary);
 }
 
 /* OSの配色設定（prefers-color-scheme）に自動追従。手動切り替えは実装しない。 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --rule: oklch(1 0 0 / 9%);
-    --rule-strong: oklch(1 0 0 / 20%);
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --md-primary: #d0bcff;
+    --md-on-primary: #381e72;
+    --md-primary-container: #4f378b;
+    --md-on-primary-container: #eaddff;
+
+    --md-secondary: #ccc2dc;
+    --md-on-secondary: #332d41;
+    --md-secondary-container: #4a4458;
+    --md-on-secondary-container: #e8def8;
+
+    --md-tertiary: #efb8c8;
+    --md-on-tertiary: #492532;
+    --md-tertiary-container: #633b48;
+    --md-on-tertiary-container: #ffd8e4;
+
+    --md-error: #f2b8b5;
+    --md-on-error: #601410;
+    --md-error-container: #8c1d18;
+    --md-on-error-container: #f9dedc;
+
+    --md-surface: #141218;
+    --md-on-surface: #e6e0e9;
+    --md-surface-variant: #49454f;
+    --md-on-surface-variant: #cac4d0;
+
+    --md-surface-container-lowest: #0f0d13;
+    --md-surface-container-low: #1d1b20;
+    --md-surface-container: #211f26;
+    --md-surface-container-high: #2b2930;
+    --md-surface-container-highest: #36343b;
+
+    --md-outline: #938f99;
+    --md-outline-variant: #49454f;
+
+    --md-inverse-surface: #e6e0e9;
+    --md-inverse-on-surface: #322f35;
   }
 }
 
@@ -142,5 +222,82 @@
     @apply font-sans;
     /* 日付・時刻が縦にも横にも揃うことが、カレンダーの読みやすさの前提になる。 */
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/* --- M3 タイプスケール ---
+   役割ごとにサイズ・行間・字間が決まっている。見出しと本文とラベルを混ぜないための土台。 */
+@layer components {
+  .type-headline-small {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 400;
+  }
+  .type-title-large {
+    font-size: 22px;
+    line-height: 28px;
+    font-weight: 400;
+  }
+  .type-title-medium {
+    font-size: 16px;
+    line-height: 24px;
+    font-weight: 500;
+    letter-spacing: 0.15px;
+  }
+  .type-title-small {
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+  }
+  .type-body-large {
+    font-size: 16px;
+    line-height: 24px;
+    letter-spacing: 0.5px;
+  }
+  .type-body-medium {
+    font-size: 14px;
+    line-height: 20px;
+    letter-spacing: 0.25px;
+  }
+  .type-body-small {
+    font-size: 12px;
+    line-height: 16px;
+    letter-spacing: 0.4px;
+  }
+  .type-label-large {
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+  }
+  .type-label-medium {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+  .type-label-small {
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+
+  /* M3のエレベーション。影ではなく面の重なりで奥行きを出す。 */
+  .elevation-1 {
+    box-shadow:
+      0 1px 2px 0 rgb(0 0 0 / 0.3),
+      0 1px 3px 1px rgb(0 0 0 / 0.15);
+  }
+  .elevation-2 {
+    box-shadow:
+      0 1px 2px 0 rgb(0 0 0 / 0.3),
+      0 2px 6px 2px rgb(0 0 0 / 0.15);
+  }
+  .elevation-3 {
+    box-shadow:
+      0 4px 8px 3px rgb(0 0 0 / 0.15),
+      0 1px 3px 0 rgb(0 0 0 / 0.3);
   }
 }

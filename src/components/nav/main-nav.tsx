@@ -4,61 +4,76 @@ import { CalendarDays, ListChecks, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
-  { href: "/calendar", label: "カレンダー", icon: CalendarDays },
-  { href: "/tasks", label: "タスク", icon: ListChecks },
-];
+  { href: "/calendar", key: "calendar", label: "カレンダー", icon: CalendarDays },
+  { href: "/tasks", key: "tasks", label: "タスク", icon: ListChecks },
+  { href: "/settings", key: "settings", label: "設定", icon: Settings },
+] as const;
 
-/** スマートフォン向けの下部ナビゲーション（docs/spec.md §4）。PCでは各画面のヘッダーに置く。 */
-export function BottomNav({ current }: { current: "calendar" | "tasks" }) {
+export type NavKey = (typeof ITEMS)[number]["key"];
+
+/**
+ * M3のナビゲーションバー（docs/spec.md §4）。
+ * 選択中の項目はアイコンの背後に「アクティブインジケーター」の丸みを表示し、
+ * 色だけに頼らずに現在地が分かるようにする。
+ */
+export function BottomNav({ current }: { current: NavKey }) {
   return (
-    <nav className="flex shrink-0 border-t border-rule bg-background md:hidden">
+    <nav className="flex h-20 shrink-0 items-start justify-around bg-surface-container px-2 pt-3 md:hidden">
       {ITEMS.map((item) => {
-        const active = item.href === `/${current}`;
+        const active = item.key === current;
         const Icon = item.icon;
 
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={cn(
-              "flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px]",
-              active ? "text-primary" : "text-muted-foreground",
-            )}
+            aria-current={active ? "page" : undefined}
+            className="flex w-full max-w-[112px] flex-col items-center gap-1"
           >
-            <Icon className="size-5" />
-            {item.label}
+            <span
+              className={cn(
+                "flex h-8 w-16 items-center justify-center rounded-full transition-colors",
+                active ? "bg-secondary-container text-on-secondary-container" : "text-on-surface-variant",
+              )}
+            >
+              <Icon className="size-6" />
+            </span>
+            <span
+              className={cn(
+                "type-label-medium",
+                active ? "text-on-surface" : "text-on-surface-variant",
+              )}
+            >
+              {item.label}
+            </span>
           </Link>
         );
       })}
-      <Link
-        href="/settings"
-        className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] text-muted-foreground"
-      >
-        <Settings className="size-5" />
-        設定
-      </Link>
     </nav>
   );
 }
 
-/** PC向けの画面切り替え。ヘッダー内に横並びで置く。 */
-export function HeaderNav({ current }: { current: "calendar" | "tasks" }) {
+/** PC向け。ナビゲーションバーは持たず、トップアプリバー内に切り替えを置く。 */
+export function HeaderNav({ current }: { current: NavKey }) {
   return (
     <div className="hidden items-center gap-1 md:flex">
-      {ITEMS.map((item) => {
-        const active = item.href === `/${current}`;
+      {ITEMS.filter((item) => item.key !== "settings").map((item) => {
+        const active = item.key === current;
         const Icon = item.icon;
 
         return (
           <Link
             key={item.href}
             href={item.href}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "flex items-center gap-1 rounded-md px-2 py-1 text-sm",
-              active ? "bg-secondary text-secondary-foreground" : "text-muted-foreground hover:bg-muted",
+              "type-label-large flex items-center gap-2 rounded-full px-3 py-1.5 transition-colors",
+              active
+                ? "bg-secondary-container text-on-secondary-container"
+                : "text-on-surface-variant hover:bg-on-surface/8",
             )}
           >
-            <Icon className="size-4" />
+            <Icon className="size-[18px]" />
             {item.label}
           </Link>
         );

@@ -185,7 +185,7 @@ export function CalendarShell({
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex items-center gap-2 border-b border-rule px-3 py-2">
+      <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
         <div className="flex items-center gap-1 font-semibold">
           <CalendarDays className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
@@ -203,7 +203,7 @@ export function CalendarShell({
         </div>
 
         {/* 日付が主役。どの期間を見ているかが常に読める大きさにする。 */}
-        <h1 className="min-w-0 flex-1 truncate text-base font-semibold">
+        <h1 className="type-title-large min-w-0 flex-1 truncate">
           {formatRangeLabel(view, anchorKey, days)}
         </h1>
 
@@ -211,14 +211,18 @@ export function CalendarShell({
           今日
         </Button>
 
-        {/* ビューは排他的な選択なので、切り替え式のひとまとまりとして見せる。 */}
-        <div className="flex items-center gap-0.5 rounded-lg border border-rule p-0.5">
+        {/* M3のセグメンテッドボタン。排他的な選択であることを、隣接した枠で示す。 */}
+        <div className="flex items-center overflow-hidden rounded-full border border-outline">
           {VIEW_LABELS.map((item) => (
             <Button
               key={item.view}
               variant={view === item.view ? "secondary" : "ghost"}
               size="xs"
-              className={cn(item.desktopOnly && "hidden md:inline-flex")}
+              className={cn(
+                "type-label-large h-8 rounded-none px-3",
+                view === item.view && "text-on-secondary-container",
+                item.desktopOnly && "hidden md:inline-flex",
+              )}
               onClick={() => navigate(item.view, anchorKey)}
             >
               {item.label}
@@ -243,7 +247,7 @@ export function CalendarShell({
       </header>
 
       {(data.errors.length > 0 || dragError) && (
-        <div className="flex flex-col gap-1 border-b border-rule bg-destructive/10 px-3 py-2 text-xs">
+        <div className="flex flex-col gap-1 bg-error-container/70 text-on-error-container px-3 py-2 text-xs">
           {data.errors.map((error) => (
             <span key={`${error.source}-${error.reason}`}>{error.reason}</span>
           ))}
@@ -342,23 +346,40 @@ function AddButton({
   if (!canAddEvent && !canAddTask) return null;
 
   return (
-    <div className="fixed right-4 bottom-20 flex flex-col items-end gap-2 md:bottom-4">
+    <div className="fixed right-4 bottom-24 z-30 flex flex-col items-end gap-2 md:bottom-6">
       {open && (
         <div className="flex flex-col gap-2">
           {canAddEvent && (
-            <Button size="sm" variant="secondary" className="shadow" onClick={onAddEvent}>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="elevation-2 rounded-lg"
+              onClick={onAddEvent}
+            >
               予定を追加
             </Button>
           )}
           {canAddTask && (
-            <Button size="sm" variant="secondary" className="shadow" onClick={onAddTask}>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="elevation-2 rounded-lg"
+              onClick={onAddTask}
+            >
               タスクを追加
             </Button>
           )}
         </div>
       )}
 
-      <Button size="icon" className="size-12 rounded-full shadow-lg" onClick={onToggle}>
+      {/* M3のFAB。角は完全な丸ではなく大きめの角丸で、面として置かれていることを示す。 */}
+      <Button
+        size="icon"
+        aria-expanded={open}
+        aria-label="追加"
+        className="elevation-3 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95"
+        onClick={onToggle}
+      >
         <Plus className={cn("size-6 transition-transform", open && "rotate-45")} />
       </Button>
     </div>

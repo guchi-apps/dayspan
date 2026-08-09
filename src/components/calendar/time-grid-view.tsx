@@ -66,7 +66,7 @@ export function TimeGridView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex border-b border-rule">
+      <div className="flex border-b border-outline-variant">
         <div className="w-14 shrink-0" />
         {days.map((dateKey) => (
           <div key={dateKey} className="flex-1 py-1.5 text-center">
@@ -82,7 +82,7 @@ export function TimeGridView({
               className={cn(
                 "mx-auto mt-0.5 grid size-7 place-items-center rounded-full text-sm",
                 dateKey === todayKey
-                  ? "bg-foreground font-semibold text-background"
+                  ? "bg-primary font-semibold text-primary-foreground"
                   : "font-medium",
               )}
             >
@@ -207,7 +207,7 @@ function DayColumn({
   };
 
   return (
-    <div className="relative flex-1 border-l border-rule">
+    <div className="relative flex-1 border-l border-outline-variant">
       {/* 空き時間の選択。予定・タスクはこの上に重ねて描画するので、
           クリックが背面へ抜けることはない（docs/spec.md §15）。 */}
       <button
@@ -226,7 +226,11 @@ function DayColumn({
             key={index}
             className={cn(
               "pointer-events-none absolute inset-x-0 border-t",
-              isMajor ? "border-rule-strong" : isHour ? "border-rule" : "border-rule/50",
+              isMajor
+                ? "border-outline/50"
+                : isHour
+                  ? "border-outline-variant"
+                  : "border-outline-variant/45",
             )}
             style={{ top: (index * HOUR_HEIGHT) / 2 }}
           />
@@ -362,18 +366,18 @@ function DayColumn({
             aria-hidden
             className={cn(
               "h-2.5 w-0.5 shrink-0",
-              task.done ? "bg-muted-foreground" : "bg-foreground",
+              task.done ? "bg-on-surface-variant/60" : "bg-primary",
             )}
           />
           <span
             className={cn(
               "h-px flex-1",
-              task.done ? "bg-muted-foreground/40" : "bg-foreground/45",
+              task.done ? "bg-on-surface-variant/30" : "bg-primary/45",
             )}
           />
           <span
             className={cn(
-              "max-w-[78%] truncate rounded-sm border border-rule-strong bg-background px-1 text-[10px] font-medium",
+              "type-label-small max-w-[78%] truncate rounded-xs border border-outline bg-surface-container-lowest px-1",
               task.done && "text-muted-foreground line-through",
             )}
           >
@@ -435,7 +439,7 @@ function AllDayArea({
     <div
       ref={rowRef}
       data-gutter-width="56"
-      className="flex border-b border-rule bg-muted/25"
+      className="flex border-b border-outline-variant bg-surface-container-low"
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
@@ -454,7 +458,7 @@ function AllDayArea({
         return (
           <div
             key={dateKey}
-            className="flex min-h-9 flex-1 flex-col gap-0.5 border-l border-rule p-1"
+            className="flex min-h-9 flex-1 flex-col gap-0.5 border-l border-outline-variant p-1"
           >
             {dayEvents.map((event) => (
               <button
@@ -489,7 +493,7 @@ function AllDayArea({
                   onOpenTask(task);
                 }}
                 className={cn(
-                  "flex items-center gap-1 truncate rounded-sm border border-rule-strong bg-background px-1.5 text-left text-[11px] leading-5 font-medium",
+                  "type-label-small flex items-center gap-1 truncate rounded-xs border border-outline bg-surface-container-lowest px-1.5 py-0.5 text-left",
                   task.done && "text-muted-foreground line-through",
                   preview?.id === task.id && "ring-2 ring-foreground/50",
                 )}
@@ -499,7 +503,7 @@ function AllDayArea({
                   aria-hidden
                   className={cn(
                     "h-2.5 w-0.5 shrink-0",
-                    task.done ? "bg-muted-foreground" : "bg-foreground",
+                    task.done ? "bg-on-surface-variant/60" : "bg-primary",
                   )}
                 />
                 <span className="truncate">{task.title}</span>
@@ -581,14 +585,14 @@ function NowLine({ days, utils }: { days: string[]; utils: CalendarDateUtils }) 
 
   return (
     <div className="pointer-events-none absolute inset-x-0 z-20" style={{ top }}>
-      <span className="absolute left-0 w-14 -translate-y-1/2 pr-2 text-right text-[10px] font-semibold text-foreground">
+      <span className="type-label-small absolute left-0 w-14 -translate-y-1/2 pr-2 text-right text-primary">
         {utils.formatTime(iso)}
       </span>
 
-      <span className="absolute right-0 left-14 block h-px bg-foreground" />
+      <span className="absolute right-0 left-14 block h-px bg-primary" />
 
       <span
-        className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
+        className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"
         style={{ left: `calc(3.5rem + (100% - 3.5rem) * ${(todayIndex + 0.5) / days.length})` }}
       />
     </div>
