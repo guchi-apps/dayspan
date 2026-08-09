@@ -9,6 +9,7 @@ import {
   MINUTES_PER_DAY,
   type CalendarDateUtils,
 } from "./item-layout";
+import { useGridDrag, type DragCommit, type DragPreview, type DragTarget } from "./use-grid-drag";
 
 export function TimeGridView({
   days,
@@ -18,6 +19,7 @@ export function TimeGridView({
   onOpenEvent,
   onOpenTask,
   onSelectSlot,
+  onDragCommit,
 }: {
   days: string[];
   events: CalendarEventItem[];
@@ -27,8 +29,17 @@ export function TimeGridView({
   onOpenTask: (task: TaskItem) => void;
   /** 空き時間の選択。minutes は 0:00 からの分数（30分単位に丸める）。 */
   onSelectSlot: (dateKey: string, minutes: number) => void;
+  onDragCommit: (commit: DragCommit) => void;
 }) {
   const todayKey = utils.todayKey();
+  const {
+    gridRef,
+    preview,
+    startDrag,
+    handlePointerMove,
+    handlePointerUp,
+    consumeDragClick,
+  } = useGridDrag({ days, onCommit: onDragCommit });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -59,7 +70,15 @@ export function TimeGridView({
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex" style={{ height: HOUR_HEIGHT * 24 }}>
+        <div
+          ref={gridRef}
+          data-gutter-width="48"
+          className="flex"
+          style={{ height: HOUR_HEIGHT * 24 }}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
           <div className="relative w-12 shrink-0">
             {Array.from({ length: 24 }, (_, hour) => (
               <div
@@ -72,10 +91,14 @@ export function TimeGridView({
             ))}
           </div>
 
-          {days.map((dateKey) => (
+          {days.map((dateKey, dayIndex) => (
             <DayColumn
               key={dateKey}
               dateKey={dateKey}
+              dayIndex={dayIndex}
+              preview={preview}
+              onStartDrag={startDrag}
+              onConsumeDragClick={consumeDragClick}
               utils={utils}
               onOpenEvent={onOpenEvent}
               onOpenTask={onOpenTask}
@@ -94,22 +117,42 @@ export function TimeGridView({
 
 function DayColumn({
   dateKey,
+  dayIndex,
   events,
   tasks,
   utils,
+  preview,
+  onStartDrag,
+  onConsumeDragClick,
   onOpenEvent,
   onOpenTask,
   onSelectSlot,
 }: {
   dateKey: string;
+  dayIndex: number;
   events: CalendarEventItem[];
   tasks: TaskItem[];
   utils: CalendarDateUtils;
+  preview: DragPreview | null;
+  onStartDrag: (
+    event: React.PointerEvent,
+    target: DragTarget,
+    geometry: { dayIndex: number; startMinutes: number; endMinutes: number },
+  ) => void;
+  onConsumeDragClick: () => boolean;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
 }) {
   const positioned = utils.layoutOverlaps(events, dateKey);
+
+  /** ドラッグ中の項目は、この列に移動してきた場合だけこの列で描く。 */
+  const previewFor = (id: string): DragPreview | null => {
+    if (!preview || preview.id !== id) return null;
+    return preview.dayIndex === dayIndex ? preview : null;
+  };
+
+  const isDraggedAway = (id: string) => preview?.id === id && preview.dayIndex !== dayIndex;
 
   const handleBackgroundClick = (clientY: number, element: HTMLElement) => {
     const rect = element.getBoundingClientRect();
@@ -139,36 +182,118 @@ function DayColumn({
       ))}
 
       {positioned.map(({ event, column, columns }) => {
-        const { top, height } = utils.eventGeometry(event, dateKey);
+        if (isDraggedAway(event.id)) return null;
+
+        const base = utils.eventGeometry(event, dateKey);
+        const eventPreview = previewFor(event.id);
+        const top = eventPreview
+          ? (eventPreview.startMinutes / MINUTES_PER_DAY) * GRID_HEIGHT
+          : base.top;
+        const height = eventPreview
+          ? Math.max(
+              ((eventPreview.endMinutes - eventPreview.startMinutes) / MINUTES_PER_DAY) *
+                GRID_HEIGHT,
+              16,
+            )
+          : base.height;
+
+        // 日をまたぐ予定は、どの日を動かしているのかが決まらないためドラッグの対象外にする。
+        const draggable =
+          utils.itemDateKey(event.start) === utils.itemDateKey(event.end) ||
+          utils.itemDateKey(event.start) === dateKey;
+
+        const geometry = {
+          dayIndex,
+          startMinutes: utils.minutesFromMidnight(event.start),
+          endMinutes: Math.max(
+            utils.minutesFromMidnight(event.end),
+            utils.minutesFromMidnight(event.start) + 15,
+          ),
+        };
+
         return (
-          <button
+          <div
             key={event.id}
-            type="button"
-            onClick={() => onOpenEvent(event)}
-            className="absolute overflow-hidden rounded px-1 text-left text-[10px] leading-4 text-white"
+            className="absolute"
             style={{
               top,
               height,
               left: `${(column / columns) * 100}%`,
               width: `${(1 / columns) * 100}%`,
-              backgroundColor: event.color ?? "#5484ed",
             }}
-            title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
           >
-            <div className="truncate font-medium">{event.title}</div>
-            <div className="truncate opacity-80">{utils.formatTime(event.start)}</div>
-          </button>
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                if (!draggable) return;
+                onStartDrag(e, { kind: "event", item: event, mode: "move" }, geometry);
+              }}
+              onClick={() => {
+                if (onConsumeDragClick()) return;
+                onOpenEvent(event);
+              }}
+              className={cn(
+                "size-full overflow-hidden rounded px-1 text-left text-[10px] leading-4 text-white",
+                eventPreview && "opacity-80 ring-2 ring-foreground/40",
+              )}
+              style={{ backgroundColor: event.color ?? "#5484ed" }}
+              title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
+            >
+              <div className="truncate font-medium">{event.title}</div>
+              <div className="truncate opacity-80">
+                {eventPreview
+                  ? formatMinutes(eventPreview.startMinutes)
+                  : utils.formatTime(event.start)}
+              </div>
+            </button>
+
+            {draggable && (
+              <>
+                <ResizeHandle
+                  position="top"
+                  onPointerDown={(e) =>
+                    onStartDrag(e, { kind: "event", item: event, mode: "resize-start" }, geometry)
+                  }
+                />
+                <ResizeHandle
+                  position="bottom"
+                  onPointerDown={(e) =>
+                    onStartDrag(e, { kind: "event", item: event, mode: "resize-end" }, geometry)
+                  }
+                />
+              </>
+            )}
+          </div>
         );
       })}
 
       {/* 期限タスクは予定のような時間幅を持たせず、期限時刻の位置に置く（docs/spec.md §6）。 */}
-      {tasks.map((task) => (
+      {tasks.map((task) => isDraggedAway(task.id) ? null : (
         <button
           key={task.id}
           type="button"
-          onClick={() => onOpenTask(task)}
+          onPointerDown={(e) =>
+            onStartDrag(
+              e,
+              { kind: "task", item: task },
+              {
+                dayIndex,
+                startMinutes: utils.minutesFromMidnight(task.due!),
+                endMinutes: utils.minutesFromMidnight(task.due!),
+              },
+            )
+          }
+          onClick={() => {
+            if (onConsumeDragClick()) return;
+            onOpenTask(task);
+          }}
           className="absolute inset-x-0 flex items-center gap-1 px-1"
-          style={{ top: (utils.minutesFromMidnight(task.due!) / MINUTES_PER_DAY) * GRID_HEIGHT }}
+          style={{
+            top:
+              ((previewFor(task.id)?.startMinutes ?? utils.minutesFromMidnight(task.due!)) /
+                MINUTES_PER_DAY) *
+              GRID_HEIGHT,
+          }}
           title={`${utils.formatTime(task.due!)} ${task.title}`}
         >
           <span className="h-0 flex-1 border-t-2 border-dashed border-foreground/40" />
@@ -253,6 +378,31 @@ function AllDayArea({
       })}
     </div>
   );
+}
+
+/** 予定ブロックの上端・下端。ここを掴むと開始または終了だけが動く。 */
+function ResizeHandle({
+  position,
+  onPointerDown,
+}: {
+  position: "top" | "bottom";
+  onPointerDown: (event: React.PointerEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={position === "top" ? "開始時刻を変更" : "終了時刻を変更"}
+      onPointerDown={onPointerDown}
+      className={cn(
+        "absolute inset-x-0 h-2 cursor-ns-resize",
+        position === "top" ? "top-0" : "bottom-0",
+      )}
+    />
+  );
+}
+
+function formatMinutes(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
 function weekdayLabel(dateKey: string): string {

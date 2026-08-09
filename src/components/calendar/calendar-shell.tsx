@@ -15,12 +15,13 @@ import {
 import { cn } from "@/lib/utils";
 import type { CalendarEventItem, CalendarLoadResult, TaskItem } from "@/types/calendar";
 
-import { dateKeyPlusMinutes } from "./datetime-fields";
+import { dateKeyPlusMinutes, localInputToIso } from "./datetime-fields";
 import { EventDialog, toEventDraft, type EventDraft } from "./event-dialog";
 import { createCalendarDateUtils } from "./item-layout";
 import { MonthView } from "./month-view";
 import { TaskDialog, toTaskDraft, type TaskDraft } from "./task-dialog";
 import { TimeGridView } from "./time-grid-view";
+import type { DragCommit } from "./use-grid-drag";
 
 const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[] = [
   { view: "month", label: "月" },
@@ -62,6 +63,55 @@ export function CalendarShell({
   const handleSaved = () => {
     closeDialogs();
     startTransition(() => router.refresh());
+  };
+
+  const [dragError, setDragError] = useState<string | null>(null);
+
+  /**
+   * ドラッグで変わった時刻を保存する。失敗しても画面の見た目は元へ戻す（再取得する）ので、
+   * 保存できたつもりのまま作業が進まないようにする。
+   */
+  const commitDrag = async (commit: DragCommit) => {
+    setDragError(null);
+
+    const startIso = localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.startMinutes), timeZone);
+
+    try {
+      let response: Response;
+
+      if (commit.target.kind === "event") {
+        const event = commit.target.item;
+        response = await fetch(`/api/events/${encodeURIComponent(event.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            calendarId: event.calendarId,
+            title: event.title,
+            allDay: false,
+            start: startIso,
+            end: localInputToIso(
+              dateKeyPlusMinutes(commit.dayKey, commit.endMinutes),
+              timeZone,
+            ),
+          }),
+        });
+      } else {
+        response = await fetch(`/api/tasks/${encodeURIComponent(commit.target.item.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ due: startIso }),
+        });
+      }
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        setDragError(body?.message ?? "変更を保存できませんでした。");
+      }
+    } catch {
+      setDragError("変更を保存できませんでした。");
+    } finally {
+      startTransition(() => router.refresh());
+    }
   };
 
   const openEvent = (event: CalendarEventItem) => setEventDraft(toEventDraft(event, timeZone));
@@ -147,11 +197,12 @@ export function CalendarShell({
         </div>
       </header>
 
-      {data.errors.length > 0 && (
+      {(data.errors.length > 0 || dragError) && (
         <div className="flex flex-col gap-1 border-b bg-destructive/10 px-3 py-2 text-xs">
           {data.errors.map((error) => (
             <span key={`${error.source}-${error.reason}`}>{error.reason}</span>
           ))}
+          {dragError && <span>{dragError}</span>}
         </div>
       )}
 
@@ -176,6 +227,7 @@ export function CalendarShell({
           onOpenEvent={openEvent}
           onOpenTask={openTask}
           onSelectSlot={(dateKey, minutes) => setEventDraft(newEventDraft(dateKey, minutes))}
+          onDragCommit={commitDrag}
         />
       )}
 
