@@ -30,7 +30,7 @@ import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { ContinuousMonthView } from "./continuous-month-view";
 import { TaskDialog, toTaskDraft, type TaskDraft } from "./task-dialog";
 import { TimeGridView } from "./time-grid-view";
-import { useCalendarChunks } from "./use-calendar-chunks";
+import { monthsOfRanges, useCalendarChunks, type TouchedRange } from "./use-calendar-chunks";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 
 const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[] = [
@@ -61,6 +61,10 @@ export function CalendarShell({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+
+  // 月のデータを取りにいっているか。取得はSuspense境界の内側で起きるが、
+  // 進行の表示はヘッダー直下（境界の外）にあるため、ここまで上げてもらう。
+  const [windowLoading, setWindowLoading] = useState(false);
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
 
   // 押した直後に見出しが変わるよう、遷移中は指定した期間を先に表示する。
@@ -94,8 +98,8 @@ export function CalendarShell({
     setTaskDraft(null);
   };
 
-  const handleSaved = () => {
-    closeDialogs();
+  /** 月表示以外の取り直し。ページごと描き直すため、表示中の期間ぶんをすべて取り直す。 */
+  const refreshAll = () => {
     startTransition(() => router.refresh());
   };
 
@@ -343,7 +347,7 @@ export function CalendarShell({
         </Button>
       </header>
 
-      <LinearProgress active={pending} />
+      <LinearProgress active={pending || windowLoading} />
 
       {/*
         予定とタスクの到着を待つ必要があるのはグリッドだけ。どの期間を見ているかは
@@ -385,7 +389,8 @@ export function CalendarShell({
             setTaskDraft({ dueMode: "datetime", due: dateKeyPlusMinutes(defaultDayKey, 18 * 60) });
           }}
           onCloseDialogs={closeDialogs}
-          onSaved={handleSaved}
+          onRefreshAll={refreshAll}
+          onLoadingChange={setWindowLoading}
         />
       </Suspense>
 
@@ -431,7 +436,8 @@ function CalendarBody({
   onAddEvent,
   onAddTask,
   onCloseDialogs,
-  onSaved,
+  onRefreshAll,
+  onLoadingChange,
 }: {
   dataPromise: Promise<CalendarLoadResult>;
   view: CalendarView;
@@ -459,7 +465,8 @@ function CalendarBody({
   onAddEvent: () => void;
   onAddTask: () => void;
   onCloseDialogs: () => void;
-  onSaved: () => void;
+  onRefreshAll: () => void;
+  onLoadingChange: (loading: boolean) => void;
 }) {
   const initial = use(dataPromise);
 
@@ -470,7 +477,25 @@ function CalendarBody({
     initial,
     serverMonths,
     autoRefreshSeconds,
+    onLoadingChange,
   });
+
+  /**
+   * 保存・削除のあとの取り直し。
+   *
+   * 月表示は変わった月だけを取り直す。ページごと描き直すと、表示中の月すべてを
+   * 外部APIから取り直すことになり、保存のたびにその待ち時間が乗る。
+   */
+  const handleSaved = (touched: TouchedRange[] | null) => {
+    onCloseDialogs();
+
+    if (view !== "month") {
+      onRefreshAll();
+      return;
+    }
+
+    data.invalidate(touched === null ? null : monthsOfRanges(touched));
+  };
 
   return (
     <>
@@ -527,7 +552,7 @@ function CalendarBody({
           calendars={data.calendars}
           timeZone={timeZone}
           onClose={onCloseDialogs}
-          onSaved={onSaved}
+          onSaved={handleSaved}
         />
       )}
 
@@ -536,7 +561,7 @@ function CalendarBody({
           draft={taskDraft}
           timeZone={timeZone}
           onClose={onCloseDialogs}
-          onSaved={onSaved}
+          onSaved={handleSaved}
         />
       )}
     </>

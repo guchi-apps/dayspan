@@ -27,6 +27,7 @@ import { RECURRENCE_PRESETS } from "@/services/notion/recurrence";
 import type { TaskItem } from "@/types/calendar";
 
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import type { TouchedRange } from "./use-calendar-chunks";
 
 const PRIORITY_OPTIONS = ["高", "中", "低"];
 const NO_VALUE = "__none__";
@@ -50,7 +51,8 @@ export function TaskDialog({
   draft: TaskDraft;
   timeZone: string;
   onClose: () => void;
-  onSaved: () => void;
+  /** 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
+  onSaved: (touched: TouchedRange[] | null) => void;
 }) {
   const editing = draft.task;
 
@@ -78,9 +80,9 @@ export function TaskDialog({
     if (!next) close();
   };
 
-  const finish = () => {
+  const finish = (touched: TouchedRange[] | null) => {
     setOpen(false);
-    setTimeout(onSaved, 150);
+    setTimeout(() => onSaved(touched), 150);
   };
 
   const changeDueMode = (next: DueMode) => {
@@ -125,7 +127,13 @@ export function TaskDialog({
         setError(await readErrorMessage(response, "保存できませんでした。"));
         return;
       }
-      finish();
+
+      // 期限を動かした場合は移動元も変わる。期限なしはカレンダーに出ないため対象から外す。
+      const touched: TouchedRange[] = [];
+      if (payload.due) touched.push({ start: payload.due, end: payload.due });
+      if (editing?.due) touched.push({ start: editing.due, end: editing.due });
+
+      finish(touched);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");

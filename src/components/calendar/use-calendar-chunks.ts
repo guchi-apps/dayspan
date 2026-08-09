@@ -46,6 +46,20 @@ function monthKeysBetween(start: string, end: string): string[] {
   return months;
 }
 
+/** 保存や削除で内容が変わった期間。取り直す月を絞り込むために使う。 */
+export type TouchedRange = { start: string; end: string };
+
+/** 変わった期間がかかる月すべて。 */
+export function monthsOfRanges(ranges: TouchedRange[]): string[] {
+  const months = new Set<string>();
+
+  for (const range of ranges) {
+    for (const month of monthKeysBetween(range.start, range.end)) months.add(month);
+  }
+
+  return [...months];
+}
+
 /** 取得結果を月ごとに仕分ける。月をまたぐ予定は、かかる月すべてに入る。 */
 function splitByMonth(
   data: Pick<CalendarLoadResult, "events" | "tasks">,
@@ -97,8 +111,13 @@ export type CalendarWindowData = {
   errors: CalendarLoadResult["errors"];
   /** 連携側ではなくアプリ側の取得失敗。 */
   loadError: string | null;
-  /** まだ取得できていない月。予定が無いのか読み込み中なのかを描き分けるために使う。 */
+  /** まだ一度も取得できていない月。予定が無いのか読み込み中なのかを描き分けるために使う。 */
   pendingMonths: ReadonlySet<string>;
+  /**
+   * 指定した月を取り直す。null を渡すと保持しているすべての月が対象。
+   * 予定やタスクを保存したあと、変わった月だけを取り直すために呼ぶ。
+   */
+  invalidate: (months: string[] | null) => void;
 };
 
 /**
@@ -114,6 +133,7 @@ export function useCalendarChunks({
   initial,
   serverMonths,
   autoRefreshSeconds,
+  onLoadingChange,
 }: {
   /** 月表示のときだけ働かせる。1日〜7日表示は取得範囲が狭く、窓で持つ必要がない。 */
   enabled: boolean;
@@ -123,6 +143,8 @@ export function useCalendarChunks({
   /** initial が満たしている月。サーバーが描いた範囲と一致していなければならない。 */
   serverMonths: string[];
   autoRefreshSeconds: number;
+  /** 取得中かどうか。読み込み中の表示はSuspense境界の外にあるため、呼び出し側へ渡す。 */
+  onLoadingChange: (loading: boolean) => void;
 }): CalendarWindowData {
   const [chunks, setChunks] = useState(() => splitByMonth(initial, serverMonths, Date.now()));
   const [meta, setMeta] = useState({
@@ -131,9 +153,14 @@ export function useCalendarChunks({
     errors: initial.errors,
   });
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [fetching, setFetching] = useState<ReadonlySet<string>>(() => new Set<string>());
 
   const inFlight = useRef(new Set<string>());
+
+  // fetchMonths からは常に最新のものを呼びたいが、fetchMonths 自体は作り直したくない。
+  const onLoadingChangeRef = useRef(onLoadingChange);
+  useEffect(() => {
+    onLoadingChangeRef.current = onLoadingChange;
+  }, [onLoadingChange]);
 
   // 取得が終わった時点でどこを見ているかは、要求を出した時点とは限らない。
   // 破棄の判断は「今の窓」で行う必要があるため、最新の窓を参照できるようにしておく。
@@ -159,7 +186,7 @@ export function useCalendarChunks({
 
   const fetchMonths = useCallback(async (months: string[]) => {
     months.forEach((month) => inFlight.current.add(month));
-    setFetching(new Set(inFlight.current));
+    onLoadingChangeRef.current(true);
 
     try {
       const params = new URLSearchParams({ months: months.join(",") });
@@ -202,7 +229,7 @@ export function useCalendarChunks({
       setLoadError("表示範囲の予定とタスクを取得できませんでした。");
     } finally {
       months.forEach((month) => inFlight.current.delete(month));
-      setFetching(new Set(inFlight.current));
+      onLoadingChangeRef.current(inFlight.current.size > 0);
     }
   }, []);
 
@@ -256,11 +283,33 @@ export function useCalendarChunks({
     return { events, tasks };
   }, [chunks, windowMonths]);
 
-  // 一度も取得できていない月と、取得中の月。空なのか読み込み中なのかを区別できるようにする。
+  // 一度も取得できていない月だけを「読み込み中」とする。取り直し中の月まで含めると、
+  // 保存のたびにその月がいったん骨組みへ戻り、内容が消えたように見えてしまう。
   const pendingMonths = useMemo(
-    () => new Set(windowMonths.filter((month) => !chunks.has(month) || fetching.has(month))),
-    [chunks, windowMonths, fetching],
+    () => new Set(windowMonths.filter((month) => !chunks.has(month))),
+    [chunks, windowMonths],
   );
+
+  const invalidate = useCallback((months: string[] | null) => {
+    if (months && months.length === 0) return;
+    const target = months ? new Set(months) : null;
+
+    setChunks((prev) => {
+      const next = new Map(prev);
+      let changed = false;
+
+      for (const [month, chunk] of prev) {
+        if (target && !target.has(month)) continue;
+
+        // 取得時刻を無効にすると、下の効果が「古い月」として拾って取り直す。
+        next.set(month, { ...chunk, fetchedAt: 0 });
+        changed = true;
+      }
+
+      // 保持していない月だけを指された場合は何も変わらない。参照も変えない。
+      return changed ? next : prev;
+    });
+  }, []);
 
   // 月表示以外は、サーバーが描いたぶんをそのまま使う。
   if (!enabled) {
@@ -272,6 +321,7 @@ export function useCalendarChunks({
       errors: initial.errors,
       loadError: null,
       pendingMonths: NO_MONTHS,
+      invalidate,
     };
   }
 
@@ -283,5 +333,6 @@ export function useCalendarChunks({
     errors: meta.errors,
     loadError,
     pendingMonths,
+    invalidate,
   };
 }

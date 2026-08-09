@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import type { TouchedRange } from "./use-calendar-chunks";
 
 const RECURRENCE_RULES: { label: string; rule: string | null }[] = [
   { label: "繰り返さない", rule: null },
@@ -54,7 +55,11 @@ export function EventDialog({
   calendars: WritableCalendar[];
   timeZone: string;
   onClose: () => void;
-  onSaved: () => void;
+  /**
+   * 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。
+   * どこが変わるか事前に決まらない場合（繰り返しの新規作成）は null を渡す。
+   */
+  onSaved: (touched: TouchedRange[] | null) => void;
 }) {
   const editing = draft.event;
 
@@ -88,9 +93,9 @@ export function EventDialog({
     if (!next) close();
   };
 
-  const finish = () => {
+  const finish = (touched: TouchedRange[] | null) => {
     setOpen(false);
-    setTimeout(onSaved, 150);
+    setTimeout(() => onSaved(touched), 150);
   };
 
   // 開始を動かしたら、それまでの所要時間を保ったまま終了も動かす。
@@ -133,6 +138,11 @@ export function EventDialog({
     setBusy(true);
     setError(null);
     try {
+      // 繰り返し規則は新規作成のときだけ送る（更新はシリーズ全体に及ぶため送らない）。
+      const recurrence = editing
+        ? null
+        : (RECURRENCE_RULES.find((r) => r.label === recurrenceRule)?.rule ?? null);
+
       const payload = {
         calendarId,
         title,
@@ -145,9 +155,7 @@ export function EventDialog({
           .split(/[,\s]+/)
           .map((value) => value.trim())
           .filter(Boolean),
-        ...(editing
-          ? {}
-          : { recurrenceRule: RECURRENCE_RULES.find((r) => r.label === recurrenceRule)?.rule ?? null }),
+        ...(editing ? {} : { recurrenceRule: recurrence }),
       };
 
       const response = await fetch(
@@ -163,7 +171,12 @@ export function EventDialog({
         setError(await readErrorMessage(response, "保存できませんでした。"));
         return;
       }
-      finish();
+
+      // 移動した場合は移動元も変わる。繰り返しはどの月に何回現れるか読めないため範囲を絞らない。
+      const touched: TouchedRange[] = [{ start: payload.start, end: payload.end }];
+      if (editing) touched.push({ start: editing.start, end: editing.end });
+
+      finish(recurrence ? null : touched);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
@@ -185,7 +198,7 @@ export function EventDialog({
         setError(await readErrorMessage(response, "削除できませんでした。"));
         return;
       }
-      finish();
+      finish([{ start: editing.start, end: editing.end }]);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
