@@ -68,9 +68,27 @@ OUTER_ENCODED="$(printf '%s' "$OUTER_SCRIPT" | iconv -t UTF-16LE | base64 -w0)"
 
 echo "Windowsの管理者権限でポートフォワーディングを設定します（UACダイアログが表示された場合は許可してください）..."
 if powershell.exe -NoProfile -NonInteractive -EncodedCommand "$OUTER_ENCODED"; then
+  # スマホから接続する先はWSLの内部IPではなくWindowsホストのLAN IP。
+  # 既定ゲートウェイを持つインターフェース＝実際にLANへ出ている口として選ぶ。
+  HOST_IP="$(powershell.exe -NoProfile -NonInteractive -Command \
+    "(Get-NetIPConfiguration | Where-Object { \$_.IPv4DefaultGateway -ne \$null } | Select-Object -First 1).IPv4Address.IPAddress" \
+    2>/dev/null | tr -d '\r' | tr -d '[:space:]' || true)"
+
+  if [[ -z "$HOST_IP" ]]; then
+    echo "警告: WindowsのLAN IPアドレスを取得できませんでした。ipconfig等で確認してください。" >&2
+    exit 0
+  fi
+
   echo "LAN経由でのアクセスURL（同一LAN上の別端末から）:"
   for port in "$@"; do
-    echo "  http://${WSL_IP}.sslip.io:${port}"
+    echo "  http://${HOST_IP}.sslip.io:${port}"
+  done
+
+  # 生のIPだとSupabase Authが無条件にリダイレクトを拒否するため、sslip.ioでホスト名にする。
+  # このURLがSupabaseのRedirect URLsに登録されていないとGoogleログインが失敗する。
+  echo "Supabaseの Redirect URLs に未登録なら追加してください:"
+  for port in "$@"; do
+    echo "  http://${HOST_IP}.sslip.io:${port}/auth/callback"
   done
 else
   echo "警告: ポートフォワーディングの設定に失敗しました（UACをキャンセルした可能性があります）。localhostでの確認は引き続き可能です。" >&2

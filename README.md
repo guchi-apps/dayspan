@@ -51,7 +51,20 @@ pnpm dev             # http://localhost:3000
 
 Googleログインを通すには、共有Supabaseプロジェクトの Redirect URLs に `http://localhost:3000/auth/callback` を登録し、`ALLOWED_GOOGLE_EMAILS` に自分のGoogleアカウントを設定しておく必要があります。
 
-スマートフォン等の同一LAN上の別端末から確認する場合は、生のLAN IPではOAuthのリダイレクトが失敗します。`http://<IP>.sslip.io:3000` の形式でアクセスし、そのURLをSupabaseの Redirect URLs にも登録してください（`scripts/dev.sh` がWindows側のポートフォワーディングをベストエフォートで設定します）。
+### スマートフォンからの確認
+
+`pnpm dev` を実行すると、`scripts/setup-lan-access.sh` がWindows側のポートフォワーディングとファイアウォール許可を設定し（UACダイアログが出るので許可する）、アクセスURLを表示します。
+
+```
+LAN経由でのアクセスURL（同一LAN上の別端末から）:
+  http://192.168.2.114.sslip.io:3000
+Supabaseの Redirect URLs に未登録なら追加してください:
+  http://192.168.2.114.sslip.io:3000/auth/callback
+```
+
+**生のLAN IPではGoogleログインが必ず失敗します。** Supabase Auth はホスト名がIPアドレスとして解釈できる場合、許可リストの照合より前にループバック以外を拒否するためです（設定では回避できない実装上の仕様）。`sslip.io` はDNSを引くとホスト名に含まれるIPをそのまま返すため、通信はLAN内で完結したままホスト名としてアクセスできます。
+
+表示されたURLの `/auth/callback` をSupabaseの Redirect URLs に登録してからアクセスしてください。Windows側のLAN IPが変わった場合は、新しいURLの登録が必要です。
 
 ### 検証コマンド
 
