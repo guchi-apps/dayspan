@@ -25,6 +25,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
+import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateTimeInput } from "./date-time-input";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import type { TouchedRange } from "./use-calendar-chunks";
@@ -269,18 +270,12 @@ export function EventDialog({
 
           {!editing && (
             <>
-              <Select value={calendarId} onValueChange={setCalendarId}>
-                <SelectTrigger label="保存先カレンダー">
-                  <SelectValue placeholder="カレンダーを選択" />
-                </SelectTrigger>
-                <SelectContent>
-                  {calendars.map((calendar) => (
-                    <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                      {calendar.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CalendarChipSelect
+                label="保存先カレンダー"
+                value={calendarId}
+                calendars={calendars}
+                onChange={setCalendarId}
+              />
 
               <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
                 <SelectTrigger label="繰り返し">
