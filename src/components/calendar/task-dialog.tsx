@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+
 import { ExternalLink } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,24 @@ export function TaskDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
+  // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
+  const [open, setOpen] = useState(true);
+
+  const close = () => {
+    setOpen(false);
+    setTimeout(onClose, 150);
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next) close();
+  };
+
+  const finish = () => {
+    setOpen(false);
+    setTimeout(onSaved, 150);
+  };
+
   const changeDueMode = (next: DueMode) => {
     if (next === "datetime" && !due.includes("T")) setDue(`${due.slice(0, 10)}T18:00`);
     if (next === "date" && due.includes("T")) setDue(due.slice(0, 10));
@@ -106,7 +125,7 @@ export function TaskDialog({
         setError(await readErrorMessage(response, "保存できませんでした。"));
         return;
       }
-      onSaved();
+      finish();
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
@@ -116,7 +135,7 @@ export function TaskDialog({
   };
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{editing ? "タスクを編集" : "タスクを追加"}</DialogTitle>
@@ -245,7 +264,7 @@ export function TaskDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" disabled={busy} onClick={onClose}>
+          <Button variant="ghost" disabled={busy} onClick={close}>
             やめる
           </Button>
           <Button disabled={busy || !title.trim()} onClick={save}>

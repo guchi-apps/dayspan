@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+
 import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -74,6 +75,24 @@ export function EventDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
+  // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
+  const [open, setOpen] = useState(true);
+
+  const close = () => {
+    setOpen(false);
+    setTimeout(onClose, 150);
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next) close();
+  };
+
+  const finish = () => {
+    setOpen(false);
+    setTimeout(onSaved, 150);
+  };
+
   // 開始を動かしたら、それまでの所要時間を保ったまま終了も動かす。
   // Google Calendarと同じ挙動にして、終了が開始より前になる状態を作りにくくする。
   const changeStart = (value: string) => {
@@ -144,7 +163,7 @@ export function EventDialog({
         setError(await readErrorMessage(response, "保存できませんでした。"));
         return;
       }
-      onSaved();
+      finish();
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
@@ -166,7 +185,7 @@ export function EventDialog({
         setError(await readErrorMessage(response, "削除できませんでした。"));
         return;
       }
-      onSaved();
+      finish();
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
@@ -176,7 +195,7 @@ export function EventDialog({
   };
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{editing ? "予定を編集" : "予定を追加"}</DialogTitle>
@@ -306,7 +325,7 @@ export function EventDialog({
             <span />
           )}
           <div className="flex gap-2">
-            <Button variant="ghost" disabled={busy} onClick={onClose}>
+            <Button variant="ghost" disabled={busy} onClick={close}>
               やめる
             </Button>
             <Button
