@@ -159,11 +159,6 @@
   --ring: var(--md-primary);
   --radius: 12px;
 
-  /* M3 Outlinedのテキストフィールドは、浮いたラベルの位置で枠線を切り欠く。
-     切り欠きは背景色で塗って表現するため、下地の面の色をここで受け渡す。
-     既定はページ背景。ダイアログやカードなど面の色が違う場所は各コンポーネント側で上書きする。 */
-  --field-notch: var(--md-surface);
-
   --sidebar: var(--md-surface-container-low);
   --sidebar-foreground: var(--md-on-surface);
   --sidebar-primary: var(--md-primary);

@@ -15,7 +15,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -214,7 +213,7 @@ export function EventDialog({
           )}
         </DialogHeader>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <Input
             id="event-title"
             label="タイトル"
@@ -223,12 +222,12 @@ export function EventDialog({
             autoFocus
           />
 
-          <label className="flex items-center gap-2 text-sm">
+          <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
             <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
             終日
           </label>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
             <Input
               id="event-start"
               label="開始"
@@ -247,40 +246,34 @@ export function EventDialog({
 
           {!editing && (
             <>
-              <div className="flex flex-col gap-1.5">
-                <Label>保存先カレンダー</Label>
-                <Select value={calendarId} onValueChange={setCalendarId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="カレンダーを選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {calendars.map((calendar) => (
-                      <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                        {calendar.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Select value={calendarId} onValueChange={setCalendarId}>
+                <SelectTrigger label="保存先カレンダー">
+                  <SelectValue placeholder="カレンダーを選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  {calendars.map((calendar) => (
+                    <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
+                      {calendar.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-              <div className="flex flex-col gap-1.5">
-                <Label>繰り返し</Label>
-                <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="繰り返さない" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {RECURRENCE_RULES.map((option) => (
-                      <SelectItem
-                        key={option.label}
-                        value={option.rule === null ? "none" : option.label}
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
+                <SelectTrigger label="繰り返し">
+                  <SelectValue placeholder="繰り返さない" />
+                </SelectTrigger>
+                <SelectContent>
+                  {RECURRENCE_RULES.map((option) => (
+                    <SelectItem
+                      key={option.label}
+                      value={option.rule === null ? "none" : option.label}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </>
           )}
 
@@ -291,15 +284,13 @@ export function EventDialog({
             onChange={(e) => setLocation(e.target.value)}
           />
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="event-description">説明</Label>
-            <Textarea
-              id="event-description"
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
+          <Textarea
+            id="event-description"
+            label="説明"
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
 
           {rangeError && <p className="text-sm text-destructive">{rangeError}</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}
