@@ -231,7 +231,10 @@ export function EventDialog({
           )}
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
+        {/* DialogContentはgrid。grid itemは既定でmin-width:autoのため、中に縮まない要素
+            （保存先カレンダーのチップ列）があるとダイアログ自体が横に広がる。min-w-0で
+            中身より狭くなれるようにし、はみ出す分はチップ列の中だけでスクロールさせる。 */}
+        <div className="flex min-w-0 flex-col gap-4">
           <Input
             id="event-title"
             label="タイトル"
