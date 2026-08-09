@@ -13,16 +13,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import type { CalendarEventItem } from "@/types/calendar";
 
 export function EventDetailDialog({
   event,
   timeZone,
+  readOnly = false,
   onClose,
   onEdit,
 }: {
   event: CalendarEventItem;
   timeZone: string;
+  /** 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。 */
+  readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
 }) {
@@ -52,6 +56,7 @@ export function EventDetailDialog({
           size="icon-sm"
           aria-label="編集"
           className="absolute top-2 right-10"
+          disabled={readOnly}
           onClick={edit}
         >
           <Pencil className="size-4" />
@@ -94,6 +99,8 @@ export function EventDetailDialog({
           {event.description && (
             <p className="whitespace-pre-wrap text-on-surface-variant">{event.description}</p>
           )}
+
+          {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
         </div>
 
         <DialogFooter>
