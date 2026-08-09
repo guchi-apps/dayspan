@@ -19,6 +19,12 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 DATABASE_URL="$(grep -E '^DATABASE_URL=' "$ENV_FILE" | tail -n1 | cut -d= -f2-)"
+# dotenvは値を囲むクォートを取り除くため .env.local 側では引用符付きでも正しく動くが、
+# このスクリプトは値をそのまま読むので、ここで前後のクォートを外しておく。
+DATABASE_URL="${DATABASE_URL%\"}"
+DATABASE_URL="${DATABASE_URL#\"}"
+DATABASE_URL="${DATABASE_URL%\'}"
+DATABASE_URL="${DATABASE_URL#\'}"
 if [[ -z "$DATABASE_URL" ]]; then
   echo "Error: $ENV_FILE に DATABASE_URL がありません。" >&2
   exit 1
