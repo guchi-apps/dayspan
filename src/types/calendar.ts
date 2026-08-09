@@ -15,6 +15,9 @@ export type CalendarEventItem = {
   end: string;
   location: string | null;
   description: string | null;
+  attendees: string[];
+  /** 繰り返し予定の1回分かどうか。編集時に「この回だけ変わる」ことを伝えるために持つ。 */
+  recurring: boolean;
   color: string | null;
   url: string | null;
 };
@@ -38,9 +41,19 @@ export type TaskItem = {
 
 export type CalendarItem = CalendarEventItem | TaskItem;
 
+/** 予定の保存先として選べるカレンダー。 */
+export type WritableCalendar = {
+  calendarId: string;
+  name: string;
+  color: string | null;
+  isCreateDefault: boolean;
+};
+
 export type CalendarLoadResult = {
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  calendars: WritableCalendar[];
+  notionReady: boolean;
   /** 連携ごとの取得失敗。片方が失敗してももう片方は表示できるようにする。 */
   errors: { source: "google" | "notion"; reason: string }[];
 };

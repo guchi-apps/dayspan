@@ -3,6 +3,8 @@
 import { cn } from "@/lib/utils";
 import type { CalendarEventItem, TaskItem } from "@/types/calendar";
 
+import type { CalendarEventItem as EventItem, TaskItem as Task } from "@/types/calendar";
+
 import type { CalendarDateUtils } from "./item-layout";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -16,6 +18,8 @@ export function MonthView({
   events,
   tasks,
   onSelectDay,
+  onOpenEvent,
+  onOpenTask,
   weekStartsOn,
   utils,
 }: {
@@ -24,6 +28,8 @@ export function MonthView({
   events: CalendarEventItem[];
   tasks: TaskItem[];
   onSelectDay: (dateKey: string) => void;
+  onOpenEvent: (event: EventItem) => void;
+  onOpenTask: (task: Task) => void;
   weekStartsOn: number;
   utils: CalendarDateUtils;
 }) {
@@ -65,31 +71,41 @@ export function MonthView({
               const inMonth = dateKey.slice(0, 7) === anchorMonth;
 
               return (
-                <button
+                <div
                   key={dateKey}
-                  type="button"
-                  onClick={() => onSelectDay(dateKey)}
                   className={cn(
-                    "flex min-w-0 flex-col gap-0.5 border-r p-1 text-left last:border-r-0 hover:bg-muted/50",
+                    "flex min-w-0 flex-col gap-0.5 border-r p-1 text-left last:border-r-0",
                     !inMonth && "bg-muted/20",
                   )}
                 >
-                  <span
+                  <button
+                    type="button"
+                    onClick={() => onSelectDay(dateKey)}
                     className={cn(
-                      "self-start rounded-full px-1 text-xs",
+                      "self-start rounded-full px-1 text-xs hover:bg-muted",
                       !inMonth && "text-muted-foreground",
                       dateKey === todayKey && "bg-primary text-primary-foreground",
                     )}
                   >
                     {Number(dateKey.slice(8, 10))}
-                  </span>
+                  </button>
 
                   <div className="flex min-w-0 flex-col gap-0.5">
                     {visible.map((item) =>
                       item.kind === "event" ? (
-                        <EventChip key={item.id} event={item} utils={utils} />
+                        <EventChip
+                          key={item.id}
+                          event={item}
+                          utils={utils}
+                          onOpen={() => onOpenEvent(item)}
+                        />
                       ) : (
-                        <TaskChip key={item.id} task={item} utils={utils} />
+                        <TaskChip
+                          key={item.id}
+                          task={item}
+                          utils={utils}
+                          onOpen={() => onOpenTask(item)}
+                        />
                       ),
                     )}
                     {hiddenCount > 0 && (
@@ -98,7 +114,7 @@ export function MonthView({
                       </span>
                     )}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -108,26 +124,46 @@ export function MonthView({
   );
 }
 
-function EventChip({ event, utils }: { event: CalendarEventItem; utils: CalendarDateUtils }) {
+function EventChip({
+  event,
+  utils,
+  onOpen,
+}: {
+  event: CalendarEventItem;
+  utils: CalendarDateUtils;
+  onOpen: () => void;
+}) {
   return (
-    <span
-      className="truncate rounded px-1 text-[10px] leading-4 text-white"
+    <button
+      type="button"
+      onClick={onOpen}
+      className="truncate rounded px-1 text-left text-[10px] leading-4 text-white"
       style={{ backgroundColor: event.color ?? "#5484ed" }}
       title={event.title}
     >
       {!event.allDay && <span className="mr-1 opacity-80">{utils.formatTime(event.start)}</span>}
       {event.title}
-    </span>
+    </button>
   );
 }
 
 // タスクは予定と判別できる必要がある（docs/spec.md §5）。塗りつぶしの予定に対して、
 // 枠線＋チェック記号の抜き表現で区別する。
-function TaskChip({ task, utils }: { task: TaskItem; utils: CalendarDateUtils }) {
+function TaskChip({
+  task,
+  utils,
+  onOpen,
+}: {
+  task: TaskItem;
+  utils: CalendarDateUtils;
+  onOpen: () => void;
+}) {
   return (
-    <span
+    <button
+      type="button"
+      onClick={onOpen}
       className={cn(
-        "flex items-center gap-1 truncate rounded border border-dashed px-1 text-[10px] leading-4",
+        "flex items-center gap-1 truncate rounded border border-dashed px-1 text-left text-[10px] leading-4",
         task.done ? "text-muted-foreground line-through" : "text-foreground",
       )}
       title={task.title}
@@ -137,6 +173,6 @@ function TaskChip({ task, utils }: { task: TaskItem; utils: CalendarDateUtils })
         <span className="opacity-70">{utils.formatTime(task.due)}</span>
       )}
       <span className="truncate">{task.title}</span>
-    </span>
+    </button>
   );
 }

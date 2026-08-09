@@ -4,7 +4,12 @@ import { listEvents } from "@/services/google-calendar/events";
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
 import { listTasksInRange } from "@/services/notion/tasks";
-import type { CalendarEventItem, CalendarLoadResult, TaskItem } from "@/types/calendar";
+import type {
+  CalendarEventItem,
+  CalendarLoadResult,
+  TaskItem,
+  WritableCalendar,
+} from "@/types/calendar";
 
 /**
  * カレンダー画面に表示する予定とタスクをまとめて取得する。
@@ -23,6 +28,8 @@ export async function loadCalendarData(
   return {
     events: events.items,
     tasks: tasks.items,
+    calendars: events.calendars,
+    notionReady: tasks.ready,
     errors: [...events.errors, ...tasks.errors],
   };
 }
@@ -30,11 +37,16 @@ export async function loadCalendarData(
 async function loadGoogleEvents(
   userId: string,
   range: { timeMin: string; timeMax: string },
-): Promise<{ items: CalendarEventItem[]; errors: CalendarLoadResult["errors"] }> {
+): Promise<{
+  items: CalendarEventItem[];
+  calendars: WritableCalendar[];
+  errors: CalendarLoadResult["errors"];
+}> {
   const accounts = await db.googleAccount.findMany({ where: { userId } });
-  if (accounts.length === 0) return { items: [], errors: [] };
+  if (accounts.length === 0) return { items: [], calendars: [], errors: [] };
 
   const items: CalendarEventItem[] = [];
+  const calendars: WritableCalendar[] = [];
   const errors: CalendarLoadResult["errors"] = [];
 
   for (const account of accounts) {
@@ -54,6 +66,16 @@ async function loadGoogleEvents(
           const entry = entryById.get(setting.calendarId);
           // Google側で削除・共有解除されたカレンダーは設定だけ残る。表示対象から外す。
           if (!entry) return [];
+
+          // 読み取り専用で共有されたカレンダーには予定を作れないため、保存先の候補から外す。
+          if (entry.accessRole === "owner" || entry.accessRole === "writer") {
+            calendars.push({
+              calendarId: setting.calendarId,
+              name: entry.summaryOverride?.trim() || entry.summary,
+              color: entry.backgroundColor ?? null,
+              isCreateDefault: setting.isCreateDefault,
+            });
+          }
 
           return listEvents(
             account,
@@ -79,15 +101,15 @@ async function loadGoogleEvents(
     }
   }
 
-  return { items, errors };
+  return { items, calendars, errors };
 }
 
 async function loadNotionTasks(
   userId: string,
   range: { timeMin: string; timeMax: string },
-): Promise<{ items: TaskItem[]; errors: CalendarLoadResult["errors"] }> {
+): Promise<{ items: TaskItem[]; ready: boolean; errors: CalendarLoadResult["errors"] }> {
   const connection = await db.notionConnection.findUnique({ where: { userId } });
-  if (!connection?.taskDataSourceId) return { items: [], errors: [] };
+  if (!connection?.taskDataSourceId) return { items: [], ready: false, errors: [] };
 
   try {
     const tasks = await listTasksInRange(createNotionClient(connection), connection, {
@@ -95,10 +117,11 @@ async function loadNotionTasks(
       from: range.timeMin.slice(0, 10),
       to: range.timeMax.slice(0, 10),
     });
-    return { items: tasks, errors: [] };
+    return { items: tasks, ready: true, errors: [] };
   } catch {
     return {
       items: [],
+      ready: true,
       errors: [{ source: "notion", reason: "Notionのタスクを取得できませんでした。" }],
     };
   }

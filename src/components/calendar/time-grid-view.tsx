@@ -15,11 +15,18 @@ export function TimeGridView({
   events,
   tasks,
   utils,
+  onOpenEvent,
+  onOpenTask,
+  onSelectSlot,
 }: {
   days: string[];
   events: CalendarEventItem[];
   tasks: TaskItem[];
   utils: CalendarDateUtils;
+  onOpenEvent: (event: CalendarEventItem) => void;
+  onOpenTask: (task: TaskItem) => void;
+  /** 空き時間の選択。minutes は 0:00 からの分数（30分単位に丸める）。 */
+  onSelectSlot: (dateKey: string, minutes: number) => void;
 }) {
   const todayKey = utils.todayKey();
 
@@ -42,7 +49,14 @@ export function TimeGridView({
         ))}
       </div>
 
-      <AllDayArea days={days} events={events} tasks={tasks} utils={utils} />
+      <AllDayArea
+        days={days}
+        events={events}
+        tasks={tasks}
+        utils={utils}
+        onOpenEvent={onOpenEvent}
+        onOpenTask={onOpenTask}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex" style={{ height: HOUR_HEIGHT * 24 }}>
@@ -63,6 +77,9 @@ export function TimeGridView({
               key={dateKey}
               dateKey={dateKey}
               utils={utils}
+              onOpenEvent={onOpenEvent}
+              onOpenTask={onOpenTask}
+              onSelectSlot={onSelectSlot}
               events={events.filter(
                 (event) => !event.allDay && utils.eventCoversDay(event, dateKey),
               )}
@@ -80,20 +97,43 @@ function DayColumn({
   events,
   tasks,
   utils,
+  onOpenEvent,
+  onOpenTask,
+  onSelectSlot,
 }: {
   dateKey: string;
   events: CalendarEventItem[];
   tasks: TaskItem[];
   utils: CalendarDateUtils;
+  onOpenEvent: (event: CalendarEventItem) => void;
+  onOpenTask: (task: TaskItem) => void;
+  onSelectSlot: (dateKey: string, minutes: number) => void;
 }) {
   const positioned = utils.layoutOverlaps(events, dateKey);
 
+  const handleBackgroundClick = (clientY: number, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    const ratio = Math.min(Math.max((clientY - rect.top) / rect.height, 0), 1);
+    // 30分単位に丸める。1分刻みで開くと、その後の時刻調整がかえって手間になるため。
+    const minutes = Math.floor((ratio * MINUTES_PER_DAY) / 30) * 30;
+    onSelectSlot(dateKey, Math.min(minutes, MINUTES_PER_DAY - 30));
+  };
+
   return (
     <div className="relative flex-1 border-l">
+      {/* 空き時間の選択。予定・タスクはこの上に重ねて描画するので、
+          クリックが背面へ抜けることはない（docs/spec.md §15）。 */}
+      <button
+        type="button"
+        aria-label={`${dateKey} の空き時間に追加`}
+        className="absolute inset-0 h-full w-full cursor-default"
+        onClick={(e) => handleBackgroundClick(e.clientY, e.currentTarget)}
+      />
+
       {Array.from({ length: 24 }, (_, hour) => (
         <div
           key={hour}
-          className="absolute inset-x-0 border-t border-border/60"
+          className="pointer-events-none absolute inset-x-0 border-t border-border/60"
           style={{ top: hour * HOUR_HEIGHT }}
         />
       ))}
@@ -101,9 +141,11 @@ function DayColumn({
       {positioned.map(({ event, column, columns }) => {
         const { top, height } = utils.eventGeometry(event, dateKey);
         return (
-          <div
+          <button
             key={event.id}
-            className="absolute overflow-hidden rounded px-1 text-[10px] leading-4 text-white"
+            type="button"
+            onClick={() => onOpenEvent(event)}
+            className="absolute overflow-hidden rounded px-1 text-left text-[10px] leading-4 text-white"
             style={{
               top,
               height,
@@ -115,14 +157,16 @@ function DayColumn({
           >
             <div className="truncate font-medium">{event.title}</div>
             <div className="truncate opacity-80">{utils.formatTime(event.start)}</div>
-          </div>
+          </button>
         );
       })}
 
       {/* 期限タスクは予定のような時間幅を持たせず、期限時刻の位置に置く（docs/spec.md §6）。 */}
       {tasks.map((task) => (
-        <div
+        <button
           key={task.id}
+          type="button"
+          onClick={() => onOpenTask(task)}
           className="absolute inset-x-0 flex items-center gap-1 px-1"
           style={{ top: (utils.minutesFromMidnight(task.due!) / MINUTES_PER_DAY) * GRID_HEIGHT }}
           title={`${utils.formatTime(task.due!)} ${task.title}`}
@@ -139,7 +183,7 @@ function DayColumn({
             </span>
             {task.title}
           </span>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -150,11 +194,15 @@ function AllDayArea({
   events,
   tasks,
   utils,
+  onOpenEvent,
+  onOpenTask,
 }: {
   days: string[];
   events: CalendarEventItem[];
   tasks: TaskItem[];
   utils: CalendarDateUtils;
+  onOpenEvent: (event: CalendarEventItem) => void;
+  onOpenTask: (task: TaskItem) => void;
 }) {
   return (
     <div className="flex border-b bg-muted/20">
@@ -172,20 +220,24 @@ function AllDayArea({
         return (
           <div key={dateKey} className="flex min-h-8 flex-1 flex-col gap-0.5 border-l p-0.5">
             {dayEvents.map((event) => (
-              <span
+              <button
                 key={event.id}
-                className="truncate rounded px-1 text-[10px] leading-4 text-white"
+                type="button"
+                onClick={() => onOpenEvent(event)}
+                className="truncate rounded px-1 text-left text-[10px] leading-4 text-white"
                 style={{ backgroundColor: event.color ?? "#5484ed" }}
                 title={event.title}
               >
                 {event.title}
-              </span>
+              </button>
             ))}
             {dayTasks.map((task) => (
-              <span
+              <button
                 key={task.id}
+                type="button"
+                onClick={() => onOpenTask(task)}
                 className={cn(
-                  "truncate rounded border border-dashed px-1 text-[10px] leading-4",
+                  "truncate rounded border border-dashed px-1 text-left text-[10px] leading-4",
                   task.done && "text-muted-foreground line-through",
                 )}
                 title={task.title}
@@ -194,7 +246,7 @@ function AllDayArea({
                   {task.done ? "☑" : "☐"}
                 </span>
                 {task.title}
-              </span>
+              </button>
             ))}
           </div>
         );

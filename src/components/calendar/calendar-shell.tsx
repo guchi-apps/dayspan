@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useMemo, useTransition } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw, Settings } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,10 +13,13 @@ import {
   type CalendarView,
 } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
-import type { CalendarLoadResult } from "@/types/calendar";
+import type { CalendarEventItem, CalendarLoadResult, TaskItem } from "@/types/calendar";
 
+import { dateKeyPlusMinutes } from "./datetime-fields";
+import { EventDialog, toEventDraft, type EventDraft } from "./event-dialog";
 import { createCalendarDateUtils } from "./item-layout";
 import { MonthView } from "./month-view";
+import { TaskDialog, toTaskDraft, type TaskDraft } from "./task-dialog";
 import { TimeGridView } from "./time-grid-view";
 
 const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[] = [
@@ -46,6 +49,35 @@ export function CalendarShell({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
+
+  const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
+  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+
+  const closeDialogs = () => {
+    setEventDraft(null);
+    setTaskDraft(null);
+  };
+
+  const handleSaved = () => {
+    closeDialogs();
+    startTransition(() => router.refresh());
+  };
+
+  const openEvent = (event: CalendarEventItem) => setEventDraft(toEventDraft(event, timeZone));
+  const openTask = (task: TaskItem) => setTaskDraft(toTaskDraft(task, timeZone));
+
+  /** 新規作成の初期値。時間グリッドの空き時間を選んだ場合はその日時から1時間で開く。 */
+  const newEventDraft = (dateKey: string, minutes: number | null): EventDraft => {
+    if (minutes === null) {
+      return { allDay: true, start: dateKey, end: dateKey };
+    }
+    return {
+      allDay: false,
+      start: dateKeyPlusMinutes(dateKey, minutes),
+      end: dateKeyPlusMinutes(dateKey, Math.min(minutes + 60, 23 * 60 + 30)),
+    };
+  };
 
   const navigate = (nextView: CalendarView, nextAnchorKey: string) => {
     startTransition(() => {
@@ -132,10 +164,96 @@ export function CalendarShell({
           weekStartsOn={weekStartsOn}
           utils={utils}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
+          onOpenEvent={openEvent}
+          onOpenTask={openTask}
         />
       ) : (
-        <TimeGridView days={days} events={data.events} tasks={data.tasks} utils={utils} />
+        <TimeGridView
+          days={days}
+          events={data.events}
+          tasks={data.tasks}
+          utils={utils}
+          onOpenEvent={openEvent}
+          onOpenTask={openTask}
+          onSelectSlot={(dateKey, minutes) => setEventDraft(newEventDraft(dateKey, minutes))}
+        />
       )}
+
+      <AddButton
+        open={addMenuOpen}
+        canAddEvent={data.calendars.length > 0}
+        canAddTask={data.notionReady}
+        onToggle={() => setAddMenuOpen((prev) => !prev)}
+        onAddEvent={() => {
+          setAddMenuOpen(false);
+          setEventDraft(newEventDraft(days[0], 9 * 60));
+        }}
+        onAddTask={() => {
+          setAddMenuOpen(false);
+          setTaskDraft({ dueMode: "datetime", due: dateKeyPlusMinutes(days[0], 18 * 60) });
+        }}
+      />
+
+      {eventDraft && (
+        <EventDialog
+          draft={eventDraft}
+          calendars={data.calendars}
+          timeZone={timeZone}
+          onClose={closeDialogs}
+          onSaved={handleSaved}
+        />
+      )}
+
+      {taskDraft && (
+        <TaskDialog
+          draft={taskDraft}
+          timeZone={timeZone}
+          onClose={closeDialogs}
+          onSaved={handleSaved}
+        />
+      )}
+    </div>
+  );
+}
+
+/** 画面右下の「＋」。押すと予定とタスクのどちらを追加するか選ぶ（docs/spec.md §15）。 */
+function AddButton({
+  open,
+  canAddEvent,
+  canAddTask,
+  onToggle,
+  onAddEvent,
+  onAddTask,
+}: {
+  open: boolean;
+  canAddEvent: boolean;
+  canAddTask: boolean;
+  onToggle: () => void;
+  onAddEvent: () => void;
+  onAddTask: () => void;
+}) {
+  if (!canAddEvent && !canAddTask) return null;
+
+  return (
+    <div className="fixed right-4 bottom-4 flex flex-col items-end gap-2">
+      {open && (
+        <div className="flex flex-col gap-2">
+          {canAddEvent && (
+            <Button size="sm" variant="secondary" className="shadow" onClick={onAddEvent}>
+              予定を追加
+            </Button>
+          )}
+          {canAddTask && (
+            <Button size="sm" variant="secondary" className="shadow" onClick={onAddTask}>
+              タスクを追加
+            </Button>
+          )}
+        </div>
+      )}
+
+      <Button size="icon" className="size-12 rounded-full shadow-lg" onClick={onToggle}>
+        <Plus className={cn("size-6 transition-transform", open && "rotate-45")} />
+      </Button>
     </div>
   );
 }

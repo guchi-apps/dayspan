@@ -45,7 +45,11 @@ export async function googleCalendarFetch<T>(
     throw new Error(`Google Calendar API ${path} returned ${response.status}: ${detail}`);
   }
 
-  return (await response.json()) as T;
+  // 削除は 204 No Content を返す。空の本文をJSONとして読むと例外になるため分岐する。
+  if (response.status === 204) return undefined as T;
+
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 /** ユーザーが参照できるカレンダーを全ページ取得する。 */
