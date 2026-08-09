@@ -15,11 +15,24 @@ import { useEffect, useRef, useState } from "react";
 /** 横に振ったと判断する最小移動量。これ未満は縦スクロールやタップの揺れと区別できない。 */
 const AXIS_LOCK_PX = 12;
 
-/** 次の日へ送るのに必要な移動量（日付列1つぶんの幅に対する割合）。 */
-const COMMIT_RATIO = 0.35;
+/**
+ * 次の日へ送るのに必要な移動量（日付列1つぶんの幅に対する割合）。
+ *
+ * 半分近くまで動かさないと送れないと、指を軽く振っただけでは前の位置へ戻ってしまう。
+ * 送る向きが読み取れる程度に動かしたら送る。
+ */
+const COMMIT_RATIO = 0.2;
 
 /** 大きく動かさなくても送れるようにするための速度（px/ms）。素早く払う操作を拾う。 */
-const COMMIT_VELOCITY = 0.4;
+const COMMIT_VELOCITY = 0.2;
+
+/**
+ * 指を離す速さを測る時間の幅（ms）。
+ *
+ * 触れてからの平均で測ると、ゆっくり動かしてから最後に払った操作の速さが薄まり、
+ * 払っても送られない。直近だけを見て、離した瞬間の速さで判断する。
+ */
+const VELOCITY_WINDOW_MS = 100;
 
 /** 指を離してから隣の期間へ収まるまでの時間。M3の標準的な長さに合わせる。 */
 export const SWIPE_SNAP_MS = 220;
@@ -81,8 +94,13 @@ export function swipeDeltaDays({
 type Origin = {
   x: number;
   y: number;
-  time: number;
   width: number;
+};
+
+/** 離す瞬間の速さを求めるための、指の位置の控え。 */
+type Sample = {
+  x: number;
+  time: number;
 };
 
 export function useDaySwipe({
@@ -104,6 +122,7 @@ export function useDaySwipe({
   const trackRef = useRef<HTMLDivElement | null>(null);
   const originRef = useRef<Origin | null>(null);
   const axisRef = useRef<"undecided" | "horizontal">("undecided");
+  const samplesRef = useRef<Sample[]>([]);
   const snapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [offset, setOffset] = useState(0);
@@ -128,6 +147,23 @@ export function useDaySwipe({
   const cancelGesture = () => {
     originRef.current = null;
     axisRef.current = "undecided";
+    samplesRef.current = [];
+  };
+
+  /** 直近の指の位置を控える。窓から外れた点は、速さの基準になる1つだけ残して捨てる。 */
+  const recordSample = (x: number, time: number) => {
+    const samples = samplesRef.current;
+    samples.push({ x, time });
+    while (samples.length > 2 && time - samples[1].time >= VELOCITY_WINDOW_MS) samples.shift();
+  };
+
+  /** 直近の横向きの速さ（px/ms、左が負）。 */
+  const recentVelocity = (x: number, time: number) => {
+    const base = samplesRef.current[0];
+    if (!base) return 0;
+
+    const elapsed = time - base.time;
+    return elapsed > 0 ? (x - base.x) / elapsed : 0;
   };
 
   const onPointerDown = (event: React.PointerEvent) => {
@@ -139,10 +175,10 @@ export function useDaySwipe({
     originRef.current = {
       x: event.clientX,
       y: event.clientY,
-      time: event.timeStamp,
       width: Math.max(trackRef.current?.clientWidth ?? 0, 1),
     };
     axisRef.current = "undecided";
+    samplesRef.current = [{ x: event.clientX, time: event.timeStamp }];
   };
 
   const onPointerMove = (event: React.PointerEvent) => {
@@ -155,6 +191,8 @@ export function useDaySwipe({
       setOffset(0);
       return;
     }
+
+    recordSample(event.clientX, event.timeStamp);
 
     const dx = event.clientX - origin.x;
     const dy = event.clientY - origin.y;
@@ -202,16 +240,15 @@ export function useDaySwipe({
   const onPointerUp = (event: React.PointerEvent) => {
     const origin = originRef.current;
     const wasHorizontal = axisRef.current === "horizontal";
+    const velocity = recentVelocity(event.clientX, event.timeStamp);
     cancelGesture();
 
     if (!origin || !wasHorizontal) return;
 
-    const dx = event.clientX - origin.x;
-
     settle(
       swipeDeltaDays({
-        dx,
-        velocity: dx / Math.max(event.timeStamp - origin.time, 1),
+        dx: event.clientX - origin.x,
+        velocity,
         trackWidth: origin.width,
         step,
       }),
