@@ -88,7 +88,12 @@ model NotionConnection {
   accessToken   String  @db.Text // 暗号化して保存
   workspaceName String?
 
-  taskDatabaseId String? // ユーザーが選択したタスクDB
+  // Notion API 2025-09-03以降、プロパティとクエリの対象はデータベースではなくデータソース。
+  // 実際の読み書きには taskDataSourceId を使い、taskDatabaseId は画面表示・リンク用に持つ。
+  taskDataSourceId String?
+  taskDatabaseId   String?
+  taskTitle        String?
+
   // アプリ側の項目名 → Notionプロパティ名の対応。プロパティ名はユーザーが自由に付けられるため
   // 固定名を前提にせず、接続時の検証結果をここへ保存する（docs/spec.md §9）。
   propertyMap Json?
