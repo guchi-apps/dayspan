@@ -69,7 +69,6 @@ export function EventDialog({
   const [end, setEnd] = useState(draft.end);
   const [location, setLocation] = useState(editing?.location ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
-  const [attendees, setAttendees] = useState((editing?.attendees ?? []).join(", "));
   const [recurrenceRule, setRecurrenceRule] = useState<string>("none");
   const [calendarId, setCalendarId] = useState(
     editing?.calendarId ??
@@ -151,10 +150,6 @@ export function EventDialog({
         end: allDay ? end : localInputToIso(end, timeZone),
         location: location.trim() || null,
         description: description.trim() || null,
-        attendees: attendees
-          .split(/[,\s]+/)
-          .map((value) => value.trim())
-          .filter(Boolean),
         ...(editing ? {} : { recurrenceRule: recurrence }),
       };
 
@@ -233,7 +228,7 @@ export function EventDialog({
             終日
           </label>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
             <Input
               id="event-start"
               label="開始"
@@ -255,7 +250,7 @@ export function EventDialog({
               <div className="flex flex-col gap-1.5">
                 <Label>保存先カレンダー</Label>
                 <Select value={calendarId} onValueChange={setCalendarId}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="カレンダーを選択" />
                   </SelectTrigger>
                   <SelectContent>
@@ -271,7 +266,7 @@ export function EventDialog({
               <div className="flex flex-col gap-1.5">
                 <Label>繰り返し</Label>
                 <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="繰り返さない" />
                   </SelectTrigger>
                   <SelectContent>
@@ -294,14 +289,6 @@ export function EventDialog({
             label="場所"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-          />
-
-          <Input
-            id="event-attendees"
-            label="参加者"
-            placeholder="メールアドレスをカンマ区切りで"
-            value={attendees}
-            onChange={(e) => setAttendees(e.target.value)}
           />
 
           <div className="flex flex-col gap-1.5">

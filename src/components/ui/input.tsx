@@ -75,16 +75,16 @@ function Input({
   if (!label) return inputEl
 
   return (
-    <div className="relative">
+    <div className="relative w-full min-w-0">
       {inputEl}
       <label
         htmlFor={inputId}
         className={cn(
-          "pointer-events-none absolute left-4 origin-left text-muted-foreground transition-all select-none",
+          "pointer-events-none absolute origin-left text-muted-foreground transition-all select-none",
           "peer-aria-invalid:text-destructive peer-disabled:opacity-38",
           floated
-            ? "-top-2.5 text-xs peer-focus-visible:text-primary"
-            : "top-1/2 -translate-y-1/2 text-base"
+            ? "-top-2.5 left-3 max-w-[calc(100%-1rem)] truncate bg-(--field-notch) px-1 text-xs peer-focus-visible:text-primary"
+            : "top-1/2 left-4 -translate-y-1/2 text-base"
         )}
       >
         {label}
