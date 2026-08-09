@@ -25,22 +25,21 @@ export function SettingsShell({
   children: ReactNode;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-      <div className="flex items-center gap-2">
+    <div className="flex min-h-dvh flex-col">
+      <header className="sticky top-0 z-10 flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
         <Button variant="ghost" size="sm" asChild>
           <Link href={backHref}>
             <ArrowLeft className="size-4" />
             {backLabel}
           </Link>
         </Button>
-      </div>
+        <h1 className="type-title-large min-w-0 flex-1 truncate px-1">{title}</h1>
+      </header>
 
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{title}</h1>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
+        {description && <p className="type-body-medium text-on-surface-variant">{description}</p>}
+        {children}
       </div>
-
-      {children}
     </div>
   );
 }

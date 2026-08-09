@@ -53,12 +53,16 @@ export function DisplaySection({ weekStartsOn }: { weekStartsOn: number }) {
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
+            {error}
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
             <Label htmlFor="week-starts-on">週の開始日</Label>
-            <p className="text-xs text-muted-foreground">
+            <p className="type-body-small text-on-surface-variant">
               月表示・週表示で、いちばん左に置く曜日です。
             </p>
           </div>

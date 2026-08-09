@@ -7,6 +7,7 @@ import { RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ConnectionStatusBadge } from "@/components/settings/connection-status-badge";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import type { CalendarSettingsResult, CalendarSummary } from "@/services/google-calendar/settings";
@@ -57,7 +58,8 @@ export function GoogleCalendarSection({
 
         {result.status === "not_connected" && (
           <div className="flex flex-col gap-3">
-            <p className="text-sm text-muted-foreground">まだ接続されていません。</p>
+            <ConnectionStatusBadge tone="not_connected">未接続</ConnectionStatusBadge>
+            <p className="type-body-medium text-on-surface-variant">まだ接続されていません。</p>
             <Button asChild className="w-fit">
               <a href="/api/google/connect">Google Calendarを接続する</a>
             </Button>
@@ -66,7 +68,8 @@ export function GoogleCalendarSection({
 
         {result.status === "reauth_required" && (
           <div className="flex flex-col gap-3">
-            <p className="text-sm text-destructive">
+            <ConnectionStatusBadge tone="attention">要再接続</ConnectionStatusBadge>
+            <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
               {result.accountEmail} の認可が失効しました。接続をやり直してください。
             </p>
             <Button asChild className="w-fit">
@@ -80,7 +83,10 @@ export function GoogleCalendarSection({
             {result.accounts.map((account) => (
               <div key={account.id} className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{account.email}</span>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="type-body-large truncate font-medium">{account.email}</span>
+                    <ConnectionStatusBadge tone="connected">接続済み</ConnectionStatusBadge>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -183,7 +189,9 @@ function ConnectResultMessage({ result }: { result: string }) {
   return (
     <p
       className={
-        message.tone === "ok" ? "text-sm text-muted-foreground" : "text-sm text-destructive"
+        message.tone === "ok"
+          ? "type-body-medium text-on-surface-variant"
+          : "type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container"
       }
     >
       {message.text}
