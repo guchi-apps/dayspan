@@ -262,8 +262,20 @@ export function CalendarShell({
     if (Math.abs(monthDistance(monthCenter, month)) >= 2) setMonthCenter(month);
   };
 
+  /**
+   * 時間グリッドに並べる日。
+   *
+   * サーバーが渡してきた期間ではなく、押した直後に更新される nav を起点にする。
+   * 前へ・次へやスワイプは、取得の完了を待たずにその場で隣の期間へ切り替わってほしい。
+   * 表示形式そのものを変えている最中は、日数が変わるためサーバーの期間に従う。
+   */
+  const gridDays = useMemo(() => {
+    if (view === "month" || nav.view !== view) return days;
+    return getVisibleDays(view, parseDateKey(nav.anchorKey), weekStartsOn).days;
+  }, [view, nav.view, nav.anchorKey, days, weekStartsOn]);
+
   // 予定を追加するときの既定の日。月表示は広い範囲を並べているため、先頭の日ではなく今日を使う。
-  const defaultDayKey = view === "month" ? utils.todayKey() : days[0];
+  const defaultDayKey = view === "month" ? utils.todayKey() : gridDays[0];
 
   // 表示形式を切り替えたときの移動先。月表示はスクロールで移動するため anchorKey が
   // 更新されない（URLだけが replaceState で追従する）。見えている月を起点にする。
@@ -359,7 +371,7 @@ export function CalendarShell({
         <CalendarBody
           dataPromise={dataPromise}
           view={view}
-          days={days}
+          days={gridDays}
           weeks={view === "month" ? monthWeeks : weeks}
           weekStartsOn={weekStartsOn}
           utils={utils}
@@ -373,6 +385,7 @@ export function CalendarShell({
           eventDraft={eventDraft}
           taskDraft={taskDraft}
           onVisibleMonthChange={handleVisibleMonthChange}
+          onSwipe={move}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
           onOpenEvent={openEvent}
           onOpenTask={openTask}
@@ -426,6 +439,7 @@ function CalendarBody({
   eventDraft,
   taskDraft,
   onVisibleMonthChange,
+  onSwipe,
   onSelectDay,
   onOpenEvent,
   onOpenTask,
@@ -455,6 +469,7 @@ function CalendarBody({
   eventDraft: EventDraft | null;
   taskDraft: TaskDraft | null;
   onVisibleMonthChange: (monthKey: string) => void;
+  onSwipe: (direction: 1 | -1) => void;
   onSelectDay: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
@@ -534,6 +549,7 @@ function CalendarBody({
           onSelectSlot={onSelectSlot}
           onDragCommit={onDragCommit}
           onAllDayDragCommit={onAllDayDragCommit}
+          onSwipe={onSwipe}
         />
       )}
 

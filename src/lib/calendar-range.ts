@@ -82,6 +82,24 @@ export function shiftAnchor(view: CalendarView, anchor: Date, direction: 1 | -1)
   return addDays(anchor, step * direction);
 }
 
+/**
+ * 日表示（1日・3日・7日）の取得期間。表示中の期間だけでなく、前後1期間ぶんも含める。
+ *
+ * 左右スワイプは指の動きに追従して隣の期間を見せるため、まだ表示していない日の予定が
+ * 手元に無いと、動かした先が空欄のまま出てしまう。外部APIへの往復は1回のままなので、
+ * 期間を広げる代わりに滑らかさを得る。
+ */
+export function getSwipeFetchRange(
+  view: CalendarView,
+  anchor: Date,
+  weekStartsOn: number,
+): { timeMin: string; timeMax: string } {
+  const previous = getVisibleDays(view, shiftAnchor(view, anchor, -1), weekStartsOn).days;
+  const next = getVisibleDays(view, shiftAnchor(view, anchor, 1), weekStartsOn).days;
+
+  return getFetchRange([previous[0], next[next.length - 1]]);
+}
+
 // --- 月表示で保持する範囲 ---
 //
 // 月表示は前後の月まで地続きに並べる。移動のたびに全部を取り直すと、押すたびに外部APIへの
