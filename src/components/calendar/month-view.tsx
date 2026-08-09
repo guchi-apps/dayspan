@@ -10,7 +10,7 @@ import type { CalendarDateUtils } from "./item-layout";
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
 // 1日のマスに詰め込みすぎると月全体が読めなくなるため、上限を超えた分は件数で畳む。
-const MAX_ITEMS_PER_DAY = 3;
+const MAX_ITEMS_PER_DAY = 4;
 
 export function MonthView({
   weeks,
@@ -77,7 +77,7 @@ export function MonthView({
                 <div
                   key={dateKey}
                   className={cn(
-                    "flex min-w-0 flex-col gap-1 border-r border-rule p-1 last:border-r-0",
+                    "flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-rule p-0.5 last:border-r-0 sm:gap-1 sm:p-1",
                     !inMonth && "bg-muted/25",
                   )}
                 >
@@ -85,7 +85,7 @@ export function MonthView({
                     type="button"
                     onClick={() => onSelectDay(dateKey)}
                     className={cn(
-                      "grid size-6 shrink-0 place-items-center self-start rounded-full text-xs",
+                      "grid size-5 shrink-0 place-items-center self-start rounded-full text-[11px] sm:size-6 sm:text-xs",
                       isToday
                         ? "bg-foreground font-semibold text-background"
                         : inMonth
@@ -96,7 +96,7 @@ export function MonthView({
                     {Number(dateKey.slice(8, 10))}
                   </button>
 
-                  <div className="flex min-w-0 flex-col gap-0.5">
+                  <div className="flex min-w-0 flex-col gap-px sm:gap-0.5">
                     {visible.map((item) =>
                       item.kind === "event" ? (
                         <EventChip
@@ -118,9 +118,10 @@ export function MonthView({
                       <button
                         type="button"
                         onClick={() => onSelectDay(dateKey)}
-                        className="px-1 text-left text-[10px] text-muted-foreground hover:text-foreground"
+                        className="truncate px-0.5 text-left text-[10px] whitespace-nowrap text-muted-foreground hover:text-foreground sm:px-1"
                       >
-                        ほか {hiddenCount}件
+                        <span className="sm:hidden">+{hiddenCount}</span>
+                        <span className="hidden sm:inline">ほか {hiddenCount}件</span>
                       </button>
                     )}
                   </div>
@@ -150,7 +151,7 @@ function EventChip({
     <button
       type="button"
       onClick={onOpen}
-      className="flex items-center gap-1 truncate rounded-sm border px-1 text-left text-[11px] leading-4 font-medium"
+      className="flex h-1.5 w-full min-w-0 items-center gap-1 overflow-hidden rounded-full border text-left text-[11px] leading-4 font-medium sm:h-auto sm:rounded-sm sm:px-1"
       style={{
         backgroundColor: colors.background,
         color: colors.foreground,
@@ -158,10 +159,13 @@ function EventChip({
       }}
       title={event.title}
     >
+      {/* 列幅が狭い画面では文字が2文字で切れて読めないため、帯の長さと色だけで示す。 */}
       {!event.allDay && (
-        <span className="shrink-0 opacity-75">{utils.formatTime(event.start)}</span>
+        <span className="hidden shrink-0 opacity-75 sm:inline">
+          {utils.formatTime(event.start)}
+        </span>
       )}
-      <span className="truncate">{event.title}</span>
+      <span className="hidden truncate sm:inline">{event.title}</span>
     </button>
   );
 }
@@ -181,19 +185,22 @@ function TaskChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex items-center gap-1 truncate rounded-sm border border-rule-strong bg-background px-1 text-left text-[11px] leading-4 font-medium",
-        task.done && "text-muted-foreground line-through",
+        "flex h-1.5 w-full min-w-0 items-center gap-1 overflow-hidden rounded-full border border-foreground/45 bg-background text-left text-[11px] leading-4 font-medium sm:h-auto sm:rounded-sm sm:border-rule-strong sm:px-1",
+        task.done && "border-muted-foreground/40 text-muted-foreground line-through",
       )}
       title={task.title}
     >
       <span
         aria-hidden
-        className={cn("h-2.5 w-0.5 shrink-0", task.done ? "bg-muted-foreground" : "bg-foreground")}
+        className={cn(
+          "h-full w-1 shrink-0 sm:h-2.5 sm:w-0.5",
+          task.done ? "bg-muted-foreground" : "bg-foreground",
+        )}
       />
       {task.hasTime && task.due && (
-        <span className="shrink-0 opacity-70">{utils.formatTime(task.due)}</span>
+        <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(task.due)}</span>
       )}
-      <span className="truncate">{task.title}</span>
+      <span className="hidden truncate sm:inline">{task.title}</span>
     </button>
   );
 }
