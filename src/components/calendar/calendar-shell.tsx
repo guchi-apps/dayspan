@@ -36,7 +36,7 @@ import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[] = [
   { view: "month", label: "月" },
   { view: "day1", label: "1日" },
-  { view: "day3", label: "3日", desktopOnly: true },
+  { view: "day3", label: "3日" },
   { view: "day7", label: "7日", desktopOnly: true },
 ];
 
