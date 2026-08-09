@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 
 import { ClearOfflineCache } from "@/components/offline/clear-offline-cache";
@@ -46,10 +47,9 @@ export default async function LoginPage({
 
           {/* スマートフォンでも押しやすい高さにする。既定のボタン高さ(32px)はタップ対象として小さい。 */}
           <Button asChild className="h-11 w-full text-base">
-            {/* OAuthは外部サイトへリダイレクトするため、オフライン再送対象のNext.jsクライアント遷移を使わない。 */}
-            <a href={`/auth/signin?next=${encodeURIComponent(next)}`}>
+            <Link href={`/auth/signin?next=${encodeURIComponent(next)}`} prefetch={false}>
               Googleでログイン
-            </a>
+            </Link>
           </Button>
         </CardContent>
       </Card>
