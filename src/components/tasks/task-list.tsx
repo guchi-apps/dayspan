@@ -70,7 +70,7 @@ export function TaskList({
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex items-center gap-2 border-b px-3 py-2">
+      <header className="flex items-center gap-2 border-b border-rule px-3 py-2">
         <div className="flex items-center gap-1 font-semibold">
           <ListChecks className="size-5 text-primary" />
           <span className="hidden sm:inline">タスク</span>
@@ -100,7 +100,7 @@ export function TaskList({
       </header>
 
       {(loadError || error) && (
-        <div className="border-b bg-destructive/10 px-3 py-2 text-xs">{loadError ?? error}</div>
+        <div className="border-b border-rule bg-destructive/10 px-3 py-2 text-xs">{loadError ?? error}</div>
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-20">
@@ -111,14 +111,14 @@ export function TaskList({
 
           return (
             <section key={key}>
-              <h2 className="sticky top-0 z-10 bg-background/95 px-3 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur">
+              <h2 className="sticky top-0 z-10 flex items-baseline gap-2 border-b border-rule bg-background/95 px-3 py-1.5 text-[11px] tracking-widest text-muted-foreground backdrop-blur">
                 {TASK_BUCKET_LABELS[key]}
-                <span className="ml-1 opacity-70">{items.length}</span>
+                <span className="text-[10px] opacity-70">{items.length}</span>
               </h2>
 
               <ul>
                 {items.map((task) => (
-                  <li key={task.id} className="flex items-start gap-2 border-b px-3 py-2">
+                  <li key={task.id} className="flex items-start gap-2 border-b border-rule px-3 py-2.5">
                     <Checkbox
                       className="mt-0.5"
                       checked={task.done}
@@ -134,8 +134,8 @@ export function TaskList({
                     >
                       <div
                         className={cn(
-                          "truncate text-sm",
-                          task.done && "text-muted-foreground line-through",
+                          "truncate text-sm font-medium",
+                          task.done && "font-normal text-muted-foreground line-through",
                         )}
                       >
                         {task.title}

@@ -1,6 +1,9 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
+
 import { cn } from "@/lib/utils";
+import { eventColors } from "./calendar-color";
 import type { CalendarEventItem, TaskItem } from "@/types/calendar";
 
 import {
@@ -63,15 +66,24 @@ export function TimeGridView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex border-b">
-        <div className="w-12 shrink-0" />
+      <div className="flex border-b border-rule">
+        <div className="w-14 shrink-0" />
         {days.map((dateKey) => (
-          <div key={dateKey} className="flex-1 py-1 text-center">
-            <div className="text-xs text-muted-foreground">{weekdayLabel(dateKey)}</div>
+          <div key={dateKey} className="flex-1 py-1.5 text-center">
             <div
               className={cn(
-                "mx-auto w-7 rounded-full text-sm",
-                dateKey === todayKey && "bg-primary text-primary-foreground",
+                "text-[10px] tracking-widest",
+                weekdayTone(dateKey) ?? "text-muted-foreground",
+              )}
+            >
+              {weekdayLabel(dateKey)}
+            </div>
+            <div
+              className={cn(
+                "mx-auto mt-0.5 grid size-7 place-items-center rounded-full text-sm",
+                dateKey === todayKey
+                  ? "bg-foreground font-semibold text-background"
+                  : "font-medium",
               )}
             >
               {Number(dateKey.slice(8, 10))}
@@ -98,24 +110,30 @@ export function TimeGridView({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div
           ref={gridRef}
-          data-gutter-width="48"
-          className="flex"
+          data-gutter-width="56"
+          className="relative flex"
           style={{ height: HOUR_HEIGHT * 24 }}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
         >
-          <div className="relative w-12 shrink-0">
+          <div className="relative w-14 shrink-0">
             {Array.from({ length: 24 }, (_, hour) => (
               <div
                 key={hour}
-                className="absolute right-1 -translate-y-1/2 text-[10px] text-muted-foreground"
+                className={cn(
+                  "absolute right-2 -translate-y-1/2 text-[10px]",
+                  // 6時間ごと（0/6/12/18時）を強めて、一日の四分割が目で追えるようにする。
+                  hour % 6 === 0 ? "font-medium text-foreground" : "text-muted-foreground",
+                )}
                 style={{ top: hour * HOUR_HEIGHT }}
               >
                 {hour > 0 && `${String(hour).padStart(2, "0")}:00`}
               </div>
             ))}
           </div>
+
+          <NowLine days={days} utils={utils} />
 
           {days.map((dateKey, dayIndex) => (
             <DayColumn
@@ -189,7 +207,7 @@ function DayColumn({
   };
 
   return (
-    <div className="relative flex-1 border-l">
+    <div className="relative flex-1 border-l border-rule">
       {/* 空き時間の選択。予定・タスクはこの上に重ねて描画するので、
           クリックが背面へ抜けることはない（docs/spec.md §15）。 */}
       <button
@@ -199,13 +217,21 @@ function DayColumn({
         onClick={(e) => handleBackgroundClick(e.clientY, e.currentTarget)}
       />
 
-      {Array.from({ length: 24 }, (_, hour) => (
-        <div
-          key={hour}
-          className="pointer-events-none absolute inset-x-0 border-t border-border/60"
-          style={{ top: hour * HOUR_HEIGHT }}
-        />
-      ))}
+      {Array.from({ length: 48 }, (_, index) => {
+        const isHour = index % 2 === 0;
+        const isMajor = index % 12 === 0;
+
+        return (
+          <div
+            key={index}
+            className={cn(
+              "pointer-events-none absolute inset-x-0 border-t",
+              isMajor ? "border-rule-strong" : isHour ? "border-rule" : "border-rule/50",
+            )}
+            style={{ top: (index * HOUR_HEIGHT) / 2 }}
+          />
+        );
+      })}
 
       {positioned.map(({ event, column, columns }) => {
         if (isDraggedAway(event.id)) return null;
@@ -227,6 +253,8 @@ function DayColumn({
         const draggable =
           utils.itemDateKey(event.start) === utils.itemDateKey(event.end) ||
           utils.itemDateKey(event.start) === dateKey;
+
+        const colors = eventColors(event.color);
 
         const geometry = {
           dayIndex,
@@ -259,18 +287,25 @@ function DayColumn({
                 onOpenEvent(event);
               }}
               className={cn(
-                "size-full overflow-hidden rounded px-1 text-left text-[10px] leading-4 text-white",
-                eventPreview && "opacity-80 ring-2 ring-foreground/40",
+                "size-full overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[11px] leading-tight",
+                eventPreview && "ring-2 ring-foreground/50",
               )}
-              style={{ backgroundColor: event.color ?? "#5484ed" }}
+              style={{
+                backgroundColor: colors.background,
+                color: colors.foreground,
+                borderColor: colors.border,
+              }}
               title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
             >
-              <div className="truncate font-medium">{event.title}</div>
-              <div className="truncate opacity-80">
-                {eventPreview
-                  ? formatMinutes(eventPreview.startMinutes)
-                  : utils.formatTime(event.start)}
-              </div>
+              <div className="truncate font-semibold">{event.title}</div>
+              {/* 短い予定で時刻まで出すと文字が潰れるため、高さに余裕があるときだけ添える。 */}
+              {height >= 40 && (
+                <div className="truncate opacity-75">
+                  {eventPreview
+                    ? formatMinutes(eventPreview.startMinutes)
+                    : utils.formatTime(event.start)}
+                </div>
+              )}
             </button>
 
             {draggable && (
@@ -313,7 +348,7 @@ function DayColumn({
             if (onConsumeDragClick()) return;
             onOpenTask(task);
           }}
-          className="absolute inset-x-0 flex items-center gap-1 px-1"
+          className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
           style={{
             top:
               ((previewFor(task.id)?.startMinutes ?? utils.minutesFromMidnight(task.due!)) /
@@ -322,16 +357,26 @@ function DayColumn({
           }}
           title={`${utils.formatTime(task.due!)} ${task.title}`}
         >
-          <span className="h-0 flex-1 border-t-2 border-dashed border-foreground/40" />
+          {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。 */}
+          <span
+            aria-hidden
+            className={cn(
+              "h-2.5 w-0.5 shrink-0",
+              task.done ? "bg-muted-foreground" : "bg-foreground",
+            )}
+          />
           <span
             className={cn(
-              "max-w-[80%] truncate rounded border border-dashed bg-background px-1 text-[10px]",
+              "h-px flex-1",
+              task.done ? "bg-muted-foreground/40" : "bg-foreground/45",
+            )}
+          />
+          <span
+            className={cn(
+              "max-w-[78%] truncate rounded-sm border border-rule-strong bg-background px-1 text-[10px] font-medium",
               task.done && "text-muted-foreground line-through",
             )}
           >
-            <span aria-hidden className="mr-1">
-              {task.done ? "☑" : "☐"}
-            </span>
             {task.title}
           </span>
         </button>
@@ -389,13 +434,13 @@ function AllDayArea({
   return (
     <div
       ref={rowRef}
-      data-gutter-width="48"
-      className="flex border-b bg-muted/20"
+      data-gutter-width="56"
+      className="flex border-b border-rule bg-muted/25"
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      <div className="w-12 shrink-0 py-1 pr-1 text-right text-[10px] text-muted-foreground">
+      <div className="w-14 shrink-0 py-1.5 pr-2 text-right text-[10px] tracking-wide text-muted-foreground">
         終日
       </div>
       {days.map((dateKey, dayIndex) => {
@@ -407,7 +452,10 @@ function AllDayArea({
         );
 
         return (
-          <div key={dateKey} className="flex min-h-8 flex-1 flex-col gap-0.5 border-l p-0.5">
+          <div
+            key={dateKey}
+            className="flex min-h-9 flex-1 flex-col gap-0.5 border-l border-rule p-1"
+          >
             {dayEvents.map((event) => (
               <button
                 key={event.id}
@@ -418,10 +466,14 @@ function AllDayArea({
                   onOpenEvent(event);
                 }}
                 className={cn(
-                  "truncate rounded px-1 text-left text-[10px] leading-4 text-white",
-                  preview?.id === event.id && "opacity-80 ring-2 ring-foreground/40",
+                  "truncate rounded-sm border px-1.5 text-left text-[11px] leading-5 font-medium",
+                  preview?.id === event.id && "ring-2 ring-foreground/50",
                 )}
-                style={{ backgroundColor: event.color ?? "#5484ed" }}
+                style={{
+                  backgroundColor: eventColors(event.color).background,
+                  color: eventColors(event.color).foreground,
+                  borderColor: eventColors(event.color).border,
+                }}
                 title={event.title}
               >
                 {event.title}
@@ -437,16 +489,20 @@ function AllDayArea({
                   onOpenTask(task);
                 }}
                 className={cn(
-                  "truncate rounded border border-dashed px-1 text-left text-[10px] leading-4",
+                  "flex items-center gap-1 truncate rounded-sm border border-rule-strong bg-background px-1.5 text-left text-[11px] leading-5 font-medium",
                   task.done && "text-muted-foreground line-through",
-                  preview?.id === task.id && "ring-2 ring-foreground/40",
+                  preview?.id === task.id && "ring-2 ring-foreground/50",
                 )}
                 title={task.title}
               >
-                <span aria-hidden className="mr-1">
-                  {task.done ? "☑" : "☐"}
-                </span>
-                {task.title}
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-2.5 w-0.5 shrink-0",
+                    task.done ? "bg-muted-foreground" : "bg-foreground",
+                  )}
+                />
+                <span className="truncate">{task.title}</span>
               </button>
             ))}
           </div>
@@ -486,6 +542,65 @@ function ResizeHandle({
 
 function formatMinutes(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/**
+ * 分単位の現在時刻。時計はReactの外にある変化する値なので、状態として持たず購読する。
+ * サーバー側では値を返さないため、ハイドレーションのずれも起きない。
+ */
+function useMinuteBucket(): number | null {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      const timer = setInterval(onStoreChange, 30_000);
+      return () => clearInterval(timer);
+    },
+    () => Math.floor(Date.now() / 60_000),
+    () => null,
+  );
+}
+
+/**
+ * 現在時刻の線。画面上で唯一の純黒の水平線にして、いま何時かを一目で掴めるようにする。
+ * 予定の色は元カレンダー由来で多彩なため、時刻の指標に色を使わず明度で際立たせる。
+ */
+function NowLine({ days, utils }: { days: string[]; utils: CalendarDateUtils }) {
+  const minuteBucket = useMinuteBucket();
+
+  // サーバー描画時は現在時刻を持たない（時計はクライアント側の外部状態として購読する）。
+  if (minuteBucket === null) return null;
+
+  const iso = new Date(minuteBucket * 60_000).toISOString();
+  const todayKey = utils.todayKey();
+  const todayIndex = days.indexOf(todayKey);
+
+  // 表示中の期間に今日が含まれないときは、線を引く意味がない。
+  if (todayIndex < 0) return null;
+
+  const minutes = utils.minutesFromMidnight(iso);
+  const top = (minutes / MINUTES_PER_DAY) * GRID_HEIGHT;
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 z-20" style={{ top }}>
+      <span className="absolute left-0 w-14 -translate-y-1/2 pr-2 text-right text-[10px] font-semibold text-foreground">
+        {utils.formatTime(iso)}
+      </span>
+
+      <span className="absolute right-0 left-14 block h-px bg-foreground" />
+
+      <span
+        className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
+        style={{ left: `calc(3.5rem + (100% - 3.5rem) * ${(todayIndex + 0.5) / days.length})` }}
+      />
+    </div>
+  );
+}
+
+/** 土日は日本のカレンダーの慣習に合わせて色を変える。彩度は落とし、予定の色より前に出さない。 */
+function weekdayTone(dateKey: string): string | null {
+  const day = new Date(`${dateKey}T12:00:00Z`).getUTCDay();
+  if (day === 0) return "text-rose-700/80 dark:text-rose-300/80";
+  if (day === 6) return "text-sky-700/80 dark:text-sky-300/80";
+  return null;
 }
 
 function weekdayLabel(dateKey: string): string {

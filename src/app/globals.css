@@ -20,6 +20,8 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -53,6 +55,9 @@
     "Noto Sans JP", "Helvetica Neue", Arial, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono-stack:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  /* 罫線はカレンダーの骨格。目盛りの強弱を2段で持ち、時間の区切りを線の濃さで表す。 */
+  --rule: oklch(0.918 0.002 260);
+  --rule-strong: oklch(0.84 0.004 260);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -90,6 +95,8 @@
 /* OSの配色設定（prefers-color-scheme）に自動追従。手動切り替えは実装しない。 */
 @media (prefers-color-scheme: dark) {
   :root {
+    --rule: oklch(1 0 0 / 9%);
+    --rule-strong: oklch(1 0 0 / 20%);
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
@@ -133,5 +140,7 @@
   }
   html {
     @apply font-sans;
+    /* 日付・時刻が縦にも横にも揃うことが、カレンダーの読みやすさの前提になる。 */
+    font-variant-numeric: tabular-nums;
   }
 }

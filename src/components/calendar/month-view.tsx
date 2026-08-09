@@ -2,9 +2,9 @@
 
 import { cn } from "@/lib/utils";
 import type { CalendarEventItem, TaskItem } from "@/types/calendar";
-
 import type { CalendarEventItem as EventItem, TaskItem as Task } from "@/types/calendar";
 
+import { eventColors } from "./calendar-color";
 import type { CalendarDateUtils } from "./item-layout";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -35,31 +35,33 @@ export function MonthView({
 }) {
   const todayKey = utils.todayKey();
 
-  const weekdayLabels = Array.from(
-    { length: 7 },
-    (_, i) => WEEKDAY_LABELS[(weekStartsOn + i) % 7],
-  );
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid grid-cols-7 border-b">
-        {weekdayLabels.map((label, index) => (
-          <div
-            key={label}
-            className={cn(
-              "py-1 text-center text-xs font-medium text-muted-foreground",
-              (weekStartsOn + index) % 7 === 0 && "text-red-600 dark:text-red-400",
-              (weekStartsOn + index) % 7 === 6 && "text-blue-600 dark:text-blue-400",
-            )}
-          >
-            {label}
-          </div>
-        ))}
+      <div className="grid grid-cols-7 border-b border-rule">
+        {Array.from({ length: 7 }, (_, index) => {
+          const weekday = (weekStartsOn + index) % 7;
+
+          return (
+            <div
+              key={weekday}
+              className={cn(
+                "py-1.5 text-center text-[10px] tracking-widest",
+                weekday === 0
+                  ? "text-rose-700/80 dark:text-rose-300/80"
+                  : weekday === 6
+                    ? "text-sky-700/80 dark:text-sky-300/80"
+                    : "text-muted-foreground",
+              )}
+            >
+              {WEEKDAY_LABELS[weekday]}
+            </div>
+          );
+        })}
       </div>
 
       <div className="grid min-h-0 flex-1 grid-rows-6">
         {weeks.map((week) => (
-          <div key={week[0]} className="grid grid-cols-7 border-b last:border-b-0">
+          <div key={week[0]} className="grid grid-cols-7 border-b border-rule last:border-b-0">
             {week.map((dateKey) => {
               const dayItems = [
                 ...events.filter((event) => utils.eventCoversDay(event, dateKey)),
@@ -69,22 +71,26 @@ export function MonthView({
               const visible = dayItems.slice(0, MAX_ITEMS_PER_DAY);
               const hiddenCount = dayItems.length - visible.length;
               const inMonth = dateKey.slice(0, 7) === anchorMonth;
+              const isToday = dateKey === todayKey;
 
               return (
                 <div
                   key={dateKey}
                   className={cn(
-                    "flex min-w-0 flex-col gap-0.5 border-r p-1 text-left last:border-r-0",
-                    !inMonth && "bg-muted/20",
+                    "flex min-w-0 flex-col gap-1 border-r border-rule p-1 last:border-r-0",
+                    !inMonth && "bg-muted/25",
                   )}
                 >
                   <button
                     type="button"
                     onClick={() => onSelectDay(dateKey)}
                     className={cn(
-                      "self-start rounded-full px-1 text-xs hover:bg-muted",
-                      !inMonth && "text-muted-foreground",
-                      dateKey === todayKey && "bg-primary text-primary-foreground",
+                      "grid size-6 shrink-0 place-items-center self-start rounded-full text-xs",
+                      isToday
+                        ? "bg-foreground font-semibold text-background"
+                        : inMonth
+                          ? "font-medium hover:bg-muted"
+                          : "text-muted-foreground hover:bg-muted",
                     )}
                   >
                     {Number(dateKey.slice(8, 10))}
@@ -109,9 +115,13 @@ export function MonthView({
                       ),
                     )}
                     {hiddenCount > 0 && (
-                      <span className="px-0.5 text-[10px] text-muted-foreground">
-                        +{hiddenCount}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onSelectDay(dateKey)}
+                        className="px-1 text-left text-[10px] text-muted-foreground hover:text-foreground"
+                      >
+                        ほか {hiddenCount}件
+                      </button>
                     )}
                   </div>
                 </div>
@@ -124,6 +134,7 @@ export function MonthView({
   );
 }
 
+/** 予定は占有した時間の「幅」。塗りつぶした帯で表す。 */
 function EventChip({
   event,
   utils,
@@ -133,22 +144,29 @@ function EventChip({
   utils: CalendarDateUtils;
   onOpen: () => void;
 }) {
+  const colors = eventColors(event.color);
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="truncate rounded px-1 text-left text-[10px] leading-4 text-white"
-      style={{ backgroundColor: event.color ?? "#5484ed" }}
+      className="flex items-center gap-1 truncate rounded-sm border px-1 text-left text-[11px] leading-4 font-medium"
+      style={{
+        backgroundColor: colors.background,
+        color: colors.foreground,
+        borderColor: colors.border,
+      }}
       title={event.title}
     >
-      {!event.allDay && <span className="mr-1 opacity-80">{utils.formatTime(event.start)}</span>}
-      {event.title}
+      {!event.allDay && (
+        <span className="shrink-0 opacity-75">{utils.formatTime(event.start)}</span>
+      )}
+      <span className="truncate">{event.title}</span>
     </button>
   );
 }
 
-// タスクは予定と判別できる必要がある（docs/spec.md §5）。塗りつぶしの予定に対して、
-// 枠線＋チェック記号の抜き表現で区別する。
+/** タスクは期限という「点」。塗らず、先頭に目盛りを立てて予定と描き分ける（docs/spec.md §5）。 */
 function TaskChip({
   task,
   utils,
@@ -163,14 +181,17 @@ function TaskChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex items-center gap-1 truncate rounded border border-dashed px-1 text-left text-[10px] leading-4",
-        task.done ? "text-muted-foreground line-through" : "text-foreground",
+        "flex items-center gap-1 truncate rounded-sm border border-rule-strong bg-background px-1 text-left text-[11px] leading-4 font-medium",
+        task.done && "text-muted-foreground line-through",
       )}
       title={task.title}
     >
-      <span aria-hidden>{task.done ? "☑" : "☐"}</span>
+      <span
+        aria-hidden
+        className={cn("h-2.5 w-0.5 shrink-0", task.done ? "bg-muted-foreground" : "bg-foreground")}
+      />
       {task.hasTime && task.due && (
-        <span className="opacity-70">{utils.formatTime(task.due)}</span>
+        <span className="shrink-0 opacity-70">{utils.formatTime(task.due)}</span>
       )}
       <span className="truncate">{task.title}</span>
     </button>

@@ -11,7 +11,7 @@ const ITEMS = [
 /** スマートフォン向けの下部ナビゲーション（docs/spec.md §4）。PCでは各画面のヘッダーに置く。 */
 export function BottomNav({ current }: { current: "calendar" | "tasks" }) {
   return (
-    <nav className="flex shrink-0 border-t bg-background md:hidden">
+    <nav className="flex shrink-0 border-t border-rule bg-background md:hidden">
       {ITEMS.map((item) => {
         const active = item.href === `/${current}`;
         const Icon = item.icon;

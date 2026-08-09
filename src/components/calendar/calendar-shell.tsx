@@ -185,62 +185,65 @@ export function CalendarShell({
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex items-center gap-2 border-b px-3 py-2">
+      <header className="flex items-center gap-2 border-b border-rule px-3 py-2">
         <div className="flex items-center gap-1 font-semibold">
-          <CalendarDays className="size-5 text-primary" />
+          <CalendarDays className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
         </div>
 
         <HeaderNav current="calendar" />
 
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => move(-1)} aria-label="前へ">
+        <div className="flex items-center">
+          <Button variant="ghost" size="icon-sm" onClick={() => move(-1)} aria-label="前へ">
             <ChevronLeft className="size-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => move(1)} aria-label="次へ">
+          <Button variant="ghost" size="icon-sm" onClick={() => move(1)} aria-label="次へ">
             <ChevronRight className="size-4" />
-          </Button>
-          <Button variant="outline" size="sm" onClick={goToday}>
-            今日
           </Button>
         </div>
 
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        {/* 日付が主役。どの期間を見ているかが常に読める大きさにする。 */}
+        <h1 className="min-w-0 flex-1 truncate text-base font-semibold">
           {formatRangeLabel(view, anchorKey, days)}
-        </span>
+        </h1>
 
-        <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" onClick={goToday}>
+          今日
+        </Button>
+
+        {/* ビューは排他的な選択なので、切り替え式のひとまとまりとして見せる。 */}
+        <div className="flex items-center gap-0.5 rounded-lg border border-rule p-0.5">
           {VIEW_LABELS.map((item) => (
             <Button
               key={item.view}
               variant={view === item.view ? "secondary" : "ghost"}
-              size="sm"
+              size="xs"
               className={cn(item.desktopOnly && "hidden md:inline-flex")}
               onClick={() => navigate(item.view, anchorKey)}
             >
               {item.label}
             </Button>
           ))}
-
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={pending}
-            aria-label="再取得"
-            onClick={() => startTransition(() => router.refresh())}
-          >
-            <RefreshCw className="size-4" />
-          </Button>
-          <Button variant="ghost" size="icon" asChild aria-label="設定">
-            <Link href="/settings">
-              <Settings className="size-4" />
-            </Link>
-          </Button>
         </div>
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          disabled={pending}
+          aria-label="再取得"
+          onClick={() => startTransition(() => router.refresh())}
+        >
+          <RefreshCw className="size-4" />
+        </Button>
+        <Button variant="ghost" size="icon-sm" asChild aria-label="設定" className="hidden md:inline-flex">
+          <Link href="/settings">
+            <Settings className="size-4" />
+          </Link>
+        </Button>
       </header>
 
       {(data.errors.length > 0 || dragError) && (
-        <div className="flex flex-col gap-1 border-b bg-destructive/10 px-3 py-2 text-xs">
+        <div className="flex flex-col gap-1 border-b border-rule bg-destructive/10 px-3 py-2 text-xs">
           {data.errors.map((error) => (
             <span key={`${error.source}-${error.reason}`}>{error.reason}</span>
           ))}
