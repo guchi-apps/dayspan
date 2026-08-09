@@ -27,6 +27,10 @@ import {
 /** 左から順に、前の期間・表示中の期間・次の期間。 */
 type PaneDays = [string[], string[], string[]];
 
+// 閲覧のみのときに渡す。日ごとの列は memo で包んであるため、
+// ここで作り直すと readOnly の間だけ毎回描き直しになる。
+const NOOP = () => {};
+
 export function TimeGridView({
   days,
   events,
@@ -38,6 +42,7 @@ export function TimeGridView({
   onDragCommit,
   onAllDayDragCommit,
   onSwipe,
+  readOnly = false,
 }: {
   days: string[];
   events: CalendarEventItem[];
@@ -51,13 +56,19 @@ export function TimeGridView({
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
   /** 左右スワイプで日付を送る。正で先の日付へ。 */
   onSwipe: (deltaDays: number) => void;
+  /**
+   * 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。
+   * 掴んだあとで断るのではなく、掴めない・空き時間を選べない状態にする。
+   * 動かせたのに戻る、という見え方をさせないため。
+   */
+  readOnly?: boolean;
 }) {
   const todayKey = utils.todayKey();
   const {
     gridRef,
     preview,
     dragging,
-    startDrag,
+    startDrag: startDragWhenEditable,
     handlePointerMove,
     handlePointerUp,
     consumeDragClick,
@@ -67,11 +78,17 @@ export function TimeGridView({
     rowRef: allDayRowRef,
     preview: allDayPreview,
     dragging: allDayDragging,
-    startDrag: startAllDayDrag,
+    startDrag: startAllDayDragWhenEditable,
     handlePointerMove: handleAllDayPointerMove,
     handlePointerUp: handleAllDayPointerUp,
     consumeDragClick: consumeAllDayDragClick,
   } = useAllDayDrag({ days, onCommit: onAllDayDragCommit });
+
+  // 閲覧のみのときは、掴む・空き時間を選ぶという書き込みの入口をふさぐ。
+  // タップして内容を見ることと、左右スワイプでの移動はそのまま使える。
+  const startDrag = readOnly ? NOOP : startDragWhenEditable;
+  const startAllDayDrag = readOnly ? NOOP : startAllDayDragWhenEditable;
+  const selectSlot = readOnly ? NOOP : onSelectSlot;
 
   // 予定を掴んでいる間の横移動は、日付ではなくその予定を動かす操作。
   const {
@@ -172,7 +189,7 @@ export function TimeGridView({
                 onConsumeDragClick={consumeDragClick}
                 onOpenEvent={onOpenEvent}
                 onOpenTask={onOpenTask}
-                onSelectSlot={onSelectSlot}
+                onSelectSlot={selectSlot}
               />
             )}
           </SwipeTrack>

@@ -2,9 +2,12 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useOffline } from "next/offline";
 import { ArrowUpDown, ListChecks, Plus, RefreshCw } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
+import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
+import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { LinearProgress } from "@/components/ui/linear-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +46,10 @@ export function TaskList({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // オフライン中は書き込みを止める（docs/spec.md §21）。
+  const offline = useOffline();
+  useReconnectRefresh();
+
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
   const buckets = useMemo(
     () => classifyTasks(tasks, utils.todayKey(), utils.itemDateKey),
@@ -50,6 +57,8 @@ export function TaskList({
   );
 
   const patchTaskDone = async (task: TaskItem, done: boolean) => {
+    if (offline) throw new Error(OFFLINE_WRITE_MESSAGE);
+
     const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -83,6 +92,7 @@ export function TaskList({
   };
 
   const editTask = (task: TaskItem) => {
+    if (offline) return;
     setViewingTask(null);
     setDraft(toTaskDraft(task, timeZone));
   };
@@ -111,7 +121,8 @@ export function TaskList({
           variant="ghost"
           size="icon"
           aria-label="再取得"
-          disabled={pending}
+          // オフライン中に押しても、再接続まで終わらない読み込みが始まるだけになる。
+          disabled={pending || offline}
           onClick={() => startTransition(() => router.refresh())}
         >
           <RefreshCw className="size-4" />
@@ -119,6 +130,8 @@ export function TaskList({
       </header>
 
       <LinearProgress active={pending || busyId !== null} />
+
+      <OfflineNotice />
 
       {(loadError || error) && (
         <div className="bg-error-container/70 text-on-error-container px-3 py-2 text-xs">{loadError ?? error}</div>
@@ -143,7 +156,7 @@ export function TaskList({
                     <Checkbox
                       className="mt-0.5"
                       checked={task.done}
-                      disabled={busyId === task.id}
+                      disabled={busyId === task.id || offline}
                       aria-label={`${task.title} を完了にする`}
                       onCheckedChange={(value) => toggleDone(task, value === true)}
                     />
@@ -199,6 +212,7 @@ export function TaskList({
         size="icon"
         className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
         aria-label="タスクを追加"
+        disabled={offline}
         onClick={() =>
           setDraft({ dueMode: "date", due: utils.todayKey() })
         }
@@ -224,6 +238,7 @@ export function TaskList({
         <TaskDetailDialog
           task={viewingTask}
           timeZone={timeZone}
+          readOnly={offline}
           onClose={() => setViewingTask(null)}
           onEdit={() => editTask(viewingTask)}
           onToggleDone={toggleDoneFromDetail}

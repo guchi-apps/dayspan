@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 
+import { ClearOfflineCache } from "@/components/offline/clear-offline-cache";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -18,6 +19,8 @@ export default async function LoginPage({
 
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-8 bg-surface-container-low p-4">
+      <ClearOfflineCache />
+
       <div className="type-headline-small flex items-center gap-2">
         <CalendarDays className="size-7 text-primary" />
         DaySpan
