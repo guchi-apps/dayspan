@@ -1,0 +1,287 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { shiftMonthKey } from "@/lib/calendar-range";
+import type {
+  CalendarEventItem,
+  CalendarLoadResult,
+  TaskItem,
+  WritableCalendar,
+} from "@/types/calendar";
+
+/**
+ * 1ヶ月ぶんの保持データ。
+ *
+ * 継ぎ足すだけにすると、外部で削除された予定がいつまでも残る。月ごとに丸ごと差し替える
+ * 単位にしておくことで、取り直した月からは消えたものが確実に消える。
+ */
+type MonthChunk = {
+  events: CalendarEventItem[];
+  tasks: TaskItem[];
+  /** 取得時刻。一定時間経った月は、窓に入り直したときに取り直す。 */
+  fetchedAt: number;
+};
+
+/** 取得の失敗が続いても要求を出し続けないよう、再試行の間隔には下限を設ける。 */
+const MIN_REFRESH_SECONDS = 30;
+
+const NO_MONTHS: ReadonlySet<string> = new Set<string>();
+
+/** 日時文字列（YYYY-MM-DD または ISO 8601）の先頭は必ず YYYY-MM。 */
+function monthKeysBetween(start: string, end: string): string[] {
+  const first = start.slice(0, 7);
+  const last = end.slice(0, 7);
+  if (last <= first) return [first];
+
+  const months = [first];
+  let cursor = first;
+
+  // 日をまたぐ予定は月もまたぐ。壊れた日付で伸び続けないよう上限を置く。
+  while (cursor < last && months.length < 24) {
+    cursor = shiftMonthKey(cursor, 1);
+    months.push(cursor);
+  }
+
+  return months;
+}
+
+/** 取得結果を月ごとに仕分ける。月をまたぐ予定は、かかる月すべてに入る。 */
+function splitByMonth(
+  data: Pick<CalendarLoadResult, "events" | "tasks">,
+  months: string[],
+  fetchedAt: number,
+): Map<string, MonthChunk> {
+  const chunks = new Map<string, MonthChunk>();
+  for (const month of months) chunks.set(month, { events: [], tasks: [], fetchedAt });
+
+  for (const event of data.events) {
+    for (const month of monthKeysBetween(event.start, event.end)) {
+      chunks.get(month)?.events.push(event);
+    }
+  }
+
+  for (const task of data.tasks) {
+    if (!task.due) continue;
+    chunks.get(task.due.slice(0, 7))?.tasks.push(task);
+  }
+
+  return chunks;
+}
+
+/**
+ * 窓の中の月だけを残す。
+ *
+ * 捨てないと、スクロールし続けたぶんだけ保持量が増える。描画は窓の中しか見ないので、
+ * 取得結果を書き込むときにまとめて落とす。
+ */
+function pruneToWindow(
+  chunks: Map<string, MonthChunk>,
+  windowMonths: readonly string[],
+): Map<string, MonthChunk> {
+  const keep = new Set(windowMonths);
+  const next = new Map<string, MonthChunk>();
+
+  for (const [month, chunk] of chunks) {
+    if (keep.has(month)) next.set(month, chunk);
+  }
+
+  return next;
+}
+
+export type CalendarWindowData = {
+  events: CalendarEventItem[];
+  tasks: TaskItem[];
+  calendars: WritableCalendar[];
+  notionReady: boolean;
+  errors: CalendarLoadResult["errors"];
+  /** 連携側ではなくアプリ側の取得失敗。 */
+  loadError: string | null;
+  /** まだ取得できていない月。予定が無いのか読み込み中なのかを描き分けるために使う。 */
+  pendingMonths: ReadonlySet<string>;
+};
+
+/**
+ * 月表示のデータを、画面に出しうる月のぶんだけ保持する。
+ *
+ * 移動のたびにページごと描き直すと、そのつど窓ぶん全部を外部APIから取り直すことになり、
+ * 押してから返るまで待たされる。ここでは足りない月だけをAPIから足し、窓から外れた月を捨てる。
+ * ページの再レンダリングを伴わないため、開いているダイアログも閉じない。
+ */
+export function useCalendarChunks({
+  enabled,
+  windowMonths,
+  initial,
+  serverMonths,
+  autoRefreshSeconds,
+}: {
+  /** 月表示のときだけ働かせる。1日〜7日表示は取得範囲が狭く、窓で持つ必要がない。 */
+  enabled: boolean;
+  /** いま画面に出しうる月。週の並びが触れる月から導く。 */
+  windowMonths: string[];
+  initial: CalendarLoadResult;
+  /** initial が満たしている月。サーバーが描いた範囲と一致していなければならない。 */
+  serverMonths: string[];
+  autoRefreshSeconds: number;
+}): CalendarWindowData {
+  const [chunks, setChunks] = useState(() => splitByMonth(initial, serverMonths, Date.now()));
+  const [meta, setMeta] = useState({
+    calendars: initial.calendars,
+    notionReady: initial.notionReady,
+    errors: initial.errors,
+  });
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [fetching, setFetching] = useState<ReadonlySet<string>>(() => new Set<string>());
+
+  const inFlight = useRef(new Set<string>());
+
+  // 取得が終わった時点でどこを見ているかは、要求を出した時点とは限らない。
+  // 破棄の判断は「今の窓」で行う必要があるため、最新の窓を参照できるようにしておく。
+  const windowRef = useRef(windowMonths);
+  useEffect(() => {
+    windowRef.current = windowMonths;
+  }, [windowMonths]);
+
+  // サーバー側が描き直された（保存後の再取得など）ときは、そちらを正として入れ替える。
+  const seededRef = useRef(initial);
+  useEffect(() => {
+    if (seededRef.current === initial) return;
+    seededRef.current = initial;
+
+    setChunks(splitByMonth(initial, serverMonths, Date.now()));
+    setMeta({
+      calendars: initial.calendars,
+      notionReady: initial.notionReady,
+      errors: initial.errors,
+    });
+    setLoadError(null);
+  }, [initial, serverMonths]);
+
+  const fetchMonths = useCallback(async (months: string[]) => {
+    months.forEach((month) => inFlight.current.add(month));
+    setFetching(new Set(inFlight.current));
+
+    try {
+      const params = new URLSearchParams({ months: months.join(",") });
+      const response = await fetch(`/api/calendar?${params.toString()}`);
+      if (!response.ok) throw new Error(`status ${response.status}`);
+
+      const data = (await response.json()) as CalendarLoadResult;
+      const fresh = splitByMonth(data, months, Date.now());
+
+      setChunks((prev) => {
+        const next = new Map(prev);
+        for (const [month, chunk] of fresh) next.set(month, chunk);
+        return pruneToWindow(next, windowRef.current);
+      });
+      setMeta({
+        calendars: data.calendars,
+        notionReady: data.notionReady,
+        errors: data.errors,
+      });
+      setLoadError(null);
+    } catch {
+      const fetchedAt = Date.now();
+
+      setChunks((prev) => {
+        const next = new Map(prev);
+
+        // 失敗した月にも取得時刻を刻む。刻まないと「未取得」のままで要求が止まらなくなる。
+        // 既に持っている月は、古くても消さずに残したほうが読める。
+        for (const month of months) {
+          const existing = next.get(month);
+          next.set(month, {
+            events: existing?.events ?? [],
+            tasks: existing?.tasks ?? [],
+            fetchedAt,
+          });
+        }
+
+        return pruneToWindow(next, windowRef.current);
+      });
+      setLoadError("表示範囲の予定とタスクを取得できませんでした。");
+    } finally {
+      months.forEach((month) => inFlight.current.delete(month));
+      setFetching(new Set(inFlight.current));
+    }
+  }, []);
+
+  // 足りない月・古くなった月を取りにいく。取得できると chunks が変わって再実行され、
+  // 「足りない月なし」で止まる。
+  useEffect(() => {
+    if (!enabled) return;
+
+    const ttl = Math.max(autoRefreshSeconds, MIN_REFRESH_SECONDS) * 1000;
+    const now = Date.now();
+
+    const needed = windowMonths.filter((month) => {
+      if (inFlight.current.has(month)) return false;
+
+      const chunk = chunks.get(month);
+      return !chunk || now - chunk.fetchedAt > ttl;
+    });
+
+    if (needed.length === 0) return;
+    void fetchMonths(needed);
+  }, [enabled, windowMonths, chunks, autoRefreshSeconds, fetchMonths]);
+
+  // 窓のぶんを1つに束ねる。月をまたぐ予定は複数の月に入っているため、ここで重複を落とす。
+  const { events, tasks } = useMemo(() => {
+    const events: CalendarEventItem[] = [];
+    const tasks: TaskItem[] = [];
+    const seenEvents = new Set<string>();
+    const seenTasks = new Set<string>();
+
+    for (const month of windowMonths) {
+      const chunk = chunks.get(month);
+      if (!chunk) continue;
+
+      for (const event of chunk.events) {
+        // 別のカレンダーに同じIDの予定がありうるため、カレンダーと組にして1件とみなす。
+        const key = `${event.calendarId} ${event.id}`;
+        if (seenEvents.has(key)) continue;
+
+        seenEvents.add(key);
+        events.push(event);
+      }
+
+      for (const task of chunk.tasks) {
+        if (seenTasks.has(task.id)) continue;
+
+        seenTasks.add(task.id);
+        tasks.push(task);
+      }
+    }
+
+    return { events, tasks };
+  }, [chunks, windowMonths]);
+
+  // 一度も取得できていない月と、取得中の月。空なのか読み込み中なのかを区別できるようにする。
+  const pendingMonths = useMemo(
+    () => new Set(windowMonths.filter((month) => !chunks.has(month) || fetching.has(month))),
+    [chunks, windowMonths, fetching],
+  );
+
+  // 月表示以外は、サーバーが描いたぶんをそのまま使う。
+  if (!enabled) {
+    return {
+      events: initial.events,
+      tasks: initial.tasks,
+      calendars: initial.calendars,
+      notionReady: initial.notionReady,
+      errors: initial.errors,
+      loadError: null,
+      pendingMonths: NO_MONTHS,
+    };
+  }
+
+  return {
+    events,
+    tasks,
+    calendars: meta.calendars,
+    notionReady: meta.notionReady,
+    errors: meta.errors,
+    loadError,
+    pendingMonths,
+  };
+}

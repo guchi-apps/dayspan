@@ -9,6 +9,11 @@ import { refreshAccessToken } from "./oauth";
 // 余裕を持って更新する。
 const EXPIRY_MARGIN_MS = 60 * 1000;
 
+// 同じアカウントへ複数のAPI呼び出しを並行させると、期限切れのときにリフレッシュが
+// 同時に何本も走り、往復とDB書き込みがその数だけ無駄に増える。
+// 進行中のリフレッシュは1本にまとめ、後続はその結果を待つ。
+const refreshInFlight = new Map<string, Promise<string>>();
+
 export class GoogleReauthRequiredError extends Error {
   constructor(message = "Google Calendarの再接続が必要です") {
     super(message);
@@ -30,6 +35,16 @@ export async function getValidAccessToken(account: GoogleAccount): Promise<strin
     return decryptSecret(account.accessToken!);
   }
 
+  const ongoing = refreshInFlight.get(account.id);
+  if (ongoing) return ongoing;
+
+  const refreshing = refreshAndStore(account).finally(() => refreshInFlight.delete(account.id));
+  refreshInFlight.set(account.id, refreshing);
+
+  return refreshing;
+}
+
+async function refreshAndStore(account: GoogleAccount): Promise<string> {
   let tokens;
   try {
     tokens = await refreshAccessToken(decryptSecret(account.refreshToken));

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { listCalendars } from "@/services/google-calendar/calendars";
-import { listEvents } from "@/services/google-calendar/events";
+import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google-calendar/events";
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
 import { listTasksInRange } from "@/services/notion/tasks";
@@ -34,6 +34,11 @@ export async function loadCalendarData(
   };
 }
 
+/** カレンダー1つ分の取得結果。1つの失敗で他のカレンダーまで巻き添えにしないために分けて持つ。 */
+type EventsFetchResult =
+  | { ok: true; events: GoogleEvent[] }
+  | { ok: false };
+
 async function loadGoogleEvents(
   userId: string,
   range: { timeMin: string; timeMax: string },
@@ -56,40 +61,26 @@ async function loadGoogleEvents(
     });
     if (visibleSettings.length === 0) continue;
 
-    try {
-      // 名前と色はGoogleが一次情報源なので、予定と同じタイミングで取り直す。
-      const entries = await listCalendars(account);
-      const entryById = new Map(entries.map((entry) => [entry.id, entry]));
-
-      const results = await Promise.all(
-        visibleSettings.map(async (setting) => {
-          const entry = entryById.get(setting.calendarId);
-          // Google側で削除・共有解除されたカレンダーは設定だけ残る。表示対象から外す。
-          if (!entry) return [];
-
-          // 読み取り専用で共有されたカレンダーには予定を作れないため、保存先の候補から外す。
-          if (entry.accessRole === "owner" || entry.accessRole === "writer") {
-            calendars.push({
-              calendarId: setting.calendarId,
-              name: entry.summaryOverride?.trim() || entry.summary,
-              color: entry.backgroundColor ?? null,
-              isCreateDefault: setting.isCreateDefault,
-            });
-          }
-
-          return listEvents(
-            account,
-            {
-              calendarId: setting.calendarId,
-              name: entry.summaryOverride?.trim() || entry.summary,
-              color: entry.backgroundColor ?? null,
-            },
-            range,
-          );
-        }),
+    // 予定の取得に要るのはカレンダーIDだけで、それはDBにある。名前と色のために
+    // calendarList の応答を待ってから予定を取りにいくと、Googleへの往復が直列に2回積み上がる。
+    // 互いに依存しないので並行に投げ、揃ってから突き合わせる。
+    //
+    // 並行にした代償として、Google側で消えたカレンダーにも予定を取りにいってしまう。
+    // その404でアカウント全体を落とさないよう、カレンダー単位の失敗はここで受け止める。
+    const fetchEvents = (calendarId: string): Promise<EventsFetchResult> =>
+      listEvents(account, calendarId, range).then(
+        (events) => ({ ok: true, events }),
+        () => ({ ok: false }),
       );
 
-      items.push(...results.flat());
+    let entries;
+    let eventResults: EventsFetchResult[];
+
+    try {
+      [entries, eventResults] = await Promise.all([
+        listCalendars(account),
+        Promise.all(visibleSettings.map((setting) => fetchEvents(setting.calendarId))),
+      ]);
     } catch (error) {
       errors.push({
         source: "google",
@@ -98,7 +89,39 @@ async function loadGoogleEvents(
             ? `${account.email} の認可が失効しました。設定画面から再接続してください。`
             : `${account.email} の予定を取得できませんでした。`,
       });
+      continue;
     }
+
+    const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
+    visibleSettings.forEach((setting, index) => {
+      const entry = entryById.get(setting.calendarId);
+      // Google側で削除・共有解除されたカレンダーは設定だけ残る。表示対象から外す
+      // （このカレンダーの取得が失敗していても、消えているのだから報告しない）。
+      if (!entry) return;
+
+      const display = {
+        calendarId: setting.calendarId,
+        name: entry.summaryOverride?.trim() || entry.summary,
+        color: entry.backgroundColor ?? null,
+      };
+
+      // 読み取り専用で共有されたカレンダーには予定を作れないため、保存先の候補から外す。
+      if (entry.accessRole === "owner" || entry.accessRole === "writer") {
+        calendars.push({ ...display, isCreateDefault: setting.isCreateDefault });
+      }
+
+      const result = eventResults[index];
+      if (!result.ok) {
+        errors.push({
+          source: "google",
+          reason: `${account.email} の「${display.name}」の予定を取得できませんでした。`,
+        });
+        return;
+      }
+
+      items.push(...toCalendarItems(result.events, display));
+    });
   }
 
   return { items, calendars, errors };

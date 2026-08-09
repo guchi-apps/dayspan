@@ -20,6 +20,18 @@ export function CalendarSkeleton() {
         <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
       </div>
 
+      <CalendarGridSkeleton />
+    </div>
+  );
+}
+
+/**
+ * 予定とタスクの到着を待っている間のグリッド。ヘッダーは実物が先に描けるため含めない
+ * （どの期間を見ているかは、データが揃う前から確定している）。
+ */
+export function CalendarGridSkeleton() {
+  return (
+    <>
       <div className="grid shrink-0 grid-cols-7 border-b border-outline-variant">
         {Array.from({ length: 7 }, (_, i) => (
           <div key={i} className="flex justify-center py-2">
@@ -43,7 +55,7 @@ export function CalendarSkeleton() {
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }
 

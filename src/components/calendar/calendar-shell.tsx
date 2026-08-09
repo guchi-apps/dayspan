@@ -2,28 +2,35 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useMemo, useOptimistic, useState, useTransition } from "react";
+import { Suspense, use, useMemo, useOptimistic, useState, useTransition } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { Button } from "@/components/ui/button";
 import { LinearProgress } from "@/components/ui/linear-progress";
 import {
+  getContinuousMonthWeeks,
   getVisibleDays,
+  monthDistance,
+  monthsOfWeeks,
   parseDateKey,
+  parseMonthKey,
   shiftAnchor,
+  shiftMonthKey,
   toDateKey,
   type CalendarView,
 } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
 import type { CalendarEventItem, CalendarLoadResult, TaskItem } from "@/types/calendar";
 
+import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, localInputToIso } from "./datetime-fields";
 import { EventDialog, toEventDraft, type EventDraft } from "./event-dialog";
-import { createCalendarDateUtils } from "./item-layout";
+import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { ContinuousMonthView } from "./continuous-month-view";
 import { TaskDialog, toTaskDraft, type TaskDraft } from "./task-dialog";
 import { TimeGridView } from "./time-grid-view";
+import { useCalendarChunks } from "./use-calendar-chunks";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 
 const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[] = [
@@ -38,17 +45,19 @@ export function CalendarShell({
   anchorKey,
   days,
   weeks,
-  data,
+  dataPromise,
   weekStartsOn,
   timeZone,
+  autoRefreshSeconds,
 }: {
   view: CalendarView;
   anchorKey: string;
   days: string[];
   weeks: string[][];
-  data: CalendarLoadResult;
+  dataPromise: Promise<CalendarLoadResult>;
   weekStartsOn: number;
   timeZone: string;
+  autoRefreshSeconds: number;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -59,6 +68,22 @@ export function CalendarShell({
 
   // 連続スクロール中の月は、サーバーの応答を待たずに見出しへ反映する。
   const [scrolledMonth, setScrolledMonth] = useState(anchorKey.slice(0, 7));
+
+  // 保持している月の中心。ここを動かすと、前後の月ぶんの並びとデータが張り直される。
+  const [monthCenter, setMonthCenter] = useState(anchorKey.slice(0, 7));
+
+  // 月表示の移動はスクロールで行う。同じ月を続けて指しても効くよう、指示に通し番号を付ける。
+  const [scrollTarget, setScrollTarget] = useState({ month: anchorKey.slice(0, 7), nonce: 0 });
+
+  // 月表示の週の並びは、サーバーの anchor ではなく保持中の窓から決まる。
+  const monthWeeks = useMemo(
+    () => getContinuousMonthWeeks(parseMonthKey(monthCenter), weekStartsOn).weeks,
+    [monthCenter, weekStartsOn],
+  );
+
+  // 画面に出しうる月と、サーバーが描いてよこした月。前者に足りないぶんをAPIから足す。
+  const windowMonths = useMemo(() => monthsOfWeeks(monthWeeks), [monthWeeks]);
+  const serverMonths = useMemo(() => monthsOfWeeks(weeks), [weeks]);
 
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
@@ -194,13 +219,51 @@ export function CalendarShell({
     });
   };
 
+  /**
+   * 月表示の移動。読み込み済みの範囲の中なら、サーバーへ行かずスクロールするだけで済む。
+   * 窓の外へ出る場合も、先に並びを張り直してから足りない月だけを取りにいく。
+   */
+  const goToMonth = (month: string) => {
+    setScrolledMonth(month);
+    setMonthCenter(month);
+    setScrollTarget((prev) => ({ month, nonce: prev.nonce + 1 }));
+    syncMonthUrl(month);
+  };
+
   const move = (direction: 1 | -1) => {
+    if (nav.view === "month") {
+      goToMonth(shiftMonthKey(scrolledMonth, direction));
+      return;
+    }
+
     navigate(nav.view, toDateKey(shiftAnchor(nav.view, parseDateKey(nav.anchorKey), direction)));
   };
 
   const goToday = () => {
+    if (nav.view === "month") {
+      goToMonth(utils.todayKey().slice(0, 7));
+      return;
+    }
+
     navigate(nav.view, utils.todayKey());
   };
+
+  /** スクロールで見えている月が変わったとき。 */
+  const handleVisibleMonthChange = (month: string) => {
+    setScrolledMonth(month);
+    syncMonthUrl(month);
+
+    // 窓の端へ近づいたら中心をずらし、先の月を前もって取りにいく。
+    // 1ヶ月ごとにずらすと週の並びを組み直す回数が増えるため、2ヶ月離れてから動かす。
+    if (Math.abs(monthDistance(monthCenter, month)) >= 2) setMonthCenter(month);
+  };
+
+  // 予定を追加するときの既定の日。月表示は広い範囲を並べているため、先頭の日ではなく今日を使う。
+  const defaultDayKey = view === "month" ? utils.todayKey() : days[0];
+
+  // 表示形式を切り替えたときの移動先。月表示はスクロールで移動するため anchorKey が
+  // 更新されない（URLだけが replaceState で追従する）。見えている月を起点にする。
+  const viewSwitchAnchorKey = nav.view === "month" ? `${scrolledMonth}-01` : anchorKey;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -256,7 +319,7 @@ export function CalendarShell({
                 nav.view === item.view && "text-on-secondary-container",
                 item.desktopOnly && "hidden md:inline-flex",
               )}
-              onClick={() => navigate(item.view, anchorKey)}
+              onClick={() => navigate(item.view, viewSwitchAnchorKey)}
             >
               {item.label}
             </Button>
@@ -282,11 +345,141 @@ export function CalendarShell({
 
       <LinearProgress active={pending} />
 
-      {(data.errors.length > 0 || dragError) && (
+      {/*
+        予定とタスクの到着を待つ必要があるのはグリッドだけ。どの期間を見ているかは
+        取得前から決まっているため、ヘッダーは待たせずに描く。
+        なお前へ・次へは startTransition の中で遷移するため、ここは骨組みへ戻らず、
+        表示中の内容を保ったまま差し替わる（操作のたびに画面が消えることはない）。
+      */}
+      <Suspense fallback={<CalendarGridSkeleton />}>
+        <CalendarBody
+          dataPromise={dataPromise}
+          view={view}
+          days={days}
+          weeks={view === "month" ? monthWeeks : weeks}
+          weekStartsOn={weekStartsOn}
+          utils={utils}
+          timeZone={timeZone}
+          windowMonths={windowMonths}
+          serverMonths={serverMonths}
+          scrollTarget={scrollTarget}
+          autoRefreshSeconds={autoRefreshSeconds}
+          dragError={dragError}
+          addMenuOpen={addMenuOpen}
+          eventDraft={eventDraft}
+          taskDraft={taskDraft}
+          onVisibleMonthChange={handleVisibleMonthChange}
+          onSelectDay={(dateKey) => navigate("day1", dateKey)}
+          onOpenEvent={openEvent}
+          onOpenTask={openTask}
+          onSelectSlot={(dateKey, minutes) => setEventDraft(newEventDraft(dateKey, minutes))}
+          onDragCommit={commitDrag}
+          onAllDayDragCommit={commitAllDayDrag}
+          onToggleAddMenu={() => setAddMenuOpen((prev) => !prev)}
+          onAddEvent={() => {
+            setAddMenuOpen(false);
+            setEventDraft(newEventDraft(defaultDayKey, 9 * 60));
+          }}
+          onAddTask={() => {
+            setAddMenuOpen(false);
+            setTaskDraft({ dueMode: "datetime", due: dateKeyPlusMinutes(defaultDayKey, 18 * 60) });
+          }}
+          onCloseDialogs={closeDialogs}
+          onSaved={handleSaved}
+        />
+      </Suspense>
+
+      <BottomNav current="calendar" />
+    </div>
+  );
+}
+
+/**
+ * 見ている月をURLへ反映する。
+ * replaceState はサーバーへ行かないため、これ自体では再取得を起こさない
+ * （リロードや保存後の再取得のときに、見ていた月が起点になる）。
+ */
+function syncMonthUrl(month: string) {
+  window.history.replaceState(null, "", `/calendar?view=month&date=${month}-01`);
+}
+
+/** 取得した予定とタスクに依存する部分。ここだけが読み込みを待つ。 */
+function CalendarBody({
+  dataPromise,
+  view,
+  days,
+  weeks,
+  weekStartsOn,
+  utils,
+  timeZone,
+  windowMonths,
+  serverMonths,
+  scrollTarget,
+  autoRefreshSeconds,
+  dragError,
+  addMenuOpen,
+  eventDraft,
+  taskDraft,
+  onVisibleMonthChange,
+  onSelectDay,
+  onOpenEvent,
+  onOpenTask,
+  onSelectSlot,
+  onDragCommit,
+  onAllDayDragCommit,
+  onToggleAddMenu,
+  onAddEvent,
+  onAddTask,
+  onCloseDialogs,
+  onSaved,
+}: {
+  dataPromise: Promise<CalendarLoadResult>;
+  view: CalendarView;
+  days: string[];
+  weeks: string[][];
+  weekStartsOn: number;
+  utils: CalendarDateUtils;
+  timeZone: string;
+  windowMonths: string[];
+  serverMonths: string[];
+  scrollTarget: { month: string; nonce: number };
+  autoRefreshSeconds: number;
+  dragError: string | null;
+  addMenuOpen: boolean;
+  eventDraft: EventDraft | null;
+  taskDraft: TaskDraft | null;
+  onVisibleMonthChange: (monthKey: string) => void;
+  onSelectDay: (dateKey: string) => void;
+  onOpenEvent: (event: CalendarEventItem) => void;
+  onOpenTask: (task: TaskItem) => void;
+  onSelectSlot: (dateKey: string, minutes: number | null) => void;
+  onDragCommit: (commit: DragCommit) => void;
+  onAllDayDragCommit: (commit: AllDayDragCommit) => void;
+  onToggleAddMenu: () => void;
+  onAddEvent: () => void;
+  onAddTask: () => void;
+  onCloseDialogs: () => void;
+  onSaved: () => void;
+}) {
+  const initial = use(dataPromise);
+
+  // 月表示だけは、前後の月ぶんをここで保持して足りない月だけ取りにいく。
+  const data = useCalendarChunks({
+    enabled: view === "month",
+    windowMonths,
+    initial,
+    serverMonths,
+    autoRefreshSeconds,
+  });
+
+  return (
+    <>
+      {(data.errors.length > 0 || data.loadError || dragError) && (
         <div className="flex flex-col gap-1 bg-error-container/70 text-on-error-container px-3 py-2 text-xs">
           {data.errors.map((error) => (
             <span key={`${error.source}-${error.reason}`}>{error.reason}</span>
           ))}
+          {data.loadError && <span>{data.loadError}</span>}
           {dragError && <span>{dragError}</span>}
         </div>
       )}
@@ -298,11 +491,12 @@ export function CalendarShell({
           tasks={data.tasks}
           weekStartsOn={weekStartsOn}
           utils={utils}
-          initialMonth={anchorKey.slice(0, 7)}
-          onVisibleMonthChange={setScrolledMonth}
-          onSelectDay={(dateKey) => navigate("day1", dateKey)}
-          onOpenEvent={openEvent}
-          onOpenTask={openTask}
+          scrollTarget={scrollTarget}
+          pendingMonths={data.pendingMonths}
+          onVisibleMonthChange={onVisibleMonthChange}
+          onSelectDay={onSelectDay}
+          onOpenEvent={onOpenEvent}
+          onOpenTask={onOpenTask}
         />
       ) : (
         <TimeGridView
@@ -310,29 +504,21 @@ export function CalendarShell({
           events={data.events}
           tasks={data.tasks}
           utils={utils}
-          onOpenEvent={openEvent}
-          onOpenTask={openTask}
-          onSelectSlot={(dateKey, minutes) => setEventDraft(newEventDraft(dateKey, minutes))}
-          onDragCommit={commitDrag}
-          onAllDayDragCommit={commitAllDayDrag}
+          onOpenEvent={onOpenEvent}
+          onOpenTask={onOpenTask}
+          onSelectSlot={onSelectSlot}
+          onDragCommit={onDragCommit}
+          onAllDayDragCommit={onAllDayDragCommit}
         />
       )}
-
-      <BottomNav current="calendar" />
 
       <AddButton
         open={addMenuOpen}
         canAddEvent={data.calendars.length > 0}
         canAddTask={data.notionReady}
-        onToggle={() => setAddMenuOpen((prev) => !prev)}
-        onAddEvent={() => {
-          setAddMenuOpen(false);
-          setEventDraft(newEventDraft(days[0], 9 * 60));
-        }}
-        onAddTask={() => {
-          setAddMenuOpen(false);
-          setTaskDraft({ dueMode: "datetime", due: dateKeyPlusMinutes(days[0], 18 * 60) });
-        }}
+        onToggle={onToggleAddMenu}
+        onAddEvent={onAddEvent}
+        onAddTask={onAddTask}
       />
 
       {eventDraft && (
@@ -340,8 +526,8 @@ export function CalendarShell({
           draft={eventDraft}
           calendars={data.calendars}
           timeZone={timeZone}
-          onClose={closeDialogs}
-          onSaved={handleSaved}
+          onClose={onCloseDialogs}
+          onSaved={onSaved}
         />
       )}
 
@@ -349,11 +535,11 @@ export function CalendarShell({
         <TaskDialog
           draft={taskDraft}
           timeZone={timeZone}
-          onClose={closeDialogs}
-          onSaved={handleSaved}
+          onClose={onCloseDialogs}
+          onSaved={onSaved}
         />
       )}
-    </div>
+    </>
   );
 }
 
