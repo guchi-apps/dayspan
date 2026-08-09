@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
 
+// Noto Sans JP（M3の日本語向け標準書体）を自己ホストする。
+// next/font/google はこの開発環境から fonts.gstatic.com へ到達できずビルドが失敗するため使わない。
+// unicode-range で124分割されており、ブラウザは実際に使う文字のサブセットだけを取得する。
+import "@fontsource-variable/noto-sans-jp";
 import "./globals.css";
 
 export const metadata: Metadata = {

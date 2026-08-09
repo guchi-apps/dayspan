@@ -91,11 +91,11 @@
 }
 
 :root {
-  /* Roboto（M3の標準書体）は追加パッケージが要るため、いまはOS標準の日本語フォントに
-     フォールバックする。字面の癖が少なく、数字が密に並ぶカレンダーに向く並びにしている。 */
+  /* Noto Sans JP。M3の設計と同じ骨格を持ち、日本語と英数字の字幅が揃うため、
+     日付や時刻が並ぶカレンダーで行がずれない。読み込み前はOS標準の日本語フォントで代替する。 */
   --font-sans-stack:
-    "Roboto", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic",
-    "Segoe UI", "Noto Sans JP", "Helvetica Neue", Arial, system-ui, -apple-system,
+    "Noto Sans JP Variable", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Hiragino Sans",
+    "Yu Gothic UI", "Yu Gothic", "Segoe UI", "Helvetica Neue", Arial, system-ui, -apple-system,
     BlinkMacSystemFont, sans-serif;
   --font-mono-stack:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
