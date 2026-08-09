@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// DaySpanのDBには、Google Calendarの予定本体とNotionタスク本体を恒久的に保存しない
+// （docs/spec.md §19）。ここに置くのは連携設定・表示設定・連携メタデータのみ。
+
+// --- 認証 ---
+// セッション管理はSupabase Auth側が行うため、Account/Session/VerificationTokenは持たない。
+// SupabaseのユーザーID（auth.users.id）を外部キーとして紐付ける。
+
+model User {
+  id             String  @id @default(cuid())
+  supabaseUserId String  @unique
+  email          String? @unique
+  name           String?
+  image          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  googleAccounts   GoogleAccount[]
+  calendarSettings CalendarSetting[]
+  notionConnection NotionConnection?
+  uiSetting        UiSetting?
+}
+
+// --- Google Calendar連携 ---
+// ログイン用のGoogle OAuth（Supabase Auth）とは別に、DaySpan専用のOAuthクライアントで
+// カレンダー権限のみを追加取得する（docs/spec.md §17）。共有Supabase/GCPプロジェクトの
+// 同意画面にセンシティブスコープを足さずに済ませるための分離。
+model GoogleAccount {
+  id           String @id @default(cuid())
+  userId       String
+  googleUserId String // Google IDトークンの sub
+  email        String
+
+  // アクセストークン・リフレッシュトークンは secret-cipher.ts でAES-256-GCM暗号化して保存する
+  accessToken          String?   @db.Text
+  accessTokenExpiresAt DateTime?
+  refreshToken         String    @db.Text
+  scope                String    @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendarSettings CalendarSetting[]
+
+  @@unique([userId, googleUserId])
+  @@index([userId])
+}
+
+// 表示対象カレンダーのON/OFFと表示順（docs/spec.md §7）。
+// カレンダー名・色はGoogle側が一次情報源のため保存せず、表示時に取得する。
+model CalendarSetting {
+  id              String @id @default(cuid())
+  userId          String
+  googleAccountId String
+  calendarId      String // Google Calendar API上のカレンダーID
+
+  visible          Boolean @default(true)
+  sortOrder        Int     @default(0)
+  isCreateDefault  Boolean @default(false) // 予定新規作成時の既定の保存先
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  googleAccount GoogleAccount @relation(fields: [googleAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([googleAccountId, calendarId])
+  @@index([userId])
+}
+
+// --- Notion連携 ---
+// MVPではユーザーがNotionのInternal Integration Tokenを入力する方式（docs/spec.md §18）。
+// 将来のNotion OAuthへ差し替えられるよう、トークンの取得元は accessToken に集約する。
+model NotionConnection {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  accessToken   String  @db.Text // 暗号化して保存
+  workspaceName String?
+
+  taskDatabaseId String? // ユーザーが選択したタスクDB
+  // アプリ側の項目名 → Notionプロパティ名の対応。プロパティ名はユーザーが自由に付けられるため
+  // 固定名を前提にせず、接続時の検証結果をここへ保存する（docs/spec.md §9）。
+  propertyMap Json?
+
+  lastValidatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// --- UI表示設定 ---
+
+enum CalendarViewType {
+  MONTH
+  DAY_1
+  DAY_3
+  DAY_7
+}
+
+model UiSetting {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  defaultMobileView  CalendarViewType @default(MONTH)
+  defaultDesktopView CalendarViewType @default(DAY_7)
+  weekStartsOn       Int              @default(0) // 0=日曜
+  timeZone           String           @default("Asia/Tokyo")
+  autoRefreshSeconds Int              @default(300) // 一定間隔での自動更新（docs/spec.md §20）
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

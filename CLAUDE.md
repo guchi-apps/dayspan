@@ -4,6 +4,21 @@
 
 共通の開発標準・運用知識は `m-guchi/docs` を一次情報源とし、このファイルには DaySpan 固有事項のみを置く。
 
+## このリポジトリの構成（エージェント向けの前提）
+
+| 項目 | 内容 |
+|---|---|
+| フレームワーク | Next.js 16（App Router）/ React 19 / TypeScript 5 |
+| スタイリング | Tailwind CSS v4 + shadcn/ui（`components.json` の style は `radix-nova`） |
+| ORM / DB | Prisma 6 + MariaDB（`app_dayspan`） |
+| 認証 | Supabase Auth + Google OAuth（`@supabase/ssr`。ミドルウェアは `src/proxy.ts`） |
+| パッケージマネージャ | pnpm |
+| 検証コマンド | `pnpm lint` / `pnpm typecheck` / `pnpm build`（`pnpm test` は lint + typecheck） |
+| 開発サーバー | `pnpm dev`（既定ポート3000。`PORT` で変更可） |
+| デプロイ | `main` への push で `deploy.yml` が VPS へ SSH デプロイ（PM2、プロセス名 `dayspan`、ポート3113） |
+
+Prisma は 7 系ではなく **6 系** を使う。7 系は driver adapter が必須になり、他アプリ（issue-deck 等）の構成から外れるため。
+
 ## アプリ概要
 
 DaySpan は、Google Calendar の予定と Notion のタスクを同じカレンダーUI上で統合して確認・操作するWebアプリ。
@@ -49,3 +64,13 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 5. VPSの現在構成が必要な場合は `m-guchi/vps`
 
 認証、OAuth、DBスキーマ、Secrets、本番環境設定などの変更では、共通ルールに従って必要なユーザー確認を行うこと。
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
