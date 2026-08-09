@@ -643,6 +643,7 @@ function CalendarBody({
           weeks={weeks}
           events={data.events}
           tasks={data.tasks}
+          reminders={data.reminders}
           weekStartsOn={weekStartsOn}
           utils={utils}
           scrollTarget={scrollTarget}
