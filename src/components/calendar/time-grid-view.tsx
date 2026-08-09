@@ -9,7 +9,16 @@ import {
   MINUTES_PER_DAY,
   type CalendarDateUtils,
 } from "./item-layout";
-import { useGridDrag, type DragCommit, type DragPreview, type DragTarget } from "./use-grid-drag";
+import {
+  useAllDayDrag,
+  useGridDrag,
+  type AllDayDragCommit,
+  type AllDayDragPreview,
+  type AllDayDragTarget,
+  type DragCommit,
+  type DragPreview,
+  type DragTarget,
+} from "./use-grid-drag";
 
 export function TimeGridView({
   days,
@@ -20,6 +29,7 @@ export function TimeGridView({
   onOpenTask,
   onSelectSlot,
   onDragCommit,
+  onAllDayDragCommit,
 }: {
   days: string[];
   events: CalendarEventItem[];
@@ -30,6 +40,7 @@ export function TimeGridView({
   /** 空き時間の選択。minutes は 0:00 からの分数（30分単位に丸める）。 */
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onDragCommit: (commit: DragCommit) => void;
+  onAllDayDragCommit: (commit: AllDayDragCommit) => void;
 }) {
   const todayKey = utils.todayKey();
   const {
@@ -40,6 +51,15 @@ export function TimeGridView({
     handlePointerUp,
     consumeDragClick,
   } = useGridDrag({ days, onCommit: onDragCommit });
+
+  const {
+    rowRef: allDayRowRef,
+    preview: allDayPreview,
+    startDrag: startAllDayDrag,
+    handlePointerMove: handleAllDayPointerMove,
+    handlePointerUp: handleAllDayPointerUp,
+    consumeDragClick: consumeAllDayDragClick,
+  } = useAllDayDrag({ days, onCommit: onAllDayDragCommit });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -65,6 +85,12 @@ export function TimeGridView({
         events={events}
         tasks={tasks}
         utils={utils}
+        rowRef={allDayRowRef}
+        preview={allDayPreview}
+        onStartDrag={startAllDayDrag}
+        onConsumeDragClick={consumeAllDayDragClick}
+        onPointerMove={handleAllDayPointerMove}
+        onPointerUp={handleAllDayPointerUp}
         onOpenEvent={onOpenEvent}
         onOpenTask={onOpenTask}
       />
@@ -319,6 +345,12 @@ function AllDayArea({
   events,
   tasks,
   utils,
+  rowRef,
+  preview,
+  onStartDrag,
+  onConsumeDragClick,
+  onPointerMove,
+  onPointerUp,
   onOpenEvent,
   onOpenTask,
 }: {
@@ -326,20 +358,52 @@ function AllDayArea({
   events: CalendarEventItem[];
   tasks: TaskItem[];
   utils: CalendarDateUtils;
+  rowRef: React.Ref<HTMLDivElement>;
+  preview: AllDayDragPreview | null;
+  onStartDrag: (
+    event: React.PointerEvent,
+    target: AllDayDragTarget,
+    dayIndex: number,
+  ) => void;
+  onConsumeDragClick: () => boolean;
+  onPointerMove: (event: React.PointerEvent) => void;
+  onPointerUp: (event: React.PointerEvent) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
 }) {
+  // ドラッグ中の項目は、動かした日数分ずらした状態で判定・描画する。
+  const shiftedEvent = (event: CalendarEventItem): CalendarEventItem =>
+    preview?.id === event.id
+      ? {
+          ...event,
+          start: shiftDateKey(event.start, preview.deltaDays),
+          end: shiftDateKey(event.end, preview.deltaDays),
+        }
+      : event;
+
+  const shiftedTaskDue = (task: TaskItem): string | null =>
+    preview?.id === task.id && task.due
+      ? shiftDateKey(task.due, preview.deltaDays)
+      : task.due;
+
   return (
-    <div className="flex border-b bg-muted/20">
+    <div
+      ref={rowRef}
+      data-gutter-width="48"
+      className="flex border-b bg-muted/20"
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
       <div className="w-12 shrink-0 py-1 pr-1 text-right text-[10px] text-muted-foreground">
         終日
       </div>
-      {days.map((dateKey) => {
+      {days.map((dateKey, dayIndex) => {
         const dayEvents = events.filter(
-          (event) => event.allDay && utils.eventCoversDay(event, dateKey),
+          (event) => event.allDay && utils.eventCoversDay(shiftedEvent(event), dateKey),
         );
         const dayTasks = tasks.filter(
-          (task) => !task.hasTime && utils.taskCoversDay(task, dateKey),
+          (task) => !task.hasTime && shiftedTaskDue(task) === dateKey,
         );
 
         return (
@@ -348,8 +412,15 @@ function AllDayArea({
               <button
                 key={event.id}
                 type="button"
-                onClick={() => onOpenEvent(event)}
-                className="truncate rounded px-1 text-left text-[10px] leading-4 text-white"
+                onPointerDown={(e) => onStartDrag(e, { kind: "event", item: event }, dayIndex)}
+                onClick={() => {
+                  if (onConsumeDragClick()) return;
+                  onOpenEvent(event);
+                }}
+                className={cn(
+                  "truncate rounded px-1 text-left text-[10px] leading-4 text-white",
+                  preview?.id === event.id && "opacity-80 ring-2 ring-foreground/40",
+                )}
                 style={{ backgroundColor: event.color ?? "#5484ed" }}
                 title={event.title}
               >
@@ -360,10 +431,15 @@ function AllDayArea({
               <button
                 key={task.id}
                 type="button"
-                onClick={() => onOpenTask(task)}
+                onPointerDown={(e) => onStartDrag(e, { kind: "task", item: task }, dayIndex)}
+                onClick={() => {
+                  if (onConsumeDragClick()) return;
+                  onOpenTask(task);
+                }}
                 className={cn(
                   "truncate rounded border border-dashed px-1 text-left text-[10px] leading-4",
                   task.done && "text-muted-foreground line-through",
+                  preview?.id === task.id && "ring-2 ring-foreground/40",
                 )}
                 title={task.title}
               >
@@ -378,6 +454,13 @@ function AllDayArea({
       })}
     </div>
   );
+}
+
+/** YYYY-MM-DD を日数分ずらす。UTC正午で扱い、タイムゾーンによる日付ずれを避ける。 */
+function shiftDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey.slice(0, 10)}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 /** 予定ブロックの上端・下端。ここを掴むと開始または終了だけが動く。 */

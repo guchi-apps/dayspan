@@ -21,7 +21,7 @@ import { createCalendarDateUtils } from "./item-layout";
 import { MonthView } from "./month-view";
 import { TaskDialog, toTaskDraft, type TaskDraft } from "./task-dialog";
 import { TimeGridView } from "./time-grid-view";
-import type { DragCommit } from "./use-grid-drag";
+import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 
 const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[] = [
   { view: "month", label: "月" },
@@ -100,6 +100,45 @@ export function CalendarShell({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ due: startIso }),
+        });
+      }
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        setDragError(body?.message ?? "変更を保存できませんでした。");
+      }
+    } catch {
+      setDragError("変更を保存できませんでした。");
+    } finally {
+      startTransition(() => router.refresh());
+    }
+  };
+
+  /** 終日エリアのドラッグ。動かせるのは日付だけなので、日数分ずらして保存する。 */
+  const commitAllDayDrag = async (commit: AllDayDragCommit) => {
+    setDragError(null);
+
+    try {
+      let response: Response;
+
+      if (commit.target.kind === "event") {
+        const event = commit.target.item;
+        response = await fetch(`/api/events/${encodeURIComponent(event.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            calendarId: event.calendarId,
+            title: event.title,
+            allDay: true,
+            start: shiftDateKey(event.start, commit.deltaDays),
+            end: shiftDateKey(event.end, commit.deltaDays),
+          }),
+        });
+      } else {
+        response = await fetch(`/api/tasks/${encodeURIComponent(commit.target.item.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ due: commit.dayKey }),
         });
       }
 
@@ -228,6 +267,7 @@ export function CalendarShell({
           onOpenTask={openTask}
           onSelectSlot={(dateKey, minutes) => setEventDraft(newEventDraft(dateKey, minutes))}
           onDragCommit={commitDrag}
+          onAllDayDragCommit={commitAllDayDrag}
         />
       )}
 
@@ -266,6 +306,13 @@ export function CalendarShell({
       )}
     </div>
   );
+}
+
+/** YYYY-MM-DD を日数分ずらす。UTC正午で扱い、タイムゾーンによる日付ずれを避ける。 */
+function shiftDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey.slice(0, 10)}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 /** 画面右下の「＋」。押すと予定とタスクのどちらを追加するか選ぶ（docs/spec.md §15）。 */

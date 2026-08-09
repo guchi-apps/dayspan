@@ -283,3 +283,177 @@ export function useGridDrag({
     consumeDragClick,
   };
 }
+
+// --- 終日エリアのドラッグ ---
+// 終日予定・日付のみタスクは時刻を持たないため、動かせるのは日付だけ。
+// 時間グリッドとは操作の意味が違うので、別のフックとして扱う。
+
+export type AllDayDragTarget =
+  | { kind: "event"; item: CalendarEventItem }
+  | { kind: "task"; item: TaskItem };
+
+export type AllDayDragPreview = {
+  id: string;
+  deltaDays: number;
+  dayIndex: number;
+};
+
+export type AllDayDragCommit = {
+  target: AllDayDragTarget;
+  deltaDays: number;
+  dayKey: string;
+};
+
+export function useAllDayDrag({
+  days,
+  onCommit,
+}: {
+  days: string[];
+  onCommit: (commit: AllDayDragCommit) => void;
+}) {
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const originRef = useRef<{
+    target: AllDayDragTarget;
+    dayIndex: number;
+    pointerX: number;
+    pointerY: number;
+    pointerType: string;
+  } | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const movedRef = useRef(false);
+
+  const [preview, setPreview] = useState<AllDayDragPreview | null>(null);
+  const [active, setActive] = useState(false);
+
+  useEffect(() => {
+    if (!active) return;
+
+    const block = (event: TouchEvent) => event.preventDefault();
+    document.addEventListener("touchmove", block, { passive: false });
+    return () => document.removeEventListener("touchmove", block);
+  }, [active]);
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const dayIndexFromPointer = useCallback(
+    (clientX: number) => {
+      const row = rowRef.current;
+      if (!row) return null;
+
+      const rect = row.getBoundingClientRect();
+      const gutter = row.dataset.gutterWidth ? Number(row.dataset.gutterWidth) : 48;
+      const columnWidth = (rect.width - gutter) / days.length;
+
+      return clamp(Math.floor((clientX - rect.left - gutter) / columnWidth), 0, days.length - 1);
+    },
+    [days.length],
+  );
+
+  const startDrag = useCallback(
+    (event: React.PointerEvent, target: AllDayDragTarget, dayIndex: number) => {
+      movedRef.current = false;
+
+      originRef.current = {
+        target,
+        dayIndex,
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+        pointerType: event.pointerType,
+      };
+
+      event.currentTarget.setPointerCapture(event.pointerId);
+
+      if (event.pointerType === "touch") {
+        longPressTimerRef.current = setTimeout(() => {
+          longPressTimerRef.current = null;
+          setActive(true);
+          setPreview({ id: target.item.id, deltaDays: 0, dayIndex });
+        }, LONG_PRESS_MS);
+      } else {
+        setActive(true);
+        setPreview({ id: target.item.id, deltaDays: 0, dayIndex });
+      }
+    },
+    [],
+  );
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent) => {
+      const origin = originRef.current;
+      if (!origin) return;
+
+      const distance = Math.hypot(
+        event.clientX - origin.pointerX,
+        event.clientY - origin.pointerY,
+      );
+
+      if (longPressTimerRef.current !== null) {
+        if (distance > LONG_PRESS_TOLERANCE_PX) {
+          cancelLongPress();
+          originRef.current = null;
+        }
+        return;
+      }
+
+      if (!active) return;
+      if (origin.pointerType !== "touch" && distance < MOUSE_THRESHOLD_PX) return;
+
+      const dayIndex = dayIndexFromPointer(event.clientX);
+      if (dayIndex === null) return;
+
+      movedRef.current = true;
+      setPreview({
+        id: origin.target.item.id,
+        deltaDays: dayIndex - origin.dayIndex,
+        dayIndex,
+      });
+    },
+    [active, dayIndexFromPointer],
+  );
+
+  const handlePointerUp = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      cancelLongPress();
+      originRef.current = null;
+      setActive(false);
+      return;
+    }
+
+    const origin = originRef.current;
+    const current = preview;
+
+    originRef.current = null;
+    setActive(false);
+    setPreview(null);
+
+    if (!origin || !current || current.deltaDays === 0) return;
+
+    onCommit({
+      target: origin.target,
+      deltaDays: current.deltaDays,
+      dayKey: days[current.dayIndex],
+    });
+  }, [days, onCommit, preview]);
+
+  const consumeDragClick = useCallback(() => {
+    if (!movedRef.current) return false;
+    movedRef.current = false;
+    return true;
+  }, []);
+
+  useEffect(() => cancelLongPress, []);
+
+  return {
+    rowRef,
+    preview,
+    startDrag,
+    handlePointerMove,
+    handlePointerUp,
+    consumeDragClick,
+  };
+}
