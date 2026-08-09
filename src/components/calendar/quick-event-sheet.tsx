@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -75,6 +75,9 @@ export function QuickEventSheet({
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
+
+  // 開いた直後のフォーカス先を自分で決めるために、シート自体を掴んでおく。
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const close = () => {
     setOpen(false);
@@ -156,9 +159,19 @@ export function QuickEventSheet({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
+        ref={contentRef}
         position="bottom"
         showCloseButton={false}
         className="max-h-[80dvh] gap-3 overflow-y-auto"
+        // 開いた時点で入力欄へフォーカスを移さない。スマートフォンではその場でキーボードが
+        // 立ち上がり、シートの下半分を覆ってしまう。時刻もカレンダーも押した位置から
+        // 埋まっているため、開いてすぐ文字を打ちたいとは限らない。
+        // Radixは既定で最初の入力欄へ移すため、シート自体へ移して打ち消す
+        // （フォーカスはシートの中に留まり、Escで閉じられる状態は保たれる）。
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          contentRef.current?.focus();
+        }}
       >
         <DialogHeader>
           <DialogTitle>予定を追加</DialogTitle>
@@ -170,7 +183,6 @@ export function QuickEventSheet({
             label="タイトル"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            autoFocus
           />
 
           {/* 日付は押した日から動かさないことが多い。時刻2つより幅を取らせない。 */}
