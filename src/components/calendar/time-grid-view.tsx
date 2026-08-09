@@ -49,8 +49,8 @@ export function TimeGridView({
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
-  /** 左右スワイプで期間を送る。1で次、-1で前。 */
-  onSwipe: (direction: 1 | -1) => void;
+  /** 左右スワイプで日付を送る。正で先の日付へ。 */
+  onSwipe: (deltaDays: number) => void;
 }) {
   const todayKey = utils.todayKey();
   const {
@@ -82,11 +82,13 @@ export function TimeGridView({
     handlers: swipeHandlers,
   } = useDaySwipe({
     daysKey: days[0],
+    step: days.length,
     enabled: !dragging && !allDayDragging,
     onSwipe,
   });
 
   // 前後の期間。表示中と同じ日数ぶんずらして左右に並べ、指の動きに合わせて見せる。
+  // 3つの期間は日付列の幅がそろって地続きに並ぶため、1列ぶんずらせば1日ぶん動く。
   const panes = useMemo<PaneDays>(
     () => [shiftDays(days, -days.length), days, shiftDays(days, days.length)],
     [days],
@@ -196,7 +198,7 @@ function SwipeTrack({
   offset: number;
   snapping: boolean;
   panes: PaneDays;
-  /** 1期間ぶんの幅を測る先。指の移動量を「何期間ぶんか」に直すために使う。 */
+  /** 1期間ぶんの幅を測る先。指の移動量を「何日ぶんか」に直すために使う。 */
   trackRef?: React.Ref<HTMLDivElement>;
   children: (days: string[], isCenter: boolean) => React.ReactNode;
 }) {
