@@ -5,15 +5,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type { WritableCalendar } from "@/types/calendar";
 
+import { CalendarChipSelect } from "./calendar-chip-select";
 import { localInputToIso } from "./datetime-fields";
 import type { EventDraft } from "./event-dialog";
 import { MINUTES_PER_DAY } from "./item-layout";
@@ -204,18 +198,12 @@ export function QuickEventSheet({
             />
           </div>
 
-          <Select value={calendarId} onValueChange={setCalendarId}>
-            <SelectTrigger label="保存先カレンダー">
-              <SelectValue placeholder="カレンダーを選択" />
-            </SelectTrigger>
-            <SelectContent>
-              {calendars.map((calendar) => (
-                <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                  {calendar.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <CalendarChipSelect
+            label="保存先カレンダー"
+            value={calendarId}
+            calendars={calendars}
+            onChange={setCalendarId}
+          />
 
           {rangeError && <p className="text-sm text-destructive">{rangeError}</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}

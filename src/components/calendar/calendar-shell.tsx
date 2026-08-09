@@ -2,10 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useOffline } from "next/offline";
 import { Suspense, use, useMemo, useOptimistic, useState, useTransition } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
+import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
+import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { Button } from "@/components/ui/button";
 import { LinearProgress } from "@/components/ui/linear-progress";
 import {
@@ -69,6 +72,11 @@ export function CalendarShell({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
+  // オフライン中は書き込みを止める（docs/spec.md §21）。ここで判定した結果を、
+  // 追加ボタン・ドラッグ・編集への入口すべてへ配って、送る前に断つ。
+  const offline = useOffline();
+  useReconnectRefresh();
+
   // 月のデータを取りにいっているか。取得はSuspense境界の内側で起きるが、
   // 進行の表示はヘッダー直下（境界の外）にあるため、ここまで上げてもらう。
   const [windowLoading, setWindowLoading] = useState(false);
@@ -127,6 +135,13 @@ export function CalendarShell({
   const commitDrag = async (commit: DragCommit) => {
     setDragError(null);
 
+    // ドラッグ自体もオフラインでは始まらないようにしてあるが、通信が落ちるのは操作の途中でも
+    // 起こる。送る直前でもう一度見て、保存できたつもりのまま画面だけ動くことを防ぐ。
+    if (offline) {
+      setDragError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
+
     const startIso = localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.startMinutes), timeZone);
 
     try {
@@ -171,6 +186,11 @@ export function CalendarShell({
   const commitAllDayDrag = async (commit: AllDayDragCommit) => {
     setDragError(null);
 
+    if (offline) {
+      setDragError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
+
     try {
       let response: Response;
 
@@ -209,11 +229,13 @@ export function CalendarShell({
   const openEvent = (event: CalendarEventItem) => setViewingEvent(event);
 
   const editEvent = (event: CalendarEventItem) => {
+    if (offline) return;
     setViewingEvent(null);
     setEventDraft(toEventDraft(event, timeZone));
   };
 
   const editTask = (task: TaskItem) => {
+    if (offline) return;
     setViewingTask(null);
     setTaskDraft(toTaskDraft(task, timeZone));
   };
@@ -380,7 +402,9 @@ export function CalendarShell({
           variant="ghost"
           size="icon"
           className="size-10 md:size-9"
-          disabled={pending}
+          // オフライン中に押しても、再接続まで終わらない読み込みが始まるだけになる。
+          // 通信が戻った時点の取り直しは useReconnectRefresh が行う。
+          disabled={pending || offline}
           aria-label="再取得"
           onClick={() => startTransition(() => router.refresh())}
         >
@@ -394,6 +418,8 @@ export function CalendarShell({
       </header>
 
       <LinearProgress active={pending || windowLoading} />
+
+      <OfflineNotice />
 
       {/*
         予定とタスクの到着を待つ必要があるのはグリッドだけ。どの期間を見ているかは
@@ -414,6 +440,7 @@ export function CalendarShell({
           serverMonths={serverMonths}
           scrollTarget={scrollTarget}
           autoRefreshSeconds={autoRefreshSeconds}
+          offline={offline}
           dragError={dragError}
           addMenuOpen={addMenuOpen}
           eventDraft={eventDraft}
@@ -428,8 +455,14 @@ export function CalendarShell({
           onOpenTask={openTask}
           onEditEvent={editEvent}
           onEditTask={editTask}
-          onSelectSlot={(dateKey, minutes) => setQuickDraft(toQuickEventDraft(dateKey, minutes))}
-          onQuickAddOnDay={(dateKey) => setQuickDraft(toQuickEventDraft(dateKey, DEFAULT_START_MINUTES))}
+          onSelectSlot={(dateKey, minutes) => {
+            if (offline) return;
+            setQuickDraft(toQuickEventDraft(dateKey, minutes));
+          }}
+          onQuickAddOnDay={(dateKey) => {
+            if (offline) return;
+            setQuickDraft(toQuickEventDraft(dateKey, DEFAULT_START_MINUTES));
+          }}
           onOpenEventForm={openEventForm}
           onDragCommit={commitDrag}
           onAllDayDragCommit={commitAllDayDrag}
@@ -475,6 +508,7 @@ function CalendarBody({
   serverMonths,
   scrollTarget,
   autoRefreshSeconds,
+  offline,
   dragError,
   addMenuOpen,
   eventDraft,
@@ -512,6 +546,7 @@ function CalendarBody({
   serverMonths: string[];
   scrollTarget: { month: string; nonce: number };
   autoRefreshSeconds: number;
+  offline: boolean;
   dragError: string | null;
   addMenuOpen: boolean;
   eventDraft: EventDraft | null;
@@ -569,6 +604,8 @@ function CalendarBody({
 
   /** 表示画面のままの完了切り替え。編集フォームを経由しないため保存とは別経路で送る。 */
   const handleToggleTaskDone = async (task: TaskItem, done: boolean) => {
+    if (offline) throw new Error(OFFLINE_WRITE_MESSAGE);
+
     const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -628,13 +665,14 @@ function CalendarBody({
           onDragCommit={onDragCommit}
           onAllDayDragCommit={onAllDayDragCommit}
           onSwipe={onSwipe}
+          readOnly={offline}
         />
       )}
 
       <AddButton
         open={addMenuOpen}
-        canAddEvent={data.calendars.length > 0}
-        canAddTask={data.notionReady}
+        canAddEvent={!offline && data.calendars.length > 0}
+        canAddTask={!offline && data.notionReady}
         onToggle={onToggleAddMenu}
         onAddEvent={onAddEvent}
         onAddTask={onAddTask}
@@ -675,6 +713,7 @@ function CalendarBody({
         <EventDetailDialog
           event={viewingEvent}
           timeZone={timeZone}
+          readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditEvent(viewingEvent)}
         />
@@ -684,6 +723,7 @@ function CalendarBody({
         <TaskDetailDialog
           task={viewingTask}
           timeZone={timeZone}
+          readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditTask(viewingTask)}
           onToggleDone={handleToggleTaskDone}

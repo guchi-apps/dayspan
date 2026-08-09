@@ -1,9 +1,11 @@
 "use client";
 
+import { useOffline } from "next/offline";
 import { useState } from "react";
 
 import { Trash2 } from "lucide-react";
 
+import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -25,6 +27,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
+import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateTimeInput } from "./date-time-input";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import type { TouchedRange } from "./use-calendar-chunks";
@@ -83,6 +86,9 @@ export function EventDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
+  const offline = useOffline();
+
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
@@ -139,6 +145,12 @@ export function EventDialog({
   };
 
   const save = async () => {
+    // 開いている最中に通信が落ちることもある。押せない状態にするだけでなく、ここでも断つ。
+    if (offline) {
+      setError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
@@ -187,6 +199,10 @@ export function EventDialog({
 
   const remove = async () => {
     if (!editing) return;
+    if (offline) {
+      setError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -273,18 +289,12 @@ export function EventDialog({
 
           {!editing && (
             <>
-              <Select value={calendarId} onValueChange={setCalendarId}>
-                <SelectTrigger label="保存先カレンダー">
-                  <SelectValue placeholder="カレンダーを選択" />
-                </SelectTrigger>
-                <SelectContent>
-                  {calendars.map((calendar) => (
-                    <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                      {calendar.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CalendarChipSelect
+                label="保存先カレンダー"
+                value={calendarId}
+                calendars={calendars}
+                onChange={setCalendarId}
+              />
 
               <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
                 <SelectTrigger label="繰り返し">
@@ -325,7 +335,7 @@ export function EventDialog({
 
         <DialogFooter className="sm:justify-between">
           {editing ? (
-            <Button variant="ghost" size="sm" disabled={busy} onClick={remove}>
+            <Button variant="ghost" size="sm" disabled={busy || offline} onClick={remove}>
               <Trash2 className="size-4" />
               削除
             </Button>
@@ -337,7 +347,7 @@ export function EventDialog({
               やめる
             </Button>
             <Button
-              disabled={busy || !title.trim() || !calendarId || rangeError !== null}
+              disabled={busy || offline || !title.trim() || !calendarId || rangeError !== null}
               onClick={save}
             >
               保存

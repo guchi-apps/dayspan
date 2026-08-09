@@ -13,18 +13,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { cn } from "@/lib/utils";
 import type { TaskItem } from "@/types/calendar";
 
 export function TaskDetailDialog({
   task,
   timeZone,
+  readOnly = false,
   onClose,
   onEdit,
   onToggleDone,
 }: {
   task: TaskItem;
   timeZone: string;
+  /** 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。 */
+  readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
   /** 完了状態の切り替え。表示画面のままでも設定できるようにするため、保存とは別経路で呼ぶ。 */
@@ -73,6 +77,7 @@ export function TaskDetailDialog({
           size="icon-sm"
           aria-label="編集"
           className="absolute top-2 right-10"
+          disabled={readOnly}
           onClick={edit}
         >
           <Pencil className="size-4" />
@@ -86,9 +91,15 @@ export function TaskDetailDialog({
 
         <div className="flex flex-col gap-4 text-sm">
           <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-            <Checkbox checked={done} disabled={busy} onCheckedChange={(v) => toggleDone(v === true)} />
+            <Checkbox
+              checked={done}
+              disabled={busy || readOnly}
+              onCheckedChange={(v) => toggleDone(v === true)}
+            />
             完了
           </label>
+
+          {readOnly && <p className="px-4 text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
 
           {task.due && <DetailField label="期限" value={formatDue(task, timeZone)} />}
           {task.priority && <DetailField label="優先度" value={task.priority} />}

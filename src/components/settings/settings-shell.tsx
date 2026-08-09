@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
+import { OfflineNotice } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -35,6 +36,8 @@ export function SettingsShell({
         </Button>
         <h1 className="type-title-large min-w-0 flex-1 truncate px-1">{title}</h1>
       </header>
+
+      <OfflineNotice />
 
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
         {description && <p className="type-body-medium text-on-surface-variant">{description}</p>}
