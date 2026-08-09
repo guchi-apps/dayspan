@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
+import { TaskDetailDialog } from "@/components/calendar/task-detail-dialog";
 import { TaskDialog, toTaskDraft, type TaskDraft } from "@/components/calendar/task-dialog";
 import { cn } from "@/lib/utils";
 import {
@@ -37,6 +38,8 @@ export function TaskList({
   const [pending, startTransition] = useTransition();
   const [sort, setSort] = useState<TaskSort>("due");
   const [draft, setDraft] = useState<TaskDraft | null>(null);
+  // タップした直後は表示専用画面を開く。編集アイコンを押したときだけ draft へ切り替える。
+  const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,27 +49,42 @@ export function TaskList({
     [tasks, utils],
   );
 
+  const patchTaskDone = async (task: TaskItem, done: boolean) => {
+    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      // 繰り返しタスクは完了時に次回分が作られるため、通常の更新とは別の経路で送る。
+      body: JSON.stringify({ done, completeAction: true }),
+    });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(body?.message ?? "更新できませんでした。");
+    }
+  };
+
   const toggleDone = async (task: TaskItem, done: boolean) => {
     setBusyId(task.id);
     setError(null);
     try {
-      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        // 繰り返しタスクは完了時に次回分が作られるため、通常の更新とは別の経路で送る。
-        body: JSON.stringify({ done, completeAction: true }),
-      });
-
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        setError(body?.message ?? "更新できませんでした。");
-      }
-    } catch {
-      setError("更新できませんでした。");
+      await patchTaskDone(task, done);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "更新できませんでした。");
     } finally {
       setBusyId(null);
       startTransition(() => router.refresh());
     }
+  };
+
+  /** 表示画面からの完了切り替え。表示画面は自前で完了状態を持つため、ここでは取り直すだけでよい。 */
+  const toggleDoneFromDetail = async (task: TaskItem, done: boolean) => {
+    await patchTaskDone(task, done);
+    startTransition(() => router.refresh());
+  };
+
+  const editTask = (task: TaskItem) => {
+    setViewingTask(null);
+    setDraft(toTaskDraft(task, timeZone));
   };
 
   return (
@@ -133,7 +151,7 @@ export function TaskList({
                     <button
                       type="button"
                       className="min-w-0 flex-1 text-left"
-                      onClick={() => setDraft(toTaskDraft(task, timeZone))}
+                      onClick={() => setViewingTask(task)}
                     >
                       <div
                         className={cn(
@@ -199,6 +217,16 @@ export function TaskList({
             setDraft(null);
             startTransition(() => router.refresh());
           }}
+        />
+      )}
+
+      {viewingTask && (
+        <TaskDetailDialog
+          task={viewingTask}
+          timeZone={timeZone}
+          onClose={() => setViewingTask(null)}
+          onEdit={() => editTask(viewingTask)}
+          onToggleDone={toggleDoneFromDetail}
         />
       )}
     </div>

@@ -26,9 +26,11 @@ import type { CalendarEventItem, CalendarLoadResult, TaskItem } from "@/types/ca
 
 import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, localInputToIso } from "./datetime-fields";
+import { EventDetailDialog } from "./event-detail-dialog";
 import { EventDialog, toEventDraft, type EventDraft } from "./event-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { ContinuousMonthView } from "./continuous-month-view";
+import { TaskDetailDialog } from "./task-detail-dialog";
 import { TaskDialog, toTaskDraft, type TaskDraft } from "./task-dialog";
 import { TimeGridView } from "./time-grid-view";
 import { monthsOfRanges, useCalendarChunks, type TouchedRange } from "./use-calendar-chunks";
@@ -92,11 +94,16 @@ export function CalendarShell({
 
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
+  // クリックした直後は表示専用画面を開く。編集アイコンを押したときだけ draft へ切り替える。
+  const [viewingEvent, setViewingEvent] = useState<CalendarEventItem | null>(null);
+  const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
 
   const closeDialogs = () => {
     setEventDraft(null);
     setTaskDraft(null);
+    setViewingEvent(null);
+    setViewingTask(null);
   };
 
   /** 月表示以外の取り直し。ページごと描き直すため、表示中の期間ぶんをすべて取り直す。 */
@@ -192,7 +199,17 @@ export function CalendarShell({
     }
   };
 
-  const openEvent = (event: CalendarEventItem) => setEventDraft(toEventDraft(event, timeZone));
+  const openEvent = (event: CalendarEventItem) => setViewingEvent(event);
+
+  const editEvent = (event: CalendarEventItem) => {
+    setViewingEvent(null);
+    setEventDraft(toEventDraft(event, timeZone));
+  };
+
+  const editTask = (task: TaskItem) => {
+    setViewingTask(null);
+    setTaskDraft(toTaskDraft(task, timeZone));
+  };
 
   // 月表示ではスクロール位置が、それ以外では選択中の期間が見出しになる。
   const headerLabel =
@@ -203,7 +220,7 @@ export function CalendarShell({
           nav.anchorKey,
           getVisibleDays(nav.view, parseDateKey(nav.anchorKey), weekStartsOn).days,
         );
-  const openTask = (task: TaskItem) => setTaskDraft(toTaskDraft(task, timeZone));
+  const openTask = (task: TaskItem) => setViewingTask(task);
 
   /** 新規作成の初期値。時間グリッドの空き時間を選んだ場合はその日時から1時間で開く。 */
   const newEventDraft = (dateKey: string, minutes: number | null): EventDraft => {
@@ -393,11 +410,15 @@ export function CalendarShell({
           addMenuOpen={addMenuOpen}
           eventDraft={eventDraft}
           taskDraft={taskDraft}
+          viewingEvent={viewingEvent}
+          viewingTask={viewingTask}
           onVisibleMonthChange={handleVisibleMonthChange}
           onSwipe={moveDays}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
           onOpenEvent={openEvent}
           onOpenTask={openTask}
+          onEditEvent={editEvent}
+          onEditTask={editTask}
           onSelectSlot={(dateKey, minutes) => setEventDraft(newEventDraft(dateKey, minutes))}
           onDragCommit={commitDrag}
           onAllDayDragCommit={commitAllDayDrag}
@@ -447,11 +468,15 @@ function CalendarBody({
   addMenuOpen,
   eventDraft,
   taskDraft,
+  viewingEvent,
+  viewingTask,
   onVisibleMonthChange,
   onSwipe,
   onSelectDay,
   onOpenEvent,
   onOpenTask,
+  onEditEvent,
+  onEditTask,
   onSelectSlot,
   onDragCommit,
   onAllDayDragCommit,
@@ -477,11 +502,15 @@ function CalendarBody({
   addMenuOpen: boolean;
   eventDraft: EventDraft | null;
   taskDraft: TaskDraft | null;
+  viewingEvent: CalendarEventItem | null;
+  viewingTask: TaskItem | null;
   onVisibleMonthChange: (monthKey: string) => void;
   onSwipe: (deltaDays: number) => void;
   onSelectDay: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onEditEvent: (event: CalendarEventItem) => void;
+  onEditTask: (task: TaskItem) => void;
   onSelectSlot: (dateKey: string, minutes: number | null) => void;
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
@@ -519,6 +548,28 @@ function CalendarBody({
     }
 
     data.invalidate(touched === null ? null : monthsOfRanges(touched));
+  };
+
+  /** 表示画面のままの完了切り替え。編集フォームを経由しないため保存とは別経路で送る。 */
+  const handleToggleTaskDone = async (task: TaskItem, done: boolean) => {
+    const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      // 繰り返しタスクは完了時に次回分が作られるため、通常の更新とは別の経路で送る。
+      body: JSON.stringify({ done, completeAction: true }),
+    });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
+      throw new Error(body?.message ?? "更新できませんでした。");
+    }
+
+    if (view !== "month") {
+      onRefreshAll();
+      return;
+    }
+
+    data.invalidate(task.due ? monthsOfRanges([{ start: task.due, end: task.due }]) : null);
   };
 
   return (
@@ -587,6 +638,25 @@ function CalendarBody({
           timeZone={timeZone}
           onClose={onCloseDialogs}
           onSaved={handleSaved}
+        />
+      )}
+
+      {viewingEvent && (
+        <EventDetailDialog
+          event={viewingEvent}
+          timeZone={timeZone}
+          onClose={onCloseDialogs}
+          onEdit={() => onEditEvent(viewingEvent)}
+        />
+      )}
+
+      {viewingTask && (
+        <TaskDetailDialog
+          task={viewingTask}
+          timeZone={timeZone}
+          onClose={onCloseDialogs}
+          onEdit={() => onEditTask(viewingTask)}
+          onToggleDone={handleToggleTaskDone}
         />
       )}
     </>
