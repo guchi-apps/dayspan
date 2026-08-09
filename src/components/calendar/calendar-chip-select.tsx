@@ -17,6 +17,10 @@ import { eventColors } from "./calendar-color";
  *
  * カレンダーは数が読めないため、折り返さず横スクロールにする。折り返すと
  * ダイアログの高さが候補の数で変わり、その下にある入力欄の位置が動いてしまう。
+ *
+ * 置く側への前提: この行を包む親には min-w-0 が要る。grid item / flex item の
+ * min-width は既定で auto のため、付け忘れるとチップの合計幅がそのまま親の最小幅になり、
+ * 行の中でスクロールする代わりにダイアログごと横へ広がる。
  */
 export function CalendarChipSelect({
   label,

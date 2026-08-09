@@ -164,7 +164,10 @@ export function QuickEventSheet({
           <DialogTitle>予定を追加</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3">
+        {/* DialogContentはgrid。grid itemは既定でmin-width:autoのため、min-w-0が無いと
+            保存先カレンダーのチップ列の幅がそのままシートの最小幅になり、行の中ではなく
+            シートごと横に広がってしまう。 */}
+        <div className="flex min-w-0 flex-col gap-3">
           <Input
             id="quick-event-title"
             label="タイトル"
