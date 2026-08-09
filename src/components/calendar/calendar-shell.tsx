@@ -348,7 +348,8 @@ export function CalendarShell({
 
         <HeaderNav current="calendar" />
 
-        <div className="flex items-center">
+        {/* スマートフォンはスワイプで移動できるため、年月の表示幅を優先する。 */}
+        <div className="hidden items-center md:flex">
           <Button
             variant="ghost"
             size="icon"
