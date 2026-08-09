@@ -16,6 +16,10 @@ import {
   type PropertyMap,
   type SharedPageSummary,
 } from "@/services/notion/task-database";
+import {
+  REMINDER_FIELD_REQUIREMENTS,
+  type ReminderPropertyMap,
+} from "@/services/notion/reminder-database";
 
 type MissingProperty = { field: string; label: string; types: string[] };
 
@@ -25,6 +29,9 @@ export type NotionSectionState = {
   taskDataSourceId: string | null;
   taskTitle: string | null;
   propertyMap: PropertyMap | null;
+  reminderDataSourceId: string | null;
+  reminderTitle: string | null;
+  reminderPropertyMap: ReminderPropertyMap | null;
   dataSources: DataSourceSummary[];
   sharedPages: SharedPageSummary[];
   dataSourcesFailed: boolean;
@@ -99,6 +106,33 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
       }
 
       setMessage({ text: "タスクDBを設定しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectReminderDataSource = async (dataSourceId: string) => {
+    setBusy(true);
+    setMissing(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/reminder-database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataSourceId }),
+      });
+      if (response.status === 422) {
+        const body = (await response.json()) as { missingRequired: MissingProperty[] };
+        setMissing(body.missingRequired);
+        setMessage({ text: "日付リマインドDBに必要なプロパティが不足しています。", tone: "error" });
+        return;
+      }
+      if (!response.ok) {
+        setMessage({ text: "日付リマインドDBを設定できませんでした。", tone: "error" });
+        return;
+      }
+      setMessage({ text: "日付リマインドDBを設定しました。", tone: "ok" });
       startTransition(() => router.refresh());
     } finally {
       setBusy(false);
@@ -240,6 +274,45 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                       size="sm"
                       disabled={disabled}
                       onClick={() => selectDataSource(dataSource.dataSourceId)}
+                    >
+                      {dataSource.title}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <Separator />
+
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">日付リマインドDBを選択</span>
+              <p className="text-xs text-muted-foreground">
+                記念日や更新日など、完了して消化するものではない日付を管理します。タイトルと日付が必要です。
+              </p>
+              {state.reminderDataSourceId && (
+                <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="secondary">日付リマインドDB</Badge>
+                    <span className="font-medium">{state.reminderTitle}</span>
+                  </div>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {REMINDER_FIELD_REQUIREMENTS.map((requirement) => (
+                      <div key={requirement.field} className="contents">
+                        <dt>{requirement.label}</dt>
+                        <dd>{state.reminderPropertyMap?.[requirement.field] ?? "未対応"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
+              <ul className="flex flex-wrap gap-2">
+                {state.dataSources.map((dataSource) => (
+                  <li key={dataSource.dataSourceId}>
+                    <Button
+                      variant={state.reminderDataSourceId === dataSource.dataSourceId ? "secondary" : "outline"}
+                      size="sm"
+                      disabled={disabled || state.taskDataSourceId === dataSource.dataSourceId}
+                      onClick={() => selectReminderDataSource(dataSource.dataSourceId)}
                     >
                       {dataSource.title}
                     </Button>
