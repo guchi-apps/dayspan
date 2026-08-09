@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { memo, useMemo, useSyncExternalStore } from "react";
 
 import { cn } from "@/lib/utils";
 import { eventColors } from "./calendar-color";
@@ -12,6 +12,7 @@ import {
   MINUTES_PER_DAY,
   type CalendarDateUtils,
 } from "./item-layout";
+import { SWIPE_SNAP_EASING, SWIPE_SNAP_MS, useDaySwipe } from "./use-day-swipe";
 import {
   useAllDayDrag,
   useGridDrag,
@@ -23,6 +24,9 @@ import {
   type DragTarget,
 } from "./use-grid-drag";
 
+/** 左から順に、前の期間・表示中の期間・次の期間。 */
+type PaneDays = [string[], string[], string[]];
+
 export function TimeGridView({
   days,
   events,
@@ -33,6 +37,7 @@ export function TimeGridView({
   onSelectSlot,
   onDragCommit,
   onAllDayDragCommit,
+  onSwipe,
 }: {
   days: string[];
   events: CalendarEventItem[];
@@ -44,11 +49,14 @@ export function TimeGridView({
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
+  /** 左右スワイプで期間を送る。1で次、-1で前。 */
+  onSwipe: (direction: 1 | -1) => void;
 }) {
   const todayKey = utils.todayKey();
   const {
     gridRef,
     preview,
+    dragging,
     startDrag,
     handlePointerMove,
     handlePointerUp,
@@ -58,42 +66,51 @@ export function TimeGridView({
   const {
     rowRef: allDayRowRef,
     preview: allDayPreview,
+    dragging: allDayDragging,
     startDrag: startAllDayDrag,
     handlePointerMove: handleAllDayPointerMove,
     handlePointerUp: handleAllDayPointerUp,
     consumeDragClick: consumeAllDayDragClick,
   } = useAllDayDrag({ days, onCommit: onAllDayDragCommit });
 
+  // 予定を掴んでいる間の横移動は、日付ではなくその予定を動かす操作。
+  const {
+    offset: swipeOffset,
+    snapping: swipeSnapping,
+    rootRef: swipeRootRef,
+    trackRef: swipeTrackRef,
+    handlers: swipeHandlers,
+  } = useDaySwipe({
+    daysKey: days[0],
+    enabled: !dragging && !allDayDragging,
+    onSwipe,
+  });
+
+  // 前後の期間。表示中と同じ日数ぶんずらして左右に並べ、指の動きに合わせて見せる。
+  const panes = useMemo<PaneDays>(
+    () => [shiftDays(days, -days.length), days, shiftDays(days, days.length)],
+    [days],
+  );
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // touch-pan-y は、縦スクロールはブラウザに任せつつ横の動きだけをこちらで受け取るための指定。
+    // これが無いと、指を横へ動かした時点でブラウザがジェスチャーを持っていってしまう。
+    <div
+      ref={swipeRootRef}
+      className="flex min-h-0 flex-1 touch-pan-y flex-col"
+      {...swipeHandlers}
+    >
       <div className="flex border-b border-outline-variant">
         <div className="w-12 shrink-0" />
-        {days.map((dateKey) => (
-          <div key={dateKey} className="flex-1 py-1.5 text-center">
-            <div
-              className={cn(
-                "type-label-small",
-                weekdayTone(dateKey) ?? "text-on-surface-variant",
-              )}
-            >
-              {weekdayLabel(dateKey)}
-            </div>
-            <div
-              className={cn(
-                "mx-auto mt-0.5 grid size-7 place-items-center rounded-full text-sm",
-                dateKey === todayKey
-                  ? "bg-primary font-semibold text-primary-foreground"
-                  : "font-medium",
-              )}
-            >
-              {Number(dateKey.slice(8, 10))}
-            </div>
-          </div>
-        ))}
+        <SwipeTrack offset={swipeOffset} snapping={swipeSnapping} panes={panes}>
+          {(paneDays) => <DayHeaderPane days={paneDays} todayKey={todayKey} />}
+        </SwipeTrack>
       </div>
 
       <AllDayArea
-        days={days}
+        panes={panes}
+        swipeOffset={swipeOffset}
+        swipeSnapping={swipeSnapping}
         events={events}
         tasks={tasks}
         utils={utils}
@@ -135,29 +152,165 @@ export function TimeGridView({
 
           <NowLine days={days} utils={utils} />
 
-          {days.map((dateKey, dayIndex) => (
-            <DayColumn
-              key={dateKey}
-              dateKey={dateKey}
-              dayIndex={dayIndex}
-              preview={preview}
-              onStartDrag={startDrag}
-              onConsumeDragClick={consumeDragClick}
-              utils={utils}
-              onOpenEvent={onOpenEvent}
-              onOpenTask={onOpenTask}
-              onSelectSlot={onSelectSlot}
-              events={events.filter(
-                (event) => !event.allDay && utils.eventCoversDay(event, dateKey),
-              )}
-              tasks={tasks.filter((task) => task.hasTime && utils.taskCoversDay(task, dateKey))}
-            />
-          ))}
+          <SwipeTrack
+            offset={swipeOffset}
+            snapping={swipeSnapping}
+            panes={panes}
+            trackRef={swipeTrackRef}
+          >
+            {(paneDays, isCenter) => (
+              <DayColumnsPane
+                days={paneDays}
+                events={events}
+                tasks={tasks}
+                utils={utils}
+                // 掴んでいる予定は、表示中の期間の中でだけ動かす。
+                preview={isCenter ? preview : null}
+                onStartDrag={startDrag}
+                onConsumeDragClick={consumeDragClick}
+                onOpenEvent={onOpenEvent}
+                onOpenTask={onOpenTask}
+                onSelectSlot={onSelectSlot}
+              />
+            )}
+          </SwipeTrack>
         </div>
       </div>
     </div>
   );
 }
+
+/**
+ * 左右へずらす帯。表示中の期間を軸に、前後の期間をその左右へ置く。
+ *
+ * 高さを決めるのは表示中の期間だけにしてある。前後を通常の並びに混ぜると、
+ * 隣の期間に終日予定が多いだけで終日エリアが伸び、触っていないのに画面が変わってしまう。
+ */
+function SwipeTrack({
+  offset,
+  snapping,
+  panes,
+  trackRef,
+  children,
+}: {
+  offset: number;
+  snapping: boolean;
+  panes: PaneDays;
+  /** 1期間ぶんの幅を測る先。指の移動量を「何期間ぶんか」に直すために使う。 */
+  trackRef?: React.Ref<HTMLDivElement>;
+  children: (days: string[], isCenter: boolean) => React.ReactNode;
+}) {
+  return (
+    <div ref={trackRef} className="relative min-w-0 flex-1 overflow-hidden">
+      <div
+        className="relative flex"
+        style={{
+          transform: `translateX(${offset * 100}%)`,
+          transition: snapping ? `transform ${SWIPE_SNAP_MS}ms ${SWIPE_SNAP_EASING}` : undefined,
+        }}
+      >
+        {/* 画面の外にある期間は読み上げ・フォーカスの対象から外す。 */}
+        <div className="absolute inset-y-0 right-full w-full" inert>
+          {children(panes[0], false)}
+        </div>
+        <div className="w-full shrink-0">{children(panes[1], true)}</div>
+        <div className="absolute inset-y-0 left-full w-full" inert>
+          {children(panes[2], false)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const DayHeaderPane = memo(function DayHeaderPane({
+  days,
+  todayKey,
+}: {
+  days: string[];
+  todayKey: string;
+}) {
+  return (
+    <div className="flex">
+      {days.map((dateKey) => (
+        <div key={dateKey} className="flex-1 py-1.5 text-center">
+          <div
+            className={cn(
+              "type-label-small",
+              weekdayTone(dateKey) ?? "text-on-surface-variant",
+            )}
+          >
+            {weekdayLabel(dateKey)}
+          </div>
+          <div
+            className={cn(
+              "mx-auto mt-0.5 grid size-7 place-items-center rounded-full text-sm",
+              dateKey === todayKey
+                ? "bg-primary font-semibold text-primary-foreground"
+                : "font-medium",
+            )}
+          >
+            {Number(dateKey.slice(8, 10))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+});
+
+/**
+ * 1期間ぶんの日付列。前後の期間は指を離すまで動かないため、
+ * 掴んでいる最中の描き直しに巻き込まれないようメモ化する。
+ */
+const DayColumnsPane = memo(function DayColumnsPane({
+  days,
+  events,
+  tasks,
+  utils,
+  preview,
+  onStartDrag,
+  onConsumeDragClick,
+  onOpenEvent,
+  onOpenTask,
+  onSelectSlot,
+}: {
+  days: string[];
+  events: CalendarEventItem[];
+  tasks: TaskItem[];
+  utils: CalendarDateUtils;
+  preview: DragPreview | null;
+  onStartDrag: (
+    event: React.PointerEvent,
+    target: DragTarget,
+    geometry: { dayIndex: number; startMinutes: number; endMinutes: number },
+  ) => void;
+  onConsumeDragClick: () => boolean;
+  onOpenEvent: (event: CalendarEventItem) => void;
+  onOpenTask: (task: TaskItem) => void;
+  onSelectSlot: (dateKey: string, minutes: number) => void;
+}) {
+  return (
+    <div className="flex" style={{ height: GRID_HEIGHT }}>
+      {days.map((dateKey, dayIndex) => (
+        <DayColumn
+          key={dateKey}
+          dateKey={dateKey}
+          dayIndex={dayIndex}
+          preview={preview}
+          onStartDrag={onStartDrag}
+          onConsumeDragClick={onConsumeDragClick}
+          utils={utils}
+          onOpenEvent={onOpenEvent}
+          onOpenTask={onOpenTask}
+          onSelectSlot={onSelectSlot}
+          events={events.filter(
+            (event) => !event.allDay && utils.eventCoversDay(event, dateKey),
+          )}
+          tasks={tasks.filter((task) => task.hasTime && utils.taskCoversDay(task, dateKey))}
+        />
+      ))}
+    </div>
+  );
+});
 
 function DayColumn({
   dateKey,
@@ -390,7 +543,9 @@ function DayColumn({
 }
 
 function AllDayArea({
-  days,
+  panes,
+  swipeOffset,
+  swipeSnapping,
   events,
   tasks,
   utils,
@@ -403,7 +558,9 @@ function AllDayArea({
   onOpenEvent,
   onOpenTask,
 }: {
-  days: string[];
+  panes: PaneDays;
+  swipeOffset: number;
+  swipeSnapping: boolean;
   events: CalendarEventItem[];
   tasks: TaskItem[];
   utils: CalendarDateUtils;
@@ -417,6 +574,63 @@ function AllDayArea({
   onConsumeDragClick: () => boolean;
   onPointerMove: (event: React.PointerEvent) => void;
   onPointerUp: (event: React.PointerEvent) => void;
+  onOpenEvent: (event: CalendarEventItem) => void;
+  onOpenTask: (task: TaskItem) => void;
+}) {
+  return (
+    <div
+      ref={rowRef}
+      data-gutter-width="48"
+      className="flex border-b border-outline-variant bg-surface-container-low"
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
+      <div className="type-label-small w-12 shrink-0 py-1.5 pr-2 text-right text-on-surface-variant">
+        終日
+      </div>
+
+      <SwipeTrack offset={swipeOffset} snapping={swipeSnapping} panes={panes}>
+        {(paneDays, isCenter) => (
+          <AllDayPane
+            days={paneDays}
+            events={events}
+            tasks={tasks}
+            utils={utils}
+            preview={isCenter ? preview : null}
+            onStartDrag={onStartDrag}
+            onConsumeDragClick={onConsumeDragClick}
+            onOpenEvent={onOpenEvent}
+            onOpenTask={onOpenTask}
+          />
+        )}
+      </SwipeTrack>
+    </div>
+  );
+}
+
+const AllDayPane = memo(function AllDayPane({
+  days,
+  events,
+  tasks,
+  utils,
+  preview,
+  onStartDrag,
+  onConsumeDragClick,
+  onOpenEvent,
+  onOpenTask,
+}: {
+  days: string[];
+  events: CalendarEventItem[];
+  tasks: TaskItem[];
+  utils: CalendarDateUtils;
+  preview: AllDayDragPreview | null;
+  onStartDrag: (
+    event: React.PointerEvent,
+    target: AllDayDragTarget,
+    dayIndex: number,
+  ) => void;
+  onConsumeDragClick: () => boolean;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
 }) {
@@ -436,17 +650,7 @@ function AllDayArea({
       : task.due;
 
   return (
-    <div
-      ref={rowRef}
-      data-gutter-width="48"
-      className="flex border-b border-outline-variant bg-surface-container-low"
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-    >
-      <div className="type-label-small w-12 shrink-0 py-1.5 pr-2 text-right text-on-surface-variant">
-        終日
-      </div>
+    <div className="flex h-full">
       {days.map((dateKey, dayIndex) => {
         const dayEvents = events.filter(
           (event) => event.allDay && utils.eventCoversDay(shiftedEvent(event), dateKey),
@@ -514,13 +718,17 @@ function AllDayArea({
       })}
     </div>
   );
-}
+});
 
 /** YYYY-MM-DD を日数分ずらす。UTC正午で扱い、タイムゾーンによる日付ずれを避ける。 */
 function shiftDateKey(dateKey: string, days: number): string {
   const date = new Date(`${dateKey.slice(0, 10)}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function shiftDays(days: string[], delta: number): string[] {
+  return days.map((dateKey) => shiftDateKey(dateKey, delta));
 }
 
 /** 予定ブロックの上端・下端。ここを掴むと開始または終了だけが動く。 */

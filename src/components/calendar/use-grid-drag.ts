@@ -451,6 +451,7 @@ export function useAllDayDrag({
   return {
     rowRef,
     preview,
+    dragging: active,
     startDrag,
     handlePointerMove,
     handlePointerUp,
