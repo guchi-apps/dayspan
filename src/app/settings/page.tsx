@@ -11,8 +11,10 @@ import { loadCalendarSettings } from "@/services/google-calendar/settings";
 import { createNotionClient } from "@/services/notion/client";
 import {
   listCandidateDataSources,
+  listSharedPages,
   type DataSourceSummary,
   type PropertyMap,
+  type SharedPageSummary,
 } from "@/services/notion/task-database";
 
 export default async function SettingsPage({
@@ -60,6 +62,7 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
       taskTitle: null,
       propertyMap: null,
       dataSources: [],
+      sharedPages: [],
       dataSourcesFailed: false,
     };
   }
@@ -67,9 +70,14 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
   // 候補一覧の取得に失敗しても設定画面自体は開けるようにする。
   // トークン失効時にここで例外を投げると、接続の解除もできなくなるため。
   let dataSources: DataSourceSummary[] = [];
+  let sharedPages: SharedPageSummary[] = [];
   let dataSourcesFailed = false;
   try {
-    dataSources = await listCandidateDataSources(createNotionClient(connection));
+    const notion = createNotionClient(connection);
+    [dataSources, sharedPages] = await Promise.all([
+      listCandidateDataSources(notion),
+      listSharedPages(notion),
+    ]);
   } catch {
     dataSourcesFailed = true;
   }
@@ -81,6 +89,7 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
     taskTitle: connection.taskTitle,
     propertyMap: (connection.propertyMap as PropertyMap | null) ?? null,
     dataSources,
+    sharedPages,
     dataSourcesFailed,
   };
 }

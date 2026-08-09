@@ -2,17 +2,19 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { NotebookPen } from "lucide-react";
+import { NotebookPen, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import {
   TASK_FIELD_REQUIREMENTS,
   type DataSourceSummary,
   type PropertyMap,
+  type SharedPageSummary,
 } from "@/services/notion/task-database";
 
 type MissingProperty = { field: string; label: string; types: string[] };
@@ -24,6 +26,7 @@ export type NotionSectionState = {
   taskTitle: string | null;
   propertyMap: PropertyMap | null;
   dataSources: DataSourceSummary[];
+  sharedPages: SharedPageSummary[];
   dataSourcesFailed: boolean;
 };
 
@@ -34,6 +37,9 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
   const [message, setMessage] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
   const [missing, setMissing] = useState<MissingProperty[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newDatabaseTitle, setNewDatabaseTitle] = useState("DaySpan タスク");
+  const [parentPageId, setParentPageId] = useState("");
 
   const connect = async () => {
     setBusy(true);
@@ -93,6 +99,30 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
       }
 
       setMessage({ text: "タスクDBを設定しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createTaskDatabase = async () => {
+    setBusy(true);
+    setMissing(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/task-database/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentPageId, title: newDatabaseTitle }),
+      });
+
+      if (!response.ok) {
+        setMessage({ text: "タスクDBを作成できませんでした。", tone: "error" });
+        return;
+      }
+
+      setCreating(false);
+      setMessage({ text: "タスクDBを作成して設定しました。", tone: "ok" });
       startTransition(() => router.refresh());
     } finally {
       setBusy(false);
@@ -216,6 +246,82 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                   </li>
                 ))}
               </ul>
+            </div>
+
+            <Separator />
+
+            <div className="flex flex-col gap-2">
+              {!creating ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-fit"
+                  disabled={disabled}
+                  onClick={() => setCreating(true)}
+                >
+                  <Plus className="size-4" />
+                  タスクDBを新規作成
+                </Button>
+              ) : (
+                <div className="flex flex-col gap-3 rounded-lg bg-muted/50 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    必要なプロパティを揃えたタスクDBをNotionに作成します。作成先のページは、
+                    このConnectionに共有されているものから選べます。
+                  </p>
+
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="new-database-title">データベース名</Label>
+                    <Input
+                      id="new-database-title"
+                      value={newDatabaseTitle}
+                      onChange={(event) => setNewDatabaseTitle(event.target.value)}
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm font-medium">作成先のページ</span>
+                    {state.sharedPages.length === 0 ? (
+                      <p className="text-xs text-destructive">
+                        共有されているページがありません。Notionで任意のページを開き、
+                        ••• →「接続」からこのConnectionを追加してください。
+                      </p>
+                    ) : (
+                      <ul className="flex flex-wrap gap-2">
+                        {state.sharedPages.map((page) => (
+                          <li key={page.pageId}>
+                            <Button
+                              variant={parentPageId === page.pageId ? "secondary" : "outline"}
+                              size="sm"
+                              disabled={disabled}
+                              onClick={() => setParentPageId(page.pageId)}
+                            >
+                              {page.title}
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={disabled || !parentPageId || !newDatabaseTitle.trim()}
+                      onClick={createTaskDatabase}
+                    >
+                      作成する
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={disabled}
+                      onClick={() => setCreating(false)}
+                    >
+                      やめる
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
