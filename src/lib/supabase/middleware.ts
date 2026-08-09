@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getRequestOrigin } from "@/lib/request-origin";
 
-const publicPaths = ["/login", "/auth/callback"];
+const publicPaths = ["/login", "/auth/signin", "/auth/callback"];
 
 function isPublicPath(pathname: string): boolean {
   return publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`));

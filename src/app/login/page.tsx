@@ -1,15 +1,20 @@
-import { Suspense } from "react";
+import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 
-import { GoogleLoginButton } from "@/components/auth/google-login-button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; callbackUrl?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, callbackUrl } = await searchParams;
+
+  const next =
+    callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
+      ? callbackUrl
+      : "/calendar";
 
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-6 bg-muted/30 p-4">
@@ -36,9 +41,13 @@ export default async function LoginPage({
               ログインに失敗しました。時間をおいて再度お試しください。
             </p>
           )}
-          <Suspense fallback={null}>
-            <GoogleLoginButton />
-          </Suspense>
+
+          {/* スマートフォンでも押しやすい高さにする。既定のボタン高さ(32px)はタップ対象として小さい。 */}
+          <Button asChild className="h-11 w-full text-base">
+            <Link href={`/auth/signin?next=${encodeURIComponent(next)}`} prefetch={false}>
+              Googleでログイン
+            </Link>
+          </Button>
         </CardContent>
       </Card>
     </div>
