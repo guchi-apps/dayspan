@@ -185,8 +185,9 @@ export function CalendarShell({
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <div className="flex items-center gap-1 font-semibold">
+      <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
+        {/* 狭い画面ではアプリ名を出さない。現在地は下部のナビゲーションバーが示している。 */}
+        <div className="hidden items-center gap-1 font-semibold md:flex">
           <CalendarDays className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
         </div>
@@ -202,12 +203,12 @@ export function CalendarShell({
           </Button>
         </div>
 
-        {/* 日付が主役。どの期間を見ているかが常に読める大きさにする。 */}
-        <h1 className="type-title-large min-w-0 flex-1 truncate">
+        {/* どの期間を見ているかは常に読めなければならない。他の操作より優先して幅を与える。 */}
+        <h1 className="type-title-medium md:type-title-large min-w-0 flex-1 truncate">
           {formatRangeLabel(view, anchorKey, days)}
         </h1>
 
-        <Button variant="outline" size="sm" onClick={goToday}>
+        <Button variant="outline" size="xs" className="md:h-8 md:px-4" onClick={goToday}>
           今日
         </Button>
 
@@ -219,7 +220,7 @@ export function CalendarShell({
               variant={view === item.view ? "secondary" : "ghost"}
               size="xs"
               className={cn(
-                "type-label-large h-8 rounded-none px-3",
+                "type-label-medium h-7 rounded-none px-2.5 md:type-label-large md:h-8 md:px-3",
                 view === item.view && "text-on-secondary-container",
                 item.desktopOnly && "hidden md:inline-flex",
               )}

@@ -67,13 +67,13 @@ export function TimeGridView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex border-b border-outline-variant">
-        <div className="w-14 shrink-0" />
+        <div className="w-12 shrink-0" />
         {days.map((dateKey) => (
           <div key={dateKey} className="flex-1 py-1.5 text-center">
             <div
               className={cn(
-                "text-[10px] tracking-widest",
-                weekdayTone(dateKey) ?? "text-muted-foreground",
+                "type-label-small",
+                weekdayTone(dateKey) ?? "text-on-surface-variant",
               )}
             >
               {weekdayLabel(dateKey)}
@@ -110,21 +110,21 @@ export function TimeGridView({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div
           ref={gridRef}
-          data-gutter-width="56"
+          data-gutter-width="48"
           className="relative flex"
           style={{ height: HOUR_HEIGHT * 24 }}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
         >
-          <div className="relative w-14 shrink-0">
+          <div className="relative w-12 shrink-0">
             {Array.from({ length: 24 }, (_, hour) => (
               <div
                 key={hour}
                 className={cn(
-                  "absolute right-2 -translate-y-1/2 text-[10px]",
+                  "type-label-small absolute right-1.5 -translate-y-1/2",
                   // 6時間ごと（0/6/12/18時）を強めて、一日の四分割が目で追えるようにする。
-                  hour % 6 === 0 ? "font-medium text-foreground" : "text-muted-foreground",
+                  hour % 6 === 0 ? "text-on-surface" : "text-on-surface-variant",
                 )}
                 style={{ top: hour * HOUR_HEIGHT }}
               >
@@ -438,13 +438,13 @@ function AllDayArea({
   return (
     <div
       ref={rowRef}
-      data-gutter-width="56"
+      data-gutter-width="48"
       className="flex border-b border-outline-variant bg-surface-container-low"
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      <div className="w-14 shrink-0 py-1.5 pr-2 text-right text-[10px] tracking-wide text-muted-foreground">
+      <div className="type-label-small w-12 shrink-0 py-1.5 pr-2 text-right text-on-surface-variant">
         終日
       </div>
       {days.map((dateKey, dayIndex) => {
@@ -585,15 +585,15 @@ function NowLine({ days, utils }: { days: string[]; utils: CalendarDateUtils }) 
 
   return (
     <div className="pointer-events-none absolute inset-x-0 z-20" style={{ top }}>
-      <span className="type-label-small absolute left-0 w-14 -translate-y-1/2 pr-2 text-right text-primary">
+      <span className="type-label-small absolute left-0 w-12 -translate-y-1/2 pr-1.5 text-right text-primary">
         {utils.formatTime(iso)}
       </span>
 
-      <span className="absolute right-0 left-14 block h-px bg-primary" />
+      <span className="absolute right-0 left-12 block h-px bg-primary" />
 
       <span
         className="absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"
-        style={{ left: `calc(3.5rem + (100% - 3.5rem) * ${(todayIndex + 0.5) / days.length})` }}
+        style={{ left: `calc(3rem + (100% - 3rem) * ${(todayIndex + 0.5) / days.length})` }}
       />
     </div>
   );
