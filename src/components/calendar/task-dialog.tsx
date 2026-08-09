@@ -150,15 +150,13 @@ export function TaskDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="task-title">タイトル</Label>
-            <Input
-              id="task-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-            />
-          </div>
+          <Input
+            id="task-title"
+            label="タイトル"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            autoFocus
+          />
 
           <div className="flex flex-col gap-1.5">
             <Label>期限</Label>
@@ -231,15 +229,13 @@ export function TaskDialog({
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="task-tags">タグ</Label>
-            <Input
-              id="task-tags"
-              placeholder="カンマ区切り"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-            />
-          </div>
+          <Input
+            id="task-tags"
+            label="タグ"
+            placeholder="カンマ区切り"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+          />
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="task-memo">メモ</Label>

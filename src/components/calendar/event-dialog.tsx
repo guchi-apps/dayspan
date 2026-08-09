@@ -220,15 +220,13 @@ export function EventDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="event-title">タイトル</Label>
-            <Input
-              id="event-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-            />
-          </div>
+          <Input
+            id="event-title"
+            label="タイトル"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            autoFocus
+          />
 
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
@@ -236,24 +234,20 @@ export function EventDialog({
           </label>
 
           <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="event-start">開始</Label>
-              <Input
-                id="event-start"
-                type={allDay ? "date" : "datetime-local"}
-                value={start}
-                onChange={(e) => changeStart(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="event-end">終了</Label>
-              <Input
-                id="event-end"
-                type={allDay ? "date" : "datetime-local"}
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-              />
-            </div>
+            <Input
+              id="event-start"
+              label="開始"
+              type={allDay ? "date" : "datetime-local"}
+              value={start}
+              onChange={(e) => changeStart(e.target.value)}
+            />
+            <Input
+              id="event-end"
+              label="終了"
+              type={allDay ? "date" : "datetime-local"}
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+            />
           </div>
 
           {!editing && (
@@ -295,24 +289,20 @@ export function EventDialog({
             </>
           )}
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="event-location">場所</Label>
-            <Input
-              id="event-location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
-          </div>
+          <Input
+            id="event-location"
+            label="場所"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="event-attendees">参加者</Label>
-            <Input
-              id="event-attendees"
-              placeholder="メールアドレスをカンマ区切りで"
-              value={attendees}
-              onChange={(e) => setAttendees(e.target.value)}
-            />
-          </div>
+          <Input
+            id="event-attendees"
+            label="参加者"
+            placeholder="メールアドレスをカンマ区切りで"
+            value={attendees}
+            onChange={(e) => setAttendees(e.target.value)}
+          />
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="event-description">説明</Label>

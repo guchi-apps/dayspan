@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
   TASK_FIELD_REQUIREMENTS,
@@ -147,9 +146,9 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
         {!state.connected ? (
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="notion-token">Integration Token</Label>
               <Input
                 id="notion-token"
+                label="Integration Token"
                 type="password"
                 autoComplete="off"
                 placeholder="ntn_..."
@@ -259,14 +258,12 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                     このConnectionに共有されているものから選べます。
                   </p>
 
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="new-database-title">データベース名</Label>
-                    <Input
-                      id="new-database-title"
-                      value={newDatabaseTitle}
-                      onChange={(event) => setNewDatabaseTitle(event.target.value)}
-                    />
-                  </div>
+                  <Input
+                    id="new-database-title"
+                    label="データベース名"
+                    value={newDatabaseTitle}
+                    onChange={(event) => setNewDatabaseTitle(event.target.value)}
+                  />
 
                   <div className="flex flex-col gap-2">
                     <span className="text-sm font-medium">作成先のページ</span>
