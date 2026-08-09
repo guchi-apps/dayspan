@@ -59,7 +59,7 @@ export function CalendarChipSelect({
 
   if (calendars.length === 0) {
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className="flex min-w-0 flex-col gap-1.5">
         <span className="type-label-medium text-on-surface-variant">{label}</span>
         <p className="type-body-small text-on-surface-variant">
           予定を作成できるカレンダーがありません。
@@ -69,7 +69,7 @@ export function CalendarChipSelect({
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <span id={labelId} className="type-label-medium text-on-surface-variant">
         {label}
       </span>
@@ -77,9 +77,12 @@ export function CalendarChipSelect({
         ref={scrollerRef}
         role="radiogroup"
         aria-labelledby={labelId}
+        // 横に送るのはこの行だけにする。min-w-0が無いと、縮まないチップの合計幅が
+        // そのままダイアログの最小幅になり、画面ごと横に広がってしまう。
+        //
         // チップの枠やフォーカスリングが切れないよう、左右と下に少しだけ余白を確保して
         // その分を負のマージンで戻す。
-        className="-mx-1 flex gap-2 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:thin]"
+        className="-mx-1 flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:thin]"
       >
         {calendars.map((calendar, index) => {
           const selected = calendar.calendarId === value;

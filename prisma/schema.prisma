@@ -98,6 +98,12 @@ model NotionConnection {
   // 固定名を前提にせず、接続時の検証結果をここへ保存する（docs/spec.md §9）。
   propertyMap Json?
 
+  // 記念日・更新日など、完了を持たない日付リマインド用のデータソース。
+  reminderDataSourceId String?
+  reminderDatabaseId   String?
+  reminderTitle        String?
+  reminderPropertyMap  Json?
+
   lastValidatedAt DateTime?
 
   createdAt DateTime @default(now())

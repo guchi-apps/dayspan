@@ -39,7 +39,19 @@ export type TaskItem = {
   url: string | null;
 };
 
-export type CalendarItem = CalendarEventItem | TaskItem;
+export type ReminderItem = {
+  kind: "reminder";
+  id: string;
+  title: string;
+  /** 対象日。日付のみは YYYY-MM-DD、時刻ありは ISO 8601。 */
+  date: string;
+  hasTime: boolean;
+  category: string | null;
+  memo: string | null;
+  url: string | null;
+};
+
+export type CalendarItem = CalendarEventItem | TaskItem | ReminderItem;
 
 /** 予定の保存先として選べるカレンダー。 */
 export type WritableCalendar = {
@@ -52,6 +64,7 @@ export type WritableCalendar = {
 export type CalendarLoadResult = {
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   calendars: WritableCalendar[];
   notionReady: boolean;
   /** 連携ごとの取得失敗。片方が失敗してももう片方は表示できるようにする。 */

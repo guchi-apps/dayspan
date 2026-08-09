@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { CalendarDays, ListChecks, Settings } from "lucide-react";
+import { BellRing, CalendarDays, ListChecks, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
   { href: "/calendar", key: "calendar", label: "カレンダー", icon: CalendarDays },
   { href: "/tasks", key: "tasks", label: "タスク", icon: ListChecks },
+  { href: "/reminders", key: "reminders", label: "日付", icon: BellRing },
   { href: "/settings", key: "settings", label: "設定", icon: Settings },
 ] as const;
 

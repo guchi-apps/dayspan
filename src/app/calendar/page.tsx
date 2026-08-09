@@ -38,7 +38,7 @@ export default async function CalendarPage({
   ]);
 
   // どちらも未接続の状態でカレンダーだけ出しても何も表示されないため、設定へ誘導する。
-  if (googleAccountCount === 0 && !notionConnection?.taskDataSourceId) {
+  if (googleAccountCount === 0 && !notionConnection?.taskDataSourceId && !notionConnection?.reminderDataSourceId) {
     return <ConnectPrompt />;
   }
 
