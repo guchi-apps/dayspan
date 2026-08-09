@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { externalApiError } from "@/lib/api-error";
+
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { deleteEvent, updateEvent, type EventWriteInput } from "@/services/google-calendar/events";
@@ -45,8 +47,8 @@ export async function PATCH(
       timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
     });
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "google_request_failed" }, { status: 502 });
+  } catch (error) {
+    return externalApiError("google", "予定の更新", error);
   }
 }
 
@@ -73,7 +75,7 @@ export async function DELETE(
   try {
     await deleteEvent(account, calendarId, eventId);
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "google_request_failed" }, { status: 502 });
+  } catch (error) {
+    return externalApiError("google", "予定の削除", error);
   }
 }

@@ -103,10 +103,13 @@ export function TaskDialog({
       );
 
       if (!response.ok) {
-        setError("保存できませんでした。");
+        setError(await readErrorMessage(response, "保存できませんでした。"));
         return;
       }
       onSaved();
+    } catch (cause) {
+      // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
+      setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
     } finally {
       setBusy(false);
     }
@@ -258,4 +261,14 @@ export function toTaskDraft(task: TaskItem, timeZone: string): TaskDraft {
   if (!task.due) return { task, dueMode: "none", due: "" };
   if (!task.hasTime) return { task, dueMode: "date", due: task.due };
   return { task, dueMode: "datetime", due: isoToLocalInput(task.due, timeZone) };
+}
+
+/** サーバーが返した失敗理由を取り出す。無い場合は既定の文言にする。 */
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: string; error?: string };
+    return body.message ?? body.error ?? fallback;
+  } catch {
+    return fallback;
+  }
 }

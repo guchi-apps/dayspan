@@ -117,10 +117,13 @@ export function EventDialog({
       );
 
       if (!response.ok) {
-        setError("保存できませんでした。");
+        setError(await readErrorMessage(response, "保存できませんでした。"));
         return;
       }
       onSaved();
+    } catch (cause) {
+      // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
+      setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
     } finally {
       setBusy(false);
     }
@@ -136,10 +139,13 @@ export function EventDialog({
         { method: "DELETE" },
       );
       if (!response.ok) {
-        setError("削除できませんでした。");
+        setError(await readErrorMessage(response, "削除できませんでした。"));
         return;
       }
       onSaved();
+    } catch (cause) {
+      // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
+      setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
     } finally {
       setBusy(false);
     }
@@ -296,4 +302,14 @@ export function toEventDraft(event: CalendarEventItem, timeZone: string): EventD
     start: event.allDay ? event.start : isoToLocalInput(event.start, timeZone),
     end: event.allDay ? event.end : isoToLocalInput(event.end, timeZone),
   };
+}
+
+/** サーバーが返した失敗理由を取り出す。無い場合は既定の文言にする。 */
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: string; error?: string };
+    return body.message ?? body.error ?? fallback;
+  } catch {
+    return fallback;
+  }
 }

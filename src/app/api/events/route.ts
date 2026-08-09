@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { externalApiError } from "@/lib/api-error";
+
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createEvent, type EventWriteInput } from "@/services/google-calendar/events";
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
       timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
     });
     return NextResponse.json({ id: created.id });
-  } catch {
-    return NextResponse.json({ error: "google_request_failed" }, { status: 502 });
+  } catch (error) {
+    return externalApiError("google", "予定の作成", error);
   }
 }

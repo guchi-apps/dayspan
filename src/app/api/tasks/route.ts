@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { externalApiError } from "@/lib/api-error";
+
 import { requireUserId } from "@/lib/auth-user";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
@@ -27,7 +29,7 @@ export async function POST(request: Request) {
       title: body.title.trim(),
     });
     return NextResponse.json({ id: created.id });
-  } catch {
-    return NextResponse.json({ error: "notion_request_failed" }, { status: 502 });
+  } catch (error) {
+    return externalApiError("notion", "タスクの作成", error);
   }
 }

@@ -143,16 +143,16 @@ export type EventWriteInput = {
 };
 
 function toRequestBody(input: EventWriteInput) {
+  if (!input.start || !input.end) {
+    throw new Error("開始日時と終了日時を入力してください。");
+  }
+
   const start = input.allDay
     ? { date: input.start }
     : { dateTime: input.start, timeZone: input.timeZone };
 
-  // Google の終日予定の end.date は排他（翌日）。表示側は最終日を含む形で扱っているので戻す。
-  const endDate = new Date(`${input.end}T00:00:00Z`);
-  endDate.setUTCDate(endDate.getUTCDate() + 1);
-
   const end = input.allDay
-    ? { date: endDate.toISOString().slice(0, 10) }
+    ? { date: exclusiveEndDate(input.end) }
     : { dateTime: input.end, timeZone: input.timeZone };
 
   return {
@@ -164,6 +164,16 @@ function toRequestBody(input: EventWriteInput) {
     attendees: input.attendees?.length ? input.attendees.map((email) => ({ email })) : undefined,
     recurrence: input.recurrenceRule ? [input.recurrenceRule] : undefined,
   };
+}
+
+/** Google の終日予定の end.date は排他（翌日）。表示側は最終日を含む形で扱うので1日進める。 */
+function exclusiveEndDate(lastDay: string): string {
+  const date = new Date(`${lastDay}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`終了日の形式が不正です: ${lastDay}`);
+  }
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }
 
 export async function createEvent(

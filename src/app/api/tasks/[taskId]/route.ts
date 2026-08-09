@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { externalApiError } from "@/lib/api-error";
+
 import { requireUserId } from "@/lib/auth-user";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
@@ -35,7 +37,7 @@ export async function PATCH(
 
     await updateTask(notion, connection, taskId, body);
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "notion_request_failed" }, { status: 502 });
+  } catch (error) {
+    return externalApiError("notion", "タスクの更新", error);
   }
 }
