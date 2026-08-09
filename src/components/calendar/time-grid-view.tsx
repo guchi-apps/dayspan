@@ -107,7 +107,7 @@ export function TimeGridView({
         onOpenTask={onOpenTask}
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div
           ref={gridRef}
           data-gutter-width="48"

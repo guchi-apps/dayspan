@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowUpDown, ListChecks, Plus, RefreshCw } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
+import { LinearProgress } from "@/components/ui/linear-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -69,7 +70,7 @@ export function TaskList({
   };
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="flex h-dvh flex-col overflow-hidden">
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
         <h1 className="type-title-large flex items-center gap-2 px-2">
           <ListChecks className="size-5" />
@@ -99,11 +100,13 @@ export function TaskList({
         </Button>
       </header>
 
+      <LinearProgress active={pending || busyId !== null} />
+
       {(loadError || error) && (
         <div className="bg-error-container/70 text-on-error-container px-3 py-2 text-xs">{loadError ?? error}</div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-20">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24">
         {ORDER.map((key) => {
           const items =
             key === "done" ? sortDoneTasks(buckets[key]) : sortTasks(buckets[key], sort);

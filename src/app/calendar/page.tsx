@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth-user";
 import {
+  getContinuousMonthWeeks,
   getFetchRange,
   getVisibleDays,
   parseDateKey,
@@ -40,7 +41,13 @@ export default async function CalendarPage({
   }
 
   const weekStartsOn = uiSetting?.weekStartsOn ?? 0;
-  const { days, weeks } = getVisibleDays(view, anchor, weekStartsOn);
+
+  // 月表示は上下に連続してスクロールするため、前後の月まで含めて取得する。
+  const { days, weeks } =
+    view === "month"
+      ? getContinuousMonthWeeks(anchor, weekStartsOn)
+      : getVisibleDays(view, anchor, weekStartsOn);
+
   const data = await loadCalendarData(user.id, getFetchRange(days));
 
   return (

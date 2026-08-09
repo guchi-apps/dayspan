@@ -2,12 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useOptimistic, useState, useTransition } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { Button } from "@/components/ui/button";
+import { LinearProgress } from "@/components/ui/linear-progress";
 import {
+  getVisibleDays,
   parseDateKey,
   shiftAnchor,
   toDateKey,
@@ -19,7 +21,7 @@ import type { CalendarEventItem, CalendarLoadResult, TaskItem } from "@/types/ca
 import { dateKeyPlusMinutes, localInputToIso } from "./datetime-fields";
 import { EventDialog, toEventDraft, type EventDraft } from "./event-dialog";
 import { createCalendarDateUtils } from "./item-layout";
-import { MonthView } from "./month-view";
+import { ContinuousMonthView } from "./continuous-month-view";
 import { TaskDialog, toTaskDraft, type TaskDraft } from "./task-dialog";
 import { TimeGridView } from "./time-grid-view";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
@@ -51,6 +53,12 @@ export function CalendarShell({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
+
+  // 押した直後に見出しが変わるよう、遷移中は指定した期間を先に表示する。
+  const [nav, setNav] = useOptimistic({ view, anchorKey });
+
+  // 連続スクロール中の月は、サーバーの応答を待たずに見出しへ反映する。
+  const [scrolledMonth, setScrolledMonth] = useState(anchorKey.slice(0, 7));
 
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
   const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
@@ -155,6 +163,16 @@ export function CalendarShell({
   };
 
   const openEvent = (event: CalendarEventItem) => setEventDraft(toEventDraft(event, timeZone));
+
+  // 月表示ではスクロール位置が、それ以外では選択中の期間が見出しになる。
+  const headerLabel =
+    nav.view === "month"
+      ? formatMonthLabel(scrolledMonth)
+      : formatRangeLabel(
+          nav.view,
+          nav.anchorKey,
+          getVisibleDays(nav.view, parseDateKey(nav.anchorKey), weekStartsOn).days,
+        );
   const openTask = (task: TaskItem) => setTaskDraft(toTaskDraft(task, timeZone));
 
   /** 新規作成の初期値。時間グリッドの空き時間を選んだ場合はその日時から1時間で開く。 */
@@ -171,20 +189,32 @@ export function CalendarShell({
 
   const navigate = (nextView: CalendarView, nextAnchorKey: string) => {
     startTransition(() => {
+      setNav({ view: nextView, anchorKey: nextAnchorKey });
       router.push(`/calendar?view=${nextView}&date=${nextAnchorKey}`);
     });
   };
 
+  // 連続スクロールで読み込み済みの端に達したとき、その月を中心に取り直す。
+  // 見出しはスクロール側で更新済みなので、履歴には積まずに置き換える。
+  const recenter = useCallback(
+    (monthKey: string) => {
+      startTransition(() => {
+        router.replace(`/calendar?view=month&date=${monthKey}-01`, { scroll: false });
+      });
+    },
+    [router],
+  );
+
   const move = (direction: 1 | -1) => {
-    navigate(view, toDateKey(shiftAnchor(view, parseDateKey(anchorKey), direction)));
+    navigate(nav.view, toDateKey(shiftAnchor(nav.view, parseDateKey(nav.anchorKey), direction)));
   };
 
   const goToday = () => {
-    navigate(view, utils.todayKey());
+    navigate(nav.view, utils.todayKey());
   };
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="flex h-dvh flex-col overflow-hidden">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
         {/* 狭い画面ではアプリ名を出さない。現在地は下部のナビゲーションバーが示している。 */}
         <div className="hidden items-center gap-1 font-semibold md:flex">
@@ -205,7 +235,7 @@ export function CalendarShell({
 
         {/* どの期間を見ているかは常に読めなければならない。他の操作より優先して幅を与える。 */}
         <h1 className="type-title-medium md:type-title-large min-w-0 flex-1 truncate">
-          {formatRangeLabel(view, anchorKey, days)}
+          {headerLabel}
         </h1>
 
         <Button variant="outline" size="xs" className="md:h-8 md:px-4" onClick={goToday}>
@@ -217,11 +247,11 @@ export function CalendarShell({
           {VIEW_LABELS.map((item) => (
             <Button
               key={item.view}
-              variant={view === item.view ? "secondary" : "ghost"}
+              variant={nav.view === item.view ? "secondary" : "ghost"}
               size="xs"
               className={cn(
                 "type-label-medium h-7 rounded-none px-2.5 md:type-label-large md:h-8 md:px-3",
-                view === item.view && "text-on-secondary-container",
+                nav.view === item.view && "text-on-secondary-container",
                 item.desktopOnly && "hidden md:inline-flex",
               )}
               onClick={() => navigate(item.view, anchorKey)}
@@ -247,6 +277,8 @@ export function CalendarShell({
         </Button>
       </header>
 
+      <LinearProgress active={pending} />
+
       {(data.errors.length > 0 || dragError) && (
         <div className="flex flex-col gap-1 bg-error-container/70 text-on-error-container px-3 py-2 text-xs">
           {data.errors.map((error) => (
@@ -257,13 +289,15 @@ export function CalendarShell({
       )}
 
       {view === "month" ? (
-        <MonthView
+        <ContinuousMonthView
           weeks={weeks}
-          anchorMonth={anchorKey.slice(0, 7)}
           events={data.events}
           tasks={data.tasks}
           weekStartsOn={weekStartsOn}
           utils={utils}
+          initialMonth={anchorKey.slice(0, 7)}
+          onVisibleMonthChange={setScrolledMonth}
+          onReachEdge={recenter}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
           onOpenEvent={openEvent}
           onOpenTask={openTask}
@@ -385,6 +419,10 @@ function AddButton({
       </Button>
     </div>
   );
+}
+
+function formatMonthLabel(monthKey: string): string {
+  return `${monthKey.slice(0, 4)}年${Number(monthKey.slice(5, 7))}月`;
 }
 
 function formatRangeLabel(view: CalendarView, anchorKey: string, days: string[]): string {

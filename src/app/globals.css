@@ -301,3 +301,16 @@
     0 4px 8px 3px rgb(0 0 0 / 0.15),
     0 1px 3px 0 rgb(0 0 0 / 0.3);
 }
+
+/* リニアプログレスの往復。M3のemphasizedに近い緩急にして、待ちの体感を短くする。 */
+@keyframes linear-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  60% {
+    transform: translateX(180%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}

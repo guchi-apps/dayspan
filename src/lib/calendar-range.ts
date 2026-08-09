@@ -81,3 +81,37 @@ export function shiftAnchor(view: CalendarView, anchor: Date, direction: 1 | -1)
   const step = view === "day1" ? 1 : view === "day3" ? 3 : 7;
   return addDays(anchor, step * direction);
 }
+
+/**
+ * 月表示を上下に連続スクロールさせるための週の並び。
+ * 月ごとに切り替えるのではなく、前後の月まで地続きに並べて途切れなく読めるようにする。
+ */
+export function getContinuousMonthWeeks(
+  anchor: Date,
+  weekStartsOn: number,
+  monthsAround = 2,
+): { weeks: string[][]; days: string[] } {
+  const firstMonth = new Date(
+    Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - monthsAround, 1, 12),
+  );
+  // 月末は「翌月の0日」で求める。
+  const lastMonthEnd = new Date(
+    Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + monthsAround + 1, 0, 12),
+  );
+
+  const offset = (firstMonth.getUTCDay() - weekStartsOn + 7) % 7;
+  let cursor = addDays(firstMonth, -offset);
+
+  const weeks: string[][] = [];
+  while (cursor.getTime() <= lastMonthEnd.getTime()) {
+    weeks.push(Array.from({ length: 7 }, (_, i) => toDateKey(addDays(cursor, i))));
+    cursor = addDays(cursor, 7);
+  }
+
+  return { weeks, days: weeks.flat() };
+}
+
+/** その週がどの月に属するとみなすか。週の中日（4日目）の月を採る。 */
+export function weekMonthKey(week: string[]): string {
+  return week[3].slice(0, 7);
+}

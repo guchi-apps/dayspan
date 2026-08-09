@@ -1,45 +1,98 @@
 "use client";
 
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { weekMonthKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
 import type { CalendarEventItem, TaskItem } from "@/types/calendar";
-import type { CalendarEventItem as EventItem, TaskItem as Task } from "@/types/calendar";
 
 import { eventColors } from "./calendar-color";
 import type { CalendarDateUtils } from "./item-layout";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
-// 1日のマスに詰め込みすぎると月全体が読めなくなるため、上限を超えた分は件数で畳む。
-// 行の高さは画面の高さを6分割した値で決まるため、狭い画面では1件少なくする。
+// 週の高さは固定にする。可変にすると、月をまたいで読み込み直したときに
+// スクロール位置を同じ場所へ戻せなくなるため。
+const WEEK_HEIGHT = 108;
+
 const MAX_ITEMS_PER_DAY = 4;
 const MOBILE_MAX_ITEMS = 3;
 
-export function MonthView({
+export function ContinuousMonthView({
   weeks,
-  anchorMonth,
   events,
   tasks,
+  weekStartsOn,
+  utils,
+  initialMonth,
+  onVisibleMonthChange,
+  onReachEdge,
   onSelectDay,
   onOpenEvent,
   onOpenTask,
-  weekStartsOn,
-  utils,
 }: {
   weeks: string[][];
-  anchorMonth: string;
   events: CalendarEventItem[];
   tasks: TaskItem[];
-  onSelectDay: (dateKey: string) => void;
-  onOpenEvent: (event: EventItem) => void;
-  onOpenTask: (task: Task) => void;
   weekStartsOn: number;
   utils: CalendarDateUtils;
+  initialMonth: string;
+  onVisibleMonthChange: (monthKey: string) => void;
+  /** 読み込み済みの端に達したとき、その月を中心に読み直してもらう。 */
+  onReachEdge: (monthKey: string) => void;
+  onSelectDay: (dateKey: string) => void;
+  onOpenEvent: (event: CalendarEventItem) => void;
+  onOpenTask: (task: TaskItem) => void;
 }) {
-  const todayKey = utils.todayKey();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const visibleMonthRef = useRef(initialMonth);
+  // 読み込み直しでweeksが差し替わったとき、同じ週が画面の上に来るように戻すための目印。
+  const anchorWeekRef = useRef<string | null>(null);
+  const [todayKey] = useState(() => utils.todayKey());
+
+  const monthKeys = weeks.map(weekMonthKey);
+  const firstMonth = monthKeys[0];
+  const lastMonth = monthKeys[monthKeys.length - 1];
+
+  // 初期表示位置と、読み込み直し後の位置合わせ。
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const target = anchorWeekRef.current
+      ? weeks.findIndex((week) => week[0] === anchorWeekRef.current)
+      : weeks.findIndex((week) => weekMonthKey(week) === visibleMonthRef.current);
+
+    if (target >= 0) container.scrollTop = target * WEEK_HEIGHT;
+    anchorWeekRef.current = null;
+  }, [weeks]);
+
+  const handleScroll = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    // 画面の上から1/3の位置にある週を「いま見ている月」とみなす。
+    const index = Math.min(
+      Math.max(Math.floor((container.scrollTop + container.clientHeight / 3) / WEEK_HEIGHT), 0),
+      weeks.length - 1,
+    );
+    const month = weekMonthKey(weeks[index]);
+
+    if (month !== visibleMonthRef.current) {
+      visibleMonthRef.current = month;
+      onVisibleMonthChange(month);
+
+      // 読み込み済みの端の月まで来たら、その月を中心に取り直す。
+      if (month === firstMonth || month === lastMonth) {
+        anchorWeekRef.current = weeks[index][0];
+        onReachEdge(month);
+      }
+    }
+  }, [firstMonth, lastMonth, onReachEdge, onVisibleMonthChange, weeks]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid grid-cols-7 border-b border-outline-variant">
+      <div className="grid shrink-0 grid-cols-7 border-b border-outline-variant">
         {Array.from({ length: 7 }, (_, index) => {
           const weekday = (weekStartsOn + index) % 7;
 
@@ -61,9 +114,17 @@ export function MonthView({
         })}
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-rows-6">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      >
         {weeks.map((week) => (
-          <div key={week[0]} className="grid grid-cols-7 border-b border-outline-variant last:border-b-0">
+          <div
+            key={week[0]}
+            className="grid grid-cols-7 border-b border-outline-variant"
+            style={{ height: WEEK_HEIGHT }}
+          >
             {week.map((dateKey) => {
               const dayEvents = events.filter((event) => utils.eventCoversDay(event, dateKey));
               const dayTasks = tasks.filter((task) => utils.taskCoversDay(task, dateKey));
@@ -72,30 +133,27 @@ export function MonthView({
               const visible = dayItems.slice(0, MAX_ITEMS_PER_DAY);
               const hiddenCount = dayItems.length - visible.length;
               const mobileHidden = dayItems.length - MOBILE_MAX_ITEMS;
-              const inMonth = dateKey.slice(0, 7) === anchorMonth;
-              const isToday = dateKey === todayKey;
+              const isFirstOfMonth = dateKey.slice(8, 10) === "01";
 
               return (
                 <div
                   key={dateKey}
-                  className={cn(
-                    "flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-outline-variant p-0.5 last:border-r-0 sm:gap-1 sm:p-1",
-                    !inMonth && "bg-surface-container-low",
-                  )}
+                  className="flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-outline-variant p-0.5 last:border-r-0 sm:gap-1 sm:p-1"
                 >
                   <button
                     type="button"
                     onClick={() => onSelectDay(dateKey)}
                     className={cn(
-                      "grid size-5 shrink-0 place-items-center self-start rounded-full text-[11px] sm:size-6 sm:text-xs",
-                      isToday
+                      "grid h-5 shrink-0 place-items-center self-start rounded-full px-1.5 text-[11px] sm:h-6 sm:text-xs",
+                      dateKey === todayKey
                         ? "bg-primary font-semibold text-primary-foreground"
-                        : inMonth
-                          ? "font-medium hover:bg-muted"
-                          : "text-on-surface-variant hover:bg-muted",
+                        : "font-medium hover:bg-muted",
                     )}
                   >
-                    {Number(dateKey.slice(8, 10))}
+                    {/* 月替わりは日付の並びだけでは分からないため、1日にだけ月を添える。 */}
+                    {isFirstOfMonth
+                      ? `${Number(dateKey.slice(5, 7))}/1`
+                      : Number(dateKey.slice(8, 10))}
                   </button>
 
                   <div className="flex min-w-0 flex-col gap-px sm:gap-0.5">
@@ -178,7 +236,6 @@ function EventChip({
       }}
       title={event.title}
     >
-      {/* 狭い列では時刻が本文の幅を奪う。時刻は日表示で確認できるので、ここでは題名を優先する。 */}
       {!event.allDay && (
         <span className="hidden shrink-0 opacity-75 sm:inline">
           {utils.formatTime(event.start)}
