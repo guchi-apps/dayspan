@@ -13,7 +13,7 @@ Google Calendar の予定と Notion のタスクを1つのカレンダーUIで�
 - アプリ名: DaySpan
 - Repository: `m-guchi/dayspan`
 - 本番URL候補: `https://dayspan.gucchii.com`
-- 本番ポート候補: `3112`
+- 本番ポート候補: `3113`
 - 種別: フルスタックWebアプリ / PWA
 - 認証: Supabase Auth + Google OAuth
 - アプリ固有DB: MariaDB
@@ -153,7 +153,7 @@ DaySpanから以下を可能にする。
 
 ユーザーがNotion側にDaySpan用のタスクDBを用意し、DaySpanから接続する。
 
-DaySpanが無断でNotion DBを作成する方式にはしない。
+DaySpanが無断でNotion DBを作成する方式にはしない。ただし、ユーザーが設定画面で明示的に「タスクDBを新規作成」を選んだ場合に限り、作成先ページを選択させたうえで必要なプロパティを揃えたDBを作成してよい。
 
 初回セットアップ時に必要なプロパティ構成を案内し、接続対象DBが必要な構成を満たしているか検証する。
 
@@ -396,7 +396,7 @@ UIコンポーネントからGoogle Calendar / Notionを直接操作する構造
 
 候補構成:
 
-`dayspan.gucchii.com` → Apache → DaySpan Next.jsプロセス → `127.0.0.1:3112`
+`dayspan.gucchii.com` → Apache → DaySpan Next.jsプロセス → `127.0.0.1:3113`
 
 現在のVPSはメモリ約2GBで複数アプリが常駐しているため、本番プロセス追加前に実機のメモリ余力を確認する。
 
