@@ -11,6 +11,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "pnpm lint && pnpm typecheck",
+    "version": "node scripts/update-changelog.mjs",
     "postinstall": "prisma generate",
     "env:init": "cp -n .env.local.example .env.local && echo '.env.local を編集してください（DB / Supabase / Google / 暗号鍵）'",
     "db:setup": "bash scripts/setup-db.sh",

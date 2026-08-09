@@ -93,6 +93,128 @@ pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 
 
 認証、OAuth、DBスキーマ、Secrets、本番環境設定などの変更では、共通ルールに従って必要なユーザー確認を行うこと。
 
+---
+
+# Issueごとの複数Claude Codeエージェント運用
+
+`@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成〜レビュー〜マージまでをGitHub Actions上で
+無人実行する運用を導入している。仕組みの本体は `m-guchi/issue-deck` にあり、DaySpanはその
+再利用可能ワークフロー（`workflows/v6` タグ）を参照する側として構成している。
+
+設計の詳細・各モードの判定ロジックは issue-deck の `docs/multi-agent-workflow.md`・`docs/multi-agent/` を
+一次情報源とする。ここにはDaySpan側の運用に必要な事項のみを置く。
+
+## ブランチ運用
+
+- `main` は本番と一致するリリース用ブランチ。直接pushは禁止し、`develop` → `main` のPRのみで進める
+- `develop` が日常の開発ブランチ
+- Issue専用ブランチは `develop` から作成し、ブランチ名は `issue-<Issue番号>` とする（例: `issue-12`）。
+  ラベル遷移・レビュー・コンフリクト解消の各ワークフローはこの命名規約からIssue番号を特定するため、
+  従わないブランチはすべて対象外になる
+- worktreeは本体リポジトリの外（`~/apps/dayspan-worktrees/<ブランチ名>/`）に作成する。
+  本体 `~/apps/dayspan` は `develop` の最新チェックアウトとして空けておく
+- 開発サーバーのポートは `scripts/start-issue.sh` が `.env.local` に `PORT=6000 + Issue番号` を設定する
+  （例: issue-12 → 6012）。issue-deck（`4000 + Issue番号`）や本番ポート3113・dev既定の3000と重ならない
+
+## Issueラベルの状態遷移
+
+原則として以下の順で遷移する。`01.planning` は `21.plan-required` が付いている場合のみ経由する。
+
+1. `01.planning` — 計画を検討中
+2. `02.wip` — 実装中
+3. `03.d:marge` — developへPR作成・マージ待ち
+4. `05.develop` — developへマージ完了（main未反映）
+5. `07.m:marge` — mainへのPR作成・マージ待ち
+6. `09.main` — mainへマージ完了。**この時点でissueをclose**する
+
+`00.check-user`（ユーザーの確認・指示が必要）は、上記のどの段階でも他のラベルと併用して付与する。
+`00.check-user` を人間が外す操作が「承認」を意味する。
+
+オプション制御のラベル:
+
+| ラベル | 効果 |
+|---|---|
+| `21.plan-required` | 実装前に計画を提示し、承認を得てから実装に入る |
+| `22.merge-confirm-required` | 内容によらず、developへのマージ前に必ず `00.check-user` を付ける |
+| `23.preview-required` | PR作成前に開発サーバーの画面で確認し、承認を得る |
+| `24.screenshot-required` | PR作成前にスクリーンショットで確認し、承認を得る。**無人実行では現状使えない**（全画面がSupabase Auth + Google OAuthの背後にあり、CIログインバイパスもPlaywright依存も無いため） |
+| `11.local` | 付いている間、無人実行ワークフローが計画・実装・分割・追加対応を行わない。ローカルのClaude Codeセッションと二重に進めないための停止フラグ |
+
+ラベルの付け替えはエージェント側でも手動で行うが、`.github/workflows/issue-labels.yml` が
+ブランチpush・PR作成・PRマージをトリガーに同じ遷移を安全網として自動でも行う。
+
+## 自動マージ不可カテゴリ
+
+以下に該当する変更は、レビュー・統合エージェントが自動マージせず `00.check-user` を付与して
+ユーザーの確認を待つ。`claude-review-develop.yml` の `risk-check` ジョブがパスパターンで一次判定し、
+パターンに掛からない意味的なリスクはレビューエージェントが二次判定する。
+
+- 認証・認可（`src/proxy.ts`、`src/lib/supabase/**`、`src/app/auth/**`、`src/lib/crypto/**`）
+- DBスキーマ変更・マイグレーション（`prisma/migrations/**`）
+- 本番環境の設定（`deploy/**`、`**/*.env.tpl`）
+- GitHub Actionsやデプロイ設定（`.github/workflows/**`）
+- Secretsや環境変数（`.env*`）
+- 課金・決済
+- 大規模な依存関係の更新（`package.json` のメジャーバージョン更新）
+- `develop` → `main` のマージ
+
+無人実行では確認する相手がその場にいないため、**新しい依存関係の追加が必要になった場合は追加せず**、
+`00.check-user` を付与して停止する（依存追加はユーザー確認が必須のため）。シークレットの実値も
+コミット・コメントのいずれにも書かない。
+
+## 実装エージェントの禁止事項
+
+- `main` / `develop` への直接コミット・push
+- 他Issueのブランチ・worktreeの編集
+- 不要なforce push
+- 自分が作成したPull Requestの自己マージ
+- 共有知識リポジトリ（`.shared-context/` / `~/apps/_docs`）の編集・コミット
+
+レビュー・統合エージェントは、加えて `main` への直接マージ・pushを行わない。
+
+## PR本文テンプレート
+
+`develop` 宛のPRには以下を記載する。
+
+- 対応Issue（`closes #番号` / `fixes #番号` は使わず `#番号` のみ。developマージ時点ではissueを
+  closeしない運用のため）
+- 実装内容
+- テスト内容
+- 確認方法（画面に関わる変更では `http://localhost:<6000 + Issue番号>` とアクセス手順）
+- 注意点
+
+## ローカルからの起動
+
+```bash
+scripts/start-issue.sh <issue番号> [issue番号...]
+```
+
+worktree作成・`.env.local` のコピー・ポート割り当て・`pnpm install`・開発サーバーの自動起動までを行い、
+実装エージェント用のClaude Codeセッションを起動する（プロンプトは `scripts/prompts/implementation-agent.md`）。
+Windows側からは `scripts/start-issue.ps1` を使う。
+
+ローカルセッションで進めるIssueには `11.local` を付け、無人実行と二重に走らないようにする。
+
+## ワークフローの構成
+
+| ファイル | 方式 | 内容 |
+|---|---|---|
+| `issue-labels.yml` | 参照（`@workflows/v6`） | ラベル状態遷移の自動化 |
+| `claude-issue-dispatch.yml` | 参照（`@workflows/v6`） | `@claude` 起点の計画・実装・PR作成 |
+| `claude-review-develop.yml` | コピー | develop向けPRの自動レビュー・リスク判定・Auto-merge |
+| `claude-conflict-resolve.yml` | コピー | developとのコンフリクト自動解消 |
+| `claude-ci-fix.yml` | コピー | CI失敗の自動修正 |
+| `release-develop-to-main.yml` | コピー | バージョンbump PR・develop→mainのリリースPR作成 |
+
+参照方式は `uses:` のタグを上げるだけでissue-deck側の改善が反映される。**`claude-issue-dispatch.yml` は
+`uses:` のタグと `prompts-ref` を必ず同じ値にする**（片方だけ上げると新しいワークフローで古い
+プロンプトが動く）。コピー方式は移植元コミットを各ファイル冒頭のコメントに記録しており、
+issue-deck側の改善を取り込む際はそこを更新する。
+
+`release-develop-to-main.yml` が生成する利用者向けの更新履歴は、`package.json` の `"version"`
+ライフサイクルスクリプト経由で `scripts/update-changelog.mjs` が `src/lib/changelog.ts` へ追記する。
+文面のルールは changelog-ja スキルに従う。
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
