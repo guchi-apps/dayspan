@@ -1,0 +1,75 @@
+import { redirect } from "next/navigation";
+
+import { NotionSection, type NotionSectionState } from "@/components/settings/notion-section";
+import { SettingsShell } from "@/components/settings/settings-shell";
+import { getCurrentUser } from "@/lib/auth-user";
+import { db } from "@/lib/db";
+import { createNotionClient } from "@/services/notion/client";
+import {
+  listCandidateDataSources,
+  listSharedPages,
+  type DataSourceSummary,
+  type PropertyMap,
+  type SharedPageSummary,
+} from "@/services/notion/task-database";
+
+export default async function NotionSettingsPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const state = await loadNotionState(user.id);
+
+  return (
+    <SettingsShell
+      title="Notion"
+      description="タスクの一次情報源です。Notion側で用意したタスクDBをDaySpanから選択します。"
+      backHref="/settings"
+      backLabel="設定"
+    >
+      <NotionSection state={state} />
+    </SettingsShell>
+  );
+}
+
+async function loadNotionState(userId: string): Promise<NotionSectionState> {
+  const connection = await db.notionConnection.findUnique({ where: { userId } });
+
+  if (!connection) {
+    return {
+      connected: false,
+      workspaceName: null,
+      taskDataSourceId: null,
+      taskTitle: null,
+      propertyMap: null,
+      dataSources: [],
+      sharedPages: [],
+      dataSourcesFailed: false,
+    };
+  }
+
+  // 候補一覧の取得に失敗しても設定画面自体は開けるようにする。
+  // トークン失効時にここで例外を投げると、接続の解除もできなくなるため。
+  let dataSources: DataSourceSummary[] = [];
+  let sharedPages: SharedPageSummary[] = [];
+  let dataSourcesFailed = false;
+  try {
+    const notion = createNotionClient(connection);
+    [dataSources, sharedPages] = await Promise.all([
+      listCandidateDataSources(notion),
+      listSharedPages(notion),
+    ]);
+  } catch {
+    dataSourcesFailed = true;
+  }
+
+  return {
+    connected: true,
+    workspaceName: connection.workspaceName,
+    taskDataSourceId: connection.taskDataSourceId,
+    taskTitle: connection.taskTitle,
+    propertyMap: (connection.propertyMap as PropertyMap | null) ?? null,
+    dataSources,
+    sharedPages,
+    dataSourcesFailed,
+  };
+}

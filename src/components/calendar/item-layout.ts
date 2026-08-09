@@ -10,17 +10,8 @@ export const GRID_HEIGHT = HOUR_HEIGHT * 24;
 
 type ZonedParts = { dateKey: string; hour: number; minute: number };
 
-function zonedParts(date: Date, timeZone: string): ZonedParts {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    // hourCycle を指定しないと 24:00 表記になる環境があるため明示する。
-    hourCycle: "h23",
-  }).formatToParts(date);
+function zonedParts(date: Date, formatter: Intl.DateTimeFormat): ZonedParts {
+  const parts = formatter.formatToParts(date);
 
   const get = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((part) => part.type === type)?.value ?? "00";
@@ -35,23 +26,51 @@ function zonedParts(date: Date, timeZone: string): ZonedParts {
 export type CalendarDateUtils = ReturnType<typeof createCalendarDateUtils>;
 
 export function createCalendarDateUtils(timeZone: string) {
+  // Intl.DateTimeFormat の生成は重い。月表示は1度の描画で数万回この変換を通るため、
+  // 呼び出しのたびに作ると描画がそれだけで数秒かかる。生成は1回にとどめる。
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    // hourCycle を指定しないと 24:00 表記になる環境があるため明示する。
+    hourCycle: "h23",
+  });
+
+  // 同じ日時文字列は何度も変換される（1つの予定が、表示中の日数ぶん判定される）。
+  // タイムゾーンが同じなら結果は必ず同じなので覚えておく。
+  // このキャッシュはユーザー設定のタイムゾーンごとに閉じている（utilsごとに1つ）。
+  const partsCache = new Map<string, ZonedParts>();
+
+  const partsOf = (value: string): ZonedParts => {
+    const cached = partsCache.get(value);
+    if (cached) return cached;
+
+    const parts = zonedParts(new Date(value), formatter);
+    partsCache.set(value, parts);
+    return parts;
+  };
+
   /** ISO 8601（時刻あり）またはYYYY-MM-DD（日付のみ）を、設定タイムゾーンの日付キーに変換する。 */
   const itemDateKey = (value: string): string => {
     if (!value.includes("T")) return value;
-    return zonedParts(new Date(value), timeZone).dateKey;
+    return partsOf(value).dateKey;
   };
 
   const minutesFromMidnight = (iso: string): number => {
-    const { hour, minute } = zonedParts(new Date(iso), timeZone);
+    const { hour, minute } = partsOf(iso);
     return hour * 60 + minute;
   };
 
   const formatTime = (iso: string): string => {
-    const { hour, minute } = zonedParts(new Date(iso), timeZone);
+    const { hour, minute } = partsOf(iso);
     return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   };
 
-  const todayKey = (): string => zonedParts(new Date(), timeZone).dateKey;
+  // 「今日」は現在時刻に依存する。覚えてしまうと日付が変わっても古いままになるため通さない。
+  const todayKey = (): string => zonedParts(new Date(), formatter).dateKey;
 
   /** その日の中での表示位置。日をまたぐ予定は、その日の範囲へ切り詰める。 */
   const eventGeometry = (

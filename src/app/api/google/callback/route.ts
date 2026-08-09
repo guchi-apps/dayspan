@@ -9,7 +9,7 @@ import { exchangeCodeForTokens, parseIdToken } from "@/services/google-calendar/
 import { OAUTH_STATE_COOKIE } from "../connect/route";
 
 function settingsRedirect(origin: string, result: string) {
-  return NextResponse.redirect(`${origin}/settings?google=${result}`);
+  return NextResponse.redirect(`${origin}/settings/google?google=${result}`);
 }
 
 export async function GET(request: NextRequest) {

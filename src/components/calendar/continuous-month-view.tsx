@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { weekMonthKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
-import type { CalendarEventItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, CalendarItem, TaskItem } from "@/types/calendar";
 
 import { eventColors } from "./calendar-color";
-import type { CalendarDateUtils } from "./item-layout";
+import { isAllDayItem, type CalendarDateUtils } from "./item-layout";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -15,8 +15,50 @@ const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 // スクロール位置を同じ場所へ戻せなくなるため。
 const WEEK_HEIGHT = 112;
 
-const MAX_ITEMS_PER_DAY = 4;
-const MOBILE_MAX_ITEMS = 3;
+// 帯を置ける段数。段の高さ（18/19px）×3段 ＋「ほか N件」1段 が、
+// 日付ボタンの下に残る高さ（WEEK_HEIGHT - 32 - 下余白）に収まる上限。
+const LANES = 3;
+
+/**
+ * 週の中での1本ぶんの帯。日をまたぐ予定は、週の境界で切って週ごとに1本にする。
+ * 週をまたぐ側の端は continuesBefore / continuesAfter で「まだ続く」ことを示す。
+ */
+type WeekSegment = {
+  item: CalendarItem;
+  /** 週の中の列（0〜6） */
+  column: number;
+  /** 何列ぶんか（1〜7） */
+  span: number;
+  /** 上から何段目に置くか */
+  lane: number;
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+};
+
+type WeekLayout = {
+  segments: WeekSegment[];
+  /** 列ごとの、段に入りきらなかった件数 */
+  hiddenByColumn: number[];
+};
+
+/** 日をまたぐ予定・終日予定を先に、上の段へ置く。時刻のある予定はその下を埋める。 */
+function isBar(segment: { item: CalendarItem; span: number }): boolean {
+  return segment.span > 1 || isAllDayItem(segment.item);
+}
+
+// サーバー描画では useLayoutEffect は動かず警告になる。スクロール位置の補正は
+// 画面に出る前に済ませないとガタつくため、ブラウザでだけレイアウト効果を使う。
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+// 読み込み中に見せる帯。実際の予定と同じ位置・同じ高さに置き、埋まったときに形が動かないようにする。
+const PENDING_BARS = [
+  { column: 1, span: 3, lane: 1 },
+  { column: 5, span: 2, lane: 2 },
+];
+
+function clampWeekIndex(index: number, length: number): number {
+  return Math.min(Math.max(index, 0), length - 1);
+}
 
 export function ContinuousMonthView({
   weeks,
@@ -24,7 +66,8 @@ export function ContinuousMonthView({
   tasks,
   weekStartsOn,
   utils,
-  initialMonth,
+  scrollTarget,
+  pendingMonths,
   onVisibleMonthChange,
   onSelectDay,
   onOpenEvent,
@@ -35,44 +78,200 @@ export function ContinuousMonthView({
   tasks: TaskItem[];
   weekStartsOn: number;
   utils: CalendarDateUtils;
-  initialMonth: string;
+  /** 指定の月へ寄せる指示。同じ月を続けて指しても効くよう nonce を持たせる。 */
+  scrollTarget: { month: string; nonce: number };
+  /** まだ取得できていない月。予定が無いのか読み込み中なのかを描き分けるために使う。 */
+  pendingMonths: ReadonlySet<string>;
   onVisibleMonthChange: (monthKey: string) => void;
   onSelectDay: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const visibleMonthRef = useRef(initialMonth);
+  const visibleMonthRef = useRef(scrollTarget.month);
   const [todayKey] = useState(() => utils.todayKey());
 
-  // 初期表示は、指定された月の先頭週に合わせる。
-  useEffect(() => {
+  // 画面の先頭にある週。窓を張り直したあと、同じ位置へ戻すために覚えておく。
+  const anchorRef = useRef<{ weekKey: string; offset: number } | null>(null);
+  const appliedTargetRef = useRef(-1);
+
+  /**
+   * 週ごとの配置を先に決めておく。
+   *
+   * 日ごとに全アイテムを走査すると、表示日数×アイテム数の突き合わせが描画のたびに走る。
+   * 月表示は前後2ヶ月ぶんを並べるため、ダイアログを開くだけの再描画でも同じ計算をやり直し、
+   * 操作が返ってこなくなる。予定とタスクが変わったときだけ組み直す。
+   */
+  const layoutByWeek = useMemo<WeekLayout[]>(() => {
+    // 日付キーから「何週目の何列目か」を引けるようにする。
+    const position = new Map<string, [number, number]>();
+    weeks.forEach((week, weekIndex) => {
+      week.forEach((dateKey, column) => position.set(dateKey, [weekIndex, column]));
+    });
+
+    // 画面に無い日まで展開しても捨てるだけなので、表示範囲で頭打ちにする
+    // （日付が壊れていても、ここで必ず止まる）。
+    const firstDay = weeks[0][0];
+    const lastDay = weeks[weeks.length - 1][6];
+
+    type RawSegment = Omit<WeekSegment, "lane">;
+    const rawByWeek: RawSegment[][] = weeks.map(() => []);
+
+    const push = (
+      startKey: string,
+      endKey: string,
+      item: CalendarItem,
+    ) => {
+      if (endKey < firstDay || startKey > lastDay) return;
+
+      const clippedStart = startKey < firstDay ? firstDay : startKey;
+      const clippedEnd = endKey > lastDay ? lastDay : endKey;
+      if (clippedStart > clippedEnd) return;
+
+      const from = position.get(clippedStart);
+      const to = position.get(clippedEnd);
+      if (!from || !to) return;
+
+      const [startWeek, startColumn] = from;
+      const [endWeek, endColumn] = to;
+
+      for (let weekIndex = startWeek; weekIndex <= endWeek; weekIndex += 1) {
+        const column = weekIndex === startWeek ? startColumn : 0;
+        const last = weekIndex === endWeek ? endColumn : 6;
+
+        rawByWeek[weekIndex].push({
+          item,
+          column,
+          span: last - column + 1,
+          continuesBefore: weekIndex > startWeek || startKey < clippedStart,
+          continuesAfter: weekIndex < endWeek || endKey > clippedEnd,
+        });
+      }
+    };
+
+    for (const event of events) {
+      const startKey = utils.itemDateKey(event.start);
+      const endKey = utils.itemDateKey(event.end);
+      push(startKey, endKey < startKey ? startKey : endKey, event);
+    }
+
+    for (const task of tasks) {
+      if (!task.due) continue;
+      const dateKey = utils.itemDateKey(task.due);
+      push(dateKey, dateKey, task);
+    }
+
+    return rawByWeek.map((raw) => {
+      raw.sort((a, b) => {
+        // 帯（日をまたぐ・終日）を先に置く。後から来た1日ぶんの予定が、
+        // 帯の空いている段へ潜り込んで帯を分断しないようにするため。
+        const barDiff = Number(isBar(b)) - Number(isBar(a));
+        if (barDiff !== 0) return barDiff;
+        if (a.column !== b.column) return a.column - b.column;
+        if (a.span !== b.span) return b.span - a.span;
+        return utils.compareItems(a.item, b.item);
+      });
+
+      // 段ごとに、どの列が埋まっているかを持つ。帯は span ぶん連続して空いている段に入れる。
+      const occupied: boolean[][] = [];
+      const segments: WeekSegment[] = [];
+      const hiddenByColumn = new Array(7).fill(0);
+
+      for (const raw_ of raw) {
+        let lane = 0;
+
+        for (;;) {
+          if (!occupied[lane]) occupied[lane] = new Array(7).fill(false);
+          const row = occupied[lane];
+
+          let free = true;
+          for (let column = raw_.column; column < raw_.column + raw_.span; column += 1) {
+            if (row[column]) {
+              free = false;
+              break;
+            }
+          }
+
+          if (free) {
+            for (let column = raw_.column; column < raw_.column + raw_.span; column += 1) {
+              row[column] = true;
+            }
+            break;
+          }
+
+          lane += 1;
+        }
+
+        if (lane < LANES) {
+          segments.push({ ...raw_, lane });
+        } else {
+          for (let column = raw_.column; column < raw_.column + raw_.span; column += 1) {
+            hiddenByColumn[column] += 1;
+          }
+        }
+      }
+
+      return { segments, hiddenByColumn };
+    });
+  }, [events, tasks, utils, weeks]);
+
+  const rememberAnchor = useCallback(
+    (container: HTMLDivElement) => {
+      const index = clampWeekIndex(Math.floor(container.scrollTop / WEEK_HEIGHT), weeks.length);
+
+      anchorRef.current = {
+        weekKey: weeks[index][0],
+        offset: container.scrollTop - index * WEEK_HEIGHT,
+      };
+    },
+    [weeks],
+  );
+
+  useIsomorphicLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
 
-    const target = weeks.findIndex((week) => weekMonthKey(week) === initialMonth);
-    if (target >= 0) container.scrollTop = target * WEEK_HEIGHT;
-  }, [weeks, initialMonth]);
+    // 月を指定した移動（今日・前へ・次へ）は、位置の維持より優先する。
+    if (scrollTarget.nonce !== appliedTargetRef.current) {
+      const target = weeks.findIndex((week) => weekMonthKey(week) === scrollTarget.month);
+
+      if (target >= 0) {
+        appliedTargetRef.current = scrollTarget.nonce;
+        container.scrollTop = target * WEEK_HEIGHT;
+        rememberAnchor(container);
+        return;
+      }
+    }
+
+    // 窓を張り直すと前後の週が増減し、見ていた内容が上下にずれる。
+    // 週の高さを固定にしてあるので、覚えておいた週が同じ位置に来るよう戻せる。
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+
+    const index = weeks.findIndex((week) => week[0] === anchor.weekKey);
+    if (index < 0) return;
+
+    container.scrollTop = index * WEEK_HEIGHT + anchor.offset;
+  }, [weeks, scrollTarget, rememberAnchor]);
 
   const handleScroll = useCallback(() => {
     const container = scrollRef.current;
     if (!container) return;
 
+    rememberAnchor(container);
+
     // 画面の上から1/3の位置にある週を「いま見ている月」とみなす。
-    const index = Math.min(
-      Math.max(Math.floor((container.scrollTop + container.clientHeight / 3) / WEEK_HEIGHT), 0),
-      weeks.length - 1,
+    const index = clampWeekIndex(
+      Math.floor((container.scrollTop + container.clientHeight / 3) / WEEK_HEIGHT),
+      weeks.length,
     );
     const month = weekMonthKey(weeks[index]);
 
-    // 見出しの更新だけを行う。スクロールを契機に読み込み直すと、開いていたメニューや
-    // ダイアログが再描画で閉じてしまい、操作を受け付けていないように見える。
-    // 読み込み済みの範囲の外へ行くときは、ヘッダーの前へ・次へで移動する。
     if (month !== visibleMonthRef.current) {
       visibleMonthRef.current = month;
       onVisibleMonthChange(month);
     }
-  }, [onVisibleMonthChange, weeks]);
+  }, [onVisibleMonthChange, rememberAnchor, weeks]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -103,105 +302,135 @@ export function ContinuousMonthView({
         onScroll={handleScroll}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
-        {weeks.map((week) => (
-          <div
-            key={week[0]}
-            className="grid grid-cols-7 border-b border-outline-variant"
-            style={{ height: WEEK_HEIGHT }}
-          >
-            {week.map((dateKey) => {
-              const dayEvents = events.filter((event) => utils.eventCoversDay(event, dateKey));
-              const dayTasks = tasks.filter((task) => utils.taskCoversDay(task, dateKey));
-              const dayItems = [...dayEvents, ...dayTasks].sort(utils.compareItems);
+        {weeks.map((week, weekIndex) => {
+          const { segments, hiddenByColumn } = layoutByWeek[weekIndex];
+          // 未取得の月をただの空白で描くと「予定が無い」と読めてしまう。
+          const pending = pendingMonths.has(weekMonthKey(week));
 
-              const visible = dayItems.slice(0, MAX_ITEMS_PER_DAY);
-              const hiddenCount = dayItems.length - visible.length;
-              const mobileHidden = dayItems.length - MOBILE_MAX_ITEMS;
-              const isFirstOfMonth = dateKey.slice(8, 10) === "01";
+          return (
+            <div
+              key={week[0]}
+              className="relative grid grid-cols-7 border-b border-outline-variant"
+              style={{ height: WEEK_HEIGHT }}
+            >
+              {week.map((dateKey) => {
+                const isFirstOfMonth = dateKey.slice(8, 10) === "01";
 
-              return (
-                <div
-                  key={dateKey}
-                  className="flex min-w-0 flex-col gap-0.5 overflow-hidden border-r border-outline-variant p-0.5 last:border-r-0 sm:gap-1 sm:p-1"
-                >
-                  <button
-                    type="button"
-                    onClick={() => onSelectDay(dateKey)}
-                    className={cn(
-                      "grid h-7 min-w-7 shrink-0 place-items-center self-start rounded-full px-2 text-[11px] sm:h-6 sm:min-w-6 sm:px-1.5 sm:text-xs",
-                      dateKey === todayKey
-                        ? "bg-primary font-semibold text-primary-foreground"
-                        : "font-medium hover:bg-muted",
-                    )}
+                return (
+                  <div
+                    key={dateKey}
+                    className="flex min-w-0 flex-col border-r border-outline-variant p-0.5 last:border-r-0 sm:p-1"
                   >
-                    {/* 月替わりは日付の並びだけでは分からないため、1日にだけ月を添える。 */}
-                    {isFirstOfMonth
-                      ? `${Number(dateKey.slice(5, 7))}/1`
-                      : Number(dateKey.slice(8, 10))}
-                  </button>
-
-                  <div className="flex min-w-0 flex-col gap-px sm:gap-0.5">
-                    {visible.map((item, index) =>
-                      item.kind === "event" ? (
-                        <EventChip
-                          key={item.id}
-                          event={item}
-                          utils={utils}
-                          onOpen={() => onOpenEvent(item)}
-                          desktopOnly={index >= MOBILE_MAX_ITEMS}
-                        />
-                      ) : (
-                        <TaskChip
-                          key={item.id}
-                          task={item}
-                          utils={utils}
-                          onOpen={() => onOpenTask(item)}
-                          desktopOnly={index >= MOBILE_MAX_ITEMS}
-                        />
-                      ),
-                    )}
-
-                    {mobileHidden > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => onSelectDay(dateKey)}
-                        className="px-0.5 text-left text-[10px] whitespace-nowrap text-on-surface-variant sm:hidden"
-                      >
-                        +{mobileHidden}
-                      </button>
-                    )}
-
-                    {hiddenCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => onSelectDay(dateKey)}
-                        className="hidden truncate px-1 text-left text-[10px] whitespace-nowrap text-on-surface-variant hover:text-foreground sm:block"
-                      >
-                        ほか {hiddenCount}件
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => onSelectDay(dateKey)}
+                      className={cn(
+                        "grid h-7 min-w-7 shrink-0 place-items-center self-start rounded-full px-2 text-[11px] sm:h-6 sm:min-w-6 sm:px-1.5 sm:text-xs",
+                        dateKey === todayKey
+                          ? "bg-primary font-semibold text-primary-foreground"
+                          : "font-medium hover:bg-muted",
+                      )}
+                    >
+                      {/* 月替わりは日付の並びだけでは分からないため、1日にだけ月を添える。 */}
+                      {isFirstOfMonth
+                        ? `${Number(dateKey.slice(5, 7))}/1`
+                        : Number(dateKey.slice(8, 10))}
+                    </button>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
+                );
+              })}
+
+              {/*
+                帯は日のセルの中ではなく、週全体に重ねた格子へ置く。セルの中に置くと
+                日をまたぐ予定を1本につなげられず、日ごとに切れて見えるため。
+              */}
+              <div className="pointer-events-none absolute inset-x-0 top-8 bottom-0.5 grid auto-rows-[18px] grid-cols-7 overflow-hidden sm:bottom-1 sm:auto-rows-[19px]">
+                {pending
+                  ? PENDING_BARS.map((bar, index) => (
+                      <div
+                        key={index}
+                        className="mx-0.5 h-4 animate-pulse rounded-xs bg-on-surface/8 sm:mx-1"
+                        style={{ gridColumn: `${bar.column} / span ${bar.span}`, gridRow: bar.lane }}
+                      />
+                    ))
+                  : segments.map((segment) => (
+                      <div
+                        key={`${segment.item.id}-${segment.column}`}
+                        className={cn(
+                          "pointer-events-auto min-w-0",
+                          // 週をまたぐ側は余白を詰め、隣の週の端と地続きに見えるようにする。
+                          segment.continuesBefore ? "pl-0" : "pl-0.5 sm:pl-1",
+                          segment.continuesAfter ? "pr-0" : "pr-0.5 sm:pr-1",
+                        )}
+                        style={{
+                          gridColumn: `${segment.column + 1} / span ${segment.span}`,
+                          gridRow: segment.lane + 1,
+                        }}
+                      >
+                        {renderChip(segment, utils, onOpenEvent, onOpenTask)}
+                      </div>
+                    ))}
+
+                {!pending &&
+                  hiddenByColumn.map((hidden, column) =>
+                    hidden > 0 ? (
+                      <button
+                        key={week[column]}
+                        type="button"
+                        onClick={() => onSelectDay(week[column])}
+                        className="pointer-events-auto truncate px-0.5 text-left text-[10px] whitespace-nowrap text-on-surface-variant sm:px-1 sm:hover:text-foreground"
+                        style={{ gridColumn: column + 1, gridRow: LANES + 1 }}
+                      >
+                        <span className="sm:hidden">+{hidden}</span>
+                        <span className="hidden sm:inline">ほか {hidden}件</span>
+                      </button>
+                    ) : null,
+                  )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function renderChip(
+  segment: WeekSegment,
+  utils: CalendarDateUtils,
+  onOpenEvent: (event: CalendarEventItem) => void,
+  onOpenTask: (task: TaskItem) => void,
+) {
+  const item = segment.item;
+
+  if (item.kind === "event") {
+    return (
+      <EventChip
+        event={item}
+        utils={utils}
+        continuesBefore={segment.continuesBefore}
+        continuesAfter={segment.continuesAfter}
+        onOpen={() => onOpenEvent(item)}
+      />
+    );
+  }
+
+  return <TaskChip task={item} utils={utils} onOpen={() => onOpenTask(item)} />;
 }
 
 /** 予定は占有した時間の「幅」。塗りつぶした帯で表す。 */
 function EventChip({
   event,
   utils,
+  continuesBefore,
+  continuesAfter,
   onOpen,
-  desktopOnly,
 }: {
   event: CalendarEventItem;
   utils: CalendarDateUtils;
+  continuesBefore: boolean;
+  continuesAfter: boolean;
   onOpen: () => void;
-  desktopOnly: boolean;
 }) {
   const colors = eventColors(event.color);
 
@@ -210,8 +439,10 @@ function EventChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex h-5 w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border px-1 text-left text-[10px] leading-5 font-medium sm:type-label-small sm:h-auto sm:px-1 sm:py-px",
-        desktopOnly && "hidden sm:flex",
+        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border px-1 text-left text-[10px] leading-[15px] font-medium sm:h-[18px] sm:text-[11px] sm:leading-4",
+        // 週をまたぐ側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
+        continuesBefore && "rounded-l-none border-l-0",
+        continuesAfter && "rounded-r-none border-r-0",
       )}
       style={{
         backgroundColor: colors.background,
@@ -220,11 +451,16 @@ function EventChip({
       }}
       title={event.title}
     >
-      {!event.allDay && (
+      {/* 開始時刻は実際に始まる日にだけ添える。続きの側に出すと、その日に始まったように読めるため。 */}
+      {!event.allDay && !continuesBefore && (
         <span className="hidden shrink-0 opacity-75 sm:inline">
           {utils.formatTime(event.start)}
         </span>
       )}
+      {/*
+        週の境界で切れた続きの側にもタイトルを出す。その週だけを見ている人には
+        前の週の帯が見えず、名前の無い帯だけが残ってしまうため。
+      */}
       <span className="truncate">{event.title}</span>
     </button>
   );
@@ -235,21 +471,18 @@ function TaskChip({
   task,
   utils,
   onOpen,
-  desktopOnly,
 }: {
   task: TaskItem;
   utils: CalendarDateUtils;
   onOpen: () => void;
-  desktopOnly: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex h-5 w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-outline bg-surface-container-lowest px-1 text-left text-[10px] leading-5 font-medium sm:type-label-small sm:h-auto sm:px-1 sm:py-px",
+        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-outline bg-surface-container-lowest px-1 text-left text-[10px] leading-[15px] font-medium sm:h-[18px] sm:text-[11px] sm:leading-4",
         task.done && "text-on-surface-variant line-through",
-        desktopOnly && "hidden sm:flex",
       )}
       title={task.title}
     >

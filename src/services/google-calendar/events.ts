@@ -12,7 +12,7 @@ type GoogleEventDateTime = {
 
 type GoogleEventAttendee = { email?: string; displayName?: string; responseStatus?: string };
 
-type GoogleEvent = {
+export type GoogleEvent = {
   id: string;
   status?: string;
   summary?: string;
@@ -30,16 +30,23 @@ type EventsResponse = {
   nextPageToken?: string;
 };
 
+/** 表示に必要なカレンダーの情報。一次情報源は calendarList 側にある。 */
+export type CalendarDisplay = { calendarId: string; name: string; color: string | null };
+
 /**
  * 指定期間の予定を取得する。繰り返し予定は singleEvents で個別の回へ展開させ、
  * 表示側が繰り返し規則を解釈しなくて済むようにする（docs/spec.md §7）。
+ *
+ * カレンダー名と色はここでは扱わない。それらは calendarList の応答が要るため、
+ * 待ち合わせると往復が直列に積み上がる。呼び出し側が両者を並行に取得し、
+ * あとから toCalendarItems() で突き合わせる。
  */
 export async function listEvents(
   account: GoogleAccount,
-  calendar: { calendarId: string; name: string; color: string | null },
+  calendarId: string,
   range: { timeMin: string; timeMax: string },
-): Promise<CalendarEventItem[]> {
-  const events: CalendarEventItem[] = [];
+): Promise<GoogleEvent[]> {
+  const events: GoogleEvent[] = [];
   let pageToken: string | undefined;
 
   do {
@@ -54,15 +61,13 @@ export async function listEvents(
 
     const page = await googleCalendarFetch<EventsResponse>(
       account,
-      `/calendars/${encodeURIComponent(calendar.calendarId)}/events?${params.toString()}`,
+      `/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
     );
 
     for (const event of page.items ?? []) {
       // キャンセルされた回（繰り返しの例外削除など）は表示しない。
       if (event.status === "cancelled") continue;
-
-      const normalized = normalizeEvent(event, calendar);
-      if (normalized) events.push(normalized);
+      events.push(event);
     }
 
     pageToken = page.nextPageToken;
@@ -71,10 +76,22 @@ export async function listEvents(
   return events;
 }
 
-function normalizeEvent(
-  event: GoogleEvent,
-  calendar: { calendarId: string; name: string; color: string | null },
-): CalendarEventItem | null {
+/** Googleの応答とカレンダーの表示情報を突き合わせて、画面が扱う形に変換する。 */
+export function toCalendarItems(
+  events: GoogleEvent[],
+  calendar: CalendarDisplay,
+): CalendarEventItem[] {
+  const items: CalendarEventItem[] = [];
+
+  for (const event of events) {
+    const normalized = normalizeEvent(event, calendar);
+    if (normalized) items.push(normalized);
+  }
+
+  return items;
+}
+
+function normalizeEvent(event: GoogleEvent, calendar: CalendarDisplay): CalendarEventItem | null {
   const start = event.start;
   const end = event.end;
   if (!start || !end) return null;

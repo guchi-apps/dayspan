@@ -17,13 +17,13 @@ export default async function LoginPage({
       : "/calendar";
 
   return (
-    <div className="flex h-dvh flex-col items-center justify-center gap-6 bg-muted/30 p-4">
-      <div className="flex items-center gap-2 text-xl font-semibold">
-        <CalendarDays className="size-6 text-primary" />
+    <div className="flex h-dvh flex-col items-center justify-center gap-8 bg-surface-container-low p-4">
+      <div className="type-headline-small flex items-center gap-2">
+        <CalendarDays className="size-7 text-primary" />
         DaySpan
       </div>
 
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-sm bg-surface-container-high">
         <CardHeader>
           <CardTitle>ログイン</CardTitle>
           <CardDescription>
@@ -32,12 +32,12 @@ export default async function LoginPage({
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {error === "not_allowed" && (
-            <p className="text-sm text-destructive">
+            <p className="type-body-small rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
               このGoogleアカウントは利用を許可されていません。
             </p>
           )}
           {error === "auth_failed" && (
-            <p className="text-sm text-destructive">
+            <p className="type-body-small rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
               ログインに失敗しました。時間をおいて再度お試しください。
             </p>
           )}

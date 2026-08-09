@@ -1,15 +1,20 @@
+import { headers } from "next/headers";
+
+import { SUPABASE_USER_ID_HEADER } from "@/lib/auth-header";
 import { db } from "@/lib/db";
-import { createClient } from "@/lib/supabase/server";
 
+/**
+ * ログイン中のユーザーを返す。
+ *
+ * Supabaseのセッション検証は proxy.ts が済ませ、結果をヘッダーで渡してくる。ここで
+ * auth.getUser() を呼び直すと、1リクエストにつきSupabaseへの往復が2回入ってしまう。
+ * proxy.ts のmatcherが外れているパス（静的アセット等）からは呼べないことに注意する。
+ */
 export async function getCurrentUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const supabaseUserId = (await headers()).get(SUPABASE_USER_ID_HEADER);
+  if (!supabaseUserId) return null;
 
-  if (!user) return null;
-
-  return db.user.findUnique({ where: { supabaseUserId: user.id } });
+  return db.user.findUnique({ where: { supabaseUserId } });
 }
 
 export async function requireUserId(): Promise<string | null> {

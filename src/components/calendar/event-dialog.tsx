@@ -15,7 +15,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -27,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import type { TouchedRange } from "./use-calendar-chunks";
 
 const RECURRENCE_RULES: { label: string; rule: string | null }[] = [
   { label: "繰り返さない", rule: null },
@@ -54,7 +54,11 @@ export function EventDialog({
   calendars: WritableCalendar[];
   timeZone: string;
   onClose: () => void;
-  onSaved: () => void;
+  /**
+   * 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。
+   * どこが変わるか事前に決まらない場合（繰り返しの新規作成）は null を渡す。
+   */
+  onSaved: (touched: TouchedRange[] | null) => void;
 }) {
   const editing = draft.event;
 
@@ -64,7 +68,6 @@ export function EventDialog({
   const [end, setEnd] = useState(draft.end);
   const [location, setLocation] = useState(editing?.location ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
-  const [attendees, setAttendees] = useState((editing?.attendees ?? []).join(", "));
   const [recurrenceRule, setRecurrenceRule] = useState<string>("none");
   const [calendarId, setCalendarId] = useState(
     editing?.calendarId ??
@@ -88,9 +91,9 @@ export function EventDialog({
     if (!next) close();
   };
 
-  const finish = () => {
+  const finish = (touched: TouchedRange[] | null) => {
     setOpen(false);
-    setTimeout(onSaved, 150);
+    setTimeout(() => onSaved(touched), 150);
   };
 
   // 開始を動かしたら、それまでの所要時間を保ったまま終了も動かす。
@@ -133,6 +136,11 @@ export function EventDialog({
     setBusy(true);
     setError(null);
     try {
+      // 繰り返し規則は新規作成のときだけ送る（更新はシリーズ全体に及ぶため送らない）。
+      const recurrence = editing
+        ? null
+        : (RECURRENCE_RULES.find((r) => r.label === recurrenceRule)?.rule ?? null);
+
       const payload = {
         calendarId,
         title,
@@ -141,13 +149,7 @@ export function EventDialog({
         end: allDay ? end : localInputToIso(end, timeZone),
         location: location.trim() || null,
         description: description.trim() || null,
-        attendees: attendees
-          .split(/[,\s]+/)
-          .map((value) => value.trim())
-          .filter(Boolean),
-        ...(editing
-          ? {}
-          : { recurrenceRule: RECURRENCE_RULES.find((r) => r.label === recurrenceRule)?.rule ?? null }),
+        ...(editing ? {} : { recurrenceRule: recurrence }),
       };
 
       const response = await fetch(
@@ -163,7 +165,12 @@ export function EventDialog({
         setError(await readErrorMessage(response, "保存できませんでした。"));
         return;
       }
-      finish();
+
+      // 移動した場合は移動元も変わる。繰り返しはどの月に何回現れるか読めないため範囲を絞らない。
+      const touched: TouchedRange[] = [{ start: payload.start, end: payload.end }];
+      if (editing) touched.push({ start: editing.start, end: editing.end });
+
+      finish(recurrence ? null : touched);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
@@ -185,7 +192,7 @@ export function EventDialog({
         setError(await readErrorMessage(response, "削除できませんでした。"));
         return;
       }
-      finish();
+      finish([{ start: editing.start, end: editing.end }]);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
@@ -206,110 +213,84 @@ export function EventDialog({
           )}
         </DialogHeader>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="event-title">タイトル</Label>
-            <Input
-              id="event-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-            />
-          </div>
+        <div className="flex flex-col gap-4">
+          <Input
+            id="event-title"
+            label="タイトル"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            autoFocus
+          />
 
-          <label className="flex items-center gap-2 text-sm">
+          <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
             <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
             終日
           </label>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="event-start">開始</Label>
-              <Input
-                id="event-start"
-                type={allDay ? "date" : "datetime-local"}
-                value={start}
-                onChange={(e) => changeStart(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="event-end">終了</Label>
-              <Input
-                id="event-end"
-                type={allDay ? "date" : "datetime-local"}
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
+            <Input
+              id="event-start"
+              label="開始"
+              type={allDay ? "date" : "datetime-local"}
+              value={start}
+              onChange={(e) => changeStart(e.target.value)}
+            />
+            <Input
+              id="event-end"
+              label="終了"
+              type={allDay ? "date" : "datetime-local"}
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+            />
           </div>
 
           {!editing && (
             <>
-              <div className="flex flex-col gap-1.5">
-                <Label>保存先カレンダー</Label>
-                <Select value={calendarId} onValueChange={setCalendarId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="カレンダーを選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {calendars.map((calendar) => (
-                      <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
-                        {calendar.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Select value={calendarId} onValueChange={setCalendarId}>
+                <SelectTrigger label="保存先カレンダー">
+                  <SelectValue placeholder="カレンダーを選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  {calendars.map((calendar) => (
+                    <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
+                      {calendar.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-              <div className="flex flex-col gap-1.5">
-                <Label>繰り返し</Label>
-                <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="繰り返さない" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {RECURRENCE_RULES.map((option) => (
-                      <SelectItem
-                        key={option.label}
-                        value={option.rule === null ? "none" : option.label}
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
+                <SelectTrigger label="繰り返し">
+                  <SelectValue placeholder="繰り返さない" />
+                </SelectTrigger>
+                <SelectContent>
+                  {RECURRENCE_RULES.map((option) => (
+                    <SelectItem
+                      key={option.label}
+                      value={option.rule === null ? "none" : option.label}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </>
           )}
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="event-location">場所</Label>
-            <Input
-              id="event-location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
-          </div>
+          <Input
+            id="event-location"
+            label="場所"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="event-attendees">参加者</Label>
-            <Input
-              id="event-attendees"
-              placeholder="メールアドレスをカンマ区切りで"
-              value={attendees}
-              onChange={(e) => setAttendees(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="event-description">説明</Label>
-            <Textarea
-              id="event-description"
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
+          <Textarea
+            id="event-description"
+            label="説明"
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
 
           {rangeError && <p className="text-sm text-destructive">{rangeError}</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}

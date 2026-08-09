@@ -2,13 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { NotebookPen, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { ConnectionStatusBadge } from "@/components/settings/connection-status-badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
   TASK_FIELD_REQUIREMENTS,
@@ -133,21 +133,13 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <NotebookPen className="size-5" />
-          Notion
-        </CardTitle>
-        <CardDescription>
-          タスクの一次情報源です。Notion側で用意したタスクDBをDaySpanから選択します。
-        </CardDescription>
-      </CardHeader>
-
       <CardContent className="flex flex-col gap-4">
         {message && (
           <p
             className={
-              message.tone === "ok" ? "text-sm text-muted-foreground" : "text-sm text-destructive"
+              message.tone === "ok"
+                ? "type-body-medium text-on-surface-variant"
+                : "type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container"
             }
           >
             {message.text}
@@ -156,10 +148,11 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
 
         {!state.connected ? (
           <div className="flex flex-col gap-3">
+            <ConnectionStatusBadge tone="not_connected">未接続</ConnectionStatusBadge>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="notion-token">Integration Token</Label>
               <Input
                 id="notion-token"
+                label="Integration Token"
                 type="password"
                 autoComplete="off"
                 placeholder="ntn_..."
@@ -177,7 +170,12 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
         ) : (
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium">{state.workspaceName ?? "接続済み"}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="type-body-large truncate font-medium">
+                  {state.workspaceName ?? "接続済み"}
+                </span>
+                <ConnectionStatusBadge tone="connected">接続済み</ConnectionStatusBadge>
+              </div>
               <Button variant="ghost" size="sm" disabled={disabled} onClick={disconnect}>
                 接続を解除
               </Button>
@@ -203,9 +201,11 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
             )}
 
             {missing && missing.length > 0 && (
-              <div className="flex flex-col gap-1 rounded-lg bg-destructive/10 p-3 text-sm">
-                <p className="font-medium">次のプロパティをNotion側に追加してください</p>
-                <ul className="list-disc pl-5 text-xs">
+              <div className="flex flex-col gap-1 rounded-lg bg-error-container/70 p-3 text-on-error-container">
+                <p className="type-body-medium font-medium">
+                  次のプロパティをNotion側に追加してください
+                </p>
+                <ul className="type-body-small list-disc pl-5">
                   {missing.map((item) => (
                     <li key={item.field}>
                       {item.label}（{item.types.join(" または ")}）
@@ -219,7 +219,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
               <span className="text-sm font-medium">タスクDBを選択</span>
 
               {state.dataSourcesFailed && (
-                <p className="text-sm text-destructive">
+                <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
                   Notionからデータベース一覧を取得できませんでした。トークンを確認してください。
                 </p>
               )}
@@ -269,14 +269,12 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                     このConnectionに共有されているものから選べます。
                   </p>
 
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="new-database-title">データベース名</Label>
-                    <Input
-                      id="new-database-title"
-                      value={newDatabaseTitle}
-                      onChange={(event) => setNewDatabaseTitle(event.target.value)}
-                    />
-                  </div>
+                  <Input
+                    id="new-database-title"
+                    label="データベース名"
+                    value={newDatabaseTitle}
+                    onChange={(event) => setNewDatabaseTitle(event.target.value)}
+                  />
 
                   <div className="flex flex-col gap-2">
                     <span className="text-sm font-medium">作成先のページ</span>
