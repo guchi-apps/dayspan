@@ -355,8 +355,12 @@ export function useAllDayDrag({
   );
 
   const startDrag = useCallback(
-    (event: React.PointerEvent, target: AllDayDragTarget, dayIndex: number) => {
+    (event: React.PointerEvent, target: AllDayDragTarget) => {
       movedRef.current = false;
+
+      // 日をまたぐ予定は1本の帯として表示するため、掴んだ列は帯の先頭ではなく
+      // 実際に指・カーソルが乗った位置から求める。
+      const dayIndex = dayIndexFromPointer(event.clientX) ?? 0;
 
       originRef.current = {
         target,
@@ -379,7 +383,7 @@ export function useAllDayDrag({
         setPreview({ id: target.item.id, deltaDays: 0, dayIndex });
       }
     },
-    [],
+    [dayIndexFromPointer],
   );
 
   const handlePointerMove = useCallback(
