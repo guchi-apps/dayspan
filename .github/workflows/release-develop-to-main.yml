@@ -1,6 +1,6 @@
 name: Release develop to main
 
-# m-guchi/issue-deck からコピーして移植したワークフロー。
+# guchi-apps/issue-deck からコピーして移植したワークフロー。
 # 移植元コミット: b198601c22aea091124b9734326032ec65b6cee1
 # 移植の手順・観点は issue-deck の docs/cross-repo-setup-guide.md を参照する。
 #
