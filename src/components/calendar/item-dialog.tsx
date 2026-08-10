@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
 import type { WritableCalendar } from "@/types/calendar";
 
@@ -44,6 +45,7 @@ export function ItemDialog({
   drafts,
   calendars = [],
   tagCatalog = EMPTY_TAG_CATALOG,
+  placeCatalog = EMPTY_PLACE_CATALOG,
   timeZone,
   weekStartsOn = 0,
   onClose,
@@ -55,6 +57,8 @@ export function ItemDialog({
   calendars?: WritableCalendar[];
   /** 登録済みのタグ・種類。設定画面で登録したものを入力の候補として渡す。 */
   tagCatalog?: TagCatalog;
+  /** 登録済みの場所。予定の場所欄の入力候補として渡す。 */
+  placeCatalog?: PlaceCatalog;
   timeZone: string;
   /** 繰り返す曜日を並べる順に使う。予定を扱わない画面では渡さない。 */
   weekStartsOn?: number;
@@ -132,6 +136,7 @@ export function ItemDialog({
             {...shared}
             draft={drafts.event}
             calendars={calendars}
+            placeCatalog={placeCatalog}
             weekStartsOn={weekStartsOn}
           />
         )}
