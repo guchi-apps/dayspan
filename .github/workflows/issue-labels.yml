@@ -3,7 +3,7 @@ name: Issue Labels
 # Issueラベル(01.planning -> 02.wip -> 03.d:marge -> 05.develop -> 07.m:marge -> 09.main)の
 # 状態遷移をイベント駆動で保証するワークフローの、DaySpan側のトリガー定義。
 #
-# ジョブ本体はm-guchi/issue-deckのreusable-issue-labels.ymlにあり、ここでは`uses:`で参照する
+# ジョブ本体はguchi-apps/issue-deckのreusable-issue-labels.ymlにあり、ここでは`uses:`で参照する
 # だけにしている。呼ばれる側でも`github`コンテキストは呼び出し元(このリポジトリ)のものになる
 # ため、ジョブ定義側にDaySpan固有の書き換えは不要。
 #
@@ -30,7 +30,7 @@ on:
 
 jobs:
   labels:
-    uses: m-guchi/issue-deck/.github/workflows/reusable-issue-labels.yml@workflows/v6
+    uses: guchi-apps/issue-deck/.github/workflows/reusable-issue-labels.yml@workflows/v6
     # 呼ばれる側の権限はcallerの付与範囲を超えられない。cleanup-on-closeジョブが
     # contents: write を要求するため、あわせてここで付与する。
     permissions:
