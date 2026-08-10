@@ -48,6 +48,8 @@ export type ReminderItem = {
   hasTime: boolean;
   category: string | null;
   memo: string | null;
+  /** 毎年の項目かどうか。プロパティ未設定時はどちらか不明のため null。 */
+  annual: boolean | null;
   url: string | null;
 };
 
