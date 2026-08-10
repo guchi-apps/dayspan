@@ -239,3 +239,20 @@ export async function deleteEvent(
     { method: "DELETE" },
   );
 }
+
+/**
+ * 予定の保存先カレンダーを変更する。PATCHではカレンダーを跨げないため、
+ * Google Calendar APIの move を使う（送信元・送信先とも同じGoogleアカウントである必要がある）。
+ */
+export async function moveEvent(
+  account: GoogleAccount,
+  calendarId: string,
+  eventId: string,
+  destinationCalendarId: string,
+): Promise<void> {
+  await googleCalendarFetch(
+    account,
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/move?destination=${encodeURIComponent(destinationCalendarId)}`,
+    { method: "POST" },
+  );
+}

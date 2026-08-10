@@ -167,7 +167,9 @@ export function EventDialog({
         end: allDay ? end : localInputToIso(end, timeZone),
         location: location.trim() || null,
         description: description.trim() || null,
-        ...(editing ? {} : { recurrenceRule: recurrence }),
+        ...(editing
+          ? { previousCalendarId: editing.calendarId }
+          : { recurrenceRule: recurrence }),
       };
 
       const response = await fetch(
@@ -290,31 +292,29 @@ export function EventDialog({
             )}
           </div>
 
-          {!editing && (
-            <>
-              <CalendarChipSelect
-                label="保存先カレンダー"
-                value={calendarId}
-                calendars={calendars}
-                onChange={setCalendarId}
-              />
+          <CalendarChipSelect
+            label="保存先カレンダー"
+            value={calendarId}
+            calendars={calendars}
+            onChange={setCalendarId}
+          />
 
-              <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
-                <SelectTrigger label="繰り返し">
-                  <SelectValue placeholder="繰り返さない" />
-                </SelectTrigger>
-                <SelectContent>
-                  {RECURRENCE_RULES.map((option) => (
-                    <SelectItem
-                      key={option.label}
-                      value={option.rule === null ? "none" : option.label}
-                    >
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </>
+          {!editing && (
+            <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
+              <SelectTrigger label="繰り返し">
+                <SelectValue placeholder="繰り返さない" />
+              </SelectTrigger>
+              <SelectContent>
+                {RECURRENCE_RULES.map((option) => (
+                  <SelectItem
+                    key={option.label}
+                    value={option.rule === null ? "none" : option.label}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
 
           <Input
