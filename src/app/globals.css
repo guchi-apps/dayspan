@@ -216,10 +216,10 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground overscroll-none;
   }
   html {
-    @apply font-sans;
+    @apply font-sans overscroll-none;
     /* 日付・時刻が縦にも横にも揃うことが、カレンダーの読みやすさの前提になる。 */
     font-variant-numeric: tabular-nums;
   }

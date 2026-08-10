@@ -56,7 +56,7 @@ INNER_ENCODED="$(printf '%s' "$INNER_SCRIPT" | iconv -t UTF-16LE | base64 -w0)"
 OUTER_SCRIPT=$(cat <<PS2
 \$ErrorActionPreference = 'Stop'
 try {
-  \$p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${INNER_ENCODED}'
+  \$p = Start-Process powershell -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${INNER_ENCODED}'
   if (\$p.ExitCode -ne 0) { exit 1 }
 } catch {
   Write-Error \$_
@@ -67,10 +67,13 @@ PS2
 OUTER_ENCODED="$(printf '%s' "$OUTER_SCRIPT" | iconv -t UTF-16LE | base64 -w0)"
 
 echo "Windowsの管理者権限でポートフォワーディングを設定します（UACダイアログが表示された場合は許可してください）..."
-if powershell.exe -NoProfile -NonInteractive -EncodedCommand "$OUTER_ENCODED"; then
+# -WindowStyle Hidden が無いと、WSLから起動したpowershell.exeのコンソールウィンドウが
+# 実行完了までWindows側に一瞬表示される（UACダイアログ自体は隠せないが、コマンド実行中の
+# 黒い画面のちらつきは防げる）。
+if powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand "$OUTER_ENCODED"; then
   # スマホから接続する先はWSLの内部IPではなくWindowsホストのLAN IP。
   # 既定ゲートウェイを持つインターフェース＝実際にLANへ出ている口として選ぶ。
-  HOST_IP="$(powershell.exe -NoProfile -NonInteractive -Command \
+  HOST_IP="$(powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -Command \
     "(Get-NetIPConfiguration | Where-Object { \$_.IPv4DefaultGateway -ne \$null } | Select-Object -First 1).IPv4Address.IPAddress" \
     2>/dev/null | tr -d '\r' | tr -d '[:space:]' || true)"
 
