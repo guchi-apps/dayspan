@@ -5,7 +5,8 @@ import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import {
-  deleteEvent,
+  deleteEventWithScope,
+  isEventDeleteScope,
   moveEvent,
   updateEvent,
   type EventWriteInput,
@@ -90,10 +91,18 @@ export async function DELETE(
   }
 
   const { eventId } = await params;
-  const calendarId = new URL(request.url).searchParams.get("calendarId");
+  const searchParams = new URL(request.url).searchParams;
+  const calendarId = searchParams.get("calendarId");
   if (!calendarId) {
     return NextResponse.json({ error: "calendarId is required" }, { status: 400 });
   }
+
+  // 繰り返し予定はどこまで消すかで操作が変わる。指定が無いときはこの回だけに留める。
+  const requestedScope = searchParams.get("scope");
+  if (requestedScope !== null && !isEventDeleteScope(requestedScope)) {
+    return NextResponse.json({ error: "invalid_scope" }, { status: 400 });
+  }
+  const scope = requestedScope ?? "single";
 
   const account = await resolveGoogleAccountForCalendar(userId, calendarId);
   if (!account) {
@@ -101,7 +110,7 @@ export async function DELETE(
   }
 
   try {
-    await deleteEvent(account, calendarId, eventId);
+    await deleteEventWithScope(account, calendarId, eventId, scope);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return externalApiError("google", "予定の削除", error);

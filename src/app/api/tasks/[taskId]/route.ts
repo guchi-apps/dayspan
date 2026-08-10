@@ -5,7 +5,12 @@ import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
-import { completeTask, updateTask, type TaskWriteInput } from "@/services/notion/tasks";
+import {
+  completeTask,
+  deleteTask,
+  updateTask,
+  type TaskWriteInput,
+} from "@/services/notion/tasks";
 
 type Body = TaskWriteInput & { completeAction?: boolean };
 
@@ -39,5 +44,29 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   } catch (error) {
     return externalApiError("notion", "タスクの更新", error);
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ taskId: string }> },
+) {
+  const userId = await requireUserId();
+  if (!userId) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const connection = await getNotionConnection(userId);
+  if (!connection) {
+    return NextResponse.json({ error: "not_connected" }, { status: 404 });
+  }
+
+  const { taskId } = await params;
+
+  try {
+    await deleteTask(createNotionClient(connection), taskId);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return externalApiError("notion", "タスクの削除", error);
   }
 }

@@ -23,6 +23,10 @@ export type GoogleEvent = {
   end?: GoogleEventDateTime;
   attendees?: GoogleEventAttendee[];
   recurringEventId?: string;
+  /** 繰り返しの1回分で、その回が本来始まるはずだった日時。回ごと動かしていても元の位置が分かる。 */
+  originalStartTime?: GoogleEventDateTime;
+  /** 繰り返し予定の親が持つ規則（RRULE・EXDATE など）。1回分の応答には含まれない。 */
+  recurrence?: string[];
 };
 
 type EventsResponse = {
@@ -238,6 +242,147 @@ export async function deleteEvent(
     `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
     { method: "DELETE" },
   );
+}
+
+/**
+ * 繰り返し予定を削除する範囲。Google Calendarの画面と同じ3通りにする。
+ * 繰り返さない予定では "single" しか使わない。
+ */
+export type EventDeleteScope = "single" | "following" | "all";
+
+const EVENT_DELETE_SCOPES: string[] = ["single", "following", "all"];
+
+export function isEventDeleteScope(value: string): value is EventDeleteScope {
+  return EVENT_DELETE_SCOPES.includes(value);
+}
+
+/**
+ * 削除範囲を指定して予定を消す。
+ *
+ * 画面に出ている繰り返し予定は singleEvents で展開した1回分で、そのIDを消しても
+ * その回しか消えない。シリーズ全体・これ以降は親の予定を触る必要があるため、
+ * ここで親を引き当ててから範囲ごとに操作を分ける。
+ */
+export async function deleteEventWithScope(
+  account: GoogleAccount,
+  calendarId: string,
+  eventId: string,
+  scope: EventDeleteScope,
+): Promise<void> {
+  if (scope === "single") {
+    await deleteEvent(account, calendarId, eventId);
+    return;
+  }
+
+  const instance = await getEvent(account, calendarId, eventId);
+  const masterId = instance.recurringEventId;
+
+  // 繰り返しでない予定に範囲を指定された場合。消す対象はその予定しかない。
+  if (!masterId) {
+    await deleteEvent(account, calendarId, eventId);
+    return;
+  }
+
+  if (scope === "all") {
+    await deleteEvent(account, calendarId, masterId);
+    return;
+  }
+
+  await endSeriesBefore(account, calendarId, masterId, instance);
+}
+
+async function getEvent(
+  account: GoogleAccount,
+  calendarId: string,
+  eventId: string,
+): Promise<GoogleEvent> {
+  return googleCalendarFetch<GoogleEvent>(
+    account,
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+  );
+}
+
+/**
+ * この回から先を繰り返しの対象から外す。親のRRULEへ、この回の直前までのUNTILを入れる。
+ * 回ごと動かしている場合は動かした先ではなく本来の位置（originalStartTime）を境目にする。
+ * 動かした先を基準にすると、まだ消したくない回まで範囲に入ってしまうため。
+ */
+async function endSeriesBefore(
+  account: GoogleAccount,
+  calendarId: string,
+  masterId: string,
+  instance: GoogleEvent,
+): Promise<void> {
+  const boundary = instance.originalStartTime ?? instance.start;
+  const master = await getEvent(account, calendarId, masterId);
+
+  // 1回目から先を消すと1回も残らない。空のシリーズを作らず、親ごと消す。
+  if (!boundary || !startsBefore(master.start, boundary)) {
+    await deleteEvent(account, calendarId, masterId);
+    return;
+  }
+
+  const until = untilBefore(boundary);
+  const rules = master.recurrence ?? [];
+  const truncated = rules.map((rule) =>
+    /^RRULE:/i.test(rule) ? withUntil(rule, until) : rule,
+  );
+
+  // RRULEを持たない（RDATEだけで組まれている等）親は範囲を縮められない。まるごと消す。
+  if (truncated.every((rule, index) => rule === rules[index])) {
+    await deleteEvent(account, calendarId, masterId);
+    return;
+  }
+
+  await googleCalendarFetch(
+    account,
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(masterId)}`,
+    { method: "PATCH", body: JSON.stringify({ recurrence: truncated }) },
+  );
+}
+
+/** 開始日時の前後比較。終日は日付、時刻ありはISO 8601で入っており、型が揃わないことがある。 */
+function startsBefore(a: GoogleEventDateTime | undefined, b: GoogleEventDateTime): boolean {
+  const left = toComparable(a);
+  const right = toComparable(b);
+  if (left === null || right === null) return false;
+  return left < right;
+}
+
+function toComparable(value: GoogleEventDateTime | undefined): number | null {
+  const iso = value?.dateTime ?? (value?.date ? `${value.date}T00:00:00Z` : null);
+  if (!iso) return null;
+  const time = new Date(iso).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+/**
+ * この回を含めないUNTILの値。RFC 5545ではDTSTARTの型と揃っている必要があるため、
+ * 終日は前日の日付、時刻ありはその1秒前をUTCの日時にする。
+ */
+function untilBefore(boundary: GoogleEventDateTime): string {
+  if (boundary.date) {
+    const date = new Date(`${boundary.date}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() - 1);
+    return date.toISOString().slice(0, 10).replace(/-/g, "");
+  }
+
+  const date = new Date(boundary.dateTime ?? "");
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`予定の開始日時を解釈できませんでした: ${boundary.dateTime}`);
+  }
+  date.setUTCSeconds(date.getUTCSeconds() - 1);
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+/** RRULEの終わり方をUNTILへ置き換える。UNTILとCOUNTは併記できないため既存の指定は外す。 */
+function withUntil(rule: string, until: string): string {
+  const body = rule.replace(/^RRULE:/i, "");
+  const parts = body
+    .split(";")
+    .filter((part) => part && !/^(UNTIL|COUNT)=/i.test(part));
+  parts.push(`UNTIL=${until}`);
+  return `RRULE:${parts.join(";")}`;
 }
 
 /**

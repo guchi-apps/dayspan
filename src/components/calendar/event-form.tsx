@@ -15,6 +15,7 @@ import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
 import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateTimeInput } from "./date-time-input";
+import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { RecurrenceFields } from "./recurrence-fields";
 import {
@@ -85,6 +86,8 @@ export function EventForm({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 削除は取り消せない。押した直後には消さず、確認を挟む。
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
   const offline = useOffline();
@@ -186,34 +189,16 @@ export function EventForm({
     }
   };
 
-  const remove = async () => {
-    if (!editing) return;
-    if (offline) {
-      setError(OFFLINE_WRITE_MESSAGE);
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await fetch(
-        `/api/events/${encodeURIComponent(editing.id)}?calendarId=${encodeURIComponent(editing.calendarId)}`,
-        { method: "DELETE" },
-      );
-      if (!response.ok) {
-        setError(await readErrorMessage(response, "削除できませんでした。"));
-        return;
-      }
-      onSaved([{ start: editing.start, end: editing.end }]);
-    } catch (cause) {
-      // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
-      setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <>
+      {editing && confirmingDelete && (
+        <DeleteItemDialog
+          item={{ kind: "event", event: editing }}
+          onCancel={() => setConfirmingDelete(false)}
+          onDeleted={onSaved}
+        />
+      )}
+
       {editing?.recurring && (
         <DialogDescription>繰り返し予定のうち、この回だけが変更されます。</DialogDescription>
       )}
@@ -310,7 +295,12 @@ export function EventForm({
 
       <DialogFooter className="sm:justify-between">
         {editing ? (
-          <Button variant="ghost" size="sm" disabled={busy || offline} onClick={remove}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy || offline}
+            onClick={() => setConfirmingDelete(true)}
+          >
             <Trash2 className="size-4" />
             削除
           </Button>

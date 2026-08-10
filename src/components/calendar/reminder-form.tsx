@@ -17,6 +17,7 @@ import type { TagOption } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
 import { DateTimeInput } from "./date-time-input";
+import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { readErrorMessage } from "./response-error";
 import type { TouchedRange } from "./use-calendar-chunks";
@@ -66,6 +67,8 @@ export function ReminderForm({
   const [annual, setAnnual] = useState(editing?.annual ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 削除は取り消せない。押した直後には消さず、確認を挟む。
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
   const offline = useOffline();
@@ -126,33 +129,16 @@ export function ReminderForm({
     }
   };
 
-  const remove = async () => {
-    if (!editing) return;
-    if (offline) {
-      setError(OFFLINE_WRITE_MESSAGE);
-      return;
-    }
-
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/reminders/${encodeURIComponent(editing.pageId)}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        setError(await readErrorMessage(response, "削除できませんでした。"));
-        return;
-      }
-      onSaved(touchedRanges(null, false, editing));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "削除に失敗しました。");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <>
+      {editing && confirmingDelete && (
+        <DeleteItemDialog
+          item={{ kind: "reminder", reminder: editing }}
+          onCancel={() => setConfirmingDelete(false)}
+          onDeleted={onSaved}
+        />
+      )}
+
       <div className="flex min-w-0 flex-col gap-4">
         <Input
           id="reminder-title"
@@ -241,7 +227,12 @@ export function ReminderForm({
 
       <DialogFooter className="sm:justify-between">
         {editing ? (
-          <Button variant="ghost" size="sm" disabled={busy || offline} onClick={remove}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy || offline}
+            onClick={() => setConfirmingDelete(true)}
+          >
             <Trash2 className="size-4" />
             削除
           </Button>

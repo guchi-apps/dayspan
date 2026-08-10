@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
-import { ExternalLink, Pencil } from "lucide-react";
+import { ExternalLink, Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,6 +19,9 @@ import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import type { TaskItem } from "@/types/calendar";
 
+import { DeleteItemDialog } from "./delete-item-dialog";
+import type { TouchedRange } from "./use-calendar-chunks";
+
 export function TaskDetailDialog({
   task,
   tagOptions,
@@ -26,6 +29,7 @@ export function TaskDetailDialog({
   readOnly = false,
   onClose,
   onEdit,
+  onDeleted,
   onToggleDone,
 }: {
   task: TaskItem;
@@ -36,6 +40,8 @@ export function TaskDetailDialog({
   readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
+  /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
+  onDeleted: (touched: TouchedRange[] | null) => void;
   /** 完了状態の切り替え。表示画面のままでも設定できるようにするため、保存とは別経路で呼ぶ。 */
   onToggleDone: (task: TaskItem, done: boolean) => Promise<void>;
 }) {
@@ -45,6 +51,8 @@ export function TaskDetailDialog({
   const [done, setDone] = useState(task.done);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 削除は押した直後には実行せず、確認を挟む。
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const close = () => {
     setOpen(false);
@@ -58,6 +66,11 @@ export function TaskDetailDialog({
   const edit = () => {
     setOpen(false);
     setTimeout(onEdit, 150);
+  };
+
+  const deleted = (touched: TouchedRange[] | null) => {
+    setOpen(false);
+    setTimeout(() => onDeleted(touched), 150);
   };
 
   const toggleDone = async (value: boolean) => {
@@ -77,6 +90,25 @@ export function TaskDetailDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+        {confirmingDelete && (
+          <DeleteItemDialog
+            item={{ kind: "task", task }}
+            onCancel={() => setConfirmingDelete(false)}
+            onDeleted={deleted}
+          />
+        )}
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="削除"
+          className="absolute top-2 right-18"
+          disabled={readOnly}
+          onClick={() => setConfirmingDelete(true)}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+
         <Button
           variant="ghost"
           size="icon-sm"
@@ -89,7 +121,7 @@ export function TaskDetailDialog({
         </Button>
 
         <DialogHeader>
-          <DialogTitle className={cn("pr-14", done && "text-on-surface-variant line-through")}>
+          <DialogTitle className={cn("pr-22", done && "text-on-surface-variant line-through")}>
             {task.title}
           </DialogTitle>
         </DialogHeader>
