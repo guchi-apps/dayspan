@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { MapPin, Sparkles } from "lucide-react";
+import { MapPin, Plus, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -42,29 +42,33 @@ export function LocationInput({
   const [open, setOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
+  const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [register, setRegister] = useState(true);
+  // この画面で登録したぶん。閉じるまで取り直さないため、候補へ自分で足す。
+  const [added, setAdded] = useState<PlaceItem[]>([]);
 
   const query = value.trim();
-  const candidates = matchPlaces(places, query);
-  // 候補が無いときだけAIに尋ねられる。登録済みの場所で足りるなら呼ぶ必要がない。
-  const canAsk = open && query.length > 0 && candidates.length === 0;
+  const candidates = matchPlaces([...places, ...added], query);
+  // 登録も、AIへの問い合わせも、候補が無いときだけ出す。
+  // 登録済みの場所で足りるなら、同じ場所を作り直す必要もAIを呼ぶ必要もない。
+  const noCandidates = open && query.length > 0 && candidates.length === 0;
 
   const change = (next: string) => {
     onChange(next);
     setOpen(true);
     setSuggestions(null);
     setError(null);
+    setNotice(null);
   };
 
-  const choose = async (name: string, address: string | null, fromAi: boolean) => {
-    onChange(toLocationText(name, address));
-    setOpen(false);
-    setSuggestions(null);
-
-    if (!fromAi || !register || !placeDatabaseReady) return;
-
-    // 登録に失敗しても入力した場所はそのまま残す。次に開いたときに候補として出ないだけ。
+  /**
+   * 場所DBへ1件登録する。
+   * 登録に失敗しても入力した場所はそのまま残す。次から候補に出ないだけで、予定は保存できる。
+   */
+  const registerPlace = async (name: string, address: string | null) => {
+    setRegistering(true);
     try {
       const response = await fetch("/api/places", {
         method: "POST",
@@ -73,10 +77,32 @@ export function LocationInput({
       });
       if (!response.ok) {
         setError(await readErrorMessage(response, "場所DBに登録できませんでした。"));
+        return;
       }
+      const place = (await response.json()) as PlaceItem;
+      setAdded((current) => [...current, place]);
+      setNotice(`「${place.name}」を場所DBに登録しました。`);
     } catch {
       setError("場所DBに登録できませんでした。");
+    } finally {
+      setRegistering(false);
     }
+  };
+
+  const choose = async (name: string, address: string | null, fromAi: boolean) => {
+    onChange(toLocationText(name, address));
+    setOpen(false);
+    setSuggestions(null);
+
+    if (!fromAi || !register || !placeDatabaseReady) return;
+    await registerPlace(name, address);
+  };
+
+  /** 打った文字列をそのまま場所DBへ登録する。住所はNotion側で足してもらう。 */
+  const registerTyped = async () => {
+    setError(null);
+    setNotice(null);
+    await registerPlace(query, null);
   };
 
   const ask = async () => {
@@ -100,6 +126,23 @@ export function LocationInput({
       setSuggesting(false);
     }
   };
+
+  // 打った文字列をそのまま登録する導線。AIに聞く前と、AIから候補が出なかったときの両方で出す。
+  const registerButton = placeDatabaseReady ? (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="w-fit"
+      disabled={registering || suggesting}
+      // 押した時点で入力欄からフォーカスが外れると、候補ごと閉じてしまう。
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={registerTyped}
+    >
+      <Plus className="size-4" />
+      {registering ? "登録しています…" : "この場所を登録"}
+    </Button>
+  ) : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -134,29 +177,33 @@ export function LocationInput({
         </ul>
       )}
 
-      {canAsk && (
+      {noCandidates && (
         <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
           {suggestions === null ? (
             <>
               <p className="text-xs text-muted-foreground">
                 登録済みの場所に「{query}」はありません。
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-fit"
-                disabled={suggesting}
-                // 押した時点で入力欄からフォーカスが外れると、候補ごと閉じてしまう。
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={ask}
-              >
-                <Sparkles className="size-4" />
-                {suggesting ? "AIに聞いています…" : "AIに聞く"}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {registerButton}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={suggesting || registering}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={ask}
+                >
+                  <Sparkles className="size-4" />
+                  {suggesting ? "AIに聞いています…" : "AIに聞く"}
+                </Button>
+              </div>
             </>
           ) : suggestions.length === 0 ? (
-            <p className="text-xs text-muted-foreground">AIからの候補はありませんでした。</p>
+            <>
+              <p className="text-xs text-muted-foreground">AIからの候補はありませんでした。</p>
+              {registerButton}
+            </>
           ) : (
             <>
               <ul className="flex flex-col gap-1">
@@ -188,6 +235,7 @@ export function LocationInput({
         </div>
       )}
 
+      {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
