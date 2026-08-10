@@ -61,6 +61,15 @@ function clampWeekIndex(index: number, length: number): number {
   return Math.min(Math.max(index, 0), length - 1);
 }
 
+/**
+ * スクロールが止まったとみなすまでの待ち時間。
+ *
+ * 窓を張り直すと画面より上の週が増減するため、見ていた位置へ scrollTop を書き戻す必要がある。
+ * この書き戻しは、指でなぞっている最中や惰性で流れている最中には効かない（進行中の
+ * スクロールに上書きされる）。止まったことを確かめてから張り直す。
+ */
+const SETTLE_DELAY = 150;
+
 export function ContinuousMonthView({
   weeks,
   events,
@@ -72,6 +81,7 @@ export function ContinuousMonthView({
   pendingMonths,
   onVisibleMonthChange,
   onVisibleWeekChange,
+  onScrollSettle,
   onSelectDay,
   onQuickAdd,
   onOpenEvent,
@@ -94,6 +104,11 @@ export function ContinuousMonthView({
   onVisibleMonthChange: (monthKey: string) => void;
   /** 画面の一番上にある週が変わったとき。 */
   onVisibleWeekChange: (weekKey: string) => void;
+  /**
+   * スクロールが止まったとき。そのとき見えている月を渡す。
+   * 窓の張り直しは位置の書き戻しを伴うため、動いている最中ではなくここで行う。
+   */
+  onScrollSettle: (monthKey: string) => void;
   onSelectDay: (dateKey: string) => void;
   /** その日に予定を足す。指・ペンでの長押しから呼ばれる。 */
   onQuickAdd: (dateKey: string) => void;
@@ -112,6 +127,22 @@ export function ContinuousMonthView({
   // 画面の先頭にある週。窓を張り直したあと、同じ位置へ戻すために覚えておく。
   const anchorRef = useRef<{ weekKey: string; offset: number } | null>(null);
   const appliedTargetRef = useRef(-1);
+
+  /*
+   * 通知先は ref 越しに呼ぶ。
+   *
+   * これらは呼び出し側で毎回作り直される。そのまま useCallback / 効果の依存に入れると、
+   * 画面のどこかが再描画されるたびに位置合わせの効果まで走り、スクロールの最中に
+   * scrollTop を書き戻して指の動きと競合する。
+   */
+  const notifyRef = useRef({ onVisibleMonthChange, onVisibleWeekChange, onScrollSettle });
+  useIsomorphicLayoutEffect(() => {
+    notifyRef.current = { onVisibleMonthChange, onVisibleWeekChange, onScrollSettle };
+  });
+
+  // スクロールが止まるのを待つためのタイマーと、指が触れているかどうか。
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchingRef = useRef(false);
 
   /**
    * 週ごとの配置を先に決めておく。
@@ -250,11 +281,48 @@ export function ContinuousMonthView({
 
       if (weekKey !== visibleWeekRef.current) {
         visibleWeekRef.current = weekKey;
-        onVisibleWeekChange(weekKey);
+        notifyRef.current.onVisibleWeekChange(weekKey);
       }
     },
-    [weeks, onVisibleWeekChange],
+    [weeks],
   );
+
+  /** いま見ている月。画面の上から1/3の位置にある週で決める。 */
+  const monthAtScroll = useCallback(
+    (container: HTMLDivElement) => {
+      const index = clampWeekIndex(
+        Math.floor((container.scrollTop + container.clientHeight / 3) / WEEK_HEIGHT),
+        weeks.length,
+      );
+
+      return weekMonthKey(weeks[index]);
+    },
+    [weeks],
+  );
+
+  const cancelSettle = useCallback(() => {
+    if (settleTimerRef.current === null) return;
+
+    clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = null;
+  }, []);
+
+  /** 動きが止まったら知らせる。指が触れている間は、離してから数え直す。 */
+  const scheduleSettle = useCallback(() => {
+    cancelSettle();
+
+    settleTimerRef.current = setTimeout(() => {
+      settleTimerRef.current = null;
+      if (touchingRef.current) return;
+
+      const container = scrollRef.current;
+      if (!container) return;
+
+      notifyRef.current.onScrollSettle(monthAtScroll(container));
+    }, SETTLE_DELAY);
+  }, [cancelSettle, monthAtScroll]);
+
+  useEffect(() => cancelSettle, [cancelSettle]);
 
   useIsomorphicLayoutEffect(() => {
     const container = scrollRef.current;
@@ -292,18 +360,27 @@ export function ContinuousMonthView({
 
     rememberAnchor(container);
 
-    // 画面の上から1/3の位置にある週を「いま見ている月」とみなす。
-    const index = clampWeekIndex(
-      Math.floor((container.scrollTop + container.clientHeight / 3) / WEEK_HEIGHT),
-      weeks.length,
-    );
-    const month = weekMonthKey(weeks[index]);
+    const month = monthAtScroll(container);
 
     if (month !== visibleMonthRef.current) {
       visibleMonthRef.current = month;
-      onVisibleMonthChange(month);
+      notifyRef.current.onVisibleMonthChange(month);
     }
-  }, [onVisibleMonthChange, rememberAnchor, weeks]);
+
+    scheduleSettle();
+  }, [monthAtScroll, rememberAnchor, scheduleSettle]);
+
+  // 指が触れている間は、離すまで「止まった」とみなさない。押している最中に窓を張り直すと、
+  // 位置の書き戻しが進行中のスクロールに上書きされ、見ていた位置が数ヶ月ぶんずれる。
+  const handleTouchStart = useCallback(() => {
+    touchingRef.current = true;
+    cancelSettle();
+  }, [cancelSettle]);
+
+  const handleTouchEnd = useCallback(() => {
+    touchingRef.current = false;
+    scheduleSettle();
+  }, [scheduleSettle]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -332,8 +409,12 @@ export function ContinuousMonthView({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        // ブラウザのネイティブ scroll anchoring が上のuseIsomorphicLayoutEffectと
-        // 二重に補正をかけ、窓の張り直し時にスクロール位置が意図せず飛ぶため無効化する。
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        // ブラウザのネイティブ scroll anchoring は無効にし、窓を張り直したときの位置合わせを
+        // 上の useIsomorphicLayoutEffect だけに任せる。両方が動くと、どちらの結果が残るかが
+        // ブラウザ任せになり、ずれたときに原因を追えないため。
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
       >
         {weeks.map((week, weekIndex) => {
