@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useOffline } from "next/offline";
-import { Suspense, use, useMemo, useOptimistic, useState, useTransition } from "react";
+import { Suspense, use, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
@@ -15,7 +15,6 @@ import {
   addDays,
   getContinuousMonthWeeks,
   getVisibleDays,
-  monthDistance,
   monthsOfWeeks,
   parseDateKey,
   parseMonthKey,
@@ -101,7 +100,9 @@ export function CalendarShell({
 
   // 画面の一番上にある週の先頭日。月表示→日表示へ切り替えるとき、この週を起点にする
   // （1日目固定だと、月の途中の週を見ていてもその月の1日目基準のタブへ飛んでしまうため）。
-  const [topWeekKey, setTopWeekKey] = useState(anchorKey);
+  // 読むのは表示形式を切り替える操作の中だけなので、状態にせず ref で持つ。
+  // 状態にすると、スクロールで週が変わるたびにカレンダー全体が描き直される。
+  const topWeekRef = useRef(anchorKey);
 
   // 保持している月の中心。ここを動かすと、前後の月ぶんの並びとデータが張り直される。
   const [monthCenter, setMonthCenter] = useState(anchorKey.slice(0, 7));
@@ -359,19 +360,27 @@ export function CalendarShell({
     navigate(nav.view, utils.todayKey());
   };
 
-  /** スクロールで見えている月が変わったとき。 */
+  /** スクロールで見えている月が変わったとき。見出しとURLだけを追従させる。 */
   const handleVisibleMonthChange = (month: string) => {
     setScrolledMonth(month);
     syncMonthUrl(month);
+  };
 
-    // 窓の端へ近づいたら中心をずらし、先の月を前もって取りにいく。
-    // 1ヶ月ごとにずらすと週の並びを組み直す回数が増えるため、2ヶ月離れてから動かす。
-    if (Math.abs(monthDistance(monthCenter, month)) >= 2) setMonthCenter(month);
+  /**
+   * スクロールが止まったとき。窓の中心を動かすのはここだけにする。
+   *
+   * 窓を張り直すと画面より上の週が増減するため、見ていた位置へ scrollTop を書き戻す必要がある。
+   * この書き戻しは、指でなぞっている最中や惰性で流れている最中には効かない
+   * （進行中のスクロールに上書きされる）。効かないまま週だけが増えると、見ていた位置が
+   * 張り直したぶんだけ過去へずれ、それがスクロールのたびに積み重なって数ヶ月飛ぶ。
+   */
+  const handleScrollSettle = (month: string) => {
+    if (month !== monthCenter) setMonthCenter(month);
   };
 
   /** スクロールで画面の一番上に来た週が変わったとき。 */
   const handleVisibleWeekChange = (weekKey: string) => {
-    setTopWeekKey(weekKey);
+    topWeekRef.current = weekKey;
   };
 
   /**
@@ -411,7 +420,7 @@ export function CalendarShell({
 
   // 表示形式を切り替えたときの移動先。月表示はスクロールで移動するため anchorKey が
   // 更新されない（URLだけが replaceState で追従する）。見えている週を起点にする。
-  const viewSwitchAnchorKey = nav.view === "month" ? topWeekKey : anchorKey;
+  const viewSwitchAnchorKey = () => (nav.view === "month" ? topWeekRef.current : anchorKey);
 
   return (
     <div className="flex h-dvh flex-col">
@@ -471,11 +480,11 @@ export function CalendarShell({
               onClick={() => {
                 if (item.view === "month") {
                   // 月表示のまま押しても、以前の位置合わせを乱さないよう何もしない。
-                  if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey);
+                  if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey());
                   return;
                 }
 
-                navigate(item.view, viewSwitchAnchorKey);
+                navigate(item.view, viewSwitchAnchorKey());
               }}
             >
               {item.label}
@@ -534,6 +543,7 @@ export function CalendarShell({
           viewingReminder={viewingReminder}
           onVisibleMonthChange={handleVisibleMonthChange}
           onVisibleWeekChange={handleVisibleWeekChange}
+          onScrollSettle={handleScrollSettle}
           onSwipe={moveDays}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
           onOpenEvent={openEvent}
@@ -596,6 +606,7 @@ function CalendarBody({
   viewingReminder,
   onVisibleMonthChange,
   onVisibleWeekChange,
+  onScrollSettle,
   onSwipe,
   onSelectDay,
   onOpenEvent,
@@ -634,6 +645,7 @@ function CalendarBody({
   viewingReminder: ReminderItem | null;
   onVisibleMonthChange: (monthKey: string) => void;
   onVisibleWeekChange: (weekKey: string) => void;
+  onScrollSettle: (monthKey: string) => void;
   onSwipe: (deltaDays: number) => void;
   onSelectDay: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
@@ -739,6 +751,7 @@ function CalendarBody({
           pendingMonths={data.pendingMonths}
           onVisibleMonthChange={onVisibleMonthChange}
           onVisibleWeekChange={onVisibleWeekChange}
+          onScrollSettle={onScrollSettle}
           onSelectDay={onSelectDay}
           onQuickAdd={onQuickAddOnDay}
           onOpenEvent={onOpenEvent}
