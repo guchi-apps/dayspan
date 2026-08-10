@@ -22,3 +22,9 @@ export async function getNotionConnection(userId: string): Promise<NotionConnect
   const connection = await db.notionConnection.findUnique({ where: { userId } });
   return connection?.taskDataSourceId ? connection : null;
 }
+
+/** 日付リマインドの書き込み先。タスクDBとは別に選ぶため、設定済みかどうかも別に見る。 */
+export async function getNotionReminderConnection(userId: string): Promise<NotionConnection | null> {
+  const connection = await db.notionConnection.findUnique({ where: { userId } });
+  return connection?.reminderDataSourceId ? connection : null;
+}

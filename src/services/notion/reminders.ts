@@ -2,7 +2,7 @@ import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
 import type { ReminderItem } from "@/types/calendar";
-import type { ReminderPropertyMap } from "./reminder-database";
+import type { ReminderField, ReminderPropertyMap } from "./reminder-database";
 
 type PropertyValue = {
   type?: string;
@@ -25,8 +25,10 @@ function normalize(page: Page, map: ReminderPropertyMap): ReminderItem | null {
   return {
     kind: "reminder",
     id: page.id,
+    pageId: page.id,
     title: text(get("title")?.title) || "(タイトルなし)",
     date,
+    sourceDate: date,
     hasTime: date.includes("T"),
     category: get("category")?.select?.name ?? null,
     memo: text(get("memo")?.rich_text) || null,
@@ -64,6 +66,7 @@ function expandAnnual(reminder: ReminderItem, range: { from: string; to: string 
     const dateKey = sameDayOfYear(year, month, day);
     if (dateKey < baseDate) continue;
     if (dateKey < range.from || dateKey > range.to) continue;
+    // sourceDate は元ページの日付のまま残す。編集画面はそちらを初期値にする。
     items.push({ ...reminder, id: `${reminder.id}:${dateKey}`, date: `${dateKey}${time}` });
   }
 
@@ -124,4 +127,82 @@ export async function listAllReminders(notion: Client, connection: NotionConnect
   if (!connection.reminderDataSourceId) return [];
   const pages = await query(notion, connection.reminderDataSourceId);
   return pages.map((page) => normalize(page, map)).filter((item): item is ReminderItem => item !== null);
+}
+
+// --- 日付リマインドの作成・更新・削除 ---
+
+export type ReminderWriteInput = {
+  title?: string;
+  /** YYYY-MM-DD（日付のみ）/ ISO 8601（時刻あり） */
+  date?: string;
+  category?: string | null;
+  memo?: string | null;
+  annual?: boolean;
+};
+
+/**
+ * 入力をNotionのプロパティ形へ変換する。
+ * DBに無い項目（propertyMapに無いもの）は書き込まず落とす。任意項目が無いのは正常なため。
+ */
+function toProperties(input: ReminderWriteInput, map: ReminderPropertyMap): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+  const set = (field: ReminderField, value: unknown) => {
+    const name = map[field];
+    if (name) properties[name] = value;
+  };
+
+  if (input.title !== undefined) {
+    set("title", { title: [{ type: "text", text: { content: input.title } }] });
+  }
+  if (input.date !== undefined) {
+    set("date", { date: { start: input.date } });
+  }
+  if (input.category !== undefined) {
+    set("category", { select: input.category ? { name: input.category } : null });
+  }
+  if (input.memo !== undefined) {
+    set("memo", { rich_text: input.memo ? [{ type: "text", text: { content: input.memo } }] : [] });
+  }
+  if (input.annual !== undefined) {
+    set("annual", { checkbox: input.annual });
+  }
+
+  return properties;
+}
+
+export async function createReminder(
+  notion: Client,
+  connection: NotionConnection,
+  input: ReminderWriteInput,
+): Promise<{ id: string }> {
+  if (!connection.reminderDataSourceId) throw new Error("Reminder data source is not configured");
+  const map = (connection.reminderPropertyMap as ReminderPropertyMap | null) ?? {};
+
+  const page = await notion.pages.create({
+    parent: { type: "data_source_id", data_source_id: connection.reminderDataSourceId },
+    properties: toProperties(input, map) as never,
+  });
+
+  return { id: page.id };
+}
+
+export async function updateReminder(
+  notion: Client,
+  connection: NotionConnection,
+  reminderId: string,
+  input: ReminderWriteInput,
+): Promise<void> {
+  const map = (connection.reminderPropertyMap as ReminderPropertyMap | null) ?? {};
+  await notion.pages.update({
+    page_id: reminderId,
+    properties: toProperties(input, map) as never,
+  });
+}
+
+/**
+ * 日付リマインドを消す。完了状態を持たないため、残す意味のない項目は消せる必要がある。
+ * Notionのゴミ箱へ移すだけなので、間違えてもNotion側で戻せる。
+ */
+export async function deleteReminder(notion: Client, reminderId: string): Promise<void> {
+  await notion.pages.update({ page_id: reminderId, in_trash: true });
 }

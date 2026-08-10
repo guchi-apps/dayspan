@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { TaskDetailDialog } from "@/components/calendar/task-detail-dialog";
-import { TaskDialog, toTaskDraft, type TaskDraft } from "@/components/calendar/task-dialog";
+import { ItemDialog } from "@/components/calendar/item-dialog";
+import { toTaskDraft, type TaskDraft } from "@/components/calendar/task-form";
 import { cn } from "@/lib/utils";
 import {
   classifyTasks,
@@ -223,8 +224,9 @@ export function TaskList({
       <BottomNav current="tasks" />
 
       {draft && (
-        <TaskDialog
-          draft={draft}
+        <ItemDialog
+          initialKind="task"
+          drafts={{ task: draft }}
           timeZone={timeZone}
           onClose={() => setDraft(null)}
           onSaved={() => {

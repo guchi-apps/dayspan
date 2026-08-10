@@ -8,14 +8,7 @@ import { Trash2 } from "lucide-react";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -30,6 +23,7 @@ import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateTimeInput } from "./date-time-input";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { readErrorMessage } from "./response-error";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 const RECURRENCE_RULES: { label: string; rule: string | null }[] = [
@@ -50,17 +44,28 @@ export type EventDraft = {
   calendarId?: string;
 };
 
-export function EventDialog({
+/**
+ * 予定の入力欄。ダイアログの枠と種類の切り替えは ItemDialog が持つ。
+ * 開閉のアニメーションもそちらが持つため、ここでは保存できたことだけを伝える。
+ */
+export function EventForm({
   draft,
   calendars,
   timeZone,
-  onClose,
+  title,
+  autoFocusTitle,
+  onTitleChange,
+  onCancel,
   onSaved,
 }: {
   draft: EventDraft;
   calendars: WritableCalendar[];
   timeZone: string;
-  onClose: () => void;
+  /** タイトルは種類を切り替えても引き継ぐため、ItemDialog が持つ。 */
+  title: string;
+  autoFocusTitle: boolean;
+  onTitleChange: (value: string) => void;
+  onCancel: () => void;
   /**
    * 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。
    * どこが変わるか事前に決まらない場合（繰り返しの新規作成）は null を渡す。
@@ -69,7 +74,6 @@ export function EventDialog({
 }) {
   const editing = draft.event;
 
-  const [title, setTitle] = useState(editing?.title ?? draft.title ?? "");
   const [allDay, setAllDay] = useState(draft.allDay);
   const [start, setStart] = useState(draft.start);
   const [end, setEnd] = useState(draft.end);
@@ -88,24 +92,6 @@ export function EventDialog({
 
   // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
   const offline = useOffline();
-
-  // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
-  // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
-  const [open, setOpen] = useState(true);
-
-  const close = () => {
-    setOpen(false);
-    setTimeout(onClose, 150);
-  };
-
-  const handleOpenChange = (next: boolean) => {
-    if (!next) close();
-  };
-
-  const finish = (touched: TouchedRange[] | null) => {
-    setOpen(false);
-    setTimeout(() => onSaved(touched), 150);
-  };
 
   // 開始を動かしたら、それまでの所要時間を保ったまま終了も動かす。
   // Google Calendarと同じ挙動にして、終了が開始より前になる状態を作りにくくする。
@@ -190,7 +176,7 @@ export function EventDialog({
       const touched: TouchedRange[] = [{ start: payload.start, end: payload.end }];
       if (editing) touched.push({ start: editing.start, end: editing.end });
 
-      finish(recurrence ? null : touched);
+      onSaved(recurrence ? null : touched);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
@@ -216,7 +202,7 @@ export function EventDialog({
         setError(await readErrorMessage(response, "削除できませんでした。"));
         return;
       }
-      finish([{ start: editing.start, end: editing.end }]);
+      onSaved([{ start: editing.start, end: editing.end }]);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
@@ -226,139 +212,132 @@ export function EventDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{editing ? "予定を編集" : "予定を追加"}</DialogTitle>
-          {editing?.recurring && (
-            <DialogDescription>
-              繰り返し予定のうち、この回だけが変更されます。
-            </DialogDescription>
+    <>
+      {editing?.recurring && (
+        <DialogDescription>繰り返し予定のうち、この回だけが変更されます。</DialogDescription>
+      )}
+
+      {/* DialogContentはgrid。grid itemは既定でmin-width:autoのため、中に縮まない要素
+          （保存先カレンダーのチップ列）があるとダイアログ自体が横に広がる。min-w-0で
+          中身より狭くなれるようにし、はみ出す分はチップ列の中だけでスクロールさせる。 */}
+      <div className="flex min-w-0 flex-col gap-4">
+        <Input
+          id="event-title"
+          label="タイトル"
+          value={title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          autoFocus={autoFocusTitle}
+        />
+
+        <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
+          <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
+          終日
+        </label>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
+          {allDay ? (
+            <>
+              <Input
+                id="event-start"
+                label="開始"
+                type="date"
+                value={start}
+                onChange={(e) => changeStart(e.target.value)}
+              />
+              <Input
+                id="event-end"
+                label="終了"
+                type="date"
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+              />
+            </>
+          ) : (
+            <>
+              <DateTimeInput
+                id="event-start"
+                dateLabel="開始日"
+                timeLabel="開始時刻"
+                value={start}
+                onChange={changeStart}
+              />
+              <DateTimeInput
+                id="event-end"
+                dateLabel="終了日"
+                timeLabel="終了時刻"
+                value={end}
+                onChange={setEnd}
+              />
+            </>
           )}
-        </DialogHeader>
-
-        {/* DialogContentはgrid。grid itemは既定でmin-width:autoのため、中に縮まない要素
-            （保存先カレンダーのチップ列）があるとダイアログ自体が横に広がる。min-w-0で
-            中身より狭くなれるようにし、はみ出す分はチップ列の中だけでスクロールさせる。 */}
-        <div className="flex min-w-0 flex-col gap-4">
-          <Input
-            id="event-title"
-            label="タイトル"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            autoFocus
-          />
-
-          <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-            <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
-            終日
-          </label>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
-            {allDay ? (
-              <>
-                <Input
-                  id="event-start"
-                  label="開始"
-                  type="date"
-                  value={start}
-                  onChange={(e) => changeStart(e.target.value)}
-                />
-                <Input
-                  id="event-end"
-                  label="終了"
-                  type="date"
-                  value={end}
-                  onChange={(e) => setEnd(e.target.value)}
-                />
-              </>
-            ) : (
-              <>
-                <DateTimeInput
-                  id="event-start"
-                  dateLabel="開始日"
-                  timeLabel="開始時刻"
-                  value={start}
-                  onChange={changeStart}
-                />
-                <DateTimeInput
-                  id="event-end"
-                  dateLabel="終了日"
-                  timeLabel="終了時刻"
-                  value={end}
-                  onChange={setEnd}
-                />
-              </>
-            )}
-          </div>
-
-          <CalendarChipSelect
-            label="保存先カレンダー"
-            value={calendarId}
-            calendars={calendars}
-            onChange={setCalendarId}
-          />
-
-          {!editing && (
-            <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
-              <SelectTrigger label="繰り返し">
-                <SelectValue placeholder="繰り返さない" />
-              </SelectTrigger>
-              <SelectContent>
-                {RECURRENCE_RULES.map((option) => (
-                  <SelectItem
-                    key={option.label}
-                    value={option.rule === null ? "none" : option.label}
-                  >
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          <Input
-            id="event-location"
-            label="場所"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-          />
-
-          <Textarea
-            id="event-description"
-            label="説明"
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-
-          {rangeError && <p className="text-sm text-destructive">{rangeError}</p>}
-          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <DialogFooter className="sm:justify-between">
-          {editing ? (
-            <Button variant="ghost" size="sm" disabled={busy || offline} onClick={remove}>
-              <Trash2 className="size-4" />
-              削除
-            </Button>
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-2">
-            <Button variant="ghost" disabled={busy} onClick={close}>
-              やめる
-            </Button>
-            <Button
-              disabled={busy || offline || !title.trim() || !calendarId || rangeError !== null}
-              onClick={save}
-            >
-              保存
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <CalendarChipSelect
+          label="保存先カレンダー"
+          value={calendarId}
+          calendars={calendars}
+          onChange={setCalendarId}
+        />
+
+        {!editing && (
+          <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
+            <SelectTrigger label="繰り返し">
+              <SelectValue placeholder="繰り返さない" />
+            </SelectTrigger>
+            <SelectContent>
+              {RECURRENCE_RULES.map((option) => (
+                <SelectItem
+                  key={option.label}
+                  value={option.rule === null ? "none" : option.label}
+                >
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        <Input
+          id="event-location"
+          label="場所"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        />
+
+        <Textarea
+          id="event-description"
+          label="説明"
+          rows={3}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+
+        {rangeError && <p className="text-sm text-destructive">{rangeError}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+      </div>
+
+      <DialogFooter className="sm:justify-between">
+        {editing ? (
+          <Button variant="ghost" size="sm" disabled={busy || offline} onClick={remove}>
+            <Trash2 className="size-4" />
+            削除
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          <Button variant="ghost" disabled={busy} onClick={onCancel}>
+            やめる
+          </Button>
+          <Button
+            disabled={busy || offline || !title.trim() || !calendarId || rangeError !== null}
+            onClick={save}
+          >
+            保存
+          </Button>
+        </div>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -382,14 +361,4 @@ export function toEventDraft(event: CalendarEventItem, timeZone: string): EventD
     start: event.allDay ? event.start : isoToLocalInput(event.start, timeZone),
     end: event.allDay ? event.end : isoToLocalInput(event.end, timeZone),
   };
-}
-
-/** サーバーが返した失敗理由を取り出す。無い場合は既定の文言にする。 */
-async function readErrorMessage(response: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await response.json()) as { message?: string; error?: string };
-    return body.message ?? body.error ?? fallback;
-  } catch {
-    return fallback;
-  }
 }

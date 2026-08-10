@@ -76,6 +76,7 @@ export function ContinuousMonthView({
   onQuickAdd,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
 }: {
   weeks: string[][];
   events: CalendarEventItem[];
@@ -98,6 +99,7 @@ export function ContinuousMonthView({
   onQuickAdd: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const visibleMonthRef = useRef(scrollTarget.month);
@@ -412,7 +414,7 @@ export function ContinuousMonthView({
                           gridRow: segment.lane + 1,
                         }}
                       >
-                        {renderChip(segment, utils, onOpenEvent, onOpenTask)}
+                        {renderChip(segment, utils, onOpenEvent, onOpenTask, onOpenReminder)}
                       </div>
                     ))}
 
@@ -445,6 +447,7 @@ function renderChip(
   utils: CalendarDateUtils,
   onOpenEvent: (event: CalendarEventItem) => void,
   onOpenTask: (task: TaskItem) => void,
+  onOpenReminder: (reminder: ReminderItem) => void,
 ) {
   const item = segment.item;
 
@@ -460,26 +463,35 @@ function renderChip(
     );
   }
 
-  if (item.kind === "reminder") return <ReminderChip reminder={item} utils={utils} />;
+  if (item.kind === "reminder") {
+    return <ReminderChip reminder={item} utils={utils} onOpen={() => onOpenReminder(item)} />;
+  }
 
   return <TaskChip task={item} utils={utils} onOpen={() => onOpenTask(item)} />;
 }
 
-function ReminderChip({ reminder, utils }: { reminder: ReminderItem; utils: CalendarDateUtils }) {
-  const content = (
-    <>
+function ReminderChip({
+  reminder,
+  utils,
+  onOpen,
+}: {
+  reminder: ReminderItem;
+  utils: CalendarDateUtils;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4"
+      title={reminder.title}
+    >
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
       {reminder.hasTime && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
       )}
       <span className="clip-nowrap">{reminder.title}</span>
-    </>
-  );
-  const className = "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4";
-  return reminder.url ? (
-    <a href={reminder.url} target="_blank" rel="noreferrer" className={className} title={reminder.title}>{content}</a>
-  ) : (
-    <span className={className} title={reminder.title}>{content}</span>
+    </button>
   );
 }
 
