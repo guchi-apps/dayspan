@@ -15,6 +15,23 @@ export const MAX_HOUR_HEIGHT = 192;
 /** 予定ブロックの最小の高さ（px）。極端に短い予定でもタイトルが読めるようにする。 */
 export const MIN_EVENT_HEIGHT = 16;
 
+/** 予定ブロックの本文1行の高さ（px）。text-[11px] / leading-tight の組み合わせに合わせる。 */
+const EVENT_LINE_HEIGHT = 14;
+
+/** 予定ブロックの上下の余白（px）。py-0.5 の上下ぶん。 */
+const EVENT_BLOCK_PADDING_Y = 4;
+
+/**
+ * 予定ブロックの高さに何行ぶんの文字が収まるかを返す。
+ *
+ * 収まる行数ぶんだけ、タイトルの下へ時刻・場所・説明を順に添える（issue #73）。
+ * 高さはピンチの倍率と予定の長さで決まるため、描画のたびに求める。
+ * タイトルだけは高さが足りなくても出すため、最低でも1を返す。
+ */
+export function eventTextLines(height: number): number {
+  return Math.max(1, Math.floor((height - EVENT_BLOCK_PADDING_Y) / EVENT_LINE_HEIGHT));
+}
+
 /**
  * 重なり判定での予定の最小の長さ（分）。
  *
