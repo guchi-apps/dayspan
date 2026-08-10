@@ -33,6 +33,7 @@ export async function loadCalendarData(
     reminders: notion.reminders,
     calendars: events.calendars,
     notionReady: notion.ready,
+    reminderReady: notion.reminderReady,
     errors: [...events.errors, ...notion.errors],
   };
 }
@@ -133,10 +134,16 @@ async function loadGoogleEvents(
 async function loadNotionItems(
   userId: string,
   range: { timeMin: string; timeMax: string },
-): Promise<{ tasks: TaskItem[]; reminders: ReminderItem[]; ready: boolean; errors: CalendarLoadResult["errors"] }> {
+): Promise<{
+  tasks: TaskItem[];
+  reminders: ReminderItem[];
+  ready: boolean;
+  reminderReady: boolean;
+  errors: CalendarLoadResult["errors"];
+}> {
   const connection = await db.notionConnection.findUnique({ where: { userId } });
   if (!connection?.taskDataSourceId && !connection?.reminderDataSourceId) {
-    return { tasks: [], reminders: [], ready: false, errors: [] };
+    return { tasks: [], reminders: [], ready: false, reminderReady: false, errors: [] };
   }
 
   try {
@@ -150,12 +157,19 @@ async function loadNotionItems(
       connection.taskDataSourceId ? listTasksInRange(notion, connection, dateRange) : [],
       connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],
     ]);
-    return { tasks, reminders, ready: Boolean(connection.taskDataSourceId), errors: [] };
+    return {
+      tasks,
+      reminders,
+      ready: Boolean(connection.taskDataSourceId),
+      reminderReady: Boolean(connection.reminderDataSourceId),
+      errors: [],
+    };
   } catch {
     return {
       tasks: [],
       reminders: [],
       ready: Boolean(connection.taskDataSourceId),
+      reminderReady: Boolean(connection.reminderDataSourceId),
       errors: [{ source: "notion", reason: "Notionのタスクまたは日付リマインドを取得できませんでした。" }],
     };
   }

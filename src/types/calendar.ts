@@ -41,10 +41,21 @@ export type TaskItem = {
 
 export type ReminderItem = {
   kind: "reminder";
+  /**
+   * 表示上のID。毎年の項目を各年へ展開した回は、元ページのIDへ日付を足した別物になる
+   * （services/notion/reminders.ts）。編集の宛先には使えない。
+   */
   id: string;
+  /** Notionのページ ID。展開した回でも元ページを指す。編集・削除はこちらを使う。 */
+  pageId: string;
   title: string;
   /** 対象日。日付のみは YYYY-MM-DD、時刻ありは ISO 8601。 */
   date: string;
+  /**
+   * 元ページに入っている日付。毎年の項目を展開した回では、登録した年の日付になる。
+   * 編集画面はこちらを初期値にする（展開した年で上書きすると起点の年が変わってしまう）。
+   */
+  sourceDate: string;
   hasTime: boolean;
   category: string | null;
   memo: string | null;
@@ -69,6 +80,8 @@ export type CalendarLoadResult = {
   reminders: ReminderItem[];
   calendars: WritableCalendar[];
   notionReady: boolean;
+  /** 日付リマインドDBが設定済みかどうか。追加画面にリマインドを出してよいかの判断に使う。 */
+  reminderReady: boolean;
   /** 連携ごとの取得失敗。片方が失敗してももう片方は表示できるようにする。 */
   errors: { source: "google" | "notion"; reason: string }[];
 };

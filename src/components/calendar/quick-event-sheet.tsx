@@ -9,7 +9,7 @@ import type { WritableCalendar } from "@/types/calendar";
 
 import { CalendarChipSelect } from "./calendar-chip-select";
 import { localInputToIso } from "./datetime-fields";
-import type { EventDraft } from "./event-dialog";
+import type { EventDraft } from "./event-form";
 import { MINUTES_PER_DAY } from "./item-layout";
 import type { TouchedRange } from "./use-calendar-chunks";
 

@@ -39,6 +39,7 @@ export function TimeGridView({
   utils,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
   onSelectSlot,
   onDragCommit,
   onAllDayDragCommit,
@@ -52,6 +53,7 @@ export function TimeGridView({
   utils: CalendarDateUtils;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
   /** 空き時間の選択。minutes は 0:00 からの分数（30分単位に丸める）。 */
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onDragCommit: (commit: DragCommit) => void;
@@ -144,6 +146,7 @@ export function TimeGridView({
         onPointerUp={handleAllDayPointerUp}
         onOpenEvent={onOpenEvent}
         onOpenTask={onOpenTask}
+        onOpenReminder={onOpenReminder}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -193,6 +196,7 @@ export function TimeGridView({
                 onConsumeDragClick={consumeDragClick}
                 onOpenEvent={onOpenEvent}
                 onOpenTask={onOpenTask}
+                onOpenReminder={onOpenReminder}
                 onSelectSlot={selectSlot}
               />
             )}
@@ -295,6 +299,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onConsumeDragClick,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
   onSelectSlot,
 }: {
   days: string[];
@@ -311,6 +316,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onConsumeDragClick: () => boolean;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
 }) {
   return (
@@ -326,6 +332,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
+          onOpenReminder={onOpenReminder}
           onSelectSlot={onSelectSlot}
           events={events.filter(
             (event) => !event.allDay && utils.eventCoversDay(event, dateKey),
@@ -352,6 +359,7 @@ function DayColumn({
   onConsumeDragClick,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
   onSelectSlot,
 }: {
   dateKey: string;
@@ -369,6 +377,7 @@ function DayColumn({
   onConsumeDragClick: () => boolean;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
 }) {
   const positioned = utils.layoutOverlaps(events, dateKey);
@@ -569,57 +578,49 @@ function DayColumn({
         </button>
       ))}
 
-      {/* 日付リマインドは編集の対象ではないため、掴めない印（時刻の点）として置き、押すとNotionの元ページを開く。 */}
+      {/* 日付リマインドは時刻の幅を持たないため、掴めない印（時刻の点）として置く。 */}
       {reminders.map((reminder) => (
         <ReminderMarker
           key={reminder.id}
           reminder={reminder}
           top={(utils.minutesFromMidnight(reminder.date) / MINUTES_PER_DAY) * GRID_HEIGHT}
           time={utils.formatTime(reminder.date)}
+          onOpen={() => onOpenReminder(reminder)}
         />
       ))}
     </div>
   );
 }
 
-/** 時刻付きの日付リマインド。予定・タスクと違い、時間グリッド上では動かせない。 */
+/**
+ * 時刻付きの日付リマインド。日付そのものを覚えておくための項目で時間の幅を持たないため、
+ * 予定・タスクと違い時間グリッド上では動かせない。押すと内容の画面を開く。
+ */
 function ReminderMarker({
   reminder,
   top,
   time,
+  onOpen,
 }: {
   reminder: ReminderItem;
   top: number;
   time: string;
+  onOpen: () => void;
 }) {
-  const content = (
-    <>
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
+      style={{ top }}
+      title={`${time} ${reminder.title}`}
+    >
       <span aria-hidden className="h-2.5 w-0.5 shrink-0 bg-tertiary" />
       <span className="h-px flex-1 bg-tertiary/45" />
       <span className="type-label-small clip-nowrap max-w-[78%] rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-on-tertiary-container">
         {reminder.title}
       </span>
-    </>
-  );
-
-  const className = "absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1";
-  const title = `${time} ${reminder.title}`;
-
-  return reminder.url ? (
-    <a
-      href={reminder.url}
-      target="_blank"
-      rel="noreferrer"
-      className={className}
-      style={{ top }}
-      title={title}
-    >
-      {content}
-    </a>
-  ) : (
-    <span className={className} style={{ top }} title={title}>
-      {content}
-    </span>
+    </button>
   );
 }
 
@@ -639,6 +640,7 @@ function AllDayArea({
   onPointerUp,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
 }: {
   panes: PaneDays;
   swipeOffset: number;
@@ -655,6 +657,7 @@ function AllDayArea({
   onPointerUp: (event: React.PointerEvent) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
 }) {
   return (
     <div
@@ -682,6 +685,7 @@ function AllDayArea({
             onConsumeDragClick={onConsumeDragClick}
             onOpenEvent={onOpenEvent}
             onOpenTask={onOpenTask}
+            onOpenReminder={onOpenReminder}
           />
         )}
       </SwipeTrack>
@@ -730,6 +734,7 @@ const AllDayPane = memo(function AllDayPane({
   onConsumeDragClick,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
 }: {
   days: string[];
   events: CalendarEventItem[];
@@ -741,6 +746,7 @@ const AllDayPane = memo(function AllDayPane({
   onConsumeDragClick: () => boolean;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
 }) {
   /**
    * 日をまたぐ終日予定を、日ごとに切らず1本の帯として並べる（月表示と同じ考え方）。
@@ -890,7 +896,10 @@ const AllDayPane = memo(function AllDayPane({
             }}
           >
             {segment.kind === "reminder" ? (
-              <AllDayReminderChip reminder={segment.item} />
+              <AllDayReminderChip
+                reminder={segment.item}
+                onOpen={() => onOpenReminder(segment.item)}
+              />
             ) : segment.kind === "event" ? (
               <button
                 type="button"
@@ -948,28 +957,26 @@ const AllDayPane = memo(function AllDayPane({
 });
 
 /**
- * 終日エリアに置く日付リマインド。押すとNotionの元ページを開く（docs/spec.md §9）。
- * 予定・タスクと違いDaySpanからは編集できないため、掴めるようには見せない。
+ * 終日エリアに置く日付リマインド。押すと内容の画面を開く（docs/spec.md §9）。
+ * 日付そのものを覚えておくための項目で時間の幅を持たないため、掴めるようには見せない。
  */
-function AllDayReminderChip({ reminder }: { reminder: ReminderItem }) {
-  const content = (
-    <>
+function AllDayReminderChip({
+  reminder,
+  onOpen,
+}: {
+  reminder: ReminderItem;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-tertiary/40 bg-tertiary-container px-1.5 py-0.5 text-left text-on-tertiary-container"
+      title={reminder.title}
+    >
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
       <span className="clip-nowrap">{reminder.title}</span>
-    </>
-  );
-
-  const className =
-    "type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-tertiary/40 bg-tertiary-container px-1.5 py-0.5 text-left text-on-tertiary-container";
-
-  return reminder.url ? (
-    <a href={reminder.url} target="_blank" rel="noreferrer" className={className} title={reminder.title}>
-      {content}
-    </a>
-  ) : (
-    <span className={className} title={reminder.title}>
-      {content}
-    </span>
+    </button>
   );
 }
 

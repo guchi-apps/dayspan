@@ -14,7 +14,10 @@ import type { ReminderItem } from "@/types/calendar";
 export default async function RemindersPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const connection = await db.notionConnection.findUnique({ where: { userId: user.id } });
+  const [uiSetting, connection] = await Promise.all([
+    db.uiSetting.findUnique({ where: { userId: user.id } }),
+    db.notionConnection.findUnique({ where: { userId: user.id } }),
+  ]);
   if (!connection?.reminderDataSourceId) return <ConnectPrompt />;
 
   let reminders: ReminderItem[] = [];
@@ -24,7 +27,13 @@ export default async function RemindersPage() {
   } catch {
     loadError = "Notionの日付リマインドを取得できませんでした。";
   }
-  return <ReminderList reminders={reminders} loadError={loadError} />;
+  return (
+    <ReminderList
+      reminders={reminders}
+      timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
+      loadError={loadError}
+    />
+  );
 }
 
 function ConnectPrompt() {
