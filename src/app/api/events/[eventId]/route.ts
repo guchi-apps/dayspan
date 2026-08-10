@@ -4,10 +4,15 @@ import { externalApiError } from "@/lib/api-error";
 
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { deleteEvent, updateEvent, type EventWriteInput } from "@/services/google-calendar/events";
+import {
+  deleteEvent,
+  moveEvent,
+  updateEvent,
+  type EventWriteInput,
+} from "@/services/google-calendar/events";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
 
-type Body = Partial<EventWriteInput> & { calendarId?: string };
+type Body = Partial<EventWriteInput> & { calendarId?: string; previousCalendarId?: string };
 
 export async function PATCH(
   request: Request,
@@ -28,14 +33,37 @@ export async function PATCH(
     );
   }
 
-  const account = await resolveGoogleAccountForCalendar(userId, body.calendarId);
+  const moving = Boolean(body.previousCalendarId) && body.previousCalendarId !== body.calendarId;
+  const sourceCalendarId = moving ? body.previousCalendarId! : body.calendarId;
+
+  const account = await resolveGoogleAccountForCalendar(userId, sourceCalendarId);
   if (!account) {
     return NextResponse.json({ error: "calendar_not_found" }, { status: 404 });
+  }
+
+  if (moving) {
+    const destinationAccount = await resolveGoogleAccountForCalendar(userId, body.calendarId);
+    if (!destinationAccount) {
+      return NextResponse.json({ error: "calendar_not_found" }, { status: 404 });
+    }
+    if (destinationAccount.id !== account.id) {
+      return NextResponse.json(
+        {
+          error: "cross_account_move_unsupported",
+          message: "異なるGoogleアカウントのカレンダーへは移動できません。",
+        },
+        { status: 400 },
+      );
+    }
   }
 
   const uiSetting = await db.uiSetting.findUnique({ where: { userId } });
 
   try {
+    if (moving) {
+      // moveはカレンダーのみを変える。他の項目は移動後に、移動先カレンダーへ改めて反映する。
+      await moveEvent(account, sourceCalendarId, eventId, body.calendarId);
+    }
     await updateEvent(account, body.calendarId, eventId, {
       title: body.title.trim(),
       allDay: Boolean(body.allDay),
@@ -48,7 +76,7 @@ export async function PATCH(
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return externalApiError("google", "予定の更新", error);
+    return externalApiError("google", moving ? "予定のカレンダー移動" : "予定の更新", error);
   }
 }
 
