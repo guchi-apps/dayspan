@@ -2,7 +2,7 @@
 
 このリポジトリで作業する Claude Code エージェント向けの DaySpan 固有ルールを記載する。
 
-共通の開発標準・運用知識は `m-guchi/docs` を一次情報源とし、このファイルには DaySpan 固有事項のみを置く。
+共通の開発標準・運用知識は `guchi-apps/docs` を一次情報源とし、このファイルには DaySpan 固有事項のみを置く。
 
 ## このリポジトリの構成（エージェント向けの前提）
 
@@ -120,9 +120,9 @@ pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 
 
 1. この `CLAUDE.md`
 2. `docs/spec.md`
-3. `.shared-context/CLAUDE.md` または `m-guchi/docs/CLAUDE.md`
+3. `.shared-context/CLAUDE.md` または `guchi-apps/docs/CLAUDE.md`
 4. 必要な `agent-rules/`、`knowledge/`、`standards/`、`guides/`
-5. VPSの現在構成が必要な場合は `m-guchi/vps`
+5. VPSの現在構成が必要な場合は `guchi-apps/vps`
 
 認証、OAuth、DBスキーマ、Secrets、本番環境設定などの変更では、共通ルールに従って必要なユーザー確認を行うこと。
 
@@ -131,7 +131,7 @@ pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 
 # Issueごとの複数Claude Codeエージェント運用
 
 `@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成〜レビュー〜マージまでをGitHub Actions上で
-無人実行する運用を導入している。仕組みの本体は `m-guchi/issue-deck` にあり、DaySpanはその
+無人実行する運用を導入している。仕組みの本体は `guchi-apps/issue-deck` にあり、DaySpanはその
 再利用可能ワークフロー（`workflows/v6` タグ）を参照する側として構成している。
 
 設計の詳細・各モードの判定ロジックは issue-deck の `docs/multi-agent-workflow.md`・`docs/multi-agent/` を
