@@ -142,7 +142,7 @@ export function useCalendarChunks({
   autoRefreshSeconds,
   onLoadingChange,
 }: {
-  /** 月表示のときだけ働かせる。1日〜7日表示は取得範囲が狭く、窓で持つ必要がない。 */
+  /** 月表示のときだけ働かせる。1日・3日・週表示は取得範囲が狭く、窓で持つ必要がない。 */
   enabled: boolean;
   /** いま画面に出しうる月。週の並びが触れる月から導く。 */
   windowMonths: string[];
