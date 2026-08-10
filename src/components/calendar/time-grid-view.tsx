@@ -7,6 +7,7 @@ import { eventColors } from "./calendar-color";
 import type { CalendarEventItem, ReminderItem, TaskItem } from "@/types/calendar";
 
 import {
+  eventTextLines,
   MIN_EVENT_HEIGHT,
   MINUTES_PER_DAY,
   type CalendarDateUtils,
@@ -486,6 +487,22 @@ function DayColumn({
 
         const colors = eventColors(event.color);
 
+        // 高さに収まる行数ぶんだけ、タイトルの下へ順に添える（issue #73）。
+        // 掴んでいる間は、動かした先の時刻を出す。
+        const timeText = eventPreview
+          ? `${formatMinutes(eventPreview.startMinutes)}–${formatMinutes(eventPreview.endMinutes)}`
+          : `${utils.formatTime(event.start)}–${utils.formatTime(event.end)}`;
+
+        const textLines = eventTextLines(height);
+
+        const details = [
+          { key: "time", text: timeText },
+          ...(event.location ? [{ key: "location", text: event.location }] : []),
+        ].slice(0, Math.max(textLines - 1, 0));
+
+        // 説明は1行に収まらないことが多いため、余った行へ折り返して入れる。
+        const descriptionLines = textLines - 1 - details.length;
+
         const geometry = {
           dayIndex,
           startMinutes: utils.minutesFromMidnight(event.start),
@@ -517,7 +534,9 @@ function DayColumn({
                 onOpenEvent(event);
               }}
               className={cn(
-                "size-full overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[11px] leading-tight",
+                // ボタンは中身を上下中央へ寄せるため、flexにして上揃えへ戻す。
+                // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
+                "flex size-full flex-col overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[11px] leading-tight",
                 eventPreview && "ring-2 ring-foreground/50",
               )}
               style={{
@@ -527,13 +546,23 @@ function DayColumn({
               }}
               title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
             >
-              <div className="clip-nowrap font-semibold">{event.title}</div>
-              {/* 短い予定で時刻まで出すと文字が潰れるため、高さに余裕があるときだけ添える。 */}
-              {height >= 40 && (
-                <div className="clip-nowrap opacity-75">
-                  {eventPreview
-                    ? formatMinutes(eventPreview.startMinutes)
-                    : utils.formatTime(event.start)}
+              <div className="clip-nowrap shrink-0 font-semibold">{event.title}</div>
+              {/* 短い予定に詰め込むと文字が潰れるため、高さに収まるぶんだけ出す。 */}
+              {details.map((detail) => (
+                <div key={detail.key} className="clip-nowrap shrink-0 opacity-75">
+                  {detail.text}
+                </div>
+              ))}
+              {event.description && descriptionLines > 0 && (
+                <div
+                  className="shrink-0 overflow-hidden break-words whitespace-pre-line opacity-75"
+                  style={{
+                    display: "-webkit-box",
+                    WebkitBoxOrient: "vertical",
+                    WebkitLineClamp: descriptionLines,
+                  }}
+                >
+                  {event.description}
                 </div>
               )}
             </button>
