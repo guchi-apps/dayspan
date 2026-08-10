@@ -32,9 +32,20 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
+  // getUser()は毎回Supabaseの /user へ往復する。届かなかったときの戻り値は未ログインと同じ
+  // user: null なので、errorを見ないと「セッションが無い」と「今は確認できない」を取り違える。
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
+
+  // 通信不達・5xx・レート制限。セッションが無効になったわけではないため、ログイン画面へは戻さない。
+  const authUnreachable = isAuthUnreachable(error);
+  if (authUnreachable) {
+    console.error(
+      `[dayspan] Supabase Authへ到達できずセッションを確認できない: ${request.nextUrl.pathname} ${error?.status ?? ""} ${error?.message ?? ""}`,
+    );
+  }
 
   // 検証済みのユーザーIDを後段へ渡し、ページ側が同じ検証を繰り返さずに済むようにする。
   // auth.getUser()は毎回Supabaseへ往復するため、1リクエストで2回叩くと待ち時間がそのまま倍になる。
@@ -58,12 +69,6 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // /api/* はルートハンドラ自身が requireUserId() で認証チェックし、
-  // 401 JSON を返す設計のため、ここではリダイレクトせず素通りさせる。
-  if (pathname.startsWith("/api/")) {
-    return proceed();
-  }
-
   // ログイン済みユーザーが /login を開いた場合（ブラウザの「戻る」操作等）は
   // ログイン画面を再表示せずカレンダーへ送る。
   if (pathname === "/login" && user) {
@@ -79,6 +84,20 @@ export async function updateSession(request: NextRequest) {
     return proceed();
   }
 
+  // ログイン状態を判定できないまま先へ進めない。ここで /login へ差し戻すと、有効なセッションを
+  // 持っている利用者が電波の悪い場所で開いただけでログインし直すことになり、さらに /login の
+  // ClearOfflineCache が保存済みの画面まで捨ててしまう（docs/spec.md §21）。
+  // 503を返し、Service Worker に保存済みの画面を出させる。
+  if (authUnreachable) {
+    return withRefreshedCookies(serviceUnavailable(pathname));
+  }
+
+  // /api/* はルートハンドラ自身が requireUserId() で認証チェックし、
+  // 401 JSON を返す設計のため、ここではリダイレクトせず素通りさせる。
+  if (pathname.startsWith("/api/")) {
+    return proceed();
+  }
+
   if (!user) {
     const loginUrl = new URL("/login", getRequestOrigin(request));
     loginUrl.searchParams.set("callbackUrl", pathname);
@@ -86,4 +105,55 @@ export async function updateSession(request: NextRequest) {
   }
 
   return proceed();
+}
+
+/**
+ * 「セッションが無効」ではなく「今は確認できなかった」ことを示すエラーか。
+ *
+ * auth-js は通信不達とHTTP 5xxを AuthRetryableFetchError（通信不達はstatus 0）で返す。
+ * 判定関数 isAuthRetryableFetchError() は @supabase/supabase-js から再公開されておらず、
+ * auth-js を直接の依存に加えたくないため、同じ判定をここに置く。
+ * レート制限(429)も同じ扱いにする。時間をおけば通るもので、ログアウトさせる理由がない。
+ */
+function isAuthUnreachable(error: { name: string; status?: number } | null): boolean {
+  if (!error) return false;
+  return error.name === "AuthRetryableFetchError" || error.status === 429;
+}
+
+/**
+ * ログイン状態を確認できなかったことを伝える応答。
+ *
+ * 401にしないのは「認証が通らなかった」ではなく「今は確認できない」ためで、
+ * 画面側にログアウトされたと解釈させない。Service Worker は5xxを受け取ると
+ * 保存済みの応答へ切り替える（public/sw.js）。
+ */
+function serviceUnavailable(pathname: string): NextResponse {
+  const headers = { "Retry-After": "5", "Cache-Control": "no-store" };
+
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      { error: "ログイン状態を確認できませんでした。通信状況を確認して、もう一度お試しください。" },
+      { status: 503, headers: { ...headers } },
+    );
+  }
+
+  return new NextResponse(
+    `<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DaySpan</title>
+  </head>
+  <body style="font-family: system-ui, sans-serif; display: grid; place-items: center; height: 100dvh; margin: 0; text-align: center;">
+    <div>
+      <p>ログイン状態を確認できませんでした。</p>
+      <p>通信状況を確認して、もう一度お試しください。</p>
+      <p><a href="">再読み込み</a></p>
+    </div>
+  </body>
+</html>
+`,
+    { status: 503, headers: { ...headers, "Content-Type": "text/html; charset=utf-8" } },
+  );
 }
