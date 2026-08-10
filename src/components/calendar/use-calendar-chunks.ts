@@ -114,6 +114,7 @@ export type CalendarWindowData = {
   reminders: ReminderItem[];
   calendars: WritableCalendar[];
   notionReady: boolean;
+  reminderReady: boolean;
   errors: CalendarLoadResult["errors"];
   /** 連携側ではなくアプリ側の取得失敗。 */
   loadError: string | null;
@@ -141,7 +142,7 @@ export function useCalendarChunks({
   autoRefreshSeconds,
   onLoadingChange,
 }: {
-  /** 月表示のときだけ働かせる。1日〜7日表示は取得範囲が狭く、窓で持つ必要がない。 */
+  /** 月表示のときだけ働かせる。1日・3日・週表示は取得範囲が狭く、窓で持つ必要がない。 */
   enabled: boolean;
   /** いま画面に出しうる月。週の並びが触れる月から導く。 */
   windowMonths: string[];
@@ -156,6 +157,7 @@ export function useCalendarChunks({
   const [meta, setMeta] = useState({
     calendars: initial.calendars,
     notionReady: initial.notionReady,
+    reminderReady: initial.reminderReady,
     errors: initial.errors,
   });
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -185,6 +187,7 @@ export function useCalendarChunks({
     setMeta({
       calendars: initial.calendars,
       notionReady: initial.notionReady,
+      reminderReady: initial.reminderReady,
       errors: initial.errors,
     });
     setLoadError(null);
@@ -210,6 +213,7 @@ export function useCalendarChunks({
       setMeta({
         calendars: data.calendars,
         notionReady: data.notionReady,
+        reminderReady: data.reminderReady,
         errors: data.errors,
       });
       setLoadError(null);
@@ -333,6 +337,7 @@ export function useCalendarChunks({
       reminders: initial.reminders,
       calendars: initial.calendars,
       notionReady: initial.notionReady,
+      reminderReady: initial.reminderReady,
       errors: initial.errors,
       loadError: null,
       pendingMonths: NO_MONTHS,
@@ -346,6 +351,7 @@ export function useCalendarChunks({
     reminders,
     calendars: meta.calendars,
     notionReady: meta.notionReady,
+    reminderReady: meta.reminderReady,
     errors: meta.errors,
     loadError,
     pendingMonths,

@@ -18,6 +18,8 @@ import {
 } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
 import { loadCalendarData } from "@/services/calendar/load";
+import { loadPlaceCatalog } from "@/services/notion/places";
+import { loadTagCatalog } from "@/services/notion/tag-options";
 
 export default async function CalendarPage({
   searchParams,
@@ -63,6 +65,13 @@ export default async function CalendarPage({
   // ここでawaitしない。渡した先の<Suspense>境界で解決させ、ヘッダーは取得を待たずに描く。
   const dataPromise = loadCalendarData(user.id, range);
 
+  // タグ・種類は月をまたいでも変わらない。予定・タスクの取得とは分けて解決させ、
+  // 月を送るたびにNotionへの往復が増えないようにする。
+  const tagCatalogPromise = loadTagCatalog(notionConnection);
+
+  // 場所も月をまたいでは変わらない。予定・タスクの取得とは分けて解決させる。
+  const placeCatalogPromise = loadPlaceCatalog(notionConnection);
+
   return (
     <CalendarShell
       view={view}
@@ -70,6 +79,8 @@ export default async function CalendarPage({
       days={days}
       weeks={weeks}
       dataPromise={dataPromise}
+      tagCatalogPromise={tagCatalogPromise}
+      placeCatalogPromise={placeCatalogPromise}
       weekStartsOn={weekStartsOn}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
       autoRefreshSeconds={uiSetting?.autoRefreshSeconds ?? 300}

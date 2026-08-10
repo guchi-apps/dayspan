@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useOffline } from "next/offline";
-import { Suspense, use, useMemo, useOptimistic, useState, useTransition } from "react";
+import { Suspense, use, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
@@ -14,6 +14,7 @@ import { LinearProgress } from "@/components/ui/linear-progress";
 import {
   addDays,
   getContinuousMonthWeeks,
+  getContinuousMonthSpan,
   getVisibleDays,
   monthDistance,
   monthsOfWeeks,
@@ -22,20 +23,31 @@ import {
   shiftAnchor,
   shiftMonthKey,
   toDateKey,
+  VIRTUAL_MONTHS_AROUND,
   type CalendarView,
 } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
-import type { CalendarEventItem, CalendarLoadResult, TaskItem } from "@/types/calendar";
+import type { PlaceCatalog } from "@/services/notion/places";
+import type { TagCatalog } from "@/services/notion/tag-options";
+import type {
+  CalendarEventItem,
+  CalendarLoadResult,
+  ReminderItem,
+  TaskItem,
+} from "@/types/calendar";
 
 import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, localInputToIso } from "./datetime-fields";
 import { EventDetailDialog } from "./event-detail-dialog";
-import { EventDialog, toEventDraft, type EventDraft } from "./event-dialog";
+import { toEventDraft, type EventDraft } from "./event-form";
+import { ItemDialog, type ItemDrafts, type ItemKind } from "./item-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { ContinuousMonthView } from "./continuous-month-view";
 import { QuickEventSheet, toQuickEventDraft, type QuickEventDraft } from "./quick-event-sheet";
+import { ReminderDetailDialog } from "./reminder-detail-dialog";
+import { toReminderDraft } from "./reminder-form";
 import { TaskDetailDialog } from "./task-detail-dialog";
-import { TaskDialog, toTaskDraft, type TaskDraft } from "./task-dialog";
+import { toTaskDraft } from "./task-form";
 import { TimeGridView } from "./time-grid-view";
 import { monthsOfRanges, useCalendarChunks, type TouchedRange } from "./use-calendar-chunks";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
@@ -43,11 +55,16 @@ import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 // 日付だけが決まっている追加（右下の「＋」・月表示の長押し）で使う開始時刻。
 const DEFAULT_START_MINUTES = 9 * 60;
 
+// タスクの期限は、その日のうちに片付ける想定の時刻から始める（予定の既定より遅い）。
+const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
+
+// 期間の短い順に並べる。同じ並びの中で右へ行くほど広い範囲を見ることになり、
+// 「今いる形式より広く／狭く見たい」がどちら向きに押せばよいか迷わずに済む。
 const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[] = [
-  { view: "month", label: "月" },
   { view: "day1", label: "1日" },
   { view: "day3", label: "3日" },
-  { view: "day7", label: "7日", desktopOnly: true },
+  { view: "day7", label: "週", desktopOnly: true },
+  { view: "month", label: "月" },
 ];
 
 export function CalendarShell({
@@ -56,6 +73,8 @@ export function CalendarShell({
   days,
   weeks,
   dataPromise,
+  tagCatalogPromise,
+  placeCatalogPromise,
   weekStartsOn,
   timeZone,
   autoRefreshSeconds,
@@ -65,6 +84,13 @@ export function CalendarShell({
   days: string[];
   weeks: string[][];
   dataPromise: Promise<CalendarLoadResult>;
+  /**
+   * 登録済みのタグ・種類。予定・タスクの取得とは別に解決させる。
+   * 月をまたぐたびに取り直す必要は無く、Notionへの往復をそのぶん増やさずに済む。
+   */
+  tagCatalogPromise: Promise<TagCatalog>;
+  /** 登録済みの場所。タグ・種類と同じく、月をまたいでも変わらないため別に解決させる。 */
+  placeCatalogPromise: Promise<PlaceCatalog>;
   weekStartsOn: number;
   timeZone: string;
   autoRefreshSeconds: number;
@@ -90,14 +116,16 @@ export function CalendarShell({
 
   // 画面の一番上にある週の先頭日。月表示→日表示へ切り替えるとき、この週を起点にする
   // （1日目固定だと、月の途中の週を見ていてもその月の1日目基準のタブへ飛んでしまうため）。
-  const [topWeekKey, setTopWeekKey] = useState(anchorKey);
+  // 読むのは表示形式を切り替える操作の中だけなので、状態にせず ref で持つ。
+  // 状態にすると、スクロールで週が変わるたびにカレンダー全体が描き直される。
+  const topWeekRef = useRef(anchorKey);
 
   // 保持している月の中心。ここを動かすと、前後の月ぶんの並びとデータが張り直される。
   const [monthCenter, setMonthCenter] = useState(anchorKey.slice(0, 7));
 
   // 月表示の移動はスクロールで行う。同じ月を続けて指しても効くよう、指示に通し番号を付ける。
-  // day は日表示から特定の日を含む週へ位置合わせしたいときだけ指定する
-  // （前へ・次へ・今日は月単位のままでよいため指定しない）。
+  // day は特定の日を含む週へ位置合わせしたいときだけ指定する（今日・日表示からの切り替え）。
+  // 前へ・次へは行き先の日が決まらないため、月単位のまま指定しない。
   const [scrollTarget, setScrollTarget] = useState<{ month: string; day?: string; nonce: number }>({
     month: anchorKey.slice(0, 7),
     nonce: 0,
@@ -109,25 +137,49 @@ export function CalendarShell({
     [monthCenter, weekStartsOn],
   );
 
+  /*
+   * スクロールできる範囲。保持している窓よりずっと広く取り、窓の外側は日付を並べない余白にする。
+   *
+   * 窓を張り直すたびに並びの長さが変わると、その上にあった週の位置も動き、見ていた場所へ
+   * scrollTop を書き戻さなければならない。書き戻しは指でなぞっている最中には効かず、
+   * 効かないまま週だけが増えると数ヶ月ぶん飛ぶ。余白で長さを固定しておけば、窓の張り直しは
+   * 位置に影響しないため、スクロールの最中でも張り直せる（＝止まらずに読み込みが続く）。
+   *
+   * 起点を動かすのは位置合わせの指示があったときだけ。そのときは絶対位置で合わせ直す。
+   */
+  const virtual = useMemo(
+    () =>
+      getContinuousMonthSpan(
+        parseMonthKey(scrollTarget.month),
+        weekStartsOn,
+        VIRTUAL_MONTHS_AROUND,
+      ),
+    [scrollTarget.month, weekStartsOn],
+  );
+
   // 画面に出しうる月と、サーバーが描いてよこした月。前者に足りないぶんをAPIから足す。
   const windowMonths = useMemo(() => monthsOfWeeks(monthWeeks), [monthWeeks]);
   const serverMonths = useMemo(() => monthsOfWeeks(weeks), [weeks]);
 
-  const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
-  // 空いているところを押したときの簡易入力。詳細な項目は「詳細」から eventDraft へ引き継ぐ。
+  // 予定・タスク・日付リマインドの入力。追加では作れる種類ぶんを渡し、
+  // どれを作るかを開いてから選べるようにする（docs/spec.md §15）。
+  const [itemDialog, setItemDialog] = useState<{
+    initialKind: ItemKind;
+    drafts: ItemDrafts;
+  } | null>(null);
+  // 空いているところを押したときの簡易入力。詳細な項目は「詳細」から入力画面へ引き継ぐ。
   const [quickDraft, setQuickDraft] = useState<QuickEventDraft | null>(null);
-  const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
   // クリックした直後は表示専用画面を開く。編集アイコンを押したときだけ draft へ切り替える。
   const [viewingEvent, setViewingEvent] = useState<CalendarEventItem | null>(null);
   const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [viewingReminder, setViewingReminder] = useState<ReminderItem | null>(null);
 
   const closeDialogs = () => {
-    setEventDraft(null);
+    setItemDialog(null);
     setQuickDraft(null);
-    setTaskDraft(null);
     setViewingEvent(null);
     setViewingTask(null);
+    setViewingReminder(null);
   };
 
   /** 月表示以外の取り直し。ページごと描き直すため、表示中の期間ぶんをすべて取り直す。 */
@@ -240,13 +292,22 @@ export function CalendarShell({
   const editEvent = (event: CalendarEventItem) => {
     if (offline) return;
     setViewingEvent(null);
-    setEventDraft(toEventDraft(event, timeZone));
+    setItemDialog({ initialKind: "event", drafts: { event: toEventDraft(event, timeZone) } });
   };
 
   const editTask = (task: TaskItem) => {
     if (offline) return;
     setViewingTask(null);
-    setTaskDraft(toTaskDraft(task, timeZone));
+    setItemDialog({ initialKind: "task", drafts: { task: toTaskDraft(task, timeZone) } });
+  };
+
+  const editReminder = (reminder: ReminderItem) => {
+    if (offline) return;
+    setViewingReminder(null);
+    setItemDialog({
+      initialKind: "reminder",
+      drafts: { reminder: toReminderDraft(reminder, timeZone) },
+    });
   };
 
   // 月表示ではスクロール位置が、それ以外では選択中の期間が見出しになる。
@@ -259,6 +320,7 @@ export function CalendarShell({
           getVisibleDays(nav.view, parseDateKey(nav.anchorKey), weekStartsOn).days,
         );
   const openTask = (task: TaskItem) => setViewingTask(task);
+  const openReminder = (reminder: ReminderItem) => setViewingReminder(reminder);
 
   /** 新規作成の初期値。指定の日時から1時間ぶんで開く。 */
   const newEventDraft = (dateKey: string, minutes: number): EventDraft => ({
@@ -270,7 +332,7 @@ export function CalendarShell({
   /** 簡易入力から通常の入力画面へ移る。入力済みの値はそのまま引き継ぐ。 */
   const openEventForm = (draft: EventDraft) => {
     setQuickDraft(null);
-    setEventDraft(draft);
+    setItemDialog({ initialKind: "event", drafts: { event: draft } });
   };
 
   const navigate = (nextView: CalendarView, nextAnchorKey: string) => {
@@ -284,10 +346,10 @@ export function CalendarShell({
    * 月表示の移動。読み込み済みの範囲の中なら、サーバーへ行かずスクロールするだけで済む。
    * 窓の外へ出る場合も、先に並びを張り直してから足りない月だけを取りにいく。
    */
-  const goToMonth = (month: string) => {
+  const goToMonth = (month: string, day?: string) => {
     setScrolledMonth(month);
     setMonthCenter(month);
-    setScrollTarget((prev) => ({ month, nonce: prev.nonce + 1 }));
+    setScrollTarget((prev) => ({ month, day, nonce: prev.nonce + 1 }));
     syncMonthUrl(month);
   };
 
@@ -323,7 +385,11 @@ export function CalendarShell({
 
   const goToday = () => {
     if (nav.view === "month") {
-      goToMonth(utils.todayKey().slice(0, 7));
+      // 月の先頭週ではなく今日を含む週へ合わせる。月の先頭週に合わせると、今日が月の
+      // どこにあるかで今日の週が何行目に来るかが変わり、日表示からの切り替え
+      // （enterMonthView）とも位置がずれるため。
+      const todayKey = utils.todayKey();
+      goToMonth(todayKey.slice(0, 7), todayKey);
       return;
     }
 
@@ -337,12 +403,13 @@ export function CalendarShell({
 
     // 窓の端へ近づいたら中心をずらし、先の月を前もって取りにいく。
     // 1ヶ月ごとにずらすと週の並びを組み直す回数が増えるため、2ヶ月離れてから動かす。
+    // 張り直しても各週の位置は動かないため、スクロールの最中でも行ってよい。
     if (Math.abs(monthDistance(monthCenter, month)) >= 2) setMonthCenter(month);
   };
 
   /** スクロールで画面の一番上に来た週が変わったとき。 */
   const handleVisibleWeekChange = (weekKey: string) => {
-    setTopWeekKey(weekKey);
+    topWeekRef.current = weekKey;
   };
 
   /**
@@ -360,15 +427,39 @@ export function CalendarShell({
   // 予定を追加するときの既定の日。月表示は広い範囲を並べているため、先頭の日ではなく今日を使う。
   const defaultDayKey = view === "month" ? utils.todayKey() : gridDays[0];
 
+  /**
+   * 右下の「＋」からの追加。作れる種類ぶんのひな型をまとめて渡し、
+   * 画面上で切り替えられるようにする。日付はどれも同じ日から始める。
+   */
+  const openAdd = (available: Record<ItemKind, boolean>) => {
+    const drafts: ItemDrafts = {};
+    if (available.event) drafts.event = newEventDraft(defaultDayKey, DEFAULT_START_MINUTES);
+    if (available.task) {
+      drafts.task = {
+        dueMode: "datetime",
+        due: dateKeyPlusMinutes(defaultDayKey, DEFAULT_TASK_DUE_MINUTES),
+      };
+    }
+    if (available.reminder) drafts.reminder = { dateMode: "date", date: defaultDayKey };
+
+    // 「＋」は予定を足す操作として使われることが多い。作れるなら予定から開く。
+    const initialKind: ItemKind = available.event ? "event" : available.task ? "task" : "reminder";
+    setItemDialog({ initialKind, drafts });
+  };
+
   // 表示形式を切り替えたときの移動先。月表示はスクロールで移動するため anchorKey が
   // 更新されない（URLだけが replaceState で追従する）。見えている週を起点にする。
-  const viewSwitchAnchorKey = nav.view === "month" ? topWeekKey : anchorKey;
+  const viewSwitchAnchorKey = () => (nav.view === "month" ? topWeekRef.current : anchorKey);
 
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        {/* 狭い画面ではアプリ名を出さない。現在地は下部のナビゲーションバーが示している。 */}
-        <div className="hidden items-center gap-1 font-semibold md:flex">
+        {/*
+          アイコンは狭い画面でも出す。他の画面（タスク・日付リマインド）は左上にアイコンがあり、
+          カレンダーだけ日付から始まると、同じアプリの中で先頭の位置が揃わないため。
+          アプリ名は幅の広いときだけ。狭い画面では年月の表示幅を優先する。
+        */}
+        <div className="flex shrink-0 items-center gap-1 font-semibold">
           <CalendarDays className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
         </div>
@@ -422,11 +513,11 @@ export function CalendarShell({
               onClick={() => {
                 if (item.view === "month") {
                   // 月表示のまま押しても、以前の位置合わせを乱さないよう何もしない。
-                  if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey);
+                  if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey());
                   return;
                 }
 
-                navigate(item.view, viewSwitchAnchorKey);
+                navigate(item.view, viewSwitchAnchorKey());
               }}
             >
               {item.label}
@@ -466,6 +557,8 @@ export function CalendarShell({
       <Suspense fallback={<CalendarGridSkeleton />}>
         <CalendarBody
           dataPromise={dataPromise}
+          tagCatalogPromise={tagCatalogPromise}
+          placeCatalogPromise={placeCatalogPromise}
           view={view}
           days={gridDays}
           weeks={view === "month" ? monthWeeks : weeks}
@@ -478,20 +571,22 @@ export function CalendarShell({
           autoRefreshSeconds={autoRefreshSeconds}
           offline={offline}
           dragError={dragError}
-          addMenuOpen={addMenuOpen}
-          eventDraft={eventDraft}
+          itemDialog={itemDialog}
           quickDraft={quickDraft}
-          taskDraft={taskDraft}
           viewingEvent={viewingEvent}
           viewingTask={viewingTask}
+          viewingReminder={viewingReminder}
+          virtual={virtual}
           onVisibleMonthChange={handleVisibleMonthChange}
           onVisibleWeekChange={handleVisibleWeekChange}
           onSwipe={moveDays}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
           onOpenEvent={openEvent}
           onOpenTask={openTask}
+          onOpenReminder={openReminder}
           onEditEvent={editEvent}
           onEditTask={editTask}
+          onEditReminder={editReminder}
           onSelectSlot={(dateKey, minutes) => {
             if (offline) return;
             setQuickDraft(toQuickEventDraft(dateKey, minutes));
@@ -503,15 +598,7 @@ export function CalendarShell({
           onOpenEventForm={openEventForm}
           onDragCommit={commitDrag}
           onAllDayDragCommit={commitAllDayDrag}
-          onToggleAddMenu={() => setAddMenuOpen((prev) => !prev)}
-          onAddEvent={() => {
-            setAddMenuOpen(false);
-            setEventDraft(newEventDraft(defaultDayKey, DEFAULT_START_MINUTES));
-          }}
-          onAddTask={() => {
-            setAddMenuOpen(false);
-            setTaskDraft({ dueMode: "datetime", due: dateKeyPlusMinutes(defaultDayKey, 18 * 60) });
-          }}
+          onAdd={openAdd}
           onCloseDialogs={closeDialogs}
           onRefreshAll={refreshAll}
           onLoadingChange={setWindowLoading}
@@ -535,6 +622,8 @@ function syncMonthUrl(month: string) {
 /** 取得した予定とタスクに依存する部分。ここだけが読み込みを待つ。 */
 function CalendarBody({
   dataPromise,
+  tagCatalogPromise,
+  placeCatalogPromise,
   view,
   days,
   weeks,
@@ -547,33 +636,35 @@ function CalendarBody({
   autoRefreshSeconds,
   offline,
   dragError,
-  addMenuOpen,
-  eventDraft,
+  itemDialog,
   quickDraft,
-  taskDraft,
   viewingEvent,
   viewingTask,
+  viewingReminder,
+  virtual,
   onVisibleMonthChange,
   onVisibleWeekChange,
   onSwipe,
   onSelectDay,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
   onEditEvent,
   onEditTask,
+  onEditReminder,
   onSelectSlot,
   onQuickAddOnDay,
   onOpenEventForm,
   onDragCommit,
   onAllDayDragCommit,
-  onToggleAddMenu,
-  onAddEvent,
-  onAddTask,
+  onAdd,
   onCloseDialogs,
   onRefreshAll,
   onLoadingChange,
 }: {
   dataPromise: Promise<CalendarLoadResult>;
+  tagCatalogPromise: Promise<TagCatalog>;
+  placeCatalogPromise: Promise<PlaceCatalog>;
   view: CalendarView;
   days: string[];
   weeks: string[][];
@@ -586,33 +677,36 @@ function CalendarBody({
   autoRefreshSeconds: number;
   offline: boolean;
   dragError: string | null;
-  addMenuOpen: boolean;
-  eventDraft: EventDraft | null;
+  itemDialog: { initialKind: ItemKind; drafts: ItemDrafts } | null;
   quickDraft: QuickEventDraft | null;
-  taskDraft: TaskDraft | null;
   viewingEvent: CalendarEventItem | null;
   viewingTask: TaskItem | null;
+  viewingReminder: ReminderItem | null;
+  virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
   onVisibleWeekChange: (weekKey: string) => void;
   onSwipe: (deltaDays: number) => void;
   onSelectDay: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
   onEditEvent: (event: CalendarEventItem) => void;
   onEditTask: (task: TaskItem) => void;
+  onEditReminder: (reminder: ReminderItem) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onQuickAddOnDay: (dateKey: string) => void;
   onOpenEventForm: (draft: EventDraft) => void;
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
-  onToggleAddMenu: () => void;
-  onAddEvent: () => void;
-  onAddTask: () => void;
+  /** 右下の「＋」。作れる種類を渡し、ひな型は呼び出し側で作る。 */
+  onAdd: (available: Record<ItemKind, boolean>) => void;
   onCloseDialogs: () => void;
   onRefreshAll: () => void;
   onLoadingChange: (loading: boolean) => void;
 }) {
   const initial = use(dataPromise);
+  const tagCatalog = use(tagCatalogPromise);
+  const placeCatalog = use(placeCatalogPromise);
 
   // 月表示だけは、前後の月ぶんをここで保持して足りない月だけ取りにいく。
   const data = useCalendarChunks({
@@ -687,21 +781,25 @@ function CalendarBody({
           utils={utils}
           scrollTarget={scrollTarget}
           pendingMonths={data.pendingMonths}
+          virtual={virtual}
           onVisibleMonthChange={onVisibleMonthChange}
           onVisibleWeekChange={onVisibleWeekChange}
           onSelectDay={onSelectDay}
           onQuickAdd={onQuickAddOnDay}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
+          onOpenReminder={onOpenReminder}
         />
       ) : (
         <TimeGridView
           days={days}
           events={data.events}
           tasks={data.tasks}
+          reminders={data.reminders}
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
+          onOpenReminder={onOpenReminder}
           onSelectSlot={onSelectSlot}
           onDragCommit={onDragCommit}
           onAllDayDragCommit={onAllDayDragCommit}
@@ -711,19 +809,23 @@ function CalendarBody({
       )}
 
       <AddButton
-        open={addMenuOpen}
-        canAddEvent={!offline && data.calendars.length > 0}
-        canAddTask={!offline && data.notionReady}
-        onToggle={onToggleAddMenu}
-        onAddEvent={onAddEvent}
-        onAddTask={onAddTask}
+        available={{
+          event: !offline && data.calendars.length > 0,
+          task: !offline && data.notionReady,
+          reminder: !offline && data.reminderReady,
+        }}
+        onAdd={onAdd}
       />
 
-      {eventDraft && (
-        <EventDialog
-          draft={eventDraft}
+      {itemDialog && (
+        <ItemDialog
+          initialKind={itemDialog.initialKind}
+          drafts={itemDialog.drafts}
           calendars={data.calendars}
+          tagCatalog={tagCatalog}
+          placeCatalog={placeCatalog}
           timeZone={timeZone}
+          weekStartsOn={weekStartsOn}
           onClose={onCloseDialogs}
           onSaved={handleSaved}
         />
@@ -741,15 +843,6 @@ function CalendarBody({
         />
       )}
 
-      {taskDraft && (
-        <TaskDialog
-          draft={taskDraft}
-          timeZone={timeZone}
-          onClose={onCloseDialogs}
-          onSaved={handleSaved}
-        />
-      )}
-
       {viewingEvent && (
         <EventDetailDialog
           event={viewingEvent}
@@ -757,17 +850,32 @@ function CalendarBody({
           readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditEvent(viewingEvent)}
+          onDeleted={handleSaved}
         />
       )}
 
       {viewingTask && (
         <TaskDetailDialog
           task={viewingTask}
+          tagOptions={tagCatalog.task ?? []}
           timeZone={timeZone}
           readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditTask(viewingTask)}
+          onDeleted={handleSaved}
           onToggleDone={handleToggleTaskDone}
+        />
+      )}
+
+      {viewingReminder && (
+        <ReminderDetailDialog
+          reminder={viewingReminder}
+          categoryOptions={tagCatalog.reminder ?? []}
+          timeZone={timeZone}
+          readOnly={offline}
+          onClose={onCloseDialogs}
+          onEdit={() => onEditReminder(viewingReminder)}
+          onDeleted={handleSaved}
         />
       )}
     </>
@@ -781,60 +889,30 @@ function shiftDateKey(dateKey: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** 画面右下の「＋」。押すと予定とタスクのどちらを追加するか選ぶ（docs/spec.md §15）。 */
+/**
+ * 画面右下の「＋」。押すと入力画面が開き、そこで予定・タスク・日付リマインドを
+ * 切り替える（docs/spec.md §15）。何を作るかは開いてからでも選べるため、
+ * ここでは種類を選ばせない。
+ */
 function AddButton({
-  open,
-  canAddEvent,
-  canAddTask,
-  onToggle,
-  onAddEvent,
-  onAddTask,
+  available,
+  onAdd,
 }: {
-  open: boolean;
-  canAddEvent: boolean;
-  canAddTask: boolean;
-  onToggle: () => void;
-  onAddEvent: () => void;
-  onAddTask: () => void;
+  available: Record<ItemKind, boolean>;
+  onAdd: (available: Record<ItemKind, boolean>) => void;
 }) {
-  if (!canAddEvent && !canAddTask) return null;
+  if (!available.event && !available.task && !available.reminder) return null;
 
   return (
-    <div className="fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-30 flex flex-col items-end gap-2 md:bottom-6">
-      {open && (
-        <div className="flex flex-col gap-2">
-          {canAddEvent && (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="elevation-2 rounded-lg"
-              onClick={onAddEvent}
-            >
-              予定を追加
-            </Button>
-          )}
-          {canAddTask && (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="elevation-2 rounded-lg"
-              onClick={onAddTask}
-            >
-              タスクを追加
-            </Button>
-          )}
-        </div>
-      )}
-
+    <div className="fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-30 md:bottom-6">
       {/* M3のFAB。角は完全な丸ではなく大きめの角丸で、面として置かれていることを示す。 */}
       <Button
         size="icon"
-        aria-expanded={open}
         aria-label="追加"
         className="elevation-3 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95"
-        onClick={onToggle}
+        onClick={() => onAdd(available)}
       >
-        <Plus className={cn("size-6 transition-transform", open && "rotate-45")} />
+        <Plus className="size-6" />
       </Button>
     </div>
   );

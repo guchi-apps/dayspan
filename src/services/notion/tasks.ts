@@ -301,3 +301,15 @@ export async function completeTask(
 
   return { nextTaskId: created.id };
 }
+
+/**
+ * タスクを消す。完了したタスクは履歴として残す（docs/spec.md §12）が、
+ * 要らなくなった・間違えて作ったタスクは残す意味がないため消せるようにする。
+ * Notionのゴミ箱へ移すだけなので、間違えてもNotion側で戻せる。
+ *
+ * 繰り返しタスクは完了のたびに次回分を別ページとして作る方式のため、
+ * ここで消えるのはこの回だけで、すでに作られた次回分は残る。
+ */
+export async function deleteTask(notion: Client, taskId: string): Promise<void> {
+  await notion.pages.update({ page_id: taskId, in_trash: true });
+}

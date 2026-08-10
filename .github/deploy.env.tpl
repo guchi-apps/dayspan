@@ -1,4 +1,4 @@
-# Vault: apps — dayspan / DB / Server / githubaction-sshkey / Supabase
+# Vault: apps — dayspan / DB / Server / githubaction-sshkey / Supabase / Anthropic
 SSH_PRIVATE_KEY=op://apps/githubaction-sshkey/private_key?ssh-format=openssh
 HOST=op://apps/Server/host
 USERNAME=op://apps/Server/username
@@ -21,5 +21,6 @@ ALLOWED_GOOGLE_EMAILS=op://apps/dayspan/allowed-google-emails
 TOKEN_ENCRYPTION_KEY=op://apps/dayspan/token-encryption-key
 GOOGLE_CALENDAR_CLIENT_ID=op://apps/dayspan/google-calendar-client-id
 GOOGLE_CALENDAR_CLIENT_SECRET=op://apps/dayspan/google-calendar-client-secret
+CLAUDE_CODE_OAUTH_TOKEN=op://apps/Anthropic/claude-code-oauth-token
 
 SIGNALY_WEBHOOK_URL=op://apps/dayspan/ci-webhook-url

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CalendarEventItem, TaskItem } from "@/types/calendar";
 
-import { GRID_HEIGHT, MINUTES_PER_DAY } from "./item-layout";
+import { MINUTES_PER_DAY } from "./item-layout";
 
 // 15分刻みに丸める。1分刻みだと指やマウスの微小な揺れがそのまま時刻になり、扱いにくい。
 const SNAP_MINUTES = 15;
@@ -101,9 +101,12 @@ export function useGridDrag({
         0,
         days.length - 1,
       );
-      const minutes = ((clientY - rect.top) / GRID_HEIGHT) * MINUTES_PER_DAY;
+      // 高さは実測する。ピンチで1時間あたりの高さが変わるため、定数から求めると
+      // 拡大したあとの指の位置が実際より手前の時刻として読まれてしまう。
+      const gridHeight = Math.max(rect.height, 1);
+      const minutes = ((clientY - rect.top) / gridHeight) * MINUTES_PER_DAY;
 
-      return { dayIndex, minutes };
+      return { dayIndex, minutes, gridHeight };
     },
     [days.length],
   );
@@ -115,7 +118,7 @@ export function useGridDrag({
       if (!origin || !position) return;
 
       const deltaMinutes = snap(
-        (((clientY - origin.pointerY) / GRID_HEIGHT) * MINUTES_PER_DAY),
+        (((clientY - origin.pointerY) / position.gridHeight) * MINUTES_PER_DAY),
       );
       const duration = origin.endMinutes - origin.startMinutes;
 
@@ -264,6 +267,17 @@ export function useGridDrag({
     finish();
   }, [finish]);
 
+  /**
+   * 確定させずに取りやめる。ピンチのように、掴んだあとで別の操作だと分かったときに使う。
+   * 指が離れたわけではないため、この時点の位置を予定へ書き込んではいけない。
+   */
+  const cancelDrag = useCallback(() => {
+    cancelLongPress();
+    originRef.current = null;
+    setActive(false);
+    setPreview(null);
+  }, []);
+
   /** ドラッグ直後のclickかどうか。trueなら編集ダイアログを開かない。 */
   const consumeDragClick = useCallback(() => {
     if (!movedRef.current) return false;
@@ -278,6 +292,7 @@ export function useGridDrag({
     preview,
     dragging: active,
     startDrag,
+    cancelDrag,
     handlePointerMove,
     handlePointerUp,
     consumeDragClick,
@@ -444,6 +459,13 @@ export function useAllDayDrag({
     });
   }, [days, onCommit, preview]);
 
+  const cancelDrag = useCallback(() => {
+    cancelLongPress();
+    originRef.current = null;
+    setActive(false);
+    setPreview(null);
+  }, []);
+
   const consumeDragClick = useCallback(() => {
     if (!movedRef.current) return false;
     movedRef.current = false;
@@ -457,6 +479,7 @@ export function useAllDayDrag({
     preview,
     dragging: active,
     startDrag,
+    cancelDrag,
     handlePointerMove,
     handlePointerUp,
     consumeDragClick,

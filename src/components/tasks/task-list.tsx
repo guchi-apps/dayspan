@@ -14,7 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { TaskDetailDialog } from "@/components/calendar/task-detail-dialog";
-import { TaskDialog, toTaskDraft, type TaskDraft } from "@/components/calendar/task-dialog";
+import { ItemDialog } from "@/components/calendar/item-dialog";
+import { toTaskDraft, type TaskDraft } from "@/components/calendar/task-form";
+import { TagChipList } from "@/components/tags/tag-chip";
 import { cn } from "@/lib/utils";
 import {
   classifyTasks,
@@ -24,16 +26,20 @@ import {
   type TaskBucketKey,
   type TaskSort,
 } from "@/services/notion/task-buckets";
+import type { TagCatalog } from "@/services/notion/tag-options";
 import type { TaskItem } from "@/types/calendar";
 
 const ORDER: TaskBucketKey[] = ["overdue", "today", "upcoming", "someday", "done"];
 
 export function TaskList({
   tasks,
+  tagCatalog,
   timeZone,
   loadError,
 }: {
   tasks: TaskItem[];
+  /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
+  tagCatalog: TagCatalog;
   timeZone: string;
   loadError: string | null;
 }) {
@@ -189,11 +195,7 @@ export function TaskList({
                         {task.recurrence && task.recurrence !== "なし" && (
                           <span className="opacity-80">{task.recurrence}</span>
                         )}
-                        {task.tags.map((tag) => (
-                          <span key={tag} className="rounded bg-muted px-1">
-                            {tag}
-                          </span>
-                        ))}
+                        <TagChipList names={task.tags} options={tagCatalog.task ?? []} />
                       </div>
                     </button>
                   </li>
@@ -223,8 +225,10 @@ export function TaskList({
       <BottomNav current="tasks" />
 
       {draft && (
-        <TaskDialog
-          draft={draft}
+        <ItemDialog
+          initialKind="task"
+          drafts={{ task: draft }}
+          tagCatalog={tagCatalog}
           timeZone={timeZone}
           onClose={() => setDraft(null)}
           onSaved={() => {
@@ -237,10 +241,15 @@ export function TaskList({
       {viewingTask && (
         <TaskDetailDialog
           task={viewingTask}
+          tagOptions={tagCatalog.task ?? []}
           timeZone={timeZone}
           readOnly={offline}
           onClose={() => setViewingTask(null)}
           onEdit={() => editTask(viewingTask)}
+          onDeleted={() => {
+            setViewingTask(null);
+            startTransition(() => router.refresh());
+          }}
           onToggleDone={toggleDoneFromDetail}
         />
       )}

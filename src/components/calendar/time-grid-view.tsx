@@ -1,14 +1,14 @@
 "use client";
 
-import { memo, useMemo, useSyncExternalStore } from "react";
+import { memo, useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { cn } from "@/lib/utils";
 import { eventColors } from "./calendar-color";
-import type { CalendarEventItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, ReminderItem, TaskItem } from "@/types/calendar";
 
 import {
-  GRID_HEIGHT,
-  HOUR_HEIGHT,
+  eventTextLines,
+  MIN_EVENT_HEIGHT,
   MINUTES_PER_DAY,
   type CalendarDateUtils,
 } from "./item-layout";
@@ -23,6 +23,7 @@ import {
   type DragPreview,
   type DragTarget,
 } from "./use-grid-drag";
+import { useTimeZoom } from "./use-time-zoom";
 
 /** 左から順に、前の期間・表示中の期間・次の期間。 */
 type PaneDays = [string[], string[], string[]];
@@ -35,9 +36,11 @@ export function TimeGridView({
   days,
   events,
   tasks,
+  reminders,
   utils,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
   onSelectSlot,
   onDragCommit,
   onAllDayDragCommit,
@@ -47,9 +50,11 @@ export function TimeGridView({
   days: string[];
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
   /** 空き時間の選択。minutes は 0:00 からの分数（30分単位に丸める）。 */
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onDragCommit: (commit: DragCommit) => void;
@@ -69,6 +74,7 @@ export function TimeGridView({
     preview,
     dragging,
     startDrag: startDragWhenEditable,
+    cancelDrag,
     handlePointerMove,
     handlePointerUp,
     consumeDragClick,
@@ -79,10 +85,31 @@ export function TimeGridView({
     preview: allDayPreview,
     dragging: allDayDragging,
     startDrag: startAllDayDragWhenEditable,
+    cancelDrag: cancelAllDayDrag,
     handlePointerMove: handleAllDayPointerMove,
     handlePointerUp: handleAllDayPointerUp,
     consumeDragClick: consumeAllDayDragClick,
   } = useAllDayDrag({ days, onCommit: onAllDayDragCommit });
+
+  // 2本指のピンチで時間の幅を変える。掴みかけの予定があれば、そちらは取りやめる
+  // （2本目の指が乗った時点で、予定を動かす操作ではなくなっているため）。
+  const onPinchStart = useCallback(() => {
+    cancelDrag();
+    cancelAllDayDrag();
+  }, [cancelDrag, cancelAllDayDrag]);
+
+  const { hourHeight, pinching, scrollRef, consumePinchClick } = useTimeZoom({ onPinchStart });
+  const gridHeight = hourHeight * 24;
+
+  // ピンチのあとに残るclickで、予定や空き時間の画面が開かないようにする。
+  const consumeGridClick = useCallback(
+    () => consumeDragClick() || consumePinchClick(),
+    [consumeDragClick, consumePinchClick],
+  );
+  const consumeAllDayClick = useCallback(
+    () => consumeAllDayDragClick() || consumePinchClick(),
+    [consumeAllDayDragClick, consumePinchClick],
+  );
 
   // 閲覧のみのときは、掴む・空き時間を選ぶという書き込みの入口をふさぐ。
   // タップして内容を見ることと、左右スワイプでの移動はそのまま使える。
@@ -100,7 +127,7 @@ export function TimeGridView({
   } = useDaySwipe({
     daysKey: days[0],
     step: days.length,
-    enabled: !dragging && !allDayDragging,
+    enabled: !dragging && !allDayDragging && !pinching,
     onSwipe,
   });
 
@@ -132,23 +159,25 @@ export function TimeGridView({
         swipeSnapping={swipeSnapping}
         events={events}
         tasks={tasks}
+        reminders={reminders}
         utils={utils}
         rowRef={allDayRowRef}
         preview={allDayPreview}
         onStartDrag={startAllDayDrag}
-        onConsumeDragClick={consumeAllDayDragClick}
+        onConsumeDragClick={consumeAllDayClick}
         onPointerMove={handleAllDayPointerMove}
         onPointerUp={handleAllDayPointerUp}
         onOpenEvent={onOpenEvent}
         onOpenTask={onOpenTask}
+        onOpenReminder={onOpenReminder}
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div
           ref={gridRef}
           data-gutter-width="48"
           className="relative flex"
-          style={{ height: HOUR_HEIGHT * 24 }}
+          style={{ height: gridHeight }}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
@@ -162,14 +191,14 @@ export function TimeGridView({
                   // 6時間ごと（0/6/12/18時）を強めて、一日の四分割が目で追えるようにする。
                   hour % 6 === 0 ? "text-on-surface" : "text-on-surface-variant",
                 )}
-                style={{ top: hour * HOUR_HEIGHT }}
+                style={{ top: hour * hourHeight }}
               >
                 {hour > 0 && `${String(hour).padStart(2, "0")}:00`}
               </div>
             ))}
           </div>
 
-          <NowLine days={days} utils={utils} />
+          <NowLine days={days} utils={utils} gridHeight={gridHeight} />
 
           <SwipeTrack
             offset={swipeOffset}
@@ -180,15 +209,18 @@ export function TimeGridView({
             {(paneDays, isCenter) => (
               <DayColumnsPane
                 days={paneDays}
+                hourHeight={hourHeight}
                 events={events}
                 tasks={tasks}
+                reminders={reminders}
                 utils={utils}
                 // 掴んでいる予定は、表示中の期間の中でだけ動かす。
                 preview={isCenter ? preview : null}
                 onStartDrag={startDrag}
-                onConsumeDragClick={consumeDragClick}
+                onConsumeDragClick={consumeGridClick}
                 onOpenEvent={onOpenEvent}
                 onOpenTask={onOpenTask}
+                onOpenReminder={onOpenReminder}
                 onSelectSlot={selectSlot}
               />
             )}
@@ -282,19 +314,25 @@ const DayHeaderPane = memo(function DayHeaderPane({
  */
 const DayColumnsPane = memo(function DayColumnsPane({
   days,
+  hourHeight,
   events,
   tasks,
+  reminders,
   utils,
   preview,
   onStartDrag,
   onConsumeDragClick,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
   onSelectSlot,
 }: {
   days: string[];
+  /** 1時間あたりの高さ（px）。ピンチで変わる（use-time-zoom.ts）。 */
+  hourHeight: number;
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   preview: DragPreview | null;
   onStartDrag: (
@@ -305,26 +343,34 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onConsumeDragClick: () => boolean;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
 }) {
+  const gridHeight = hourHeight * 24;
+
   return (
-    <div className="flex" style={{ height: GRID_HEIGHT }}>
+    <div className="flex" style={{ height: gridHeight }}>
       {days.map((dateKey, dayIndex) => (
         <DayColumn
           key={dateKey}
           dateKey={dateKey}
           dayIndex={dayIndex}
+          hourHeight={hourHeight}
           preview={preview}
           onStartDrag={onStartDrag}
           onConsumeDragClick={onConsumeDragClick}
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
+          onOpenReminder={onOpenReminder}
           onSelectSlot={onSelectSlot}
           events={events.filter(
             (event) => !event.allDay && utils.eventCoversDay(event, dateKey),
           )}
           tasks={tasks.filter((task) => task.hasTime && utils.taskCoversDay(task, dateKey))}
+          reminders={reminders.filter(
+            (reminder) => reminder.hasTime && utils.itemDateKey(reminder.date) === dateKey,
+          )}
         />
       ))}
     </div>
@@ -334,20 +380,25 @@ const DayColumnsPane = memo(function DayColumnsPane({
 function DayColumn({
   dateKey,
   dayIndex,
+  hourHeight,
   events,
   tasks,
+  reminders,
   utils,
   preview,
   onStartDrag,
   onConsumeDragClick,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
   onSelectSlot,
 }: {
   dateKey: string;
   dayIndex: number;
+  hourHeight: number;
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   preview: DragPreview | null;
   onStartDrag: (
@@ -358,9 +409,14 @@ function DayColumn({
   onConsumeDragClick: () => boolean;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
 }) {
   const positioned = utils.layoutOverlaps(events, dateKey);
+  const gridHeight = hourHeight * 24;
+
+  /** 0:00からの分数を、この列の中での位置（px）に直す。 */
+  const offsetOf = (minutes: number) => (minutes / MINUTES_PER_DAY) * gridHeight;
 
   /** ドラッグ中の項目は、この列に移動してきた場合だけこの列で描く。 */
   const previewFor = (id: string): DragPreview | null => {
@@ -371,6 +427,9 @@ function DayColumn({
   const isDraggedAway = (id: string) => preview?.id === id && preview.dayIndex !== dayIndex;
 
   const handleBackgroundClick = (clientY: number, element: HTMLElement) => {
+    // ピンチや予定のドラッグの後始末で来たclickでは、空き時間を選んだことにしない。
+    if (onConsumeDragClick()) return;
+
     const rect = element.getBoundingClientRect();
     const ratio = Math.min(Math.max((clientY - rect.top) / rect.height, 0), 1);
     // 30分単位に丸める。1分刻みで開くと、その後の時刻調整がかえって手間になるため。
@@ -404,7 +463,7 @@ function DayColumn({
                   ? "border-outline-variant"
                   : "border-outline-variant/45",
             )}
-            style={{ top: (index * HOUR_HEIGHT) / 2 }}
+            style={{ top: (index * hourHeight) / 2 }}
           />
         );
       })}
@@ -412,18 +471,14 @@ function DayColumn({
       {positioned.map(({ event, column, columns }) => {
         if (isDraggedAway(event.id)) return null;
 
-        const base = utils.eventGeometry(event, dateKey);
         const eventPreview = previewFor(event.id);
-        const top = eventPreview
-          ? (eventPreview.startMinutes / MINUTES_PER_DAY) * GRID_HEIGHT
-          : base.top;
-        const height = eventPreview
-          ? Math.max(
-              ((eventPreview.endMinutes - eventPreview.startMinutes) / MINUTES_PER_DAY) *
-                GRID_HEIGHT,
-              16,
-            )
-          : base.height;
+        // 掴んでいる間は、動かした先の時間帯で描く。
+        const range = eventPreview ?? utils.eventRange(event, dateKey);
+        const top = offsetOf(range.startMinutes);
+        const height = Math.max(
+          offsetOf(range.endMinutes - range.startMinutes),
+          MIN_EVENT_HEIGHT,
+        );
 
         // 日をまたぐ予定は、どの日を動かしているのかが決まらないためドラッグの対象外にする。
         const draggable =
@@ -431,6 +486,22 @@ function DayColumn({
           utils.itemDateKey(event.start) === dateKey;
 
         const colors = eventColors(event.color);
+
+        // 高さに収まる行数ぶんだけ、タイトルの下へ順に添える（issue #73）。
+        // 掴んでいる間は、動かした先の時刻を出す。
+        const timeText = eventPreview
+          ? `${formatMinutes(eventPreview.startMinutes)}–${formatMinutes(eventPreview.endMinutes)}`
+          : `${utils.formatTime(event.start)}–${utils.formatTime(event.end)}`;
+
+        const textLines = eventTextLines(height);
+
+        const details = [
+          { key: "time", text: timeText },
+          ...(event.location ? [{ key: "location", text: event.location }] : []),
+        ].slice(0, Math.max(textLines - 1, 0));
+
+        // 説明は1行に収まらないことが多いため、余った行へ折り返して入れる。
+        const descriptionLines = textLines - 1 - details.length;
 
         const geometry = {
           dayIndex,
@@ -463,7 +534,9 @@ function DayColumn({
                 onOpenEvent(event);
               }}
               className={cn(
-                "size-full overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[11px] leading-tight",
+                // ボタンは中身を上下中央へ寄せるため、flexにして上揃えへ戻す。
+                // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
+                "flex size-full flex-col overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[11px] leading-tight",
                 eventPreview && "ring-2 ring-foreground/50",
               )}
               style={{
@@ -473,13 +546,23 @@ function DayColumn({
               }}
               title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
             >
-              <div className="clip-nowrap font-semibold">{event.title}</div>
-              {/* 短い予定で時刻まで出すと文字が潰れるため、高さに余裕があるときだけ添える。 */}
-              {height >= 40 && (
-                <div className="clip-nowrap opacity-75">
-                  {eventPreview
-                    ? formatMinutes(eventPreview.startMinutes)
-                    : utils.formatTime(event.start)}
+              <div className="clip-nowrap shrink-0 font-semibold">{event.title}</div>
+              {/* 短い予定に詰め込むと文字が潰れるため、高さに収まるぶんだけ出す。 */}
+              {details.map((detail) => (
+                <div key={detail.key} className="clip-nowrap shrink-0 opacity-75">
+                  {detail.text}
+                </div>
+              ))}
+              {event.description && descriptionLines > 0 && (
+                <div
+                  className="shrink-0 overflow-hidden break-words whitespace-pre-line opacity-75"
+                  style={{
+                    display: "-webkit-box",
+                    WebkitBoxOrient: "vertical",
+                    WebkitLineClamp: descriptionLines,
+                  }}
+                >
+                  {event.description}
                 </div>
               )}
             </button>
@@ -526,10 +609,7 @@ function DayColumn({
           }}
           className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
           style={{
-            top:
-              ((previewFor(task.id)?.startMinutes ?? utils.minutesFromMidnight(task.due!)) /
-                MINUTES_PER_DAY) *
-              GRID_HEIGHT,
+            top: offsetOf(previewFor(task.id)?.startMinutes ?? utils.minutesFromMidnight(task.due!)),
           }}
           title={`${utils.formatTime(task.due!)} ${task.title}`}
         >
@@ -557,7 +637,50 @@ function DayColumn({
           </span>
         </button>
       ))}
+
+      {/* 日付リマインドは時刻の幅を持たないため、掴めない印（時刻の点）として置く。 */}
+      {reminders.map((reminder) => (
+        <ReminderMarker
+          key={reminder.id}
+          reminder={reminder}
+          top={offsetOf(utils.minutesFromMidnight(reminder.date))}
+          time={utils.formatTime(reminder.date)}
+          onOpen={() => onOpenReminder(reminder)}
+        />
+      ))}
     </div>
+  );
+}
+
+/**
+ * 時刻付きの日付リマインド。日付そのものを覚えておくための項目で時間の幅を持たないため、
+ * 予定・タスクと違い時間グリッド上では動かせない。押すと内容の画面を開く。
+ */
+function ReminderMarker({
+  reminder,
+  top,
+  time,
+  onOpen,
+}: {
+  reminder: ReminderItem;
+  top: number;
+  time: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
+      style={{ top }}
+      title={`${time} ${reminder.title}`}
+    >
+      <span aria-hidden className="h-2.5 w-0.5 shrink-0 bg-tertiary" />
+      <span className="h-px flex-1 bg-tertiary/45" />
+      <span className="type-label-small clip-nowrap max-w-[78%] rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-on-tertiary-container">
+        {reminder.title}
+      </span>
+    </button>
   );
 }
 
@@ -567,6 +690,7 @@ function AllDayArea({
   swipeSnapping,
   events,
   tasks,
+  reminders,
   utils,
   rowRef,
   preview,
@@ -576,12 +700,14 @@ function AllDayArea({
   onPointerUp,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
 }: {
   panes: PaneDays;
   swipeOffset: number;
   swipeSnapping: boolean;
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   rowRef: React.Ref<HTMLDivElement>;
   preview: AllDayDragPreview | null;
@@ -591,6 +717,7 @@ function AllDayArea({
   onPointerUp: (event: React.PointerEvent) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
 }) {
   return (
     <div
@@ -611,12 +738,14 @@ function AllDayArea({
             days={paneDays}
             events={events}
             tasks={tasks}
+            reminders={reminders}
             utils={utils}
             preview={isCenter ? preview : null}
             onStartDrag={onStartDrag}
             onConsumeDragClick={onConsumeDragClick}
             onOpenEvent={onOpenEvent}
             onOpenTask={onOpenTask}
+            onOpenReminder={onOpenReminder}
           />
         )}
       </SwipeTrack>
@@ -643,28 +772,41 @@ type AllDaySegment =
       lane: number;
       continuesBefore: false;
       continuesAfter: false;
+    }
+  | {
+      kind: "reminder";
+      item: ReminderItem;
+      column: number;
+      span: 1;
+      lane: number;
+      continuesBefore: false;
+      continuesAfter: false;
     };
 
 const AllDayPane = memo(function AllDayPane({
   days,
   events,
   tasks,
+  reminders,
   utils,
   preview,
   onStartDrag,
   onConsumeDragClick,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
 }: {
   days: string[];
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   preview: AllDayDragPreview | null;
   onStartDrag: (event: React.PointerEvent, target: AllDayDragTarget) => void;
   onConsumeDragClick: () => boolean;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
 }) {
   /**
    * 日をまたぐ終日予定を、日ごとに切らず1本の帯として並べる（月表示と同じ考え方）。
@@ -728,6 +870,15 @@ const AllDayPane = memo(function AllDayPane({
       raw.push({ kind: "task", item: task, column, span: 1, continuesBefore: false, continuesAfter: false });
     }
 
+    for (const reminder of reminders) {
+      if (reminder.hasTime) continue;
+
+      const column = position.get(utils.itemDateKey(reminder.date));
+      if (column === undefined) continue;
+
+      raw.push({ kind: "reminder", item: reminder, column, span: 1, continuesBefore: false, continuesAfter: false });
+    }
+
     // 日をまたぐ帯を先に上の段へ置く。後から来た1日ぶんの項目が、帯の空いている段へ
     // 潜り込んで帯を分断しないようにするため（continuous-month-view.tsx と同じ考え方）。
     raw.sort((a, b) => {
@@ -770,7 +921,7 @@ const AllDayPane = memo(function AllDayPane({
     }
 
     return { segments, laneCount: occupied.length };
-  }, [days, events, tasks, preview, utils]);
+  }, [days, events, tasks, reminders, preview, utils]);
 
   return (
     <div className="relative min-h-9 w-full">
@@ -804,7 +955,12 @@ const AllDayPane = memo(function AllDayPane({
               gridRow: segment.lane + 1,
             }}
           >
-            {segment.kind === "event" ? (
+            {segment.kind === "reminder" ? (
+              <AllDayReminderChip
+                reminder={segment.item}
+                onOpen={() => onOpenReminder(segment.item)}
+              />
+            ) : segment.kind === "event" ? (
               <button
                 type="button"
                 onPointerDown={(e) => onStartDrag(e, { kind: "event", item: segment.item })}
@@ -859,6 +1015,30 @@ const AllDayPane = memo(function AllDayPane({
     </div>
   );
 });
+
+/**
+ * 終日エリアに置く日付リマインド。押すと内容の画面を開く（docs/spec.md §9）。
+ * 日付そのものを覚えておくための項目で時間の幅を持たないため、掴めるようには見せない。
+ */
+function AllDayReminderChip({
+  reminder,
+  onOpen,
+}: {
+  reminder: ReminderItem;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-tertiary/40 bg-tertiary-container px-1.5 py-0.5 text-left text-on-tertiary-container"
+      title={reminder.title}
+    >
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
+      <span className="clip-nowrap">{reminder.title}</span>
+    </button>
+  );
+}
 
 /** YYYY-MM-DD を日数分ずらす。UTC正午で扱い、タイムゾーンによる日付ずれを避ける。 */
 function shiftDateKey(dateKey: string, days: number): string {
@@ -915,7 +1095,15 @@ function useMinuteBucket(): number | null {
  * 現在時刻の線。画面上で唯一の純黒の水平線にして、いま何時かを一目で掴めるようにする。
  * 予定の色は元カレンダー由来で多彩なため、時刻の指標に色を使わず明度で際立たせる。
  */
-function NowLine({ days, utils }: { days: string[]; utils: CalendarDateUtils }) {
+function NowLine({
+  days,
+  utils,
+  gridHeight,
+}: {
+  days: string[];
+  utils: CalendarDateUtils;
+  gridHeight: number;
+}) {
   const minuteBucket = useMinuteBucket();
 
   // サーバー描画時は現在時刻を持たない（時計はクライアント側の外部状態として購読する）。
@@ -929,7 +1117,7 @@ function NowLine({ days, utils }: { days: string[]; utils: CalendarDateUtils }) 
   if (todayIndex < 0) return null;
 
   const minutes = utils.minutesFromMidnight(iso);
-  const top = (minutes / MINUTES_PER_DAY) * GRID_HEIGHT;
+  const top = (minutes / MINUTES_PER_DAY) * gridHeight;
 
   return (
     <div className="pointer-events-none absolute inset-x-0 z-20" style={{ top }}>

@@ -4,9 +4,41 @@ import type { CalendarEventItem, CalendarItem, TaskItem } from "@/types/calendar
 // 実行環境のローカル時刻に依存させると、サーバー（VPSはUTC）とブラウザ（JST）で
 // 描画結果がずれ、ハイドレーションが一致しなくなるため。
 
-export const HOUR_HEIGHT = 48;
 export const MINUTES_PER_DAY = 24 * 60;
-export const GRID_HEIGHT = HOUR_HEIGHT * 24;
+
+// 1時間あたりの高さ（px）。ピンチで変えられるため定数ではなく初期値として扱う（docs/spec.md §6）。
+export const DEFAULT_HOUR_HEIGHT = 48;
+// 縮めきった状態でも一日ぶんの並びが読み取れ、広げきった状態でも15分の予定が掴める幅に収める。
+export const MIN_HOUR_HEIGHT = 24;
+export const MAX_HOUR_HEIGHT = 192;
+
+/** 予定ブロックの最小の高さ（px）。極端に短い予定でもタイトルが読めるようにする。 */
+export const MIN_EVENT_HEIGHT = 16;
+
+/** 予定ブロックの本文1行の高さ（px）。text-[11px] / leading-tight の組み合わせに合わせる。 */
+const EVENT_LINE_HEIGHT = 14;
+
+/** 予定ブロックの上下の余白（px）。py-0.5 の上下ぶん。 */
+const EVENT_BLOCK_PADDING_Y = 4;
+
+/**
+ * 予定ブロックの高さに何行ぶんの文字が収まるかを返す。
+ *
+ * 収まる行数ぶんだけ、タイトルの下へ時刻・場所・説明を順に添える（issue #73）。
+ * 高さはピンチの倍率と予定の長さで決まるため、描画のたびに求める。
+ * タイトルだけは高さが足りなくても出すため、最低でも1を返す。
+ */
+export function eventTextLines(height: number): number {
+  return Math.max(1, Math.floor((height - EVENT_BLOCK_PADDING_Y) / EVENT_LINE_HEIGHT));
+}
+
+/**
+ * 重なり判定での予定の最小の長さ（分）。
+ *
+ * 画面上は最小の高さぶんの場所を取るため、その高さを既定の倍率で分に直した値を使う。
+ * 実際の高さで判定すると、ピンチで倍率を変えるたびに短い予定の列の並びが変わってしまう。
+ */
+const MIN_EVENT_MINUTES = (MIN_EVENT_HEIGHT / DEFAULT_HOUR_HEIGHT) * 60;
 
 type ZonedParts = { dateKey: string; hour: number; minute: number };
 
@@ -72,22 +104,23 @@ export function createCalendarDateUtils(timeZone: string) {
   // 「今日」は現在時刻に依存する。覚えてしまうと日付が変わっても古いままになるため通さない。
   const todayKey = (): string => zonedParts(new Date(), formatter).dateKey;
 
-  /** その日の中での表示位置。日をまたぐ予定は、その日の範囲へ切り詰める。 */
-  const eventGeometry = (
+  /**
+   * その日の中で予定が占める時間帯。日をまたぐ予定は、その日の範囲へ切り詰める。
+   *
+   * 画面上の位置ではなく分で返す。時間グリッドの高さはピンチで変わるため、
+   * 位置を持ち回ると倍率を変えるたびに全ての計算をやり直すことになる。
+   */
+  const eventRange = (
     event: CalendarEventItem,
     dateKey: string,
-  ): { top: number; height: number } => {
+  ): { startMinutes: number; endMinutes: number } => {
     const startsToday = itemDateKey(event.start) === dateKey;
     const endsToday = itemDateKey(event.end) === dateKey;
 
-    const startMinutes = startsToday ? minutesFromMidnight(event.start) : 0;
-    const endMinutes = endsToday ? minutesFromMidnight(event.end) : MINUTES_PER_DAY;
-
-    const top = (startMinutes / MINUTES_PER_DAY) * GRID_HEIGHT;
-    // 極端に短い予定でもタイトルが読めるよう、最低の高さを確保する。
-    const height = Math.max(((endMinutes - startMinutes) / MINUTES_PER_DAY) * GRID_HEIGHT, 16);
-
-    return { top, height };
+    return {
+      startMinutes: startsToday ? minutesFromMidnight(event.start) : 0,
+      endMinutes: endsToday ? minutesFromMidnight(event.end) : MINUTES_PER_DAY,
+    };
   };
 
   /** 終日予定・複数日予定が、その日にかかっているか。 */
@@ -124,8 +157,14 @@ export function createCalendarDateUtils(timeZone: string) {
     dateKey: string,
   ): { event: CalendarEventItem; column: number; columns: number }[] => {
     const sorted = [...events].sort(
-      (a, b) => eventGeometry(a, dateKey).top - eventGeometry(b, dateKey).top,
+      (a, b) => eventRange(a, dateKey).startMinutes - eventRange(b, dateKey).startMinutes,
     );
+
+    /** 画面上で場所を取り終える時刻。最小の高さぶんは、短い予定でも占有しているものとして扱う。 */
+    const occupiedUntil = (event: CalendarEventItem): number => {
+      const { startMinutes, endMinutes } = eventRange(event, dateKey);
+      return Math.max(endMinutes, startMinutes + MIN_EVENT_MINUTES);
+    };
 
     const result: { event: CalendarEventItem; column: number; columns: number }[] = [];
     let cluster: { event: CalendarEventItem; column: number }[] = [];
@@ -140,17 +179,14 @@ export function createCalendarDateUtils(timeZone: string) {
     };
 
     for (const event of sorted) {
-      const { top, height } = eventGeometry(event, dateKey);
+      const { startMinutes } = eventRange(event, dateKey);
 
       // 直前までの集まりと時間が重ならなくなったら、そこで列数を確定させる。
-      if (top >= clusterEnd) flush();
+      if (startMinutes >= clusterEnd) flush();
 
       const usedColumns = new Set(
         cluster
-          .filter((entry) => {
-            const geometry = eventGeometry(entry.event, dateKey);
-            return geometry.top + geometry.height > top;
-          })
+          .filter((entry) => occupiedUntil(entry.event) > startMinutes)
           .map((entry) => entry.column),
       );
 
@@ -158,7 +194,7 @@ export function createCalendarDateUtils(timeZone: string) {
       while (usedColumns.has(column)) column += 1;
 
       cluster.push({ event, column });
-      clusterEnd = Math.max(clusterEnd, top + height);
+      clusterEnd = Math.max(clusterEnd, occupiedUntil(event));
     }
 
     flush();
@@ -171,7 +207,7 @@ export function createCalendarDateUtils(timeZone: string) {
     minutesFromMidnight,
     formatTime,
     todayKey,
-    eventGeometry,
+    eventRange,
     eventCoversDay,
     taskCoversDay,
     compareItems,

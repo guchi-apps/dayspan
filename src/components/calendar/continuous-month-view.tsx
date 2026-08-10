@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
-import { weekMonthKey } from "@/lib/calendar-range";
+import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
 import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/types/calendar";
 
@@ -61,6 +69,20 @@ function clampWeekIndex(index: number, length: number): number {
   return Math.min(Math.max(index, 0), length - 1);
 }
 
+/**
+ * 窓の外側に置く余白。まだ日付を並べていない範囲。
+ *
+ * 何も描かないと、勢いよくスクロールして窓の先へ出たときにカレンダーが途切れて見える。
+ * 週と日の区切り線だけを背景で描き、日付の入っていないカレンダーとして見せる。
+ */
+const VOID_STYLE: CSSProperties = {
+  backgroundImage: [
+    "linear-gradient(to bottom, transparent calc(100% - 1px), var(--color-outline-variant) 0)",
+    "linear-gradient(to right, transparent calc(100% - 1px), var(--color-outline-variant) 0)",
+  ].join(", "),
+  backgroundSize: `100% ${WEEK_HEIGHT}px, calc(100% / 7) 100%`,
+};
+
 export function ContinuousMonthView({
   weeks,
   events,
@@ -70,12 +92,14 @@ export function ContinuousMonthView({
   utils,
   scrollTarget,
   pendingMonths,
+  virtual,
   onVisibleMonthChange,
   onVisibleWeekChange,
   onSelectDay,
   onQuickAdd,
   onOpenEvent,
   onOpenTask,
+  onOpenReminder,
 }: {
   weeks: string[][];
   events: CalendarEventItem[];
@@ -90,6 +114,13 @@ export function ContinuousMonthView({
   scrollTarget: { month: string; day?: string; nonce: number };
   /** まだ取得できていない月。予定が無いのか読み込み中なのかを描き分けるために使う。 */
   pendingMonths: ReadonlySet<string>;
+  /**
+   * スクロールできる範囲。weeks（描く窓）より広く、その外側は日付を並べない余白になる。
+   *
+   * 窓を張り直しても、余白が同じぶん増減して各週の位置を据え置く。位置が動かないので、
+   * スクロールの最中に張り直しても見ていた場所がずれない。
+   */
+  virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
   /** 画面の一番上にある週が変わったとき。 */
   onVisibleWeekChange: (weekKey: string) => void;
@@ -98,6 +129,7 @@ export function ContinuousMonthView({
   onQuickAdd: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
+  onOpenReminder: (reminder: ReminderItem) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const visibleMonthRef = useRef(scrollTarget.month);
@@ -107,9 +139,59 @@ export function ContinuousMonthView({
   // 日のセルは、押せばその日の時間グリッドへ移り、長押しならその日へ予定を足す。
   const dayPress = useLongPress<string>({ onPress: onSelectDay, onLongPress: onQuickAdd });
 
-  // 画面の先頭にある週。窓を張り直したあと、同じ位置へ戻すために覚えておく。
-  const anchorRef = useRef<{ weekKey: string; offset: number } | null>(null);
+  /*
+   * 画面の先頭にある週。並びの中の位置ではなく、余白も含めた通し位置（absIndex）で覚える。
+   *
+   * 窓を張り直しただけなら通し位置は変わらないため、書き戻しは何もせずに済む。
+   * サーバー描画のあと余白を出すときのように、通し位置そのものが動いたときだけ戻す。
+   */
+  const anchorRef = useRef<{ weekKey: string; absIndex: number; offset: number } | null>(null);
   const appliedTargetRef = useRef(-1);
+
+  /*
+   * 余白はブラウザでだけ出す。
+   *
+   * サーバー描画の時点で余白を入れると、まだ位置合わせが走っていない（scrollTop が 0 の）
+   * 画面には余白だけが映り、カレンダーが空に見える。最初の描画は窓だけにしておく。
+   */
+  const [spacersReady, setSpacersReady] = useState(false);
+  useIsomorphicLayoutEffect(() => setSpacersReady(true), []);
+
+  /**
+   * 並べたものの高さ方向の座標。先頭週（originWeekKey）から数えた通し番号で位置を決める。
+   *
+   * 窓ではなくこの座標で見ている場所を求めるため、余白の奥まで一気に飛ばされても、
+   * そこがどの月かを一度で言い当てられる（窓の端で頭打ちにすると、窓が追いつくまで
+   * 何度も張り直すことになる）。
+   */
+  const geometry = useMemo(() => {
+    const lead = spacersReady ? weeksBetween(virtual.firstWeekKey, weeks[0][0]) : 0;
+
+    // 余白の外まで動いた場合（何年も指で送り続けたとき）は、余白を諦めて窓だけを描く。
+    if (lead < 0 || lead + weeks.length > virtual.weekCount) {
+      return { originWeekKey: weeks[0][0], totalWeeks: weeks.length, lead: 0 };
+    }
+
+    return {
+      originWeekKey: spacersReady ? virtual.firstWeekKey : weeks[0][0],
+      totalWeeks: spacersReady ? virtual.weekCount : weeks.length,
+      lead,
+    };
+  }, [spacersReady, virtual, weeks]);
+
+  const trail = geometry.totalWeeks - geometry.lead - weeks.length;
+
+  /*
+   * 通知先は ref 越しに呼ぶ。
+   *
+   * これらは呼び出し側で毎回作り直される。そのまま useCallback / 効果の依存に入れると、
+   * 画面のどこかが再描画されるたびに位置合わせの効果まで走り、スクロールの最中に
+   * scrollTop を書き戻して指の動きと競合する。
+   */
+  const notifyRef = useRef({ onVisibleMonthChange, onVisibleWeekChange });
+  useIsomorphicLayoutEffect(() => {
+    notifyRef.current = { onVisibleMonthChange, onVisibleWeekChange };
+  });
 
   /**
    * 週ごとの配置を先に決めておく。
@@ -236,22 +318,44 @@ export function ContinuousMonthView({
     });
   }, [events, tasks, reminders, utils, weeks]);
 
+  /** その高さにある週の先頭日。余白の中でも、窓の外の週として答える。 */
+  const weekKeyAt = useCallback(
+    (top: number) => {
+      const index = clampWeekIndex(Math.floor(top / WEEK_HEIGHT), geometry.totalWeeks);
+      return toDateKey(addDays(parseDateKey(geometry.originWeekKey), index * 7));
+    },
+    [geometry],
+  );
+
   const rememberAnchor = useCallback(
     (container: HTMLDivElement) => {
-      const index = clampWeekIndex(Math.floor(container.scrollTop / WEEK_HEIGHT), weeks.length);
-      const weekKey = weeks[index][0];
+      const absIndex = clampWeekIndex(
+        Math.floor(container.scrollTop / WEEK_HEIGHT),
+        geometry.totalWeeks,
+      );
+      const weekKey = toDateKey(addDays(parseDateKey(geometry.originWeekKey), absIndex * 7));
 
       anchorRef.current = {
         weekKey,
-        offset: container.scrollTop - index * WEEK_HEIGHT,
+        absIndex,
+        offset: container.scrollTop - absIndex * WEEK_HEIGHT,
       };
 
       if (weekKey !== visibleWeekRef.current) {
         visibleWeekRef.current = weekKey;
-        onVisibleWeekChange(weekKey);
+        notifyRef.current.onVisibleWeekChange(weekKey);
       }
     },
-    [weeks, onVisibleWeekChange],
+    [geometry],
+  );
+
+  /** いま見ている月。画面の上から1/3の位置にある週の、中日（4日目）の月を採る。 */
+  const monthAtScroll = useCallback(
+    (container: HTMLDivElement) => {
+      const weekKey = weekKeyAt(container.scrollTop + container.clientHeight / 3);
+      return toDateKey(addDays(parseDateKey(weekKey), 3)).slice(0, 7);
+    },
+    [weekKeyAt],
   );
 
   useIsomorphicLayoutEffect(() => {
@@ -267,22 +371,23 @@ export function ContinuousMonthView({
 
       if (target >= 0) {
         appliedTargetRef.current = scrollTarget.nonce;
-        container.scrollTop = target * WEEK_HEIGHT;
+        container.scrollTop = (geometry.lead + target) * WEEK_HEIGHT;
         rememberAnchor(container);
         return;
       }
     }
 
-    // 窓を張り直すと前後の週が増減し、見ていた内容が上下にずれる。
-    // 週の高さを固定にしてあるので、覚えておいた週が同じ位置に来るよう戻せる。
+    // 覚えておいた週の通し位置が動いていれば、その差だけ戻す。窓を張り直しただけなら
+    // 余白が同じぶん減る（増える）ので差は0になり、ここでは何もしない。
     const anchor = anchorRef.current;
     if (!anchor) return;
 
-    const index = weeks.findIndex((week) => week[0] === anchor.weekKey);
-    if (index < 0) return;
+    const absIndex = weeksBetween(geometry.originWeekKey, anchor.weekKey);
+    if (absIndex === anchor.absIndex) return;
 
-    container.scrollTop = index * WEEK_HEIGHT + anchor.offset;
-  }, [weeks, scrollTarget, rememberAnchor]);
+    container.scrollTop += (absIndex - anchor.absIndex) * WEEK_HEIGHT;
+    anchorRef.current = { ...anchor, absIndex };
+  }, [geometry, weeks, scrollTarget, rememberAnchor]);
 
   const handleScroll = useCallback(() => {
     const container = scrollRef.current;
@@ -290,18 +395,13 @@ export function ContinuousMonthView({
 
     rememberAnchor(container);
 
-    // 画面の上から1/3の位置にある週を「いま見ている月」とみなす。
-    const index = clampWeekIndex(
-      Math.floor((container.scrollTop + container.clientHeight / 3) / WEEK_HEIGHT),
-      weeks.length,
-    );
-    const month = weekMonthKey(weeks[index]);
+    const month = monthAtScroll(container);
 
     if (month !== visibleMonthRef.current) {
       visibleMonthRef.current = month;
-      onVisibleMonthChange(month);
+      notifyRef.current.onVisibleMonthChange(month);
     }
-  }, [onVisibleMonthChange, rememberAnchor, weeks]);
+  }, [monthAtScroll, rememberAnchor]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -330,10 +430,15 @@ export function ContinuousMonthView({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        // ブラウザのネイティブ scroll anchoring が上のuseIsomorphicLayoutEffectと
-        // 二重に補正をかけ、窓の張り直し時にスクロール位置が意図せず飛ぶため無効化する。
+        // ブラウザのネイティブ scroll anchoring は無効にし、窓を張り直したときの位置合わせを
+        // 上の useIsomorphicLayoutEffect だけに任せる。両方が動くと、どちらの結果が残るかが
+        // ブラウザ任せになり、ずれたときに原因を追えないため。
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
       >
+        {geometry.lead > 0 && (
+          <div aria-hidden style={{ ...VOID_STYLE, height: geometry.lead * WEEK_HEIGHT }} />
+        )}
+
         {weeks.map((week, weekIndex) => {
           const { segments, hiddenByColumn } = layoutByWeek[weekIndex];
           // 未取得の月をただの空白で描くと「予定が無い」と読めてしまう。
@@ -412,7 +517,7 @@ export function ContinuousMonthView({
                           gridRow: segment.lane + 1,
                         }}
                       >
-                        {renderChip(segment, utils, onOpenEvent, onOpenTask)}
+                        {renderChip(segment, utils, onOpenEvent, onOpenTask, onOpenReminder)}
                       </div>
                     ))}
 
@@ -435,6 +540,8 @@ export function ContinuousMonthView({
             </div>
           );
         })}
+
+        {trail > 0 && <div aria-hidden style={{ ...VOID_STYLE, height: trail * WEEK_HEIGHT }} />}
       </div>
     </div>
   );
@@ -445,6 +552,7 @@ function renderChip(
   utils: CalendarDateUtils,
   onOpenEvent: (event: CalendarEventItem) => void,
   onOpenTask: (task: TaskItem) => void,
+  onOpenReminder: (reminder: ReminderItem) => void,
 ) {
   const item = segment.item;
 
@@ -460,26 +568,35 @@ function renderChip(
     );
   }
 
-  if (item.kind === "reminder") return <ReminderChip reminder={item} utils={utils} />;
+  if (item.kind === "reminder") {
+    return <ReminderChip reminder={item} utils={utils} onOpen={() => onOpenReminder(item)} />;
+  }
 
   return <TaskChip task={item} utils={utils} onOpen={() => onOpenTask(item)} />;
 }
 
-function ReminderChip({ reminder, utils }: { reminder: ReminderItem; utils: CalendarDateUtils }) {
-  const content = (
-    <>
+function ReminderChip({
+  reminder,
+  utils,
+  onOpen,
+}: {
+  reminder: ReminderItem;
+  utils: CalendarDateUtils;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4"
+      title={reminder.title}
+    >
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
       {reminder.hasTime && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
       )}
       <span className="clip-nowrap">{reminder.title}</span>
-    </>
-  );
-  const className = "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4";
-  return reminder.url ? (
-    <a href={reminder.url} target="_blank" rel="noreferrer" className={className} title={reminder.title}>{content}</a>
-  ) : (
-    <span className={className} title={reminder.title}>{content}</span>
+    </button>
   );
 }
 

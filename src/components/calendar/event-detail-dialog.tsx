@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { CalendarClock, MapPin, Pencil, RotateCw, Users } from "lucide-react";
+import { CalendarClock, MapPin, Pencil, RotateCw, Trash2, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,12 +16,16 @@ import {
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import type { CalendarEventItem } from "@/types/calendar";
 
+import { DeleteItemDialog } from "./delete-item-dialog";
+import type { TouchedRange } from "./use-calendar-chunks";
+
 export function EventDetailDialog({
   event,
   timeZone,
   readOnly = false,
   onClose,
   onEdit,
+  onDeleted,
 }: {
   event: CalendarEventItem;
   timeZone: string;
@@ -29,10 +33,14 @@ export function EventDetailDialog({
   readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
+  /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
+  onDeleted: (touched: TouchedRange[] | null) => void;
 }) {
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
+  // 削除は取り消せない。押した直後には消さず、確認を挟む。
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const close = () => {
     setOpen(false);
@@ -48,9 +56,33 @@ export function EventDetailDialog({
     setTimeout(onEdit, 150);
   };
 
+  const deleted = (touched: TouchedRange[] | null) => {
+    setOpen(false);
+    setTimeout(() => onDeleted(touched), 150);
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+        {confirmingDelete && (
+          <DeleteItemDialog
+            item={{ kind: "event", event }}
+            onCancel={() => setConfirmingDelete(false)}
+            onDeleted={deleted}
+          />
+        )}
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="削除"
+          className="absolute top-2 right-18"
+          disabled={readOnly}
+          onClick={() => setConfirmingDelete(true)}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+
         <Button
           variant="ghost"
           size="icon-sm"
@@ -63,7 +95,7 @@ export function EventDetailDialog({
         </Button>
 
         <DialogHeader>
-          <DialogTitle className="pr-14">{event.title}</DialogTitle>
+          <DialogTitle className="pr-22">{event.title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 text-sm">
