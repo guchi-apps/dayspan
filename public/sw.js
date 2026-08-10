@@ -160,21 +160,36 @@ async function networkFirst(request, cacheName, limit) {
 
   try {
     const response = await fetch(request);
+
+    // 5xx は「届いたが今は応えられない」。proxy.ts はSupabase Authへ届かずログイン状態を
+    // 確認できなかったときにこれを返す。保存済みがあるならそちらを出す。エラー画面を出すと、
+    // 通信が不安定なだけの利用者に「ログアウトされた」と受け取られる。
+    if (response.status >= 500) {
+      const cached = await matchCached(cache, request);
+      if (cached) return cached;
+      return response;
+    }
+
     if (isCacheable(response)) {
       await cache.put(request, response.clone());
       await trim(cache, limit);
     }
     return response;
   } catch (cause) {
-    const cached = await cache.match(request, { ignoreVary: true });
+    const cached = await matchCached(cache, request);
     if (cached) return cached;
-
-    // 同じ画面の別の日付しか無い場合は、それを出す。まったく何も出ないよりは手掛かりになる。
-    const fallback = await cache.match(request, { ignoreVary: true, ignoreSearch: true });
-    if (fallback) return fallback;
 
     throw cause;
   }
+}
+
+/** 保存済みの応答を探す。同じURLが無ければ、同じ画面の別の日付を出す。 */
+async function matchCached(cache, request) {
+  const cached = await cache.match(request, { ignoreVary: true });
+  if (cached) return cached;
+
+  // まったく何も出ないよりは手掛かりになる。
+  return cache.match(request, { ignoreVary: true, ignoreSearch: true });
 }
 
 /** 上限を超えたぶんを古い順に捨てる。Cache API は追加した順に keys() を返す。 */
