@@ -452,8 +452,12 @@ export function CalendarShell({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        {/* 狭い画面ではアプリ名を出さない。現在地は下部のナビゲーションバーが示している。 */}
-        <div className="hidden items-center gap-1 font-semibold md:flex">
+        {/*
+          アイコンは狭い画面でも出す。他の画面（タスク・日付リマインド）は左上にアイコンがあり、
+          カレンダーだけ日付から始まると、同じアプリの中で先頭の位置が揃わないため。
+          アプリ名は幅の広いときだけ。狭い画面では年月の表示幅を優先する。
+        */}
+        <div className="flex shrink-0 items-center gap-1 font-semibold">
           <CalendarDays className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
         </div>
