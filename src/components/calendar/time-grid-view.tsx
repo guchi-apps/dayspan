@@ -585,11 +585,7 @@ function AllDayArea({
   utils: CalendarDateUtils;
   rowRef: React.Ref<HTMLDivElement>;
   preview: AllDayDragPreview | null;
-  onStartDrag: (
-    event: React.PointerEvent,
-    target: AllDayDragTarget,
-    dayIndex: number,
-  ) => void;
+  onStartDrag: (event: React.PointerEvent, target: AllDayDragTarget) => void;
   onConsumeDragClick: () => boolean;
   onPointerMove: (event: React.PointerEvent) => void;
   onPointerUp: (event: React.PointerEvent) => void;
@@ -628,6 +624,27 @@ function AllDayArea({
   );
 }
 
+/** 終日エリアで1本ぶんの帯。日をまたぐ予定は、表示中の期間の端で continuesBefore / continuesAfter が立つ。 */
+type AllDaySegment =
+  | {
+      kind: "event";
+      item: CalendarEventItem;
+      column: number;
+      span: number;
+      lane: number;
+      continuesBefore: boolean;
+      continuesAfter: boolean;
+    }
+  | {
+      kind: "task";
+      item: TaskItem;
+      column: number;
+      span: 1;
+      lane: number;
+      continuesBefore: false;
+      continuesAfter: false;
+    };
+
 const AllDayPane = memo(function AllDayPane({
   days,
   events,
@@ -644,97 +661,201 @@ const AllDayPane = memo(function AllDayPane({
   tasks: TaskItem[];
   utils: CalendarDateUtils;
   preview: AllDayDragPreview | null;
-  onStartDrag: (
-    event: React.PointerEvent,
-    target: AllDayDragTarget,
-    dayIndex: number,
-  ) => void;
+  onStartDrag: (event: React.PointerEvent, target: AllDayDragTarget) => void;
   onConsumeDragClick: () => boolean;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
 }) {
-  // ドラッグ中の項目は、動かした日数分ずらした状態で判定・描画する。
-  const shiftedEvent = (event: CalendarEventItem): CalendarEventItem =>
-    preview?.id === event.id
-      ? {
-          ...event,
-          start: shiftDateKey(event.start, preview.deltaDays),
-          end: shiftDateKey(event.end, preview.deltaDays),
-        }
-      : event;
+  /**
+   * 日をまたぐ終日予定を、日ごとに切らず1本の帯として並べる（月表示と同じ考え方）。
+   * 表示中の期間の外へはみ出す側は continuesBefore / continuesAfter で「まだ続く」ことを示す。
+   */
+  const { segments, laneCount } = useMemo(() => {
+    const position = new Map<string, number>();
+    days.forEach((dateKey, index) => position.set(dateKey, index));
+    const firstDay = days[0];
+    const lastDay = days[days.length - 1];
 
-  const shiftedTaskDue = (task: TaskItem): string | null =>
-    preview?.id === task.id && task.due
-      ? shiftDateKey(task.due, preview.deltaDays)
-      : task.due;
+    // ドラッグ中の項目は、動かした日数分ずらした状態で判定・配置する。
+    const shiftedEventRange = (event: CalendarEventItem): { start: string; end: string } =>
+      preview?.id === event.id
+        ? {
+            start: shiftDateKey(event.start, preview.deltaDays),
+            end: shiftDateKey(event.end, preview.deltaDays),
+          }
+        : { start: event.start, end: event.end };
+
+    const shiftedTaskDue = (task: TaskItem): string | null =>
+      preview?.id === task.id && task.due
+        ? shiftDateKey(task.due, preview.deltaDays)
+        : task.due;
+
+    type Raw = Omit<AllDaySegment, "lane">;
+    const raw: Raw[] = [];
+
+    for (const event of events) {
+      if (!event.allDay) continue;
+
+      const shifted = shiftedEventRange(event);
+      const startKey = shifted.start;
+      const endKey = shifted.end < startKey ? startKey : shifted.end;
+      if (endKey < firstDay || startKey > lastDay) continue;
+
+      const clippedStart = startKey < firstDay ? firstDay : startKey;
+      const clippedEnd = endKey > lastDay ? lastDay : endKey;
+      const column = position.get(clippedStart);
+      const endColumn = position.get(clippedEnd);
+      if (column === undefined || endColumn === undefined) continue;
+
+      raw.push({
+        kind: "event",
+        item: event,
+        column,
+        span: endColumn - column + 1,
+        continuesBefore: startKey < clippedStart,
+        continuesAfter: endKey > clippedEnd,
+      });
+    }
+
+    for (const task of tasks) {
+      if (task.hasTime || !task.due) continue;
+
+      const dateKey = shiftedTaskDue(task);
+      if (!dateKey) continue;
+      const column = position.get(dateKey);
+      if (column === undefined) continue;
+
+      raw.push({ kind: "task", item: task, column, span: 1, continuesBefore: false, continuesAfter: false });
+    }
+
+    // 日をまたぐ帯を先に上の段へ置く。後から来た1日ぶんの項目が、帯の空いている段へ
+    // 潜り込んで帯を分断しないようにするため（continuous-month-view.tsx と同じ考え方）。
+    raw.sort((a, b) => {
+      const barDiff = Number(b.span > 1) - Number(a.span > 1);
+      if (barDiff !== 0) return barDiff;
+      if (a.column !== b.column) return a.column - b.column;
+      if (a.span !== b.span) return b.span - a.span;
+      return utils.compareItems(a.item, b.item);
+    });
+
+    const occupied: boolean[][] = [];
+    const segments: AllDaySegment[] = [];
+
+    for (const item of raw) {
+      let lane = 0;
+
+      for (;;) {
+        if (!occupied[lane]) occupied[lane] = new Array(days.length).fill(false);
+        const row = occupied[lane];
+
+        let free = true;
+        for (let column = item.column; column < item.column + item.span; column += 1) {
+          if (row[column]) {
+            free = false;
+            break;
+          }
+        }
+
+        if (free) {
+          for (let column = item.column; column < item.column + item.span; column += 1) {
+            row[column] = true;
+          }
+          break;
+        }
+
+        lane += 1;
+      }
+
+      segments.push({ ...item, lane } as AllDaySegment);
+    }
+
+    return { segments, laneCount: occupied.length };
+  }, [days, events, tasks, preview, utils]);
 
   return (
-    <div className="flex h-full">
-      {days.map((dateKey, dayIndex) => {
-        const dayEvents = events.filter(
-          (event) => event.allDay && utils.eventCoversDay(shiftedEvent(event), dateKey),
-        );
-        const dayTasks = tasks.filter(
-          (task) => !task.hasTime && shiftedTaskDue(task) === dateKey,
-        );
+    <div className="relative min-h-9 w-full">
+      {/* 日ごとの区切り線。帯を置く格子とは別に、常に日数ぶんの列で敷いておく。 */}
+      <div
+        className="pointer-events-none absolute inset-0 grid"
+        style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+      >
+        {days.map((dateKey) => (
+          <div key={dateKey} className="border-l border-outline-variant" />
+        ))}
+      </div>
 
-        return (
+      <div
+        className="grid gap-y-0.5 py-1"
+        style={{
+          gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`,
+          gridTemplateRows: laneCount > 0 ? `repeat(${laneCount}, min-content)` : undefined,
+        }}
+      >
+        {segments.map((segment) => (
           <div
-            key={dateKey}
-            className="flex min-h-9 flex-1 flex-col gap-0.5 border-l border-outline-variant p-1"
+            key={segment.item.id}
+            className={cn(
+              "min-w-0",
+              segment.continuesBefore ? "pl-0" : "pl-1",
+              segment.continuesAfter ? "pr-0" : "pr-1",
+            )}
+            style={{
+              gridColumn: `${segment.column + 1} / span ${segment.span}`,
+              gridRow: segment.lane + 1,
+            }}
           >
-            {dayEvents.map((event) => (
+            {segment.kind === "event" ? (
               <button
-                key={event.id}
                 type="button"
-                onPointerDown={(e) => onStartDrag(e, { kind: "event", item: event }, dayIndex)}
+                onPointerDown={(e) => onStartDrag(e, { kind: "event", item: segment.item })}
                 onClick={() => {
                   if (onConsumeDragClick()) return;
-                  onOpenEvent(event);
+                  onOpenEvent(segment.item);
                 }}
                 className={cn(
-                  "clip-nowrap rounded-sm border px-1.5 text-left text-[11px] leading-5 font-medium",
-                  preview?.id === event.id && "ring-2 ring-foreground/50",
+                  "clip-nowrap w-full rounded-sm border px-1.5 text-left text-[11px] leading-5 font-medium",
+                  // 期間の境界で切れた続きの側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
+                  segment.continuesBefore && "rounded-l-none border-l-0",
+                  segment.continuesAfter && "rounded-r-none border-r-0",
+                  preview?.id === segment.item.id && "ring-2 ring-foreground/50",
                 )}
                 style={{
-                  backgroundColor: eventColors(event.color).background,
-                  color: eventColors(event.color).foreground,
-                  borderColor: eventColors(event.color).border,
+                  backgroundColor: eventColors(segment.item.color).background,
+                  color: eventColors(segment.item.color).foreground,
+                  borderColor: eventColors(segment.item.color).border,
                 }}
-                title={event.title}
+                title={segment.item.title}
               >
-                {event.title}
+                {segment.item.title}
               </button>
-            ))}
-            {dayTasks.map((task) => (
+            ) : (
               <button
-                key={task.id}
                 type="button"
-                onPointerDown={(e) => onStartDrag(e, { kind: "task", item: task }, dayIndex)}
+                onPointerDown={(e) => onStartDrag(e, { kind: "task", item: segment.item })}
                 onClick={() => {
                   if (onConsumeDragClick()) return;
-                  onOpenTask(task);
+                  onOpenTask(segment.item);
                 }}
                 className={cn(
-                  "type-label-small clip-nowrap flex items-center gap-1 rounded-xs border border-outline bg-surface-container-lowest px-1.5 py-0.5 text-left",
-                  task.done && "text-muted-foreground line-through",
-                  preview?.id === task.id && "ring-2 ring-foreground/50",
+                  "type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-outline bg-surface-container-lowest px-1.5 py-0.5 text-left",
+                  segment.item.done && "text-muted-foreground line-through",
+                  preview?.id === segment.item.id && "ring-2 ring-foreground/50",
                 )}
-                title={task.title}
+                title={segment.item.title}
               >
                 <span
                   aria-hidden
                   className={cn(
                     "h-2.5 w-0.5 shrink-0",
-                    task.done ? "bg-on-surface-variant/60" : "bg-primary",
+                    segment.item.done ? "bg-on-surface-variant/60" : "bg-primary",
                   )}
                 />
-                <span className="clip-nowrap">{task.title}</span>
+                <span className="clip-nowrap">{segment.item.title}</span>
               </button>
-            ))}
+            )}
           </div>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 });
