@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { listCalendars } from "@/services/google-calendar/calendars";
 import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google-calendar/events";
+import { SETTING_ORDER } from "@/services/google-calendar/settings";
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
 import { listTasksInRange } from "@/services/notion/tasks";
@@ -61,7 +62,7 @@ async function loadGoogleEvents(
   for (const account of accounts) {
     const visibleSettings = await db.calendarSetting.findMany({
       where: { googleAccountId: account.id, visible: true },
-      orderBy: { sortOrder: "asc" },
+      orderBy: SETTING_ORDER,
     });
     if (visibleSettings.length === 0) continue;
 
