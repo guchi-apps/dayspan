@@ -1,6 +1,6 @@
 import type { Client } from "@notionhq/client";
 
-export type ReminderField = "title" | "date" | "category" | "memo";
+export type ReminderField = "title" | "date" | "category" | "memo" | "annual";
 export type ReminderPropertyMap = Partial<Record<ReminderField, string>>;
 
 type PropertyConfig = { id: string; name: string; type: string };
@@ -17,6 +17,7 @@ export const REMINDER_FIELD_REQUIREMENTS: Requirement[] = [
   { field: "date", label: "日付", types: ["date"], required: true, hints: ["日付", "対象日", "date", "更新日", "記念日"] },
   { field: "category", label: "種類", types: ["select"], required: false, hints: ["種類", "カテゴリ", "category", "type"] },
   { field: "memo", label: "メモ", types: ["rich_text"], required: false, hints: ["メモ", "備考", "memo", "note"] },
+  { field: "annual", label: "毎年", types: ["checkbox"], required: false, hints: ["毎年", "annual", "繰り返し", "recurring", "repeat"] },
 ];
 
 export type ReminderValidation = {
