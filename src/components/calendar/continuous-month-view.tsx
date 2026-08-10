@@ -71,6 +71,7 @@ export function ContinuousMonthView({
   scrollTarget,
   pendingMonths,
   onVisibleMonthChange,
+  onVisibleWeekChange,
   onSelectDay,
   onQuickAdd,
   onOpenEvent,
@@ -82,11 +83,16 @@ export function ContinuousMonthView({
   reminders: ReminderItem[];
   weekStartsOn: number;
   utils: CalendarDateUtils;
-  /** 指定の月へ寄せる指示。同じ月を続けて指しても効くよう nonce を持たせる。 */
-  scrollTarget: { month: string; nonce: number };
+  /**
+   * 位置合わせの指示。同じ指定を続けても効くよう nonce を持たせる。
+   * day を指定するとその日を含む週へ、無指定なら month の最初の週へ合わせる。
+   */
+  scrollTarget: { month: string; day?: string; nonce: number };
   /** まだ取得できていない月。予定が無いのか読み込み中なのかを描き分けるために使う。 */
   pendingMonths: ReadonlySet<string>;
   onVisibleMonthChange: (monthKey: string) => void;
+  /** 画面の一番上にある週が変わったとき。 */
+  onVisibleWeekChange: (weekKey: string) => void;
   onSelectDay: (dateKey: string) => void;
   /** その日に予定を足す。指・ペンでの長押しから呼ばれる。 */
   onQuickAdd: (dateKey: string) => void;
@@ -95,6 +101,7 @@ export function ContinuousMonthView({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const visibleMonthRef = useRef(scrollTarget.month);
+  const visibleWeekRef = useRef(weeks[0][0]);
   const [todayKey] = useState(() => utils.todayKey());
 
   // 日のセルは、押せばその日の時間グリッドへ移り、長押しならその日へ予定を足す。
@@ -232,22 +239,31 @@ export function ContinuousMonthView({
   const rememberAnchor = useCallback(
     (container: HTMLDivElement) => {
       const index = clampWeekIndex(Math.floor(container.scrollTop / WEEK_HEIGHT), weeks.length);
+      const weekKey = weeks[index][0];
 
       anchorRef.current = {
-        weekKey: weeks[index][0],
+        weekKey,
         offset: container.scrollTop - index * WEEK_HEIGHT,
       };
+
+      if (weekKey !== visibleWeekRef.current) {
+        visibleWeekRef.current = weekKey;
+        onVisibleWeekChange(weekKey);
+      }
     },
-    [weeks],
+    [weeks, onVisibleWeekChange],
   );
 
   useIsomorphicLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
 
-    // 月を指定した移動（今日・前へ・次へ）は、位置の維持より優先する。
+    // 月・日を指定した移動（今日・前へ・次へ・日表示からの切り替え）は、位置の維持より優先する。
     if (scrollTarget.nonce !== appliedTargetRef.current) {
-      const target = weeks.findIndex((week) => weekMonthKey(week) === scrollTarget.month);
+      const { day, month } = scrollTarget;
+      const target = day
+        ? weeks.findIndex((week) => week.includes(day))
+        : weeks.findIndex((week) => weekMonthKey(week) === month);
 
       if (target >= 0) {
         appliedTargetRef.current = scrollTarget.nonce;

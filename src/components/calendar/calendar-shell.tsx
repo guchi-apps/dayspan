@@ -88,11 +88,20 @@ export function CalendarShell({
   // 連続スクロール中の月は、サーバーの応答を待たずに見出しへ反映する。
   const [scrolledMonth, setScrolledMonth] = useState(anchorKey.slice(0, 7));
 
+  // 画面の一番上にある週の先頭日。月表示→日表示へ切り替えるとき、この週を起点にする
+  // （1日目固定だと、月の途中の週を見ていてもその月の1日目基準のタブへ飛んでしまうため）。
+  const [topWeekKey, setTopWeekKey] = useState(anchorKey);
+
   // 保持している月の中心。ここを動かすと、前後の月ぶんの並びとデータが張り直される。
   const [monthCenter, setMonthCenter] = useState(anchorKey.slice(0, 7));
 
   // 月表示の移動はスクロールで行う。同じ月を続けて指しても効くよう、指示に通し番号を付ける。
-  const [scrollTarget, setScrollTarget] = useState({ month: anchorKey.slice(0, 7), nonce: 0 });
+  // day は日表示から特定の日を含む週へ位置合わせしたいときだけ指定する
+  // （前へ・次へ・今日は月単位のままでよいため指定しない）。
+  const [scrollTarget, setScrollTarget] = useState<{ month: string; day?: string; nonce: number }>({
+    month: anchorKey.slice(0, 7),
+    nonce: 0,
+  });
 
   // 月表示の週の並びは、サーバーの anchor ではなく保持中の窓から決まる。
   const monthWeeks = useMemo(
@@ -282,6 +291,19 @@ export function CalendarShell({
     syncMonthUrl(month);
   };
 
+  /**
+   * 日表示から月表示へ切り替えるとき。その日を含む週へ位置合わせしてから遷移する。
+   * 何もしないと、以前に月表示を見ていたときの位置（またはマウント時点の初期値）へ
+   * スクロールが戻ってしまう。
+   */
+  const enterMonthView = (dateKey: string) => {
+    const month = dateKey.slice(0, 7);
+    setScrolledMonth(month);
+    setMonthCenter(month);
+    setScrollTarget((prev) => ({ month, day: dateKey, nonce: prev.nonce + 1 }));
+    navigate("month", dateKey);
+  };
+
   const move = (direction: 1 | -1) => {
     if (nav.view === "month") {
       goToMonth(shiftMonthKey(scrolledMonth, direction));
@@ -318,6 +340,11 @@ export function CalendarShell({
     if (Math.abs(monthDistance(monthCenter, month)) >= 2) setMonthCenter(month);
   };
 
+  /** スクロールで画面の一番上に来た週が変わったとき。 */
+  const handleVisibleWeekChange = (weekKey: string) => {
+    setTopWeekKey(weekKey);
+  };
+
   /**
    * 時間グリッドに並べる日。
    *
@@ -334,8 +361,8 @@ export function CalendarShell({
   const defaultDayKey = view === "month" ? utils.todayKey() : gridDays[0];
 
   // 表示形式を切り替えたときの移動先。月表示はスクロールで移動するため anchorKey が
-  // 更新されない（URLだけが replaceState で追従する）。見えている月を起点にする。
-  const viewSwitchAnchorKey = nav.view === "month" ? `${scrolledMonth}-01` : anchorKey;
+  // 更新されない（URLだけが replaceState で追従する）。見えている週を起点にする。
+  const viewSwitchAnchorKey = nav.view === "month" ? topWeekKey : anchorKey;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -392,7 +419,15 @@ export function CalendarShell({
                 nav.view === item.view && "text-on-secondary-container",
                 item.desktopOnly && "hidden md:inline-flex",
               )}
-              onClick={() => navigate(item.view, viewSwitchAnchorKey)}
+              onClick={() => {
+                if (item.view === "month") {
+                  // 月表示のまま押しても、以前の位置合わせを乱さないよう何もしない。
+                  if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey);
+                  return;
+                }
+
+                navigate(item.view, viewSwitchAnchorKey);
+              }}
             >
               {item.label}
             </Button>
@@ -450,6 +485,7 @@ export function CalendarShell({
           viewingEvent={viewingEvent}
           viewingTask={viewingTask}
           onVisibleMonthChange={handleVisibleMonthChange}
+          onVisibleWeekChange={handleVisibleWeekChange}
           onSwipe={moveDays}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
           onOpenEvent={openEvent}
@@ -518,6 +554,7 @@ function CalendarBody({
   viewingEvent,
   viewingTask,
   onVisibleMonthChange,
+  onVisibleWeekChange,
   onSwipe,
   onSelectDay,
   onOpenEvent,
@@ -545,7 +582,7 @@ function CalendarBody({
   timeZone: string;
   windowMonths: string[];
   serverMonths: string[];
-  scrollTarget: { month: string; nonce: number };
+  scrollTarget: { month: string; day?: string; nonce: number };
   autoRefreshSeconds: number;
   offline: boolean;
   dragError: string | null;
@@ -556,6 +593,7 @@ function CalendarBody({
   viewingEvent: CalendarEventItem | null;
   viewingTask: TaskItem | null;
   onVisibleMonthChange: (monthKey: string) => void;
+  onVisibleWeekChange: (weekKey: string) => void;
   onSwipe: (deltaDays: number) => void;
   onSelectDay: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
@@ -650,6 +688,7 @@ function CalendarBody({
           scrollTarget={scrollTarget}
           pendingMonths={data.pendingMonths}
           onVisibleMonthChange={onVisibleMonthChange}
+          onVisibleWeekChange={onVisibleWeekChange}
           onSelectDay={onSelectDay}
           onQuickAdd={onQuickAddOnDay}
           onOpenEvent={onOpenEvent}
