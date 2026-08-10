@@ -109,6 +109,21 @@ export function getSwipeFetchRange(
 /** 見ている月の前後、いくつの月を保持するか。 */
 export const MONTHS_AROUND = 3;
 
+/**
+ * 月表示でスクロールできる範囲。保持する窓（MONTHS_AROUND）よりずっと広く取る。
+ *
+ * 窓を張り直すと週の並びの長さが変わり、その上にあった週の位置も動くため、見ていた場所へ
+ * scrollTop を書き戻す必要が出る。書き戻しは指でなぞっている最中や惰性で流れている最中には
+ * 効かない（スクロール位置はブラウザ側が持っており、代入が上書きされる）ため、書き戻しが
+ * そもそも要らない形にする。窓の外側をあらかじめ余白として確保しておけば、窓を張り直しても
+ * 各週の位置は動かず、スクロールの最中でも安全に張り直せる。
+ *
+ * 前後20年ぶん。指でここまで動かすには百回以上の操作が要るため、実際には端に当たらない。
+ */
+export const VIRTUAL_MONTHS_AROUND = 240;
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** YYYY-MM を、その月の1日（UTC正午）として扱う。 */
 export function parseMonthKey(monthKey: string): Date {
   const year = Number(monthKey.slice(0, 4));
@@ -170,6 +185,42 @@ export function getContinuousMonthWeeks(
   weekStartsOn: number,
   monthsAround = MONTHS_AROUND,
 ): { weeks: string[][]; days: string[] } {
+  const { first, weekCount } = continuousMonthRange(anchor, weekStartsOn, monthsAround);
+
+  const weeks = Array.from({ length: weekCount }, (_, week) =>
+    Array.from({ length: 7 }, (_, i) => toDateKey(addDays(first, week * 7 + i))),
+  );
+
+  return { weeks, days: weeks.flat() };
+}
+
+/**
+ * 週の並びの外枠だけ。日付は作らず、先頭週と週数だけを返す。
+ *
+ * スクロールできる範囲（VIRTUAL_MONTHS_AROUND）は年単位の長さになるため、
+ * 実際に描く窓の外側まで日付を並べるとその都度何千個もの文字列を作ることになる。
+ */
+export function getContinuousMonthSpan(
+  anchor: Date,
+  weekStartsOn: number,
+  monthsAround = MONTHS_AROUND,
+): { firstWeekKey: string; weekCount: number } {
+  const { first, weekCount } = continuousMonthRange(anchor, weekStartsOn, monthsAround);
+  return { firstWeekKey: toDateKey(first), weekCount };
+}
+
+/** 週の先頭日どうしが何週離れているか（符号つき）。 */
+export function weeksBetween(fromWeekKey: string, toWeekKey: string): number {
+  return Math.round(
+    (parseDateKey(toWeekKey).getTime() - parseDateKey(fromWeekKey).getTime()) / WEEK_MS,
+  );
+}
+
+function continuousMonthRange(
+  anchor: Date,
+  weekStartsOn: number,
+  monthsAround: number,
+): { first: Date; weekCount: number } {
   const firstMonth = new Date(
     Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - monthsAround, 1, 12),
   );
@@ -179,15 +230,12 @@ export function getContinuousMonthWeeks(
   );
 
   const offset = (firstMonth.getUTCDay() - weekStartsOn + 7) % 7;
-  let cursor = addDays(firstMonth, -offset);
+  const first = addDays(firstMonth, -offset);
 
-  const weeks: string[][] = [];
-  while (cursor.getTime() <= lastMonthEnd.getTime()) {
-    weeks.push(Array.from({ length: 7 }, (_, i) => toDateKey(addDays(cursor, i))));
-    cursor = addDays(cursor, 7);
-  }
-
-  return { weeks, days: weeks.flat() };
+  return {
+    first,
+    weekCount: Math.floor((lastMonthEnd.getTime() - first.getTime()) / WEEK_MS) + 1,
+  };
 }
 
 /** その週がどの月に属するとみなすか。週の中日（4日目）の月を採る。 */
