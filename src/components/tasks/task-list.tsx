@@ -252,7 +252,7 @@ function formatDue(task: TaskItem, utils: ReturnType<typeof createCalendarDateUt
   if (!task.due) return "";
 
   const dateKey = utils.itemDateKey(task.due);
-  const label = `${Number(dateKey.slice(5, 7))}/${Number(dateKey.slice(8, 10))}`;
+  const label = `${dateKey.slice(0, 4)}/${Number(dateKey.slice(5, 7))}/${Number(dateKey.slice(8, 10))}`;
 
   return task.hasTime ? `${label} ${utils.formatTime(task.due)}` : label;
 }
