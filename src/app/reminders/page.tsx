@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
 import { listAllReminders } from "@/services/notion/reminders";
+import { loadTagCatalog } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
 export default async function RemindersPage() {
@@ -22,6 +23,8 @@ export default async function RemindersPage() {
 
   let reminders: ReminderItem[] = [];
   let loadError: string | null = null;
+  // 種類の取得は失敗しても空になるだけで、日付リマインドの表示は妨げない。
+  const tagCatalogPromise = loadTagCatalog(connection);
   try {
     reminders = await listAllReminders(createNotionClient(connection), connection);
   } catch {
@@ -30,6 +33,7 @@ export default async function RemindersPage() {
   return (
     <ReminderList
       reminders={reminders}
+      tagCatalog={await tagCatalogPromise}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
       loadError={loadError}
     />

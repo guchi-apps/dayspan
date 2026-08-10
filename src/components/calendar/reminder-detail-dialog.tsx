@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { CalendarClock, ExternalLink, Pencil, RotateCw, Tag } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { TagChip } from "@/components/tags/tag-chip";
+import { tagColorOf } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,16 +16,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import type { TagOption } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
 export function ReminderDetailDialog({
   reminder,
+  categoryOptions,
   timeZone,
   readOnly = false,
   onClose,
   onEdit,
 }: {
   reminder: ReminderItem;
+  /** 登録済みの種類。色を引くために渡す。取得できていないときは空でよい。 */
+  categoryOptions: TagOption[];
   timeZone: string;
   /** 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。 */
   readOnly?: boolean;
@@ -74,7 +80,12 @@ export function ReminderDetailDialog({
           )}
 
           {reminder.category && (
-            <DetailRow icon={<Tag className="size-4" />}>{reminder.category}</DetailRow>
+            <DetailRow icon={<Tag className="size-4" />}>
+              <TagChip
+                name={reminder.category}
+                color={tagColorOf(categoryOptions, reminder.category)}
+              />
+            </DetailRow>
           )}
 
           {reminder.memo && (

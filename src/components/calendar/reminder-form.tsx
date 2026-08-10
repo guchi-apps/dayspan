@@ -9,9 +9,11 @@ import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DialogFooter } from "@/components/ui/dialog";
+import { TagPicker } from "@/components/tags/tag-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import type { TagOption } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
 import { DateTimeInput } from "./date-time-input";
@@ -45,8 +47,8 @@ export function ReminderForm({
 }: {
   draft: ReminderDraft;
   timeZone: string;
-  /** すでに使われている種類。Notionのselectは自由に増やせるため、入力の候補として出す。 */
-  categories: string[];
+  /** 設定画面で登録済みの種類。無い名前もここから足せる（Notionが選択肢を増やす）。 */
+  categories: TagOption[];
   /** タイトルは種類を切り替えても引き継ぐため、ItemDialog が持つ。 */
   title: string;
   autoFocusTitle: boolean;
@@ -199,20 +201,14 @@ export function ReminderForm({
           )}
         </div>
 
-        {/* 種類はNotionのselect。既存の選択肢から選べるようにしつつ、新しい名前も入れられる
-            ようにする（Notionは未知の名前を渡すと選択肢を足す）。 */}
-        <Input
-          id="reminder-category"
+        {/* 種類はNotionのselectで1件につき1つ。押し直すと未設定へ戻せるようにする。 */}
+        <TagPicker
           label="種類"
-          list="reminder-categories"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
+          options={categories}
+          value={category ? [category] : []}
+          multiple={false}
+          onChange={(next) => setCategory(next[0] ?? "")}
         />
-        <datalist id="reminder-categories">
-          {categories.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
 
         <Textarea
           id="reminder-memo"

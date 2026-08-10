@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { ExternalLink, Pencil } from "lucide-react";
 
@@ -14,11 +14,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { TagChipList } from "@/components/tags/tag-chip";
 import { cn } from "@/lib/utils";
+import type { TagOption } from "@/services/notion/tag-options";
 import type { TaskItem } from "@/types/calendar";
 
 export function TaskDetailDialog({
   task,
+  tagOptions,
   timeZone,
   readOnly = false,
   onClose,
@@ -26,6 +29,8 @@ export function TaskDetailDialog({
   onToggleDone,
 }: {
   task: TaskItem;
+  /** 登録済みのタグ。色を引くために渡す。取得できていないときは空でよい。 */
+  tagOptions: TagOption[];
   timeZone: string;
   /** 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。 */
   readOnly?: boolean;
@@ -106,7 +111,11 @@ export function TaskDetailDialog({
           {task.recurrence && task.recurrence !== "なし" && (
             <DetailField label="繰り返し" value={task.recurrence} />
           )}
-          {task.tags.length > 0 && <DetailField label="タグ" value={task.tags.join(", ")} />}
+          {task.tags.length > 0 && (
+            <DetailField label="タグ">
+              <TagChipList names={task.tags} options={tagOptions} />
+            </DetailField>
+          )}
           {task.memo && <DetailField label="メモ" value={task.memo} />}
 
           {task.url && (
@@ -134,11 +143,20 @@ export function TaskDetailDialog({
   );
 }
 
-function DetailField({ label, value }: { label: string; value: string }) {
+/** 見出しと中身の組。文字だけの項目は value、チップのように形のある項目は children で渡す。 */
+function DetailField({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value?: string;
+  children?: ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-0.5 px-4">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="whitespace-pre-wrap">{value}</span>
+      {children ?? <span className="whitespace-pre-wrap">{value}</span>}
     </div>
   );
 }
