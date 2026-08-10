@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
-import { weekMonthKey } from "@/lib/calendar-range";
+import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
 import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/types/calendar";
 
@@ -62,13 +70,18 @@ function clampWeekIndex(index: number, length: number): number {
 }
 
 /**
- * スクロールが止まったとみなすまでの待ち時間。
+ * 窓の外側に置く余白。まだ日付を並べていない範囲。
  *
- * 窓を張り直すと画面より上の週が増減するため、見ていた位置へ scrollTop を書き戻す必要がある。
- * この書き戻しは、指でなぞっている最中や惰性で流れている最中には効かない（進行中の
- * スクロールに上書きされる）。止まったことを確かめてから張り直す。
+ * 何も描かないと、勢いよくスクロールして窓の先へ出たときにカレンダーが途切れて見える。
+ * 週と日の区切り線だけを背景で描き、日付の入っていないカレンダーとして見せる。
  */
-const SETTLE_DELAY = 150;
+const VOID_STYLE: CSSProperties = {
+  backgroundImage: [
+    "linear-gradient(to bottom, transparent calc(100% - 1px), var(--color-outline-variant) 0)",
+    "linear-gradient(to right, transparent calc(100% - 1px), var(--color-outline-variant) 0)",
+  ].join(", "),
+  backgroundSize: `100% ${WEEK_HEIGHT}px, calc(100% / 7) 100%`,
+};
 
 export function ContinuousMonthView({
   weeks,
@@ -79,9 +92,9 @@ export function ContinuousMonthView({
   utils,
   scrollTarget,
   pendingMonths,
+  virtual,
   onVisibleMonthChange,
   onVisibleWeekChange,
-  onScrollSettle,
   onSelectDay,
   onQuickAdd,
   onOpenEvent,
@@ -101,14 +114,16 @@ export function ContinuousMonthView({
   scrollTarget: { month: string; day?: string; nonce: number };
   /** まだ取得できていない月。予定が無いのか読み込み中なのかを描き分けるために使う。 */
   pendingMonths: ReadonlySet<string>;
+  /**
+   * スクロールできる範囲。weeks（描く窓）より広く、その外側は日付を並べない余白になる。
+   *
+   * 窓を張り直しても、余白が同じぶん増減して各週の位置を据え置く。位置が動かないので、
+   * スクロールの最中に張り直しても見ていた場所がずれない。
+   */
+  virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
   /** 画面の一番上にある週が変わったとき。 */
   onVisibleWeekChange: (weekKey: string) => void;
-  /**
-   * スクロールが止まったとき。そのとき見えている月を渡す。
-   * 窓の張り直しは位置の書き戻しを伴うため、動いている最中ではなくここで行う。
-   */
-  onScrollSettle: (monthKey: string) => void;
   onSelectDay: (dateKey: string) => void;
   /** その日に予定を足す。指・ペンでの長押しから呼ばれる。 */
   onQuickAdd: (dateKey: string) => void;
@@ -124,9 +139,47 @@ export function ContinuousMonthView({
   // 日のセルは、押せばその日の時間グリッドへ移り、長押しならその日へ予定を足す。
   const dayPress = useLongPress<string>({ onPress: onSelectDay, onLongPress: onQuickAdd });
 
-  // 画面の先頭にある週。窓を張り直したあと、同じ位置へ戻すために覚えておく。
-  const anchorRef = useRef<{ weekKey: string; offset: number } | null>(null);
+  /*
+   * 画面の先頭にある週。並びの中の位置ではなく、余白も含めた通し位置（absIndex）で覚える。
+   *
+   * 窓を張り直しただけなら通し位置は変わらないため、書き戻しは何もせずに済む。
+   * サーバー描画のあと余白を出すときのように、通し位置そのものが動いたときだけ戻す。
+   */
+  const anchorRef = useRef<{ weekKey: string; absIndex: number; offset: number } | null>(null);
   const appliedTargetRef = useRef(-1);
+
+  /*
+   * 余白はブラウザでだけ出す。
+   *
+   * サーバー描画の時点で余白を入れると、まだ位置合わせが走っていない（scrollTop が 0 の）
+   * 画面には余白だけが映り、カレンダーが空に見える。最初の描画は窓だけにしておく。
+   */
+  const [spacersReady, setSpacersReady] = useState(false);
+  useIsomorphicLayoutEffect(() => setSpacersReady(true), []);
+
+  /**
+   * 並べたものの高さ方向の座標。先頭週（originWeekKey）から数えた通し番号で位置を決める。
+   *
+   * 窓ではなくこの座標で見ている場所を求めるため、余白の奥まで一気に飛ばされても、
+   * そこがどの月かを一度で言い当てられる（窓の端で頭打ちにすると、窓が追いつくまで
+   * 何度も張り直すことになる）。
+   */
+  const geometry = useMemo(() => {
+    const lead = spacersReady ? weeksBetween(virtual.firstWeekKey, weeks[0][0]) : 0;
+
+    // 余白の外まで動いた場合（何年も指で送り続けたとき）は、余白を諦めて窓だけを描く。
+    if (lead < 0 || lead + weeks.length > virtual.weekCount) {
+      return { originWeekKey: weeks[0][0], totalWeeks: weeks.length, lead: 0 };
+    }
+
+    return {
+      originWeekKey: spacersReady ? virtual.firstWeekKey : weeks[0][0],
+      totalWeeks: spacersReady ? virtual.weekCount : weeks.length,
+      lead,
+    };
+  }, [spacersReady, virtual, weeks]);
+
+  const trail = geometry.totalWeeks - geometry.lead - weeks.length;
 
   /*
    * 通知先は ref 越しに呼ぶ。
@@ -135,14 +188,10 @@ export function ContinuousMonthView({
    * 画面のどこかが再描画されるたびに位置合わせの効果まで走り、スクロールの最中に
    * scrollTop を書き戻して指の動きと競合する。
    */
-  const notifyRef = useRef({ onVisibleMonthChange, onVisibleWeekChange, onScrollSettle });
+  const notifyRef = useRef({ onVisibleMonthChange, onVisibleWeekChange });
   useIsomorphicLayoutEffect(() => {
-    notifyRef.current = { onVisibleMonthChange, onVisibleWeekChange, onScrollSettle };
+    notifyRef.current = { onVisibleMonthChange, onVisibleWeekChange };
   });
-
-  // スクロールが止まるのを待つためのタイマーと、指が触れているかどうか。
-  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchingRef = useRef(false);
 
   /**
    * 週ごとの配置を先に決めておく。
@@ -269,14 +318,27 @@ export function ContinuousMonthView({
     });
   }, [events, tasks, reminders, utils, weeks]);
 
+  /** その高さにある週の先頭日。余白の中でも、窓の外の週として答える。 */
+  const weekKeyAt = useCallback(
+    (top: number) => {
+      const index = clampWeekIndex(Math.floor(top / WEEK_HEIGHT), geometry.totalWeeks);
+      return toDateKey(addDays(parseDateKey(geometry.originWeekKey), index * 7));
+    },
+    [geometry],
+  );
+
   const rememberAnchor = useCallback(
     (container: HTMLDivElement) => {
-      const index = clampWeekIndex(Math.floor(container.scrollTop / WEEK_HEIGHT), weeks.length);
-      const weekKey = weeks[index][0];
+      const absIndex = clampWeekIndex(
+        Math.floor(container.scrollTop / WEEK_HEIGHT),
+        geometry.totalWeeks,
+      );
+      const weekKey = toDateKey(addDays(parseDateKey(geometry.originWeekKey), absIndex * 7));
 
       anchorRef.current = {
         weekKey,
-        offset: container.scrollTop - index * WEEK_HEIGHT,
+        absIndex,
+        offset: container.scrollTop - absIndex * WEEK_HEIGHT,
       };
 
       if (weekKey !== visibleWeekRef.current) {
@@ -284,45 +346,17 @@ export function ContinuousMonthView({
         notifyRef.current.onVisibleWeekChange(weekKey);
       }
     },
-    [weeks],
+    [geometry],
   );
 
-  /** いま見ている月。画面の上から1/3の位置にある週で決める。 */
+  /** いま見ている月。画面の上から1/3の位置にある週の、中日（4日目）の月を採る。 */
   const monthAtScroll = useCallback(
     (container: HTMLDivElement) => {
-      const index = clampWeekIndex(
-        Math.floor((container.scrollTop + container.clientHeight / 3) / WEEK_HEIGHT),
-        weeks.length,
-      );
-
-      return weekMonthKey(weeks[index]);
+      const weekKey = weekKeyAt(container.scrollTop + container.clientHeight / 3);
+      return toDateKey(addDays(parseDateKey(weekKey), 3)).slice(0, 7);
     },
-    [weeks],
+    [weekKeyAt],
   );
-
-  const cancelSettle = useCallback(() => {
-    if (settleTimerRef.current === null) return;
-
-    clearTimeout(settleTimerRef.current);
-    settleTimerRef.current = null;
-  }, []);
-
-  /** 動きが止まったら知らせる。指が触れている間は、離してから数え直す。 */
-  const scheduleSettle = useCallback(() => {
-    cancelSettle();
-
-    settleTimerRef.current = setTimeout(() => {
-      settleTimerRef.current = null;
-      if (touchingRef.current) return;
-
-      const container = scrollRef.current;
-      if (!container) return;
-
-      notifyRef.current.onScrollSettle(monthAtScroll(container));
-    }, SETTLE_DELAY);
-  }, [cancelSettle, monthAtScroll]);
-
-  useEffect(() => cancelSettle, [cancelSettle]);
 
   useIsomorphicLayoutEffect(() => {
     const container = scrollRef.current;
@@ -337,22 +371,23 @@ export function ContinuousMonthView({
 
       if (target >= 0) {
         appliedTargetRef.current = scrollTarget.nonce;
-        container.scrollTop = target * WEEK_HEIGHT;
+        container.scrollTop = (geometry.lead + target) * WEEK_HEIGHT;
         rememberAnchor(container);
         return;
       }
     }
 
-    // 窓を張り直すと前後の週が増減し、見ていた内容が上下にずれる。
-    // 週の高さを固定にしてあるので、覚えておいた週が同じ位置に来るよう戻せる。
+    // 覚えておいた週の通し位置が動いていれば、その差だけ戻す。窓を張り直しただけなら
+    // 余白が同じぶん減る（増える）ので差は0になり、ここでは何もしない。
     const anchor = anchorRef.current;
     if (!anchor) return;
 
-    const index = weeks.findIndex((week) => week[0] === anchor.weekKey);
-    if (index < 0) return;
+    const absIndex = weeksBetween(geometry.originWeekKey, anchor.weekKey);
+    if (absIndex === anchor.absIndex) return;
 
-    container.scrollTop = index * WEEK_HEIGHT + anchor.offset;
-  }, [weeks, scrollTarget, rememberAnchor]);
+    container.scrollTop += (absIndex - anchor.absIndex) * WEEK_HEIGHT;
+    anchorRef.current = { ...anchor, absIndex };
+  }, [geometry, weeks, scrollTarget, rememberAnchor]);
 
   const handleScroll = useCallback(() => {
     const container = scrollRef.current;
@@ -366,21 +401,7 @@ export function ContinuousMonthView({
       visibleMonthRef.current = month;
       notifyRef.current.onVisibleMonthChange(month);
     }
-
-    scheduleSettle();
-  }, [monthAtScroll, rememberAnchor, scheduleSettle]);
-
-  // 指が触れている間は、離すまで「止まった」とみなさない。押している最中に窓を張り直すと、
-  // 位置の書き戻しが進行中のスクロールに上書きされ、見ていた位置が数ヶ月ぶんずれる。
-  const handleTouchStart = useCallback(() => {
-    touchingRef.current = true;
-    cancelSettle();
-  }, [cancelSettle]);
-
-  const handleTouchEnd = useCallback(() => {
-    touchingRef.current = false;
-    scheduleSettle();
-  }, [scheduleSettle]);
+  }, [monthAtScroll, rememberAnchor]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -409,14 +430,15 @@ export function ContinuousMonthView({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
         // ブラウザのネイティブ scroll anchoring は無効にし、窓を張り直したときの位置合わせを
         // 上の useIsomorphicLayoutEffect だけに任せる。両方が動くと、どちらの結果が残るかが
         // ブラウザ任せになり、ずれたときに原因を追えないため。
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
       >
+        {geometry.lead > 0 && (
+          <div aria-hidden style={{ ...VOID_STYLE, height: geometry.lead * WEEK_HEIGHT }} />
+        )}
+
         {weeks.map((week, weekIndex) => {
           const { segments, hiddenByColumn } = layoutByWeek[weekIndex];
           // 未取得の月をただの空白で描くと「予定が無い」と読めてしまう。
@@ -518,6 +540,8 @@ export function ContinuousMonthView({
             </div>
           );
         })}
+
+        {trail > 0 && <div aria-hidden style={{ ...VOID_STYLE, height: trail * WEEK_HEIGHT }} />}
       </div>
     </div>
   );

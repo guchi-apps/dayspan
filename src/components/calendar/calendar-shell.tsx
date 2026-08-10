@@ -14,13 +14,16 @@ import { LinearProgress } from "@/components/ui/linear-progress";
 import {
   addDays,
   getContinuousMonthWeeks,
+  getContinuousMonthSpan,
   getVisibleDays,
+  monthDistance,
   monthsOfWeeks,
   parseDateKey,
   parseMonthKey,
   shiftAnchor,
   shiftMonthKey,
   toDateKey,
+  VIRTUAL_MONTHS_AROUND,
   type CalendarView,
 } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
@@ -119,6 +122,26 @@ export function CalendarShell({
   const monthWeeks = useMemo(
     () => getContinuousMonthWeeks(parseMonthKey(monthCenter), weekStartsOn).weeks,
     [monthCenter, weekStartsOn],
+  );
+
+  /*
+   * スクロールできる範囲。保持している窓よりずっと広く取り、窓の外側は日付を並べない余白にする。
+   *
+   * 窓を張り直すたびに並びの長さが変わると、その上にあった週の位置も動き、見ていた場所へ
+   * scrollTop を書き戻さなければならない。書き戻しは指でなぞっている最中には効かず、
+   * 効かないまま週だけが増えると数ヶ月ぶん飛ぶ。余白で長さを固定しておけば、窓の張り直しは
+   * 位置に影響しないため、スクロールの最中でも張り直せる（＝止まらずに読み込みが続く）。
+   *
+   * 起点を動かすのは位置合わせの指示があったときだけ。そのときは絶対位置で合わせ直す。
+   */
+  const virtual = useMemo(
+    () =>
+      getContinuousMonthSpan(
+        parseMonthKey(scrollTarget.month),
+        weekStartsOn,
+        VIRTUAL_MONTHS_AROUND,
+      ),
+    [scrollTarget.month, weekStartsOn],
   );
 
   // 画面に出しうる月と、サーバーが描いてよこした月。前者に足りないぶんをAPIから足す。
@@ -360,22 +383,15 @@ export function CalendarShell({
     navigate(nav.view, utils.todayKey());
   };
 
-  /** スクロールで見えている月が変わったとき。見出しとURLだけを追従させる。 */
+  /** スクロールで見えている月が変わったとき。 */
   const handleVisibleMonthChange = (month: string) => {
     setScrolledMonth(month);
     syncMonthUrl(month);
-  };
 
-  /**
-   * スクロールが止まったとき。窓の中心を動かすのはここだけにする。
-   *
-   * 窓を張り直すと画面より上の週が増減するため、見ていた位置へ scrollTop を書き戻す必要がある。
-   * この書き戻しは、指でなぞっている最中や惰性で流れている最中には効かない
-   * （進行中のスクロールに上書きされる）。効かないまま週だけが増えると、見ていた位置が
-   * 張り直したぶんだけ過去へずれ、それがスクロールのたびに積み重なって数ヶ月飛ぶ。
-   */
-  const handleScrollSettle = (month: string) => {
-    if (month !== monthCenter) setMonthCenter(month);
+    // 窓の端へ近づいたら中心をずらし、先の月を前もって取りにいく。
+    // 1ヶ月ごとにずらすと週の並びを組み直す回数が増えるため、2ヶ月離れてから動かす。
+    // 張り直しても各週の位置は動かないため、スクロールの最中でも行ってよい。
+    if (Math.abs(monthDistance(monthCenter, month)) >= 2) setMonthCenter(month);
   };
 
   /** スクロールで画面の一番上に来た週が変わったとき。 */
@@ -541,9 +557,9 @@ export function CalendarShell({
           viewingEvent={viewingEvent}
           viewingTask={viewingTask}
           viewingReminder={viewingReminder}
+          virtual={virtual}
           onVisibleMonthChange={handleVisibleMonthChange}
           onVisibleWeekChange={handleVisibleWeekChange}
-          onScrollSettle={handleScrollSettle}
           onSwipe={moveDays}
           onSelectDay={(dateKey) => navigate("day1", dateKey)}
           onOpenEvent={openEvent}
@@ -604,9 +620,9 @@ function CalendarBody({
   viewingEvent,
   viewingTask,
   viewingReminder,
+  virtual,
   onVisibleMonthChange,
   onVisibleWeekChange,
-  onScrollSettle,
   onSwipe,
   onSelectDay,
   onOpenEvent,
@@ -643,9 +659,9 @@ function CalendarBody({
   viewingEvent: CalendarEventItem | null;
   viewingTask: TaskItem | null;
   viewingReminder: ReminderItem | null;
+  virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
   onVisibleWeekChange: (weekKey: string) => void;
-  onScrollSettle: (monthKey: string) => void;
   onSwipe: (deltaDays: number) => void;
   onSelectDay: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEventItem) => void;
@@ -749,9 +765,9 @@ function CalendarBody({
           utils={utils}
           scrollTarget={scrollTarget}
           pendingMonths={data.pendingMonths}
+          virtual={virtual}
           onVisibleMonthChange={onVisibleMonthChange}
           onVisibleWeekChange={onVisibleWeekChange}
-          onScrollSettle={onScrollSettle}
           onSelectDay={onSelectDay}
           onQuickAdd={onQuickAddOnDay}
           onOpenEvent={onOpenEvent}
