@@ -10,6 +10,7 @@ type PropertyValue = {
   rich_text?: Array<{ plain_text?: string }>;
   select?: { name?: string } | null;
   date?: { start?: string | null } | null;
+  checkbox?: boolean;
 };
 type Page = { id: string; url?: string; properties?: Record<string, PropertyValue> };
 
@@ -20,6 +21,7 @@ function normalize(page: Page, map: ReminderPropertyMap): ReminderItem | null {
   const get = (field: keyof ReminderPropertyMap) => map[field] ? page.properties?.[map[field]!] : undefined;
   const date = get("date")?.date?.start ?? null;
   if (!date) return null;
+  const annualProperty = get("annual");
   return {
     kind: "reminder",
     id: page.id,
@@ -28,6 +30,7 @@ function normalize(page: Page, map: ReminderPropertyMap): ReminderItem | null {
     hasTime: date.includes("T"),
     category: get("category")?.select?.name ?? null,
     memo: text(get("memo")?.rich_text) || null,
+    annual: annualProperty ? Boolean(annualProperty.checkbox) : null,
     url: page.url ?? null,
   };
 }
