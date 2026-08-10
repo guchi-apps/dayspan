@@ -45,6 +45,7 @@ export function ItemDialog({
   calendars = [],
   tagCatalog = EMPTY_TAG_CATALOG,
   timeZone,
+  weekStartsOn = 0,
   onClose,
   onSaved,
 }: {
@@ -55,6 +56,8 @@ export function ItemDialog({
   /** 登録済みのタグ・種類。設定画面で登録したものを入力の候補として渡す。 */
   tagCatalog?: TagCatalog;
   timeZone: string;
+  /** 繰り返す曜日を並べる順に使う。予定を扱わない画面では渡さない。 */
+  weekStartsOn?: number;
   onClose: () => void;
   /** 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onSaved: (touched: TouchedRange[] | null) => void;
@@ -125,7 +128,12 @@ export function ItemDialog({
         </DialogHeader>
 
         {kind === "event" && drafts.event && (
-          <EventForm {...shared} draft={drafts.event} calendars={calendars} />
+          <EventForm
+            {...shared}
+            draft={drafts.event}
+            calendars={calendars}
+            weekStartsOn={weekStartsOn}
+          />
         )}
         {kind === "task" && drafts.task && (
           <TaskForm {...shared} draft={drafts.task} tagOptions={tagCatalog.task ?? []} />

@@ -21,6 +21,7 @@ import {
   buildRecurrenceRule,
   NO_RECURRENCE,
   recurrenceError,
+  withStart,
   type RecurrenceInput,
 } from "./recurrence-rule";
 import { readErrorMessage } from "./response-error";
@@ -44,6 +45,7 @@ export function EventForm({
   draft,
   calendars,
   timeZone,
+  weekStartsOn,
   title,
   autoFocusTitle,
   onTitleChange,
@@ -53,6 +55,8 @@ export function EventForm({
   draft: EventDraft;
   calendars: WritableCalendar[];
   timeZone: string;
+  /** 繰り返す曜日を並べる順に使う。設定画面で選んだ週の開始曜日（0=日曜）。 */
+  weekStartsOn: number;
   /** タイトルは種類を切り替えても引き継ぐため、ItemDialog が持つ。 */
   title: string;
   autoFocusTitle: boolean;
@@ -97,6 +101,8 @@ export function EventForm({
       setEnd(dateToInput(nextEnd, allDay));
     }
 
+    // 毎週の曜日は開始日から入る。自分で選び直していない間は、新しい開始日の曜日へ移す。
+    setRecurrence((current) => withStart(current, start, value));
     setStart(value);
   };
 
@@ -274,7 +280,14 @@ export function EventForm({
           onChange={setCalendarId}
         />
 
-        {!editing && <RecurrenceFields value={recurrence} onChange={setRecurrence} />}
+        {!editing && (
+          <RecurrenceFields
+            value={recurrence}
+            start={start}
+            weekStartsOn={weekStartsOn}
+            onChange={setRecurrence}
+          />
+        )}
 
         <Input
           id="event-location"

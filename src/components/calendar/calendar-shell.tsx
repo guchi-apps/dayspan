@@ -810,6 +810,7 @@ function CalendarBody({
           calendars={data.calendars}
           tagCatalog={tagCatalog}
           timeZone={timeZone}
+          weekStartsOn={weekStartsOn}
           onClose={onCloseDialogs}
           onSaved={handleSaved}
         />
