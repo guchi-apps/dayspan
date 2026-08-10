@@ -12,6 +12,8 @@ export type RecurrenceEnd = "never" | "until" | "count";
 
 export type RecurrenceInput = {
   frequency: RecurrenceFrequency;
+  /** 毎週のときに繰り返す曜日（0=日曜）。毎週以外では使わない。 */
+  weekdays: number[];
   /** 何日・何週間・何か月・何年ごとに繰り返すか。 */
   interval: string;
   end: RecurrenceEnd;
@@ -23,6 +25,7 @@ export type RecurrenceInput = {
 
 export const NO_RECURRENCE: RecurrenceInput = {
   frequency: "none",
+  weekdays: [],
   interval: "1",
   end: "never",
   until: "",
@@ -42,6 +45,76 @@ export const END_OPTIONS: { value: RecurrenceEnd; label: string }[] = [
   { value: "until", label: "日付まで" },
   { value: "count", label: "回数まで" },
 ];
+
+/** 曜日の並びと表記。RRULE の BYDAY は日曜始まりの2文字。 */
+export const WEEKDAYS: { value: number; label: string; code: string }[] = [
+  { value: 0, label: "日", code: "SU" },
+  { value: 1, label: "月", code: "MO" },
+  { value: 2, label: "火", code: "TU" },
+  { value: 3, label: "水", code: "WE" },
+  { value: 4, label: "木", code: "TH" },
+  { value: 5, label: "金", code: "FR" },
+  { value: 6, label: "土", code: "SA" },
+];
+
+/** 週の開始曜日（設定画面の値）から、チップを並べる順を作る。 */
+export function orderedWeekdays(weekStartsOn: number) {
+  const start = ((weekStartsOn % 7) + 7) % 7;
+  return WEEKDAYS.map((_, index) => WEEKDAYS[(start + index) % 7]);
+}
+
+/**
+ * 頻度を変えたあとの値。毎週にしたときは開始日の曜日を選んでおく。
+ * 複数選択の欄が空のまま現れると、何も繰り返さないように見えるため。
+ */
+export function withFrequency(
+  input: RecurrenceInput,
+  frequency: RecurrenceFrequency,
+  start: string,
+): RecurrenceInput {
+  if (frequency !== "WEEKLY") return { ...input, frequency };
+
+  const weekday = weekdayOf(start);
+  const weekdays =
+    input.weekdays.length > 0 || weekday === null ? input.weekdays : [weekday];
+
+  return { ...input, frequency, weekdays };
+}
+
+/**
+ * 開始日を変えたあとの値。曜日を自分で選び直していない間だけ、新しい開始日の曜日へ移す。
+ * 選び直したあとに動かすと、指定した曜日が黙って書き換わってしまうため。
+ */
+export function withStart(
+  input: RecurrenceInput,
+  previousStart: string,
+  nextStart: string,
+): RecurrenceInput {
+  if (input.frequency !== "WEEKLY") return input;
+
+  const previous = weekdayOf(previousStart);
+  const next = weekdayOf(nextStart);
+  if (previous === null || next === null || next === previous) return input;
+  if (input.weekdays.length !== 1 || input.weekdays[0] !== previous) return input;
+
+  return { ...input, weekdays: [next] };
+}
+
+/** 曜日の選択を入れ替える。 */
+export function toggleWeekday(input: RecurrenceInput, weekday: number): RecurrenceInput {
+  const weekdays = input.weekdays.includes(weekday)
+    ? input.weekdays.filter((value) => value !== weekday)
+    : [...input.weekdays, weekday].sort((a, b) => a - b);
+
+  return { ...input, weekdays };
+}
+
+/** 入力欄の値（YYYY-MM-DD もしくは YYYY-MM-DDTHH:mm）の曜日。日付が無ければ null。 */
+function weekdayOf(value: string): number | null {
+  // 日付だけをUTC正午で扱い、タイムゾーンによる日付ずれを避ける。
+  const date = new Date(`${value.slice(0, 10)}T12:00:00Z`);
+  return Number.isNaN(date.getTime()) ? null : date.getUTCDay();
+}
 
 /**
  * 間隔の入力欄に出すラベル。単位は頻度で変わるため、欄の外に単位を並べずラベルへ含める。
@@ -66,6 +139,10 @@ export function recurrenceError(input: RecurrenceInput, start: string): string |
 
   if (!isPositiveInteger(input.interval)) {
     return "繰り返しの間隔は1以上の数字で入力してください。";
+  }
+
+  if (input.frequency === "WEEKLY" && input.weekdays.length === 0) {
+    return "繰り返す曜日を1つ以上選んでください。";
   }
 
   if (input.end === "until") {
@@ -99,6 +176,14 @@ export function buildRecurrenceRule(
   // 「1週間ごと」と冗長になるため省く。
   const interval = Number(input.interval);
   if (interval > 1) parts.push(`INTERVAL=${interval}`);
+
+  // 毎週は曜日を複数指定できる。BYDAY が無いと開始日の曜日だけになる。
+  if (input.frequency === "WEEKLY" && input.weekdays.length > 0) {
+    const codes = [...input.weekdays]
+      .sort((a, b) => a - b)
+      .map((weekday) => WEEKDAYS[weekday].code);
+    parts.push(`BYDAY=${codes.join(",")}`);
+  }
 
   if (input.end === "until") {
     parts.push(`UNTIL=${untilValue(input.until, allDay, timeZone)}`);
