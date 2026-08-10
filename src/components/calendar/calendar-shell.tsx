@@ -699,6 +699,7 @@ function CalendarBody({
           days={days}
           events={data.events}
           tasks={data.tasks}
+          reminders={data.reminders}
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
