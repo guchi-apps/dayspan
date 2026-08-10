@@ -1,6 +1,6 @@
 name: Claude Code Review (develop向けPR)
 
-# m-guchi/issue-deck からコピーして移植したワークフロー。
+# guchi-apps/issue-deck からコピーして移植したワークフロー。
 # 移植元コミット: b198601c22aea091124b9734326032ec65b6cee1
 # 移植の手順・観点は issue-deck の docs/cross-repo-setup-guide.md を参照する。
 #
@@ -244,7 +244,7 @@ jobs:
         continue-on-error: true
         uses: actions/checkout@v4
         with:
-          repository: ${{ vars.SHARED_CONTEXT_REPO || 'm-guchi/docs' }}
+          repository: ${{ vars.SHARED_CONTEXT_REPO || 'guchi-apps/docs' }}
           ref: ${{ vars.SHARED_CONTEXT_REF || 'main' }}
           path: .shared-context
           fetch-depth: 1
@@ -306,7 +306,7 @@ jobs:
               混入していれば必ず指摘し、自動マージ不可として扱う
 
             ## 全アプリ共通の共有知識（`.shared-context/`）
-            ワークツリー内の`.shared-context/`に、全アプリ共通の知識リポジトリ（`m-guchi/docs`）が
+            ワークツリー内の`.shared-context/`に、全アプリ共通の知識リポジトリ（`guchi-apps/docs`）が
             チェックアウトされています。レビューに必要な範囲だけ読んでください。
 
             - `.shared-context/CLAUDE.md` — 共有知識の索引・読む順序
