@@ -7,6 +7,7 @@ import {
   History,
   LayoutGrid,
   NotebookPen,
+  Tags,
   UserRound,
 } from "lucide-react";
 
@@ -56,6 +57,15 @@ export default async function SettingsPage() {
                 : (notionConnection.taskTitle ?? "接続済み")
           }
         />
+        {/* タグはNotionのプロパティ選択肢が実体のため、接続前は開いても何も出せない。 */}
+        {notionConnection && (
+          <MenuItem
+            href="/settings/tags"
+            icon={Tags}
+            label="タグ"
+            value="タスクのタグと日付リマインドの種類"
+          />
+        )}
         <MenuItem
           href="/settings/display"
           icon={LayoutGrid}

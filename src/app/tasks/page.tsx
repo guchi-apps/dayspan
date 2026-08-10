@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
+import { loadTagCatalog } from "@/services/notion/tag-options";
 import { listAllTasks } from "@/services/notion/tasks";
 import type { TaskItem } from "@/types/calendar";
 
@@ -23,8 +24,10 @@ export default async function TasksPage() {
   if (!connection?.taskDataSourceId) return <ConnectPrompt />;
 
   // 取得に失敗しても画面は開けるようにする。原因を画面上に出して再取得できる状態を保つ。
+  // タグの取得は失敗しても空になるだけで、タスクの表示は妨げない。
   let tasks: TaskItem[] = [];
   let loadError: string | null = null;
+  const tagCatalogPromise = loadTagCatalog(connection);
   try {
     tasks = await listAllTasks(createNotionClient(connection), connection);
   } catch {
@@ -34,6 +37,7 @@ export default async function TasksPage() {
   return (
     <TaskList
       tasks={tasks}
+      tagCatalog={await tagCatalogPromise}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
       loadError={loadError}
     />

@@ -18,8 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TagPicker } from "@/components/tags/tag-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { RECURRENCE_PRESETS } from "@/services/notion/recurrence";
+import type { TagOption } from "@/services/notion/tag-options";
 import type { TaskItem } from "@/types/calendar";
 
 import { DateTimeInput } from "./date-time-input";
@@ -47,6 +49,7 @@ export type TaskDraft = {
 export function TaskForm({
   draft,
   timeZone,
+  tagOptions,
   title,
   autoFocusTitle,
   onTitleChange,
@@ -55,6 +58,8 @@ export function TaskForm({
 }: {
   draft: TaskDraft;
   timeZone: string;
+  /** 設定画面で登録済みのタグ。無い名前もここから足せる（Notionが選択肢を増やす）。 */
+  tagOptions: TagOption[];
   /** タイトルは種類を切り替えても引き継ぐため、ItemDialog が持つ。 */
   title: string;
   autoFocusTitle: boolean;
@@ -70,7 +75,7 @@ export function TaskForm({
   const [done, setDone] = useState(editing?.done ?? false);
   const [priority, setPriority] = useState(editing?.priority ?? NO_VALUE);
   const [memo, setMemo] = useState(editing?.memo ?? "");
-  const [tags, setTags] = useState((editing?.tags ?? []).join(", "));
+  const [tags, setTags] = useState<string[]>(editing?.tags ?? []);
   const [recurrence, setRecurrence] = useState(editing?.recurrence ?? "なし");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,10 +123,7 @@ export function TaskForm({
         done,
         priority: priority === NO_VALUE ? null : priority,
         memo: memo.trim() || null,
-        tags: tags
-          .split(/[,、]/)
-          .map((value) => value.trim())
-          .filter(Boolean),
+        tags,
         recurrence,
       };
 
@@ -240,13 +242,7 @@ export function TaskForm({
           </Select>
         </div>
 
-        <Input
-          id="task-tags"
-          label="タグ"
-          placeholder="カンマ区切り"
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-        />
+        <TagPicker label="タグ" options={tagOptions} value={tags} multiple onChange={setTags} />
 
         <Textarea
           id="task-memo"

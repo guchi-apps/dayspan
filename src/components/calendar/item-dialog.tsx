@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
 import type { WritableCalendar } from "@/types/calendar";
 
 import { EventForm, type EventDraft } from "./event-form";
@@ -42,7 +43,7 @@ export function ItemDialog({
   initialKind,
   drafts,
   calendars = [],
-  reminderCategories = [],
+  tagCatalog = EMPTY_TAG_CATALOG,
   timeZone,
   onClose,
   onSaved,
@@ -51,8 +52,8 @@ export function ItemDialog({
   drafts: ItemDrafts;
   /** 予定の保存先。予定を扱わない画面（タスク・日付リマインド一覧）では渡さない。 */
   calendars?: WritableCalendar[];
-  /** 日付リマインドの種類の候補。すでに使われている名前を入力の補助として渡す。 */
-  reminderCategories?: string[];
+  /** 登録済みのタグ・種類。設定画面で登録したものを入力の候補として渡す。 */
+  tagCatalog?: TagCatalog;
   timeZone: string;
   onClose: () => void;
   /** 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
@@ -126,9 +127,15 @@ export function ItemDialog({
         {kind === "event" && drafts.event && (
           <EventForm {...shared} draft={drafts.event} calendars={calendars} />
         )}
-        {kind === "task" && drafts.task && <TaskForm {...shared} draft={drafts.task} />}
+        {kind === "task" && drafts.task && (
+          <TaskForm {...shared} draft={drafts.task} tagOptions={tagCatalog.task ?? []} />
+        )}
         {kind === "reminder" && drafts.reminder && (
-          <ReminderForm {...shared} draft={drafts.reminder} categories={reminderCategories} />
+          <ReminderForm
+            {...shared}
+            draft={drafts.reminder}
+            categories={tagCatalog.reminder ?? []}
+          />
         )}
       </DialogContent>
     </Dialog>

@@ -25,6 +25,7 @@ import {
   type CalendarView,
 } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
+import type { TagCatalog } from "@/services/notion/tag-options";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
@@ -67,6 +68,7 @@ export function CalendarShell({
   days,
   weeks,
   dataPromise,
+  tagCatalogPromise,
   weekStartsOn,
   timeZone,
   autoRefreshSeconds,
@@ -76,6 +78,11 @@ export function CalendarShell({
   days: string[];
   weeks: string[][];
   dataPromise: Promise<CalendarLoadResult>;
+  /**
+   * 登録済みのタグ・種類。予定・タスクの取得とは別に解決させる。
+   * 月をまたぐたびに取り直す必要は無く、Notionへの往復をそのぶん増やさずに済む。
+   */
+  tagCatalogPromise: Promise<TagCatalog>;
   weekStartsOn: number;
   timeZone: string;
   autoRefreshSeconds: number;
@@ -515,6 +522,7 @@ export function CalendarShell({
       <Suspense fallback={<CalendarGridSkeleton />}>
         <CalendarBody
           dataPromise={dataPromise}
+          tagCatalogPromise={tagCatalogPromise}
           view={view}
           days={gridDays}
           weeks={view === "month" ? monthWeeks : weeks}
@@ -577,6 +585,7 @@ function syncMonthUrl(month: string) {
 /** 取得した予定とタスクに依存する部分。ここだけが読み込みを待つ。 */
 function CalendarBody({
   dataPromise,
+  tagCatalogPromise,
   view,
   days,
   weeks,
@@ -615,6 +624,7 @@ function CalendarBody({
   onLoadingChange,
 }: {
   dataPromise: Promise<CalendarLoadResult>;
+  tagCatalogPromise: Promise<TagCatalog>;
   view: CalendarView;
   days: string[];
   weeks: string[][];
@@ -654,6 +664,7 @@ function CalendarBody({
   onLoadingChange: (loading: boolean) => void;
 }) {
   const initial = use(dataPromise);
+  const tagCatalog = use(tagCatalogPromise);
 
   // 月表示だけは、前後の月ぶんをここで保持して足りない月だけ取りにいく。
   const data = useCalendarChunks({
@@ -681,15 +692,6 @@ function CalendarBody({
 
     data.invalidate(touched === null ? null : monthsOfRanges(touched));
   };
-
-  // 日付リマインドの種類は利用者が自由に決める。取得済みの項目から候補を作る。
-  const reminderCategories = useMemo(
-    () =>
-      Array.from(
-        new Set(data.reminders.map((reminder) => reminder.category).filter((v) => v !== null)),
-      ).sort(),
-    [data.reminders],
-  );
 
   /** 表示画面のままの完了切り替え。編集フォームを経由しないため保存とは別経路で送る。 */
   const handleToggleTaskDone = async (task: TaskItem, done: boolean) => {
@@ -777,7 +779,7 @@ function CalendarBody({
           initialKind={itemDialog.initialKind}
           drafts={itemDialog.drafts}
           calendars={data.calendars}
-          reminderCategories={reminderCategories}
+          tagCatalog={tagCatalog}
           timeZone={timeZone}
           onClose={onCloseDialogs}
           onSaved={handleSaved}
@@ -809,6 +811,7 @@ function CalendarBody({
       {viewingTask && (
         <TaskDetailDialog
           task={viewingTask}
+          tagOptions={tagCatalog.task ?? []}
           timeZone={timeZone}
           readOnly={offline}
           onClose={onCloseDialogs}
@@ -820,6 +823,7 @@ function CalendarBody({
       {viewingReminder && (
         <ReminderDetailDialog
           reminder={viewingReminder}
+          categoryOptions={tagCatalog.reminder ?? []}
           timeZone={timeZone}
           readOnly={offline}
           onClose={onCloseDialogs}

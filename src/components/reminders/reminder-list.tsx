@@ -10,11 +10,14 @@ import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { toReminderDraft, type ReminderDraft } from "@/components/calendar/reminder-form";
 import { ReminderDetailDialog } from "@/components/calendar/reminder-detail-dialog";
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
+import { TagChip } from "@/components/tags/tag-chip";
+import { tagColorOf } from "@/components/tags/tag-color";
 import { OfflineNotice } from "@/components/offline/offline-notice";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LinearProgress } from "@/components/ui/linear-progress";
+import type { TagCatalog } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
 function groupByYear(reminders: ReminderItem[]) {
@@ -30,10 +33,13 @@ function groupByYear(reminders: ReminderItem[]) {
 
 export function ReminderList({
   reminders,
+  tagCatalog,
   timeZone,
   loadError,
 }: {
   reminders: ReminderItem[];
+  /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
+  tagCatalog: TagCatalog;
   timeZone: string;
   loadError: string | null;
 }) {
@@ -49,15 +55,6 @@ export function ReminderList({
 
   const sorted = useMemo(() => [...reminders].sort((a, b) => a.date.localeCompare(b.date)), [reminders]);
   const grouped = useMemo(() => groupByYear(sorted), [sorted]);
-
-  // 種類はNotionのselect。すでに使われている名前を入力の候補として渡す。
-  const categories = useMemo(
-    () =>
-      Array.from(
-        new Set(reminders.map((reminder) => reminder.category).filter((v) => v !== null)),
-      ).sort(),
-    [reminders],
-  );
 
   const edit = (reminder: ReminderItem) => {
     if (offline) return;
@@ -100,7 +97,12 @@ export function ReminderList({
                       <div className="type-body-small flex flex-wrap items-center gap-1.5 text-on-surface-variant">
                         <span>{reminder.date.slice(0, 10)}</span>
                         {reminder.annual !== null && <Badge variant="outline">{reminder.annual ? "毎年" : "単発"}</Badge>}
-                        {reminder.category && <Badge variant="secondary">{reminder.category}</Badge>}
+                        {reminder.category && (
+                          <TagChip
+                            name={reminder.category}
+                            color={tagColorOf(tagCatalog.reminder ?? [], reminder.category)}
+                          />
+                        )}
                         {reminder.memo && <span className="clip-nowrap">{reminder.memo}</span>}
                       </div>
                     </div>
@@ -129,7 +131,7 @@ export function ReminderList({
         <ItemDialog
           initialKind="reminder"
           drafts={{ reminder: draft }}
-          reminderCategories={categories}
+          tagCatalog={tagCatalog}
           timeZone={timeZone}
           onClose={() => setDraft(null)}
           onSaved={() => {
@@ -142,6 +144,7 @@ export function ReminderList({
       {viewing && (
         <ReminderDetailDialog
           reminder={viewing}
+          categoryOptions={tagCatalog.reminder ?? []}
           timeZone={timeZone}
           readOnly={offline}
           onClose={() => setViewing(null)}
