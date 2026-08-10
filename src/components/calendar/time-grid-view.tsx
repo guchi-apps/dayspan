@@ -4,7 +4,7 @@ import { memo, useMemo, useSyncExternalStore } from "react";
 
 import { cn } from "@/lib/utils";
 import { eventColors } from "./calendar-color";
-import type { CalendarEventItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, ReminderItem, TaskItem } from "@/types/calendar";
 
 import {
   GRID_HEIGHT,
@@ -35,6 +35,7 @@ export function TimeGridView({
   days,
   events,
   tasks,
+  reminders,
   utils,
   onOpenEvent,
   onOpenTask,
@@ -47,6 +48,7 @@ export function TimeGridView({
   days: string[];
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
@@ -132,6 +134,7 @@ export function TimeGridView({
         swipeSnapping={swipeSnapping}
         events={events}
         tasks={tasks}
+        reminders={reminders}
         utils={utils}
         rowRef={allDayRowRef}
         preview={allDayPreview}
@@ -182,6 +185,7 @@ export function TimeGridView({
                 days={paneDays}
                 events={events}
                 tasks={tasks}
+                reminders={reminders}
                 utils={utils}
                 // 掴んでいる予定は、表示中の期間の中でだけ動かす。
                 preview={isCenter ? preview : null}
@@ -284,6 +288,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   days,
   events,
   tasks,
+  reminders,
   utils,
   preview,
   onStartDrag,
@@ -295,6 +300,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   days: string[];
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   preview: DragPreview | null;
   onStartDrag: (
@@ -325,6 +331,9 @@ const DayColumnsPane = memo(function DayColumnsPane({
             (event) => !event.allDay && utils.eventCoversDay(event, dateKey),
           )}
           tasks={tasks.filter((task) => task.hasTime && utils.taskCoversDay(task, dateKey))}
+          reminders={reminders.filter(
+            (reminder) => reminder.hasTime && utils.itemDateKey(reminder.date) === dateKey,
+          )}
         />
       ))}
     </div>
@@ -336,6 +345,7 @@ function DayColumn({
   dayIndex,
   events,
   tasks,
+  reminders,
   utils,
   preview,
   onStartDrag,
@@ -348,6 +358,7 @@ function DayColumn({
   dayIndex: number;
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   preview: DragPreview | null;
   onStartDrag: (
@@ -557,7 +568,58 @@ function DayColumn({
           </span>
         </button>
       ))}
+
+      {/* 日付リマインドは編集の対象ではないため、掴めない印（時刻の点）として置き、押すとNotionの元ページを開く。 */}
+      {reminders.map((reminder) => (
+        <ReminderMarker
+          key={reminder.id}
+          reminder={reminder}
+          top={(utils.minutesFromMidnight(reminder.date) / MINUTES_PER_DAY) * GRID_HEIGHT}
+          time={utils.formatTime(reminder.date)}
+        />
+      ))}
     </div>
+  );
+}
+
+/** 時刻付きの日付リマインド。予定・タスクと違い、時間グリッド上では動かせない。 */
+function ReminderMarker({
+  reminder,
+  top,
+  time,
+}: {
+  reminder: ReminderItem;
+  top: number;
+  time: string;
+}) {
+  const content = (
+    <>
+      <span aria-hidden className="h-2.5 w-0.5 shrink-0 bg-tertiary" />
+      <span className="h-px flex-1 bg-tertiary/45" />
+      <span className="type-label-small clip-nowrap max-w-[78%] rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-on-tertiary-container">
+        {reminder.title}
+      </span>
+    </>
+  );
+
+  const className = "absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1";
+  const title = `${time} ${reminder.title}`;
+
+  return reminder.url ? (
+    <a
+      href={reminder.url}
+      target="_blank"
+      rel="noreferrer"
+      className={className}
+      style={{ top }}
+      title={title}
+    >
+      {content}
+    </a>
+  ) : (
+    <span className={className} style={{ top }} title={title}>
+      {content}
+    </span>
   );
 }
 
@@ -567,6 +629,7 @@ function AllDayArea({
   swipeSnapping,
   events,
   tasks,
+  reminders,
   utils,
   rowRef,
   preview,
@@ -582,6 +645,7 @@ function AllDayArea({
   swipeSnapping: boolean;
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   rowRef: React.Ref<HTMLDivElement>;
   preview: AllDayDragPreview | null;
@@ -611,6 +675,7 @@ function AllDayArea({
             days={paneDays}
             events={events}
             tasks={tasks}
+            reminders={reminders}
             utils={utils}
             preview={isCenter ? preview : null}
             onStartDrag={onStartDrag}
@@ -643,12 +708,22 @@ type AllDaySegment =
       lane: number;
       continuesBefore: false;
       continuesAfter: false;
+    }
+  | {
+      kind: "reminder";
+      item: ReminderItem;
+      column: number;
+      span: 1;
+      lane: number;
+      continuesBefore: false;
+      continuesAfter: false;
     };
 
 const AllDayPane = memo(function AllDayPane({
   days,
   events,
   tasks,
+  reminders,
   utils,
   preview,
   onStartDrag,
@@ -659,6 +734,7 @@ const AllDayPane = memo(function AllDayPane({
   days: string[];
   events: CalendarEventItem[];
   tasks: TaskItem[];
+  reminders: ReminderItem[];
   utils: CalendarDateUtils;
   preview: AllDayDragPreview | null;
   onStartDrag: (event: React.PointerEvent, target: AllDayDragTarget) => void;
@@ -728,6 +804,15 @@ const AllDayPane = memo(function AllDayPane({
       raw.push({ kind: "task", item: task, column, span: 1, continuesBefore: false, continuesAfter: false });
     }
 
+    for (const reminder of reminders) {
+      if (reminder.hasTime) continue;
+
+      const column = position.get(utils.itemDateKey(reminder.date));
+      if (column === undefined) continue;
+
+      raw.push({ kind: "reminder", item: reminder, column, span: 1, continuesBefore: false, continuesAfter: false });
+    }
+
     // 日をまたぐ帯を先に上の段へ置く。後から来た1日ぶんの項目が、帯の空いている段へ
     // 潜り込んで帯を分断しないようにするため（continuous-month-view.tsx と同じ考え方）。
     raw.sort((a, b) => {
@@ -770,7 +855,7 @@ const AllDayPane = memo(function AllDayPane({
     }
 
     return { segments, laneCount: occupied.length };
-  }, [days, events, tasks, preview, utils]);
+  }, [days, events, tasks, reminders, preview, utils]);
 
   return (
     <div className="relative min-h-9 w-full">
@@ -804,7 +889,9 @@ const AllDayPane = memo(function AllDayPane({
               gridRow: segment.lane + 1,
             }}
           >
-            {segment.kind === "event" ? (
+            {segment.kind === "reminder" ? (
+              <AllDayReminderChip reminder={segment.item} />
+            ) : segment.kind === "event" ? (
               <button
                 type="button"
                 onPointerDown={(e) => onStartDrag(e, { kind: "event", item: segment.item })}
@@ -859,6 +946,32 @@ const AllDayPane = memo(function AllDayPane({
     </div>
   );
 });
+
+/**
+ * 終日エリアに置く日付リマインド。押すとNotionの元ページを開く（docs/spec.md §9）。
+ * 予定・タスクと違いDaySpanからは編集できないため、掴めるようには見せない。
+ */
+function AllDayReminderChip({ reminder }: { reminder: ReminderItem }) {
+  const content = (
+    <>
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
+      <span className="clip-nowrap">{reminder.title}</span>
+    </>
+  );
+
+  const className =
+    "type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-tertiary/40 bg-tertiary-container px-1.5 py-0.5 text-left text-on-tertiary-container";
+
+  return reminder.url ? (
+    <a href={reminder.url} target="_blank" rel="noreferrer" className={className} title={reminder.title}>
+      {content}
+    </a>
+  ) : (
+    <span className={className} title={reminder.title}>
+      {content}
+    </span>
+  );
+}
 
 /** YYYY-MM-DD を日数分ずらす。UTC正午で扱い、タイムゾーンによる日付ずれを避ける。 */
 function shiftDateKey(dateKey: string, days: number): string {
