@@ -11,12 +11,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
 import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { LocationInput } from "./location-input";
 import { RecurrenceFields } from "./recurrence-fields";
 import {
   buildRecurrenceRule,
@@ -45,6 +47,7 @@ export type EventDraft = {
 export function EventForm({
   draft,
   calendars,
+  placeCatalog,
   timeZone,
   weekStartsOn,
   title,
@@ -55,6 +58,8 @@ export function EventForm({
 }: {
   draft: EventDraft;
   calendars: WritableCalendar[];
+  /** 場所欄の入力候補。Notionの場所DBに登録済みのもの。 */
+  placeCatalog: PlaceCatalog;
   timeZone: string;
   /** 繰り返す曜日を並べる順に使う。設定画面で選んだ週の開始曜日（0=日曜）。 */
   weekStartsOn: number;
@@ -274,11 +279,12 @@ export function EventForm({
           />
         )}
 
-        <Input
-          id="event-location"
-          label="場所"
+        <LocationInput
           value={location}
-          onChange={(e) => setLocation(e.target.value)}
+          onChange={setLocation}
+          places={placeCatalog.places}
+          eventTitle={title}
+          placeDatabaseReady={placeCatalog.ready}
         />
 
         <Textarea

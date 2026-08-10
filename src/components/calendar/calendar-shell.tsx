@@ -27,6 +27,7 @@ import {
   type CalendarView,
 } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
+import type { PlaceCatalog } from "@/services/notion/places";
 import type { TagCatalog } from "@/services/notion/tag-options";
 import type {
   CalendarEventItem,
@@ -71,6 +72,7 @@ export function CalendarShell({
   weeks,
   dataPromise,
   tagCatalogPromise,
+  placeCatalogPromise,
   weekStartsOn,
   timeZone,
   autoRefreshSeconds,
@@ -85,6 +87,8 @@ export function CalendarShell({
    * 月をまたぐたびに取り直す必要は無く、Notionへの往復をそのぶん増やさずに済む。
    */
   tagCatalogPromise: Promise<TagCatalog>;
+  /** 登録済みの場所。タグ・種類と同じく、月をまたいでも変わらないため別に解決させる。 */
+  placeCatalogPromise: Promise<PlaceCatalog>;
   weekStartsOn: number;
   timeZone: string;
   autoRefreshSeconds: number;
@@ -548,6 +552,7 @@ export function CalendarShell({
         <CalendarBody
           dataPromise={dataPromise}
           tagCatalogPromise={tagCatalogPromise}
+          placeCatalogPromise={placeCatalogPromise}
           view={view}
           days={gridDays}
           weeks={view === "month" ? monthWeeks : weeks}
@@ -612,6 +617,7 @@ function syncMonthUrl(month: string) {
 function CalendarBody({
   dataPromise,
   tagCatalogPromise,
+  placeCatalogPromise,
   view,
   days,
   weeks,
@@ -652,6 +658,7 @@ function CalendarBody({
 }: {
   dataPromise: Promise<CalendarLoadResult>;
   tagCatalogPromise: Promise<TagCatalog>;
+  placeCatalogPromise: Promise<PlaceCatalog>;
   view: CalendarView;
   days: string[];
   weeks: string[][];
@@ -693,6 +700,7 @@ function CalendarBody({
 }) {
   const initial = use(dataPromise);
   const tagCatalog = use(tagCatalogPromise);
+  const placeCatalog = use(placeCatalogPromise);
 
   // 月表示だけは、前後の月ぶんをここで保持して足りない月だけ取りにいく。
   const data = useCalendarChunks({
@@ -809,6 +817,7 @@ function CalendarBody({
           drafts={itemDialog.drafts}
           calendars={data.calendars}
           tagCatalog={tagCatalog}
+          placeCatalog={placeCatalog}
           timeZone={timeZone}
           weekStartsOn={weekStartsOn}
           onClose={onCloseDialogs}

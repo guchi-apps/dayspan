@@ -104,6 +104,12 @@ model NotionConnection {
   reminderTitle        String?
   reminderPropertyMap  Json?
 
+  // よく行く場所。予定の「場所」欄の入力候補として読むだけで、DaySpan側には保存しない。
+  placeDataSourceId String?
+  placeDatabaseId   String?
+  placeTitle        String?
+  placePropertyMap  Json?
+
   lastValidatedAt DateTime?
 
   createdAt DateTime @default(now())
