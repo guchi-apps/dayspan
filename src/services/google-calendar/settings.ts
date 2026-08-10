@@ -1,7 +1,18 @@
+import type { Prisma } from "@prisma/client";
+
 import { db } from "@/lib/db";
 
 import { calendarDisplayName, listCalendars, type GoogleCalendarListEntry } from "./calendars";
 import { GoogleReauthRequiredError } from "./tokens";
+
+/**
+ * 表示順。sortOrder が同じ行（並べ替えを一度もしていない古い設定）でも
+ * 画面ごとに並びが入れ替わらないよう、作成順を第二の基準にする。
+ */
+export const SETTING_ORDER: Prisma.CalendarSettingOrderByWithRelationInput[] = [
+  { sortOrder: "asc" },
+  { createdAt: "asc" },
+];
 
 export type CalendarSummary = {
   settingId: string;
@@ -49,17 +60,20 @@ export async function loadCalendarSettings(userId: string): Promise<CalendarSett
     }
 
     const settings = await ensureCalendarSettings(userId, account.id, entries);
-    const settingByCalendarId = new Map(settings.map((s) => [s.calendarId, s]));
+    const entryByCalendarId = new Map(entries.map((entry) => [entry.id, entry]));
 
-    for (const entry of entries) {
-      const setting = settingByCalendarId.get(entry.id);
-      if (!setting) continue;
+    // 並べ替えた順に返す。Google側の一覧の順ではなく設定の sortOrder が表示順なので、
+    // 設定の側から回す。Google側で削除・共有解除されたカレンダーは設定だけが残るため、
+    // 一覧に無いものは飛ばす。
+    for (const setting of settings) {
+      const entry = entryByCalendarId.get(setting.calendarId);
+      if (!entry) continue;
 
       calendars.push({
         settingId: setting.id,
         googleAccountId: account.id,
         accountEmail: account.email,
-        calendarId: entry.id,
+        calendarId: setting.calendarId,
         name: calendarDisplayName(entry),
         backgroundColor: entry.backgroundColor ?? null,
         primary: Boolean(entry.primary),
@@ -91,6 +105,10 @@ async function ensureCalendarSettings(
   const missing = entries.filter((entry) => !existingIds.has(entry.id));
 
   if (missing.length > 0) {
+    // 後から増えたカレンダーは末尾に足す。並べ替え済みの間に割り込むと、
+    // Google側でカレンダーが1つ増えただけで手で決めた並びが崩れるため。
+    const nextOrder = existing.reduce((max, s) => Math.max(max, s.sortOrder), -1) + 1;
+
     await db.calendarSetting.createMany({
       data: missing.map((entry, index) => ({
         userId,
@@ -98,13 +116,13 @@ async function ensureCalendarSettings(
         calendarId: entry.id,
         visible: entry.selected ?? Boolean(entry.primary),
         isCreateDefault: Boolean(entry.primary) && existing.length === 0,
-        sortOrder: existing.length + index,
+        sortOrder: nextOrder + index,
       })),
     });
   }
 
   return db.calendarSetting.findMany({
     where: { googleAccountId },
-    orderBy: { sortOrder: "asc" },
+    orderBy: SETTING_ORDER,
   });
 }

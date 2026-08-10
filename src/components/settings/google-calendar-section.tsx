@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,66 @@ export function GoogleCalendarSection({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busySettingId, setBusySettingId] = useState<string | null>(null);
+  const [orderError, setOrderError] = useState<string | null>(null);
+
+  // 並べ替えは押した直後に反映する。サーバーから取り直すとGoogleへのカレンダー一覧の
+  // 往復が挟まり、押してから動くまでが空いて効いていないように見えるため、
+  // 順番だけは手元に持って先に描画し、保存はその裏で行う。
+  const [orderedIds, setOrderedIds] = useState<string[] | null>(null);
+
+  const calendars = useMemo(() => {
+    const all = result.status === "ok" ? result.calendars : [];
+    if (!orderedIds) return all;
+
+    // 手元の並びに無いもの（この画面を開いた後にGoogle側で増えたカレンダー）は末尾へ回す。
+    const rank = new Map(orderedIds.map((id, index) => [id, index]));
+    const at = (settingId: string) => rank.get(settingId) ?? Number.MAX_SAFE_INTEGER;
+    return [...all].sort((a, b) => at(a.settingId) - at(b.settingId));
+  }, [result, orderedIds]);
+
+  const calendarsOf = (googleAccountId: string) =>
+    calendars.filter((calendar) => calendar.googleAccountId === googleAccountId);
+
+  // 並べ替えの保存は前のものが終わってから次を送る。連続で押したときに
+  // 応答の前後が入れ替わると、最後に押した並びで終わらないため。
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+
+  const saveOrder = async (googleAccountId: string, settingIds: string[]) => {
+    try {
+      const response = await fetch("/api/google/calendars/order", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ googleAccountId, settingIds }),
+      });
+      if (!response.ok) throw new Error(`order request failed: ${response.status}`);
+    } catch {
+      // 保存できていないのに画面だけ並び替わったままにしない。手元の並びは捨て、
+      // 保存されている並びを取り直して見せる。
+      setOrderedIds(null);
+      setOrderError("表示順を保存できませんでした。");
+      startTransition(() => router.refresh());
+    }
+  };
+
+  /** 同じアカウントの中で、カレンダーを1つ上（-1）・下（+1）へ動かす。 */
+  const move = (googleAccountId: string, settingId: string, delta: number) => {
+    const group = calendarsOf(googleAccountId).map((calendar) => calendar.settingId);
+
+    const from = group.indexOf(settingId);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= group.length) return;
+    [group[from], group[to]] = [group[to], group[from]];
+
+    // 画面には複数アカウントのカレンダーが並ぶ。動かしたアカウントの分だけ差し替える。
+    let cursor = 0;
+    const next = calendars.map((calendar) =>
+      calendar.googleAccountId === googleAccountId ? group[cursor++] : calendar.settingId,
+    );
+
+    setOrderedIds(next);
+    setOrderError(null);
+    saveQueue.current = saveQueue.current.then(() => saveOrder(googleAccountId, group));
+  };
 
   const updateSetting = async (
     settingId: string,
@@ -80,6 +140,17 @@ export function GoogleCalendarSection({
 
         {result.status === "ok" && (
           <div className="flex flex-col gap-5">
+            <p className="type-body-small text-on-surface-variant">
+              上下の矢印で並べ替えます。ここでの並びは、予定の入力画面に出る保存先カレンダーの
+              並び順にも使われます。
+            </p>
+
+            {orderError && (
+              <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
+                {orderError}
+              </p>
+            )}
+
             {result.accounts.map((account) => (
               <div key={account.id} className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-2">
@@ -98,30 +169,31 @@ export function GoogleCalendarSection({
                 </div>
 
                 <ul className="flex flex-col gap-2">
-                  {result.calendars
-                    .filter((calendar) => calendar.googleAccountId === account.id)
-                    .map((calendar) => (
-                      <li key={calendar.settingId} className="flex items-center gap-3">
-                        <Switch
-                          id={`visible-${calendar.settingId}`}
-                          checked={calendar.visible}
-                          disabled={busySettingId === calendar.settingId}
-                          onCheckedChange={(checked) =>
-                            updateSetting(calendar.settingId, { visible: checked })
-                          }
-                        />
-                        <span
-                          aria-hidden
-                          className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15"
-                          style={{ backgroundColor: calendar.backgroundColor ?? "transparent" }}
-                        />
-                        <Label
-                          htmlFor={`visible-${calendar.settingId}`}
-                          className="flex-1 cursor-pointer font-normal"
-                        >
-                          {calendar.name}
-                        </Label>
+                  {calendarsOf(account.id).map((calendar, index, list) => (
+                    // 名前が長いと、既定の保存先の表示と並べ替えのボタンまで入りきらない。
+                    // 折り返して2行にする（名前だけを削って読めなくしない）。
+                    <li key={calendar.settingId} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <Switch
+                        id={`visible-${calendar.settingId}`}
+                        checked={calendar.visible}
+                        disabled={busySettingId === calendar.settingId}
+                        onCheckedChange={(checked) =>
+                          updateSetting(calendar.settingId, { visible: checked })
+                        }
+                      />
+                      <span
+                        aria-hidden
+                        className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15"
+                        style={{ backgroundColor: calendar.backgroundColor ?? "transparent" }}
+                      />
+                      <Label
+                        htmlFor={`visible-${calendar.settingId}`}
+                        className="min-w-0 flex-1 cursor-pointer font-normal"
+                      >
+                        {calendar.name}
+                      </Label>
 
+                      <div className="ml-auto flex items-center gap-1">
                         {calendar.isCreateDefault ? (
                           <Badge variant="secondary">既定の保存先</Badge>
                         ) : (
@@ -138,8 +210,27 @@ export function GoogleCalendarSection({
                             </Button>
                           )
                         )}
-                      </li>
-                    ))}
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`${calendar.name}を上へ移動`}
+                          disabled={index === 0}
+                          onClick={() => move(account.id, calendar.settingId, -1)}
+                        >
+                          <ChevronUp />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`${calendar.name}を下へ移動`}
+                          disabled={index === list.length - 1}
+                          onClick={() => move(account.id, calendar.settingId, 1)}
+                        >
+                          <ChevronDown />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
                 </ul>
               </div>
             ))}
