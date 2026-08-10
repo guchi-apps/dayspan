@@ -58,11 +58,13 @@ const DEFAULT_START_MINUTES = 9 * 60;
 // タスクの期限は、その日のうちに片付ける想定の時刻から始める（予定の既定より遅い）。
 const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
 
+// 期間の短い順に並べる。同じ並びの中で右へ行くほど広い範囲を見ることになり、
+// 「今いる形式より広く／狭く見たい」がどちら向きに押せばよいか迷わずに済む。
 const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[] = [
-  { view: "month", label: "月" },
   { view: "day1", label: "1日" },
   { view: "day3", label: "3日" },
-  { view: "day7", label: "7日", desktopOnly: true },
+  { view: "day7", label: "週", desktopOnly: true },
+  { view: "month", label: "月" },
 ];
 
 export function CalendarShell({
