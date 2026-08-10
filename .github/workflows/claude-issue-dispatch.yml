@@ -3,7 +3,7 @@ name: Claude Issue Dispatch
 # Issueへの`@claude`コメントを起点に、計画提示・実装・develop向けPR作成までをGitHub Actions上で
 # 無人実行するワークフローの、DaySpan側のトリガー定義。
 #
-# ジョブ本体はm-guchi/issue-deckのreusable-issue-dispatch.ymlにあり、ここでは`uses:`で参照する
+# ジョブ本体はguchi-apps/issue-deckのreusable-issue-dispatch.ymlにあり、ここでは`uses:`で参照する
 # だけにしている。技術スタックの差はwith:のinputsで吸収する。
 #
 # `uses:`のタグと`prompts-ref`は必ず同じ値にする。`uses:`だけ上げるとプロンプト
@@ -34,7 +34,7 @@ on:
 
 jobs:
   dispatch:
-    uses: m-guchi/issue-deck/.github/workflows/reusable-issue-dispatch.yml@workflows/v6
+    uses: guchi-apps/issue-deck/.github/workflows/reusable-issue-dispatch.yml@workflows/v6
     with:
       # DaySpanはNext.js + Prisma + MariaDBのため node-db。ただしこのプリセットが効くのは
       # 24.screenshot-requiredが付いたIssueだけで、DaySpanは全画面がSupabase Auth +
