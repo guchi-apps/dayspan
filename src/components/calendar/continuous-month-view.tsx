@@ -314,7 +314,9 @@ export function ContinuousMonthView({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        // ブラウザのネイティブ scroll anchoring が上のuseIsomorphicLayoutEffectと
+        // 二重に補正をかけ、窓の張り直し時にスクロール位置が意図せず飛ぶため無効化する。
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
       >
         {weeks.map((week, weekIndex) => {
           const { segments, hiddenByColumn } = layoutByWeek[weekIndex];
