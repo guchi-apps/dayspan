@@ -10,29 +10,21 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
 import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateTimeInput } from "./date-time-input";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { RecurrenceFields } from "./recurrence-fields";
+import {
+  buildRecurrenceRule,
+  NO_RECURRENCE,
+  recurrenceError,
+  type RecurrenceInput,
+} from "./recurrence-rule";
 import { readErrorMessage } from "./response-error";
 import type { TouchedRange } from "./use-calendar-chunks";
-
-const RECURRENCE_RULES: { label: string; rule: string | null }[] = [
-  { label: "繰り返さない", rule: null },
-  { label: "毎日", rule: "RRULE:FREQ=DAILY" },
-  { label: "毎週", rule: "RRULE:FREQ=WEEKLY" },
-  { label: "毎月", rule: "RRULE:FREQ=MONTHLY" },
-  { label: "毎年", rule: "RRULE:FREQ=YEARLY" },
-];
 
 export type EventDraft = {
   event?: CalendarEventItem;
@@ -79,7 +71,7 @@ export function EventForm({
   const [end, setEnd] = useState(draft.end);
   const [location, setLocation] = useState(editing?.location ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
-  const [recurrenceRule, setRecurrenceRule] = useState<string>("none");
+  const [recurrence, setRecurrence] = useState<RecurrenceInput>(NO_RECURRENCE);
   const [calendarId, setCalendarId] = useState(
     editing?.calendarId ??
       draft.calendarId ??
@@ -117,6 +109,9 @@ export function EventForm({
     return end <= start ? "終了日時が開始日時より後になるようにしてください。" : null;
   })();
 
+  // 繰り返しの入力欄は新規作成のときだけ出る。編集では規則を送らないため検証もしない。
+  const inputError = rangeError ?? (editing ? null : recurrenceError(recurrence, start));
+
   // 終日と時刻指定では入力欄の形式が違う（date と datetime-local）。切り替え時に値を作り直す。
   const toggleAllDay = (next: boolean) => {
     if (next) {
@@ -141,9 +136,9 @@ export function EventForm({
     setError(null);
     try {
       // 繰り返し規則は新規作成のときだけ送る（更新はシリーズ全体に及ぶため送らない）。
-      const recurrence = editing
+      const recurrenceRule = editing
         ? null
-        : (RECURRENCE_RULES.find((r) => r.label === recurrenceRule)?.rule ?? null);
+        : buildRecurrenceRule(recurrence, { allDay, timeZone });
 
       const payload = {
         calendarId,
@@ -155,7 +150,7 @@ export function EventForm({
         description: description.trim() || null,
         ...(editing
           ? { previousCalendarId: editing.calendarId }
-          : { recurrenceRule: recurrence }),
+          : { recurrenceRule }),
       };
 
       const response = await fetch(
@@ -176,7 +171,7 @@ export function EventForm({
       const touched: TouchedRange[] = [{ start: payload.start, end: payload.end }];
       if (editing) touched.push({ start: editing.start, end: editing.end });
 
-      onSaved(recurrence ? null : touched);
+      onSaved(recurrenceRule ? null : touched);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
@@ -279,23 +274,7 @@ export function EventForm({
           onChange={setCalendarId}
         />
 
-        {!editing && (
-          <Select value={recurrenceRule} onValueChange={setRecurrenceRule}>
-            <SelectTrigger label="繰り返し">
-              <SelectValue placeholder="繰り返さない" />
-            </SelectTrigger>
-            <SelectContent>
-              {RECURRENCE_RULES.map((option) => (
-                <SelectItem
-                  key={option.label}
-                  value={option.rule === null ? "none" : option.label}
-                >
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        {!editing && <RecurrenceFields value={recurrence} onChange={setRecurrence} />}
 
         <Input
           id="event-location"
@@ -312,7 +291,7 @@ export function EventForm({
           onChange={(e) => setDescription(e.target.value)}
         />
 
-        {rangeError && <p className="text-sm text-destructive">{rangeError}</p>}
+        {inputError && <p className="text-sm text-destructive">{inputError}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
@@ -330,7 +309,7 @@ export function EventForm({
             やめる
           </Button>
           <Button
-            disabled={busy || offline || !title.trim() || !calendarId || rangeError !== null}
+            disabled={busy || offline || !title.trim() || !calendarId || inputError !== null}
             onClick={save}
           >
             保存
