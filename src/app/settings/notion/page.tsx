@@ -12,6 +12,7 @@ import {
   type PropertyMap,
   type SharedPageSummary,
 } from "@/services/notion/task-database";
+import type { PlacePropertyMap } from "@/services/notion/place-database";
 import type { ReminderPropertyMap } from "@/services/notion/reminder-database";
 
 export default async function NotionSettingsPage() {
@@ -45,6 +46,9 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
       reminderDataSourceId: null,
       reminderTitle: null,
       reminderPropertyMap: null,
+      placeDataSourceId: null,
+      placeTitle: null,
+      placePropertyMap: null,
       dataSources: [],
       sharedPages: [],
       dataSourcesFailed: false,
@@ -75,6 +79,9 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
     reminderDataSourceId: connection.reminderDataSourceId,
     reminderTitle: connection.reminderTitle,
     reminderPropertyMap: (connection.reminderPropertyMap as ReminderPropertyMap | null) ?? null,
+    placeDataSourceId: connection.placeDataSourceId,
+    placeTitle: connection.placeTitle,
+    placePropertyMap: (connection.placePropertyMap as PlacePropertyMap | null) ?? null,
     dataSources,
     sharedPages,
     dataSourcesFailed,

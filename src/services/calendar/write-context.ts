@@ -28,3 +28,9 @@ export async function getNotionReminderConnection(userId: string): Promise<Notio
   const connection = await db.notionConnection.findUnique({ where: { userId } });
   return connection?.reminderDataSourceId ? connection : null;
 }
+
+/** 場所の書き込み先。設定していないユーザーもいるため、タスク・リマインドとは別に見る。 */
+export async function getNotionPlaceConnection(userId: string): Promise<NotionConnection | null> {
+  const connection = await db.notionConnection.findUnique({ where: { userId } });
+  return connection?.placeDataSourceId ? connection : null;
+}
