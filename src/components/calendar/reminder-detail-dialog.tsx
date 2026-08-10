@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { CalendarClock, ExternalLink, Pencil, RotateCw, Tag } from "lucide-react";
+import { CalendarClock, ExternalLink, Pencil, RotateCw, Tag, Trash2 } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { TagChip } from "@/components/tags/tag-chip";
@@ -19,6 +19,9 @@ import {
 import type { TagOption } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
+import { DeleteItemDialog } from "./delete-item-dialog";
+import type { TouchedRange } from "./use-calendar-chunks";
+
 export function ReminderDetailDialog({
   reminder,
   categoryOptions,
@@ -26,6 +29,7 @@ export function ReminderDetailDialog({
   readOnly = false,
   onClose,
   onEdit,
+  onDeleted,
 }: {
   reminder: ReminderItem;
   /** 登録済みの種類。色を引くために渡す。取得できていないときは空でよい。 */
@@ -35,10 +39,14 @@ export function ReminderDetailDialog({
   readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
+  /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
+  onDeleted: (touched: TouchedRange[] | null) => void;
 }) {
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
+  // 削除は押した直後には実行せず、確認を挟む。
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const close = () => {
     setOpen(false);
@@ -50,9 +58,33 @@ export function ReminderDetailDialog({
     setTimeout(onEdit, 150);
   };
 
+  const deleted = (touched: TouchedRange[] | null) => {
+    setOpen(false);
+    setTimeout(() => onDeleted(touched), 150);
+  };
+
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+        {confirmingDelete && (
+          <DeleteItemDialog
+            item={{ kind: "reminder", reminder }}
+            onCancel={() => setConfirmingDelete(false)}
+            onDeleted={deleted}
+          />
+        )}
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="削除"
+          className="absolute top-2 right-18"
+          disabled={readOnly}
+          onClick={() => setConfirmingDelete(true)}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+
         <Button
           variant="ghost"
           size="icon-sm"
@@ -65,7 +97,7 @@ export function ReminderDetailDialog({
         </Button>
 
         <DialogHeader>
-          <DialogTitle className="pr-14">{reminder.title}</DialogTitle>
+          <DialogTitle className="pr-22">{reminder.title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 text-sm">

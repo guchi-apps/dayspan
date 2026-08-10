@@ -149,6 +149,10 @@ export function ReminderList({
           readOnly={offline}
           onClose={() => setViewing(null)}
           onEdit={() => edit(viewing)}
+          onDeleted={() => {
+            setViewing(null);
+            startTransition(() => router.refresh());
+          }}
         />
       )}
     </div>

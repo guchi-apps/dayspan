@@ -246,6 +246,10 @@ export function TaskList({
           readOnly={offline}
           onClose={() => setViewingTask(null)}
           onEdit={() => editTask(viewingTask)}
+          onDeleted={() => {
+            setViewingTask(null);
+            startTransition(() => router.refresh());
+          }}
           onToggleDone={toggleDoneFromDetail}
         />
       )}

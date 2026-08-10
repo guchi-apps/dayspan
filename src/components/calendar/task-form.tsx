@@ -3,7 +3,7 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Trash2 } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import type { TagOption } from "@/services/notion/tag-options";
 import type { TaskItem } from "@/types/calendar";
 
 import { DateTimeInput } from "./date-time-input";
+import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { readErrorMessage } from "./response-error";
 import type { TouchedRange } from "./use-calendar-chunks";
@@ -79,6 +80,8 @@ export function TaskForm({
   const [recurrence, setRecurrence] = useState(editing?.recurrence ?? "なし");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 削除は押した直後には実行せず、確認を挟む。
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
   const offline = useOffline();
@@ -157,6 +160,14 @@ export function TaskForm({
 
   return (
     <>
+      {editing && confirmingDelete && (
+        <DeleteItemDialog
+          item={{ kind: "task", task: editing }}
+          onCancel={() => setConfirmingDelete(false)}
+          onDeleted={onSaved}
+        />
+      )}
+
       <div className="flex min-w-0 flex-col gap-4">
         <Input
           id="task-title"
@@ -273,13 +284,28 @@ export function TaskForm({
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
-      <DialogFooter>
-        <Button variant="ghost" disabled={busy} onClick={onCancel}>
-          やめる
-        </Button>
-        <Button disabled={busy || offline || !title.trim() || dueError !== null} onClick={save}>
-          保存
-        </Button>
+      <DialogFooter className="sm:justify-between">
+        {editing ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy || offline}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trash2 className="size-4" />
+            削除
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          <Button variant="ghost" disabled={busy} onClick={onCancel}>
+            やめる
+          </Button>
+          <Button disabled={busy || offline || !title.trim() || dueError !== null} onClick={save}>
+            保存
+          </Button>
+        </div>
       </DialogFooter>
     </>
   );

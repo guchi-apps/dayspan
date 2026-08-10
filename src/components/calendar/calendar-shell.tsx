@@ -834,6 +834,7 @@ function CalendarBody({
           readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditEvent(viewingEvent)}
+          onDeleted={handleSaved}
         />
       )}
 
@@ -845,6 +846,7 @@ function CalendarBody({
           readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditTask(viewingTask)}
+          onDeleted={handleSaved}
           onToggleDone={handleToggleTaskDone}
         />
       )}
@@ -857,6 +859,7 @@ function CalendarBody({
           readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditReminder(viewingReminder)}
+          onDeleted={handleSaved}
         />
       )}
     </>
