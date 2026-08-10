@@ -96,8 +96,8 @@ export function CalendarShell({
   const [monthCenter, setMonthCenter] = useState(anchorKey.slice(0, 7));
 
   // 月表示の移動はスクロールで行う。同じ月を続けて指しても効くよう、指示に通し番号を付ける。
-  // day は日表示から特定の日を含む週へ位置合わせしたいときだけ指定する
-  // （前へ・次へ・今日は月単位のままでよいため指定しない）。
+  // day は特定の日を含む週へ位置合わせしたいときだけ指定する（今日・日表示からの切り替え）。
+  // 前へ・次へは行き先の日が決まらないため、月単位のまま指定しない。
   const [scrollTarget, setScrollTarget] = useState<{ month: string; day?: string; nonce: number }>({
     month: anchorKey.slice(0, 7),
     nonce: 0,
@@ -284,10 +284,10 @@ export function CalendarShell({
    * 月表示の移動。読み込み済みの範囲の中なら、サーバーへ行かずスクロールするだけで済む。
    * 窓の外へ出る場合も、先に並びを張り直してから足りない月だけを取りにいく。
    */
-  const goToMonth = (month: string) => {
+  const goToMonth = (month: string, day?: string) => {
     setScrolledMonth(month);
     setMonthCenter(month);
-    setScrollTarget((prev) => ({ month, nonce: prev.nonce + 1 }));
+    setScrollTarget((prev) => ({ month, day, nonce: prev.nonce + 1 }));
     syncMonthUrl(month);
   };
 
@@ -323,7 +323,11 @@ export function CalendarShell({
 
   const goToday = () => {
     if (nav.view === "month") {
-      goToMonth(utils.todayKey().slice(0, 7));
+      // 月の先頭週ではなく今日を含む週へ合わせる。月の先頭週に合わせると、今日が月の
+      // どこにあるかで今日の週が何行目に来るかが変わり、日表示からの切り替え
+      // （enterMonthView）とも位置がずれるため。
+      const todayKey = utils.todayKey();
+      goToMonth(todayKey.slice(0, 7), todayKey);
       return;
     }
 
