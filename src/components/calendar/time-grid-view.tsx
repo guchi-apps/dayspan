@@ -564,7 +564,7 @@ function DayColumn({
               className={cn(
                 // ボタンは中身を上下中央へ寄せるため、flexにして上揃えへ戻す。
                 // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
-                "flex size-full flex-col overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[11px] leading-tight",
+                "flex size-full flex-col overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[10px] leading-tight",
                 eventPreview && "ring-2 ring-foreground/50",
               )}
               style={{
@@ -1042,7 +1042,7 @@ const AllDayPane = memo(function AllDayPane({
                   onOpenEvent(segment.item);
                 }}
                 className={cn(
-                  "clip-nowrap w-full rounded-sm border px-1.5 text-left text-[11px] leading-5 font-medium",
+                  "clip-nowrap w-full rounded-sm border px-1.5 text-left text-[10px] leading-5 font-medium",
                   // 期間の境界で切れた続きの側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
                   segment.continuesBefore && "rounded-l-none border-l-0",
                   segment.continuesAfter && "rounded-r-none border-r-0",

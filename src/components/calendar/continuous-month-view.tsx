@@ -688,7 +688,7 @@ function ReminderChip({
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1 text-left text-[10px] leading-[15px] font-medium sm:h-[18px] sm:text-[11px] sm:leading-4"
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
       title={yearLabel ? `${reminder.title} ${yearLabel}` : reminder.title}
     >
       <Bell aria-hidden className="size-2.5 shrink-0 text-tertiary" />
@@ -722,7 +722,7 @@ function EventChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border px-1 text-left text-[10px] leading-[15px] font-medium sm:h-[18px] sm:text-[11px] sm:leading-4",
+        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4",
         // 週をまたぐ側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
         continuesBefore && "rounded-l-none border-l-0",
         continuesAfter && "rounded-r-none border-r-0",
@@ -775,7 +775,7 @@ function TaskChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-outline bg-surface-container-lowest px-1 text-left text-[10px] leading-[15px] font-medium sm:h-[18px] sm:text-[11px] sm:leading-4",
+        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-outline bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4",
         planned && "border-dashed",
         task.done && "text-on-surface-variant line-through",
       )}
