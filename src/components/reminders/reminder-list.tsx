@@ -68,7 +68,10 @@ export function ReminderList({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <h1 className="type-title-large flex items-center gap-2 px-2"><BellRing className="size-5" /><span className="hidden sm:inline">日付リマインド</span></h1>
+        <div className="flex shrink-0 items-center gap-1 font-semibold">
+          <BellRing className="size-5" />
+          <span className="hidden lg:inline">DaySpan</span>
+        </div>
         <HeaderNav current="reminders" />
         <span className="flex-1" />
         <Button variant="ghost" size="icon" aria-label="再取得" disabled={pending || offline} onClick={() => startTransition(() => router.refresh())}><RefreshCw className="size-4" /></Button>

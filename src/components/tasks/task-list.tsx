@@ -106,10 +106,10 @@ export function TaskList({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <h1 className="type-title-large flex items-center gap-2 px-2">
+        <div className="flex shrink-0 items-center gap-1 font-semibold">
           <ListChecks className="size-5" />
-          <span className="hidden sm:inline">タスク</span>
-        </h1>
+          <span className="hidden lg:inline">DaySpan</span>
+        </div>
 
         <HeaderNav current="tasks" />
 
