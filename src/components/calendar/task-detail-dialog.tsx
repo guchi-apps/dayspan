@@ -138,7 +138,15 @@ export function TaskDetailDialog({
 
           {readOnly && <p className="px-4 text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
 
-          {task.due && <DetailField label="期限" value={formatDue(task, timeZone)} />}
+          {task.due && (
+            <DetailField label="期限" value={formatTaskDate(task.due, task.hasTime, timeZone)} />
+          )}
+          {task.planned && (
+            <DetailField
+              label="予定日"
+              value={formatTaskDate(task.planned, task.plannedHasTime, timeZone)}
+            />
+          )}
           {task.priority && <DetailField label="優先度" value={task.priority} />}
           {task.recurrence && task.recurrence !== "なし" && (
             <DetailField label="繰り返し" value={task.recurrence} />
@@ -193,10 +201,9 @@ function DetailField({
   );
 }
 
-/** 期限の表示用フォーマット。日付のみは日付を、時刻ありは日付と時刻を表示する。 */
-function formatDue(task: TaskItem, timeZone: string): string {
-  if (!task.due) return "";
-  if (!task.hasTime) return formatDateKey(task.due);
+/** 期限・予定日の表示用フォーマット。日付のみは日付を、時刻ありは日付と時刻を表示する。 */
+function formatTaskDate(date: string, hasTime: boolean, timeZone: string): string {
+  if (!hasTime) return formatDateKey(date);
 
   const parts = new Intl.DateTimeFormat("ja-JP", {
     timeZone,
@@ -205,7 +212,7 @@ function formatDue(task: TaskItem, timeZone: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
-  }).formatToParts(new Date(task.due));
+  }).formatToParts(new Date(date));
 
   const get = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((part) => part.type === type)?.value ?? "";

@@ -49,7 +49,12 @@ import { toReminderDraft } from "./reminder-form";
 import { TaskDetailDialog } from "./task-detail-dialog";
 import { toTaskDraft } from "./task-form";
 import { TimeGridView, weekdayLabel, weekdayTone } from "./time-grid-view";
-import { monthsOfRanges, useCalendarChunks, type TouchedRange } from "./use-calendar-chunks";
+import {
+  monthsOfRanges,
+  taskRanges,
+  useCalendarChunks,
+  type TouchedRange,
+} from "./use-calendar-chunks";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 
 // 日付だけが決まっている追加（右下の「＋」・月表示の長押し）で使う開始時刻。
@@ -225,10 +230,11 @@ export function CalendarShell({
           }),
         });
       } else {
+        // 掴んだのが期限の枠か予定日の枠かで、書き換える日付が違う。
         response = await fetch(`/api/tasks/${encodeURIComponent(commit.target.item.id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ due: startIso }),
+          body: JSON.stringify({ [commit.target.field]: startIso }),
         });
       }
 
@@ -272,7 +278,7 @@ export function CalendarShell({
         response = await fetch(`/api/tasks/${encodeURIComponent(commit.target.item.id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ due: commit.dayKey }),
+          body: JSON.stringify({ [commit.target.field]: commit.dayKey }),
         });
       }
 
@@ -787,7 +793,9 @@ function CalendarBody({
       return;
     }
 
-    data.invalidate(task.due ? monthsOfRanges([{ start: task.due, end: task.due }]) : null);
+    // 完了にすると繰り返しの次回分が別の日に作られることもあるため、
+    // 期限と予定日の両方がかかる月を取り直す。
+    data.invalidate(monthsOfRanges(taskRanges(task)));
   };
 
   return (

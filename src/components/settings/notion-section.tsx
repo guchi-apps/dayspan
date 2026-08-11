@@ -315,6 +315,9 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
 
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium">タスクDBを選択</span>
+              <p className="text-xs text-muted-foreground">
+                Notion側にプロパティを足したときは、同じDBをもう一度選ぶと対応が更新されます。
+              </p>
 
               {state.dataSourcesFailed && (
                 <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
