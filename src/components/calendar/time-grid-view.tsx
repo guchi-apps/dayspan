@@ -10,6 +10,7 @@ import {
   eventTextLines,
   MIN_EVENT_HEIGHT,
   MINUTES_PER_DAY,
+  reminderAnnualYearLabel,
   taskOccurrenceKey,
   taskOccurrences,
   type CalendarDateUtils,
@@ -705,18 +706,20 @@ function ReminderMarker({
   time: string;
   onOpen: () => void;
 }) {
+  const yearLabel = reminderAnnualYearLabel(reminder);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
       style={{ top }}
-      title={`${time} ${reminder.title}`}
+      title={yearLabel ? `${time} ${reminder.title} ${yearLabel}` : `${time} ${reminder.title}`}
     >
       <span aria-hidden className="h-2.5 w-0.5 shrink-0 bg-tertiary" />
       <span className="h-px flex-1 bg-tertiary/45" />
       <span className="type-label-small clip-nowrap max-w-[78%] rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-on-tertiary-container">
         {reminder.title}
+        {yearLabel && <span className="opacity-70"> {yearLabel}</span>}
       </span>
     </button>
   );
@@ -1126,15 +1129,17 @@ function AllDayReminderChip({
   reminder: ReminderItem;
   onOpen: () => void;
 }) {
+  const yearLabel = reminderAnnualYearLabel(reminder);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-tertiary/40 bg-tertiary-container px-1.5 py-0.5 text-left text-on-tertiary-container"
-      title={reminder.title}
+      title={yearLabel ? `${reminder.title} ${yearLabel}` : reminder.title}
     >
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
       <span className="clip-nowrap">{reminder.title}</span>
+      {yearLabel && <span className="shrink-0 opacity-70">{yearLabel}</span>}
     </button>
   );
 }
