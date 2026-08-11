@@ -6,6 +6,7 @@ import type { Client } from "@notionhq/client";
 export type TaskField =
   | "title"
   | "due"
+  | "planned"
   | "done"
   | "memo"
   | "priority"
@@ -24,6 +25,9 @@ type FieldRequirement = {
 export const TASK_FIELD_REQUIREMENTS: FieldRequirement[] = [
   { field: "title", label: "タイトル", types: ["title"], required: true, nameHints: ["タイトル", "名前", "title", "name", "タスク"] },
   { field: "due", label: "期限", types: ["date"], required: true, nameHints: ["期限", "締切", "日付", "due", "date", "deadline"] },
+  // 予定日は「期限までのどの辺りで片付けるか」の見込み。期限と同じdate型のため、
+  // 名前で先に確定させる必要がある（型だけで割り当てると期限と取り違える）。
+  { field: "planned", label: "予定日", types: ["date"], required: false, nameHints: ["予定日", "予定", "着手", "実施", "planned", "scheduled"] },
   { field: "done", label: "完了状態", types: ["checkbox", "status"], required: true, nameHints: ["完了", "done", "status", "ステータス", "済"] },
   { field: "memo", label: "メモ", types: ["rich_text"], required: false, nameHints: ["メモ", "備考", "memo", "note", "notes", "詳細"] },
   { field: "priority", label: "優先度", types: ["select", "status"], required: false, nameHints: ["優先度", "priority", "重要度"] },
@@ -181,6 +185,7 @@ export async function validateTaskDataSource(
 export const TASK_DATABASE_TEMPLATE = {
   title: "タイトル",
   due: "期限",
+  planned: "予定日",
   done: "完了",
   memo: "メモ",
   priority: "優先度",
@@ -250,6 +255,7 @@ export async function createTaskDatabase(
       properties: {
         [TASK_DATABASE_TEMPLATE.title]: { title: {} },
         [TASK_DATABASE_TEMPLATE.due]: { date: {} },
+        [TASK_DATABASE_TEMPLATE.planned]: { date: {} },
         [TASK_DATABASE_TEMPLATE.done]: { checkbox: {} },
         [TASK_DATABASE_TEMPLATE.memo]: { rich_text: {} },
         [TASK_DATABASE_TEMPLATE.priority]: {

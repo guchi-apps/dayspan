@@ -56,8 +56,11 @@ export function normalizeTask(page: NotionPage, propertyMap: PropertyMap): TaskI
     return name ? properties[name] : undefined;
   };
 
-  const dueProperty = get("due");
-  const dueStart = dueProperty?.type === "date" ? (dueProperty.date?.start ?? null) : null;
+  const dateStart = (property: NotionPropertyValue | undefined): string | null =>
+    property?.type === "date" ? (property.date?.start ?? null) : null;
+
+  const dueStart = dateStart(get("due"));
+  const plannedStart = dateStart(get("planned"));
 
   return {
     kind: "task",
@@ -66,6 +69,8 @@ export function normalizeTask(page: NotionPage, propertyMap: PropertyMap): TaskI
     due: dueStart,
     // Notionの日付は「日付のみ」なら YYYY-MM-DD、時刻ありなら時刻部分を含む。
     hasTime: Boolean(dueStart && dueStart.includes("T")),
+    planned: plannedStart,
+    plannedHasTime: Boolean(plannedStart && plannedStart.includes("T")),
     done: readDone(get("done")),
     priority: readChoice(get("priority")),
     tags: (get("tags")?.multi_select ?? []).map((tag) => tag.name ?? "").filter(Boolean),
@@ -104,8 +109,11 @@ async function queryTasks(
 }
 
 /**
- * 指定期間に期限があるタスクを取得する。
- * 期限未設定のタスクはカレンダーに表示しないため、ここでは取得しない（docs/spec.md §10）。
+ * 指定期間に期限または予定日があるタスクを取得する。
+ * どちらも未設定のタスクはカレンダーに置く日が決まらないため取得しない（docs/spec.md §10）。
+ *
+ * 予定日だけが期間内のタスクも要る。期限が半年先でも、予定日がこの月にあれば
+ * その日のカレンダーに出す必要があるため、期限での絞り込みだけでは足りない。
  */
 export async function listTasksInRange(
   notion: Client,
@@ -117,12 +125,22 @@ export async function listTasksInRange(
 
   if (!connection.taskDataSourceId || !dueProperty) return [];
 
-  const pages = await queryTasks(notion, connection.taskDataSourceId, {
+  const withinRange = (property: string) => ({
     and: [
-      { property: dueProperty, date: { on_or_after: range.from } },
-      { property: dueProperty, date: { on_or_before: range.to } },
+      { property, date: { on_or_after: range.from } },
+      { property, date: { on_or_before: range.to } },
     ],
   });
+
+  const plannedProperty = propertyMap.planned;
+
+  const pages = await queryTasks(
+    notion,
+    connection.taskDataSourceId,
+    plannedProperty
+      ? { or: [withinRange(dueProperty), withinRange(plannedProperty)] }
+      : withinRange(dueProperty),
+  );
 
   return pages.map((page) => normalizeTask(page, propertyMap));
 }
@@ -145,6 +163,8 @@ export type TaskWriteInput = {
   title?: string;
   /** YYYY-MM-DD（日付のみ）/ ISO 8601（時刻あり）/ null（期限未設定） */
   due?: string | null;
+  /** 予定日。期限と同じ形式で、null は未設定。 */
+  planned?: string | null;
   done?: boolean;
   priority?: string | null;
   memo?: string | null;
@@ -174,6 +194,10 @@ function toProperties(
 
   if (input.due !== undefined) {
     set("due", { date: input.due ? { start: input.due } : null });
+  }
+
+  if (input.planned !== undefined) {
+    set("planned", { date: input.planned ? { start: input.planned } : null });
   }
 
   if (input.done !== undefined) {
@@ -292,6 +316,9 @@ export async function completeTask(
   const created = await createTask(notion, connection, {
     title: current.title,
     due,
+    // 予定日も同じ繰り返しで進める。前回の予定日をそのまま写すと、次回分が
+    // 作られた時点で過ぎた日を指してしまうため。
+    planned: nextDue(current.planned, recurrence),
     done: false,
     priority: current.priority,
     memo: current.memo,

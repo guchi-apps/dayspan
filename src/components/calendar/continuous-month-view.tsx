@@ -15,7 +15,12 @@ import { cn } from "@/lib/utils";
 import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/types/calendar";
 
 import { eventColors } from "./calendar-color";
-import { isAllDayItem, type CalendarDateUtils } from "./item-layout";
+import {
+  isAllDayItem,
+  taskOccurrences,
+  type CalendarDateUtils,
+  type TaskDateField,
+} from "./item-layout";
 import { useLongPress } from "./use-long-press";
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
 
@@ -35,6 +40,8 @@ const LANES = 3;
  */
 type WeekSegment = {
   item: CalendarItem;
+  /** タスクのとき、期限と予定日のどちらの枠か（docs/spec.md §5）。 */
+  taskField?: TaskDateField;
   /** 週の中の列（0〜6） */
   column: number;
   /** 何列ぶんか（1〜7） */
@@ -52,8 +59,8 @@ type WeekLayout = {
 };
 
 /** 日をまたぐ予定・終日予定を先に、上の段へ置く。時刻のある予定はその下を埋める。 */
-function isBar(segment: { item: CalendarItem; span: number }): boolean {
-  return segment.span > 1 || isAllDayItem(segment.item);
+function isBar(segment: { item: CalendarItem; taskField?: TaskDateField; span: number }): boolean {
+  return segment.span > 1 || isAllDayItem(segment.item, segment.taskField);
 }
 
 // サーバー描画では useLayoutEffect は動かず警告になる。スクロール位置の補正は
@@ -221,6 +228,7 @@ export function ContinuousMonthView({
       startKey: string,
       endKey: string,
       item: CalendarItem,
+      taskField?: TaskDateField,
     ) => {
       if (endKey < firstDay || startKey > lastDay) return;
 
@@ -241,6 +249,7 @@ export function ContinuousMonthView({
 
         rawByWeek[weekIndex].push({
           item,
+          taskField,
           column,
           span: last - column + 1,
           continuesBefore: weekIndex > startWeek || startKey < clippedStart,
@@ -255,10 +264,13 @@ export function ContinuousMonthView({
       push(startKey, endKey < startKey ? startKey : endKey, event);
     }
 
+    // 期限と予定日はそれぞれ別の枠として置く。同じタスクでも意味が違うため、
+    // 片方に寄せず、それぞれの日で描き分ける（docs/spec.md §5）。
     for (const task of tasks) {
-      if (!task.due) continue;
-      const dateKey = utils.itemDateKey(task.due);
-      push(dateKey, dateKey, task);
+      for (const occurrence of taskOccurrences(task)) {
+        const dateKey = utils.itemDateKey(occurrence.date);
+        push(dateKey, dateKey, task, occurrence.field);
+      }
     }
 
     for (const reminder of reminders) {
@@ -274,7 +286,7 @@ export function ContinuousMonthView({
         if (barDiff !== 0) return barDiff;
         if (a.column !== b.column) return a.column - b.column;
         if (a.span !== b.span) return b.span - a.span;
-        return utils.compareItems(a.item, b.item);
+        return utils.compareItems(a, b);
       });
 
       // 段ごとに、どの列が埋まっているかを持つ。帯は span ぶん連続して空いている段に入れる。
@@ -512,7 +524,8 @@ export function ContinuousMonthView({
                     ))
                   : segments.map((segment) => (
                       <div
-                        key={`${segment.item.id}-${segment.column}`}
+                        // 期限と予定日が同じ列に並ぶこともあるため、どちらの枠かまで含めて区別する。
+                        key={`${segment.item.id}-${segment.taskField ?? ""}-${segment.column}`}
                         className={cn(
                           "pointer-events-auto min-w-0",
                           // 週をまたぐ側は余白を詰め、隣の週の端と地続きに見えるようにする。
@@ -579,7 +592,14 @@ function renderChip(
     return <ReminderChip reminder={item} utils={utils} onOpen={() => onOpenReminder(item)} />;
   }
 
-  return <TaskChip task={item} utils={utils} onOpen={() => onOpenTask(item)} />;
+  return (
+    <TaskChip
+      task={item}
+      field={segment.taskField ?? "due"}
+      utils={utils}
+      onOpen={() => onOpenTask(item)}
+    />
+  );
 }
 
 function ReminderChip({
@@ -655,35 +675,47 @@ function EventChip({
   );
 }
 
-/** タスクは期限という「点」。塗らず、先頭に目盛りを立てて予定と描き分ける（docs/spec.md §5）。 */
+/**
+ * タスクは期限という「点」。塗らず、先頭に目盛りを立てて予定と描き分ける（docs/spec.md §5）。
+ *
+ * 予定日の枠は、同じ形のまま枠線を破線・目盛りを薄くして描く。締切ではなく見込みであることを
+ * 一目で分けるためで、別の形にしないのは同じタスクの枠だと分かるようにするため。
+ */
 function TaskChip({
   task,
+  field,
   utils,
   onOpen,
 }: {
   task: TaskItem;
+  field: TaskDateField;
   utils: CalendarDateUtils;
   onOpen: () => void;
 }) {
+  const planned = field === "planned";
+  const date = planned ? task.planned : task.due;
+  const hasTime = planned ? task.plannedHasTime : task.hasTime;
+
   return (
     <button
       type="button"
       onClick={onOpen}
       className={cn(
         "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-outline bg-surface-container-lowest px-1 text-left text-[10px] leading-[15px] font-medium sm:h-[18px] sm:text-[11px] sm:leading-4",
+        planned && "border-dashed",
         task.done && "text-on-surface-variant line-through",
       )}
-      title={task.title}
+      title={planned ? `予定日: ${task.title}` : task.title}
     >
       <span
         aria-hidden
         className={cn(
           "h-2.5 w-0.5 shrink-0",
-          task.done ? "bg-on-surface-variant/60" : "bg-primary",
+          task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
         )}
       />
-      {task.hasTime && task.due && (
-        <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(task.due)}</span>
+      {hasTime && date && (
+        <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(date)}</span>
       )}
       <span className="clip-nowrap">{task.title}</span>
     </button>

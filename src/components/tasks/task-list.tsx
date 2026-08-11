@@ -184,7 +184,13 @@ export function TaskList({
                       <div className="type-body-small flex flex-wrap items-center gap-1.5 text-on-surface-variant">
                         {task.due && (
                           <span className={cn(key === "overdue" && "text-destructive")}>
-                            {formatDue(task, utils)}
+                            {formatTaskDate(task.due, task.hasTime, utils)}
+                          </span>
+                        )}
+                        {/* 予定日は期限とは別の日付。分類・並び順は期限のままで、見えるだけ添える。 */}
+                        {task.planned && (
+                          <span className="opacity-80">
+                            予定 {formatTaskDate(task.planned, task.plannedHasTime, utils)}
                           </span>
                         )}
                         {task.priority && (
@@ -257,11 +263,13 @@ export function TaskList({
   );
 }
 
-function formatDue(task: TaskItem, utils: ReturnType<typeof createCalendarDateUtils>): string {
-  if (!task.due) return "";
-
-  const dateKey = utils.itemDateKey(task.due);
+function formatTaskDate(
+  date: string,
+  hasTime: boolean,
+  utils: ReturnType<typeof createCalendarDateUtils>,
+): string {
+  const dateKey = utils.itemDateKey(date);
   const label = `${dateKey.slice(0, 4)}/${Number(dateKey.slice(5, 7))}/${Number(dateKey.slice(8, 10))}`;
 
-  return task.hasTime ? `${label} ${utils.formatTime(task.due)}` : label;
+  return hasTime ? `${label} ${utils.formatTime(date)}` : label;
 }
