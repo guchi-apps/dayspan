@@ -289,11 +289,11 @@ export function isAllDayItem(item: CalendarItem, taskField: TaskDateField = "due
 
 /**
  * 毎年の日付リマインドが登録から何年目かを表すラベル（「(3年目)」）。
- * 登録した年（sourceDate）を1年目として数える。毎年の項目でない場合は null（docs/spec.md §9）。
+ * 登録した年（sourceDate）を0年目として数える。毎年の項目でない場合は null。
  */
 export function reminderAnnualYearLabel(reminder: ReminderItem): string | null {
   if (!reminder.annual) return null;
   const sourceYear = Number(reminder.sourceDate.slice(0, 4));
   const displayYear = Number(reminder.date.slice(0, 4));
-  return `(${displayYear - sourceYear + 1}年目)`;
+  return `(${displayYear - sourceYear}年目)`;
 }
