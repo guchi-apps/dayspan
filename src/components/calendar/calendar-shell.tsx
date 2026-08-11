@@ -521,9 +521,11 @@ export function CalendarShell({
           月日がその中に埋もれて、目を留めないと読み取れないため。
         */}
         <h1 className="flex min-w-0 flex-1 items-baseline gap-1 md:gap-1.5">
-          <span className="type-label-medium md:type-title-small shrink-0 text-on-surface-variant">
-            {headerLabel.year}
-          </span>
+          {headerLabel.year && (
+            <span className="type-label-medium md:type-title-small shrink-0 text-on-surface-variant">
+              {headerLabel.year}
+            </span>
+          )}
           <span className="type-title-medium md:type-headline-small truncate">
             {headerLabel.main}
           </span>
@@ -981,7 +983,8 @@ function AddButton({
  * 画面側で字の大きさと濃さを変えられる形で渡す。
  */
 type HeaderLabel = {
-  /** 「2026年」。範囲が年をまたぐときは先頭の年だけを出し、またいだ先は main に入れる */
+  /** 「2026年」。範囲が年をまたぐときは先頭の年だけを出し、またいだ先は main に入れる。
+   *  1日・3日表示は幅が足りず見切れるため空文字にする */
   year: string;
   /** 「8月」「8月12日」「8月10日 – 16日」 */
   main: string;
@@ -1004,7 +1007,9 @@ function formatRangeLabel(view: CalendarView, anchorKey: string, days: string[])
 
   const first = days[0];
   const last = days[days.length - 1];
-  const year = `${first.slice(0, 4)}年`;
+  // 1日・3日表示は月日だけでもスマートフォンの幅いっぱいになるため、年を足すと見切れる。
+  // 週表示（desktopOnly）は幅に余裕があるため、そちらは従来どおり年も出す。
+  const year = view === "day1" || view === "day3" ? "" : `${first.slice(0, 4)}年`;
 
   if (first === last) {
     return {
