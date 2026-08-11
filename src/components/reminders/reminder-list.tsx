@@ -42,7 +42,7 @@ export function ReminderList({
   timeZone,
   loadError,
   calendars = [],
-  placeCatalog = { places: [] },
+  placeCatalog = { ready: false, places: [] },
   weekStartsOn = 0,
 }: {
   reminders: ReminderItem[];
