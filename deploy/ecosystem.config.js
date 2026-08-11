@@ -4,7 +4,7 @@ module.exports = {
   apps: [
     {
       name: "dayspan",
-      script: "node_modules/next/dist/bin/next",
+      script: path.join(__dirname, "..", "node_modules", ".bin", "next"),
       args: "start",
       cwd: path.resolve(__dirname, ".."),
       instances: 1,
