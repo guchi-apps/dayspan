@@ -119,11 +119,12 @@ export function CalendarShell({
   // 連続スクロール中の月は、サーバーの応答を待たずに見出しへ反映する。
   const [scrolledMonth, setScrolledMonth] = useState(anchorKey.slice(0, 7));
 
-  // 画面の一番上にある週の先頭日。月表示→日表示へ切り替えるとき、この週を起点にする
-  // （1日目固定だと、月の途中の週を見ていてもその月の1日目基準のタブへ飛んでしまうため）。
+  // 画面中央にある週の先頭日。月表示→日表示へ切り替えるとき、この週を起点にする
+  // （1日目固定だと、月の途中の週を見ていてもその月の1日目基準のタブへ飛んでしまうため。
+  // 上端の週だと、半分だけ見えている週を起点に選んでしまうこともあるため中央を採る）。
   // 読むのは表示形式を切り替える操作の中だけなので、状態にせず ref で持つ。
   // 状態にすると、スクロールで週が変わるたびにカレンダー全体が描き直される。
-  const topWeekRef = useRef(anchorKey);
+  const centerWeekRef = useRef(anchorKey);
 
   // 保持している月の中心。ここを動かすと、前後の月ぶんの並びとデータが張り直される。
   const [monthCenter, setMonthCenter] = useState(anchorKey.slice(0, 7));
@@ -422,9 +423,9 @@ export function CalendarShell({
     if (Math.abs(monthDistance(monthCenter, month)) >= 2) setMonthCenter(month);
   };
 
-  /** スクロールで画面の一番上に来た週が変わったとき。 */
+  /** スクロールで画面中央に来た週が変わったとき。 */
   const handleVisibleWeekChange = (weekKey: string) => {
-    topWeekRef.current = weekKey;
+    centerWeekRef.current = weekKey;
   };
 
   /**
@@ -464,7 +465,18 @@ export function CalendarShell({
 
   // 表示形式を切り替えたときの移動先。月表示はスクロールで移動するため anchorKey が
   // 更新されない（URLだけが replaceState で追従する）。見えている週を起点にする。
-  const viewSwitchAnchorKey = () => (nav.view === "month" ? topWeekRef.current : anchorKey);
+  const viewSwitchAnchorKey = () => (nav.view === "month" ? centerWeekRef.current : anchorKey);
+
+  /**
+   * 月表示から3日・1日表示へ切り替えるときの日。中央の週の先頭日をそのまま使うと、
+   * 3日表示の初日・1日表示の日が週の先頭の曜日（例: 日曜）に固定されてしまう。
+   * 今日と同じ曜日の日を中央の週から選び、切り替えても見ている曜日の感覚がずれないようにする。
+   */
+  const viewSwitchDayAnchorKey = () => {
+    const weekStart = parseDateKey(centerWeekRef.current);
+    const offset = (parseDateKey(utils.todayKey()).getUTCDay() - weekStartsOn + 7) % 7;
+    return toDateKey(addDays(weekStart, offset));
+  };
 
   return (
     <div className="flex h-dvh flex-col">
@@ -548,6 +560,11 @@ export function CalendarShell({
                 if (item.view === "month") {
                   // 月表示のまま押しても、以前の位置合わせを乱さないよう何もしない。
                   if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey());
+                  return;
+                }
+
+                if (nav.view === "month" && item.view !== "day7") {
+                  navigate(item.view, viewSwitchDayAnchorKey());
                   return;
                 }
 

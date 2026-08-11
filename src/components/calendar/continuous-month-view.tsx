@@ -131,7 +131,10 @@ export function ContinuousMonthView({
    */
   virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
-  /** 画面の一番上にある週が変わったとき。 */
+  /**
+   * 画面中央にある週が変わったとき。
+   * 表示形式を切り替える操作の起点にする週なので、上端ではなく中央を採る。
+   */
   onVisibleWeekChange: (weekKey: string) => void;
   onSelectDay: (dateKey: string) => void;
   /** その日に予定を足す。指・ペンでの長押しから呼ばれる。 */
@@ -356,12 +359,15 @@ export function ContinuousMonthView({
         offset: container.scrollTop - absIndex * WEEK_HEIGHT,
       };
 
-      if (weekKey !== visibleWeekRef.current) {
-        visibleWeekRef.current = weekKey;
-        notifyRef.current.onVisibleWeekChange(weekKey);
+      // 表示形式を切り替えたときの移動先には画面中央にある週を使う。上端の週だと、
+      // 半分だけ見えている週を移動先に選ぶことになり、いま読んでいた内容とずれるため。
+      const centerWeekKey = weekKeyAt(container.scrollTop + container.clientHeight / 2);
+      if (centerWeekKey !== visibleWeekRef.current) {
+        visibleWeekRef.current = centerWeekKey;
+        notifyRef.current.onVisibleWeekChange(centerWeekKey);
       }
     },
-    [geometry],
+    [geometry, weekKeyAt],
   );
 
   /** いま見ている月。画面の上から1/3の位置にある週の、中日（4日目）の月を採る。 */
@@ -386,7 +392,13 @@ export function ContinuousMonthView({
 
       if (target >= 0) {
         appliedTargetRef.current = scrollTarget.nonce;
-        container.scrollTop = (geometry.lead + target) * WEEK_HEIGHT;
+
+        // day を指定した移動（今日・日表示からの切り替え）は、その週を画面中央へ置く。
+        // 上端に揃えるだけだと、指定した日が画面の外や端に埋もれて見えることがあるため。
+        // month だけの指定（前へ・次へ）は、従来どおりその月の先頭週を上端に揃える。
+        container.scrollTop = day
+          ? (geometry.lead + target) * WEEK_HEIGHT - (container.clientHeight - WEEK_HEIGHT) / 2
+          : (geometry.lead + target) * WEEK_HEIGHT;
         rememberAnchor(container);
         return;
       }
