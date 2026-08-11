@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import type { CalendarEventItem, ReminderItem, TaskItem } from "@/types/calendar";
 
 import { readErrorMessage } from "./response-error";
-import type { TouchedRange } from "./use-calendar-chunks";
+import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 
 /** 削除の対象。編集画面からも表示画面からも同じ確認を通す。 */
 export type DeletableItem =
@@ -198,8 +198,8 @@ function touchedRanges(item: DeletableItem, scope: EventDeleteScope): TouchedRan
   }
 
   if (item.kind === "task") {
-    // 期限なしのタスクはカレンダーに出ないため、取り直す期間もない。
-    return item.task.due ? [{ start: item.task.due, end: item.task.due }] : [];
+    // 期限も予定日も無いタスクはカレンダーに出ないため、取り直す期間もない。
+    return taskRanges(item.task);
   }
 
   if (item.reminder.annual) return null;

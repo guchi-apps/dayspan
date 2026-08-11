@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CalendarEventItem, TaskItem } from "@/types/calendar";
 
-import { MINUTES_PER_DAY } from "./item-layout";
+import { MINUTES_PER_DAY, taskOccurrenceKey, type TaskDateField } from "./item-layout";
 
 // 15分刻みに丸める。1分刻みだと指やマウスの微小な揺れがそのまま時刻になり、扱いにくい。
 const SNAP_MINUTES = 15;
@@ -18,9 +18,19 @@ export type DragMode = "move" | "resize-start" | "resize-end";
 
 export type DragTarget =
   | { kind: "event"; item: CalendarEventItem; mode: DragMode }
-  | { kind: "task"; item: TaskItem };
+  // タスクは期限と予定日で別の枠として現れる。掴んだのがどちらの日付かで動かす先が違う。
+  | { kind: "task"; item: TaskItem; field: TaskDateField };
+
+/**
+ * 掴んでいる枠の識別子。タスクは1つのタスクが2枠に現れるため、IDだけでは
+ * 期限と予定日のどちらを動かしているのか決まらない。
+ */
+function targetKey(target: DragTarget | AllDayDragTarget): string {
+  return target.kind === "task" ? taskOccurrenceKey(target.item.id, target.field) : target.item.id;
+}
 
 export type DragPreview = {
+  /** 掴んでいる枠の識別子（targetKey）。 */
   id: string;
   dayIndex: number;
   startMinutes: number;
@@ -160,7 +170,7 @@ export function useGridDrag({
           : position.dayIndex;
 
       setPreview({
-        id: origin.target.item.id,
+        id: targetKey(origin.target),
         dayIndex,
         startMinutes,
         endMinutes,
@@ -218,11 +228,11 @@ export function useGridDrag({
         longPressTimerRef.current = setTimeout(() => {
           longPressTimerRef.current = null;
           setActive(true);
-          setPreview({ id: target.item.id, ...geometry });
+          setPreview({ id: targetKey(target), ...geometry });
         }, LONG_PRESS_MS);
       } else {
         setActive(true);
-        setPreview({ id: target.item.id, ...geometry });
+        setPreview({ id: targetKey(target), ...geometry });
       }
     },
     [],
@@ -305,9 +315,10 @@ export function useGridDrag({
 
 export type AllDayDragTarget =
   | { kind: "event"; item: CalendarEventItem }
-  | { kind: "task"; item: TaskItem };
+  | { kind: "task"; item: TaskItem; field: TaskDateField };
 
 export type AllDayDragPreview = {
+  /** 掴んでいる枠の識別子（targetKey）。 */
   id: string;
   deltaDays: number;
   dayIndex: number;
@@ -394,11 +405,11 @@ export function useAllDayDrag({
         longPressTimerRef.current = setTimeout(() => {
           longPressTimerRef.current = null;
           setActive(true);
-          setPreview({ id: target.item.id, deltaDays: 0, dayIndex });
+          setPreview({ id: targetKey(target), deltaDays: 0, dayIndex });
         }, LONG_PRESS_MS);
       } else {
         setActive(true);
-        setPreview({ id: target.item.id, deltaDays: 0, dayIndex });
+        setPreview({ id: targetKey(target), deltaDays: 0, dayIndex });
       }
     },
     [dayIndexFromPointer],
@@ -430,7 +441,7 @@ export function useAllDayDrag({
 
       movedRef.current = true;
       setPreview({
-        id: origin.target.item.id,
+        id: targetKey(origin.target),
         deltaDays: dayIndex - origin.dayIndex,
         dayIndex,
       });
