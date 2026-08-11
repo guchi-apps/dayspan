@@ -362,7 +362,10 @@ export function useAllDayDrag({
 
       const rect = row.getBoundingClientRect();
       const gutter = row.dataset.gutterWidth ? Number(row.dataset.gutterWidth) : 48;
-      const columnWidth = (rect.width - gutter) / days.length;
+      // 右端は、下の時間グリッドがスクロールバーに取られているぶんだけ空いている（issue #136）。
+      // 日付列はその内側を等分するため、幅から差し引いてから割る。
+      const gutterEnd = row.dataset.gutterEnd ? Number(row.dataset.gutterEnd) : 0;
+      const columnWidth = (rect.width - gutter - gutterEnd) / days.length;
 
       return clamp(Math.floor((clientX - rect.left - gutter) / columnWidth), 0, days.length - 1);
     },
