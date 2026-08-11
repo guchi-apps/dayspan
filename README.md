@@ -27,7 +27,7 @@ Google Calendar の予定、Notion のタスクと日付リマインドを、1�
 | 本番URL | `https://dayspan.gucchii.com` |
 | 本番ポート | `3113`（PM2、プロセス名 `dayspan`） |
 
-共通の開発標準・運用知識は [m-guchi/docs](https://github.com/m-guchi/docs) を一次情報源とします。
+共通の開発標準・運用知識は [guchi-apps/docs](https://github.com/guchi-apps/docs) を一次情報源とします。
 
 ### データの一次情報源
 
@@ -87,4 +87,4 @@ pnpm build       # 本番ビルド
 ## 開発ルール
 
 このリポジトリ固有のルールは [CLAUDE.md](CLAUDE.md) を参照してください。
-共通の開発標準・運用知識は `m-guchi/docs` を一次情報源とします。
+共通の開発標準・運用知識は `guchi-apps/docs` を一次情報源とします。

@@ -3,7 +3,7 @@ name: Issue Labels
 # Issueラベル(01.planning -> 02.wip -> 03.d:marge -> 05.develop -> 07.m:marge -> 09.main)の
 # 状態遷移をイベント駆動で保証するワークフローの、DaySpan側のトリガー定義。
 #
-# ジョブ本体はm-guchi/issue-deckのreusable-issue-labels.ymlにあり、ここでは`uses:`で参照する
+# ジョブ本体はguchi-apps/issue-deckのreusable-issue-labels.ymlにあり、ここでは`uses:`で参照する
 # だけにしている。呼ばれる側でも`github`コンテキストは呼び出し元(このリポジトリ)のものになる
 # ため、ジョブ定義側にDaySpan固有の書き換えは不要。
 #
@@ -30,10 +30,16 @@ on:
 
 jobs:
   labels:
-    uses: m-guchi/issue-deck/.github/workflows/reusable-issue-labels.yml@workflows/v6
+    uses: guchi-apps/issue-deck/.github/workflows/reusable-issue-labels.yml@workflows/v8
     # 呼ばれる側の権限はcallerの付与範囲を超えられない。cleanup-on-closeジョブが
     # contents: write を要求するため、あわせてここで付与する。
     permissions:
       issues: write
       pull-requests: write
       contents: write
+    # 進捗をissue-deckの報告API(POST /api/progress)へ送るための共有シークレット
+    # (guchi-apps/issue-deck#991 Phase 2)。organization secretとして解決される。
+    # secrets: inherit ではなく個別に渡し、呼ばれる側へ渡る秘密を最小限に保つ。
+    # 未設定でも報告ステップがスキップされるだけで、ラベル遷移には影響しない。
+    secrets:
+      PROGRESS_REPORT_SECRET: ${{ secrets.PROGRESS_REPORT_SECRET }}
