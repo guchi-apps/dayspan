@@ -120,7 +120,7 @@ export function ReminderList({
 
       <Button
         size="icon"
-        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
+        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
         aria-label="日付リマインドを追加"
         disabled={offline}
         onClick={() => setDraft({ dateMode: "date", date: utils.todayKey() })}
