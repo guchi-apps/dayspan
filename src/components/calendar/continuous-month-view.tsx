@@ -9,6 +9,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { Bell } from "lucide-react";
 
 import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
@@ -144,7 +145,10 @@ export function ContinuousMonthView({
    */
   virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
-  /** 画面の一番上にある週が変わったとき。 */
+  /**
+   * 画面中央にある週が変わったとき。
+   * 表示形式を切り替える操作の起点にする週なので、上端ではなく中央を採る。
+   */
   onVisibleWeekChange: (weekKey: string) => void;
   onSelectDay: (dateKey: string) => void;
   /** その日に予定を足す。指・ペンでの長押しから呼ばれる。 */
@@ -386,12 +390,15 @@ export function ContinuousMonthView({
         offset: container.scrollTop - absIndex * weekHeight,
       };
 
-      if (weekKey !== visibleWeekRef.current) {
-        visibleWeekRef.current = weekKey;
-        notifyRef.current.onVisibleWeekChange(weekKey);
+      // 表示形式を切り替えたときの移動先には画面中央にある週を使う。上端の週だと、
+      // 半分だけ見えている週を移動先に選ぶことになり、いま読んでいた内容とずれるため。
+      const centerWeekKey = weekKeyAt(container.scrollTop + container.clientHeight / 2);
+      if (centerWeekKey !== visibleWeekRef.current) {
+        visibleWeekRef.current = centerWeekKey;
+        notifyRef.current.onVisibleWeekChange(centerWeekKey);
       }
     },
-    [geometry, weekHeight],
+    [geometry, weekHeight, weekKeyAt],
   );
 
   /** いま見ている月。画面の上から1/3の位置にある週の、中日（4日目）の月を採る。 */
@@ -416,7 +423,13 @@ export function ContinuousMonthView({
 
       if (target >= 0) {
         appliedTargetRef.current = scrollTarget.nonce;
-        container.scrollTop = (geometry.lead + target) * weekHeight;
+
+        // day を指定した移動（今日・日表示からの切り替え）は、その週を画面中央へ置く。
+        // 上端に揃えるだけだと、指定した日が画面の外や端に埋もれて見えることがあるため。
+        // month だけの指定（前へ・次へ）は、従来どおりその月の先頭週を上端に揃える。
+        container.scrollTop = day
+          ? (geometry.lead + target) * weekHeight - (container.clientHeight - weekHeight) / 2
+          : (geometry.lead + target) * weekHeight;
         rememberAnchor(container);
         return;
       }
@@ -635,6 +648,10 @@ function renderChip(
   );
 }
 
+/**
+ * 日付リマインドは完了して消化するタスクとは別物。塗りつぶさず、ベルのアイコンで
+ * 予定・タスクと描き分ける（docs/spec.md §9）。
+ */
 function ReminderChip({
   reminder,
   utils,
@@ -649,10 +666,10 @@ function ReminderChip({
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4"
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1 text-left text-[10px] leading-[15px] font-medium sm:h-[18px] sm:text-[11px] sm:leading-4"
       title={yearLabel ? `${reminder.title} ${yearLabel}` : reminder.title}
     >
-      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
+      <Bell aria-hidden className="size-2.5 shrink-0 text-tertiary" />
       {reminder.hasTime && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
       )}
