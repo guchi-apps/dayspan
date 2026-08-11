@@ -264,9 +264,20 @@ jobs:
             fi
 
             echo "Health check..."
-            sleep 5
-            curl -fsS "http://127.0.0.1:${PORT}/" >/dev/null
-            echo "Deployment successful."
+            # Next.js は起動完了までに数秒かかる（next.config.ts の読み込みを含む）。
+            # 1回だけの curl では起動が間に合わずに失敗するため、一定時間リトライする。
+            for i in $(seq 1 30); do
+              if curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/"; then
+                echo "Deployment successful."
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "Health check failed after 60s."
+            pm2 describe dayspan || true
+            pm2 logs dayspan --lines 50 --nostream || true
+            exit 1
 
   notify:
     runs-on: ubuntu-latest
