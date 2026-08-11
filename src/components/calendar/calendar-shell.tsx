@@ -39,7 +39,7 @@ import type {
 import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, localInputToIso } from "./datetime-fields";
 import { EventDetailDialog } from "./event-detail-dialog";
-import { toEventDraft, type EventDraft } from "./event-form";
+import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
 import { ItemDialog, type ItemDrafts, type ItemKind } from "./item-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { ContinuousMonthView } from "./continuous-month-view";
@@ -293,6 +293,15 @@ export function CalendarShell({
     if (offline) return;
     setViewingEvent(null);
     setItemDialog({ initialKind: "event", drafts: { event: toEventDraft(event, timeZone) } });
+  };
+
+  const duplicateEvent = (event: CalendarEventItem) => {
+    if (offline) return;
+    setViewingEvent(null);
+    setItemDialog({
+      initialKind: "event",
+      drafts: { event: duplicateEventDraft(event, timeZone) },
+    });
   };
 
   const editTask = (task: TaskItem) => {
@@ -585,6 +594,7 @@ export function CalendarShell({
           onOpenTask={openTask}
           onOpenReminder={openReminder}
           onEditEvent={editEvent}
+          onDuplicateEvent={duplicateEvent}
           onEditTask={editTask}
           onEditReminder={editReminder}
           onSelectSlot={(dateKey, minutes) => {
@@ -650,6 +660,7 @@ function CalendarBody({
   onOpenTask,
   onOpenReminder,
   onEditEvent,
+  onDuplicateEvent,
   onEditTask,
   onEditReminder,
   onSelectSlot,
@@ -691,6 +702,7 @@ function CalendarBody({
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
   onEditEvent: (event: CalendarEventItem) => void;
+  onDuplicateEvent: (event: CalendarEventItem) => void;
   onEditTask: (task: TaskItem) => void;
   onEditReminder: (reminder: ReminderItem) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
@@ -850,6 +862,7 @@ function CalendarBody({
           readOnly={offline}
           onClose={onCloseDialogs}
           onEdit={() => onEditEvent(viewingEvent)}
+          onDuplicate={() => onDuplicateEvent(viewingEvent)}
           onDeleted={handleSaved}
         />
       )}
