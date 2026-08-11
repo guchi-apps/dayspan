@@ -1159,14 +1159,14 @@ function NowLine({
 }
 
 /** 土日は日本のカレンダーの慣習に合わせて色を変える。彩度は落とし、予定の色より前に出さない。 */
-function weekdayTone(dateKey: string): string | null {
+export function weekdayTone(dateKey: string): string | null {
   const day = new Date(`${dateKey}T12:00:00Z`).getUTCDay();
   if (day === 0) return "text-rose-700/80 dark:text-rose-300/80";
   if (day === 6) return "text-sky-700/80 dark:text-sky-300/80";
   return null;
 }
 
-function weekdayLabel(dateKey: string): string {
+export function weekdayLabel(dateKey: string): string {
   const labels = ["日", "月", "火", "水", "木", "金", "土"];
   return labels[new Date(`${dateKey}T12:00:00Z`).getUTCDay()];
 }
