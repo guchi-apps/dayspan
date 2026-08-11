@@ -35,9 +35,12 @@ export type EventDraft = {
   start: string;
   end: string;
   allDay: boolean;
-  /** 簡易入力から引き継いだ入力途中の値。新規作成のときだけ意味を持つ。 */
+  /** 簡易入力や複製から引き継いだ入力途中の値。新規作成のときだけ意味を持つ。 */
   title?: string;
   calendarId?: string;
+  /** 複製から引き継ぐ場所・説明。新規作成のときだけ意味を持つ。 */
+  location?: string;
+  description?: string;
 };
 
 /**
@@ -79,8 +82,8 @@ export function EventForm({
   const [allDay, setAllDay] = useState(draft.allDay);
   const [start, setStart] = useState(draft.start);
   const [end, setEnd] = useState(draft.end);
-  const [location, setLocation] = useState(editing?.location ?? "");
-  const [description, setDescription] = useState(editing?.description ?? "");
+  const [location, setLocation] = useState(editing?.location ?? draft.location ?? "");
+  const [description, setDescription] = useState(editing?.description ?? draft.description ?? "");
   const [recurrence, setRecurrence] = useState<RecurrenceInput>(NO_RECURRENCE);
   const [calendarId, setCalendarId] = useState(
     editing?.calendarId ??
@@ -349,4 +352,52 @@ export function toEventDraft(event: CalendarEventItem, timeZone: string): EventD
     start: event.allDay ? event.start : isoToLocalInput(event.start, timeZone),
     end: event.allDay ? event.end : isoToLocalInput(event.end, timeZone),
   };
+}
+
+/**
+ * 複製用の初期値。日時だけ現在の時間に置き換え、それ以外は元の予定を引き継ぐ。
+ * `event` を含めないため新規作成として扱われ、繰り返しの入力欄も選び直せる。
+ */
+export function duplicateEventDraft(event: CalendarEventItem, timeZone: string): EventDraft {
+  const { start, end } = event.allDay
+    ? duplicateAllDayRange(event, timeZone)
+    : duplicateTimedRange(event, timeZone);
+
+  return {
+    allDay: event.allDay,
+    start,
+    end,
+    title: event.title,
+    calendarId: event.calendarId,
+    location: event.location ?? undefined,
+    description: event.description ?? undefined,
+  };
+}
+
+function duplicateTimedRange(event: CalendarEventItem, timeZone: string) {
+  const durationMs = new Date(event.end).getTime() - new Date(event.start).getTime();
+  const now = new Date();
+  return {
+    start: isoToLocalInput(now.toISOString(), timeZone),
+    end: isoToLocalInput(new Date(now.getTime() + durationMs).toISOString(), timeZone),
+  };
+}
+
+function duplicateAllDayRange(event: CalendarEventItem, timeZone: string) {
+  const durationDays = dateKeyDiffDays(event.start, event.end);
+  const todayKey = isoToLocalInput(new Date().toISOString(), timeZone).slice(0, 10);
+  return { start: todayKey, end: shiftDateKeyByDays(todayKey, durationDays) };
+}
+
+/** 終日の日数差。UTC正午で扱い、タイムゾーンによる日付ずれを避ける。 */
+function dateKeyDiffDays(startKey: string, endKey: string): number {
+  const start = new Date(`${startKey}T12:00:00Z`).getTime();
+  const end = new Date(`${endKey}T12:00:00Z`).getTime();
+  return Math.round((end - start) / 86_400_000);
+}
+
+function shiftDateKeyByDays(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }

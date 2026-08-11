@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { CalendarClock, MapPin, Pencil, RotateCw, Trash2, Users } from "lucide-react";
+import { CalendarClock, Copy, MapPin, Pencil, RotateCw, Trash2, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +25,7 @@ export function EventDetailDialog({
   readOnly = false,
   onClose,
   onEdit,
+  onDuplicate,
   onDeleted,
 }: {
   event: CalendarEventItem;
@@ -33,6 +34,7 @@ export function EventDetailDialog({
   readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onDeleted: (touched: TouchedRange[] | null) => void;
 }) {
@@ -54,6 +56,11 @@ export function EventDetailDialog({
   const edit = () => {
     setOpen(false);
     setTimeout(onEdit, 150);
+  };
+
+  const duplicate = () => {
+    setOpen(false);
+    setTimeout(onDuplicate, 150);
   };
 
   const deleted = (touched: TouchedRange[] | null) => {
@@ -86,6 +93,17 @@ export function EventDetailDialog({
         <Button
           variant="ghost"
           size="icon-sm"
+          aria-label="複製"
+          className="absolute top-2 right-26"
+          disabled={readOnly}
+          onClick={duplicate}
+        >
+          <Copy className="size-4" />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
           aria-label="編集"
           className="absolute top-2 right-10"
           disabled={readOnly}
@@ -95,7 +113,7 @@ export function EventDetailDialog({
         </Button>
 
         <DialogHeader>
-          <DialogTitle className="pr-22">{event.title}</DialogTitle>
+          <DialogTitle className="pr-30">{event.title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 text-sm">
