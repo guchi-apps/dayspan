@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { BellRing, CalendarDays, ListChecks, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -18,6 +21,17 @@ export type NavKey = (typeof ITEMS)[number]["key"];
  * 色だけに頼らずに現在地が分かるようにする。
  */
 export function BottomNav({ current }: { current: NavKey }) {
+  const router = useRouter();
+
+  const handleCalendarClick = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    const todayKey = `${year}-${month}-${day}`;
+    router.push(`/calendar?view=day1&date=${todayKey}`);
+  };
+
   return (
     // viewport-fit=cover でページがブラウザのツールバーやホームインジケーターの下まで
     // 広がるため、その分を内側へ確保しないとタップがブラウザ側に取られる。
@@ -27,6 +41,34 @@ export function BottomNav({ current }: { current: NavKey }) {
       {ITEMS.map((item) => {
         const active = item.key === current;
         const Icon = item.icon;
+
+        if (item.key === "calendar") {
+          return (
+            <button
+              key={item.href}
+              onClick={handleCalendarClick}
+              aria-current={active ? "page" : undefined}
+              className="flex w-full max-w-[112px] flex-col items-center gap-1"
+            >
+              <span
+                className={cn(
+                  "flex h-8 w-16 items-center justify-center rounded-full transition-colors",
+                  active ? "bg-secondary-container text-on-secondary-container" : "text-on-surface-variant",
+                )}
+              >
+                <Icon className="size-6" />
+              </span>
+              <span
+                className={cn(
+                  "type-label-medium",
+                  active ? "text-on-surface" : "text-on-surface-variant",
+                )}
+              >
+                {item.label}
+              </span>
+            </button>
+          );
+        }
 
         return (
           <Link
