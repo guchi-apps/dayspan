@@ -9,6 +9,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { Bell } from "lucide-react";
 
 import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
@@ -17,21 +18,30 @@ import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/
 import { eventColors } from "./calendar-color";
 import {
   isAllDayItem,
+  reminderAnnualYearLabel,
   taskOccurrences,
   type CalendarDateUtils,
   type TaskDateField,
 } from "./item-layout";
 import { useLongPress } from "./use-long-press";
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
+import { useWeekZoom } from "./use-week-zoom";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
-// 週の高さは固定にする。可変にすると、月をまたいで読み込み直したときに
-// スクロール位置を同じ場所へ戻せなくなるため。
-const WEEK_HEIGHT = 112;
+// 時間グリッドのピンチ（use-time-zoom.ts）は、始まった時点で掴みかけの予定ドラッグを
+// 取りやめるために onPinchStart を使う。月表示にドラッグは無いため何もしない。
+const NOOP = () => {};
 
-// 帯を置ける段数。段の高さ（18/19px）×3段 ＋「ほか N件」1段 が、
-// 日付ボタンの下に残る高さ（WEEK_HEIGHT - 32 - 下余白）に収まる上限。
+// 週の高さは、1日・3日表示の時間幅と同じく2本指のピンチで変えられる（use-week-zoom.ts）。
+// 全ての週に同じ高さを一律に適用するため、週をまたいで窓を張り直しても、通し位置
+// （絶対週インデックス）と高さの掛け算のままスクロール位置が求まる。
+
+// 帯を置ける段数。段の高さ（18/19px）×3段 ＋「ほか N件」1段 が、既定の週の高さで
+// 日付ボタンの下に残る高さ（週の高さ - 32 - 下余白）に収まる上限。ピンチで高さを変えても
+// 段数はここで揃えたままにする。高さに応じて増減させると、予定とタスクが変わったときだけ
+// 組み直している週ごとの配置計算（layoutByWeek、下記コメント参照）を指の動きのたびにも
+// 走らせることになり、操作が返ってこなくなるため。
 const LANES = 3;
 
 /**
@@ -77,19 +87,24 @@ function clampWeekIndex(index: number, length: number): number {
   return Math.min(Math.max(index, 0), length - 1);
 }
 
+const VOID_BACKGROUND_IMAGE = [
+  "linear-gradient(to bottom, transparent calc(100% - 1px), var(--color-outline-variant) 0)",
+  "linear-gradient(to right, transparent calc(100% - 1px), var(--color-outline-variant) 0)",
+].join(", ");
+
 /**
  * 窓の外側に置く余白。まだ日付を並べていない範囲。
  *
  * 何も描かないと、勢いよくスクロールして窓の先へ出たときにカレンダーが途切れて見える。
  * 週と日の区切り線だけを背景で描き、日付の入っていないカレンダーとして見せる。
+ * 区切り線の間隔は週の高さで決まるため、ピンチで高さが変わるたびに求め直す。
  */
-const VOID_STYLE: CSSProperties = {
-  backgroundImage: [
-    "linear-gradient(to bottom, transparent calc(100% - 1px), var(--color-outline-variant) 0)",
-    "linear-gradient(to right, transparent calc(100% - 1px), var(--color-outline-variant) 0)",
-  ].join(", "),
-  backgroundSize: `100% ${WEEK_HEIGHT}px, calc(100% / 7) 100%`,
-};
+function voidStyle(weekHeight: number): CSSProperties {
+  return {
+    backgroundImage: VOID_BACKGROUND_IMAGE,
+    backgroundSize: `100% ${weekHeight}px, calc(100% / 7) 100%`,
+  };
+}
 
 export function ContinuousMonthView({
   weeks,
@@ -130,7 +145,10 @@ export function ContinuousMonthView({
    */
   virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
-  /** 画面の一番上にある週が変わったとき。 */
+  /**
+   * 画面中央にある週が変わったとき。
+   * 表示形式を切り替える操作の起点にする週なので、上端ではなく中央を採る。
+   */
   onVisibleWeekChange: (weekKey: string) => void;
   onSelectDay: (dateKey: string) => void;
   /** その日に予定を足す。指・ペンでの長押しから呼ばれる。 */
@@ -139,14 +157,31 @@ export function ContinuousMonthView({
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // ピンチ直後に残るclickやピンチ中の長押しを無視するためのフラグ。use-week-zoom.ts の
+  // consumePinchClick を、長押しタイマーの発火時にも古い判定値を読まないようrefで持つ
+  // （タイマーはpointerdown時点のonLongPressを掴んだまま数百ms後に発火するため、
+  // useCallbackの依存越しに渡すと発火時点の最新のピンチ状態を読めない）。
+  const consumePinchClickRef = useRef<() => boolean>(() => false);
+
+  // 日のセルは、押せばその日の時間グリッドへ移り、長押しならその日へ予定を足す。
+  const dayPress = useLongPress<string>({
+    onPress: (dateKey) => {
+      if (!consumePinchClickRef.current()) onSelectDay(dateKey);
+    },
+    onLongPress: (dateKey) => {
+      if (!consumePinchClickRef.current()) onQuickAdd(dateKey);
+    },
+  });
+
+  const { weekHeight, scrollRef, consumePinchClick } = useWeekZoom({ onPinchStart: NOOP });
+  useIsomorphicLayoutEffect(() => {
+    consumePinchClickRef.current = consumePinchClick;
+  });
+
   const scrollbarGutter = useScrollbarGutter(scrollRef);
   const visibleMonthRef = useRef(scrollTarget.month);
   const visibleWeekRef = useRef(weeks[0][0]);
   const [todayKey] = useState(() => utils.todayKey());
-
-  // 日のセルは、押せばその日の時間グリッドへ移り、長押しならその日へ予定を足す。
-  const dayPress = useLongPress<string>({ onPress: onSelectDay, onLongPress: onQuickAdd });
 
   /*
    * 画面の先頭にある週。並びの中の位置ではなく、余白も含めた通し位置（absIndex）で覚える。
@@ -335,16 +370,16 @@ export function ContinuousMonthView({
   /** その高さにある週の先頭日。余白の中でも、窓の外の週として答える。 */
   const weekKeyAt = useCallback(
     (top: number) => {
-      const index = clampWeekIndex(Math.floor(top / WEEK_HEIGHT), geometry.totalWeeks);
+      const index = clampWeekIndex(Math.floor(top / weekHeight), geometry.totalWeeks);
       return toDateKey(addDays(parseDateKey(geometry.originWeekKey), index * 7));
     },
-    [geometry],
+    [geometry, weekHeight],
   );
 
   const rememberAnchor = useCallback(
     (container: HTMLDivElement) => {
       const absIndex = clampWeekIndex(
-        Math.floor(container.scrollTop / WEEK_HEIGHT),
+        Math.floor(container.scrollTop / weekHeight),
         geometry.totalWeeks,
       );
       const weekKey = toDateKey(addDays(parseDateKey(geometry.originWeekKey), absIndex * 7));
@@ -352,15 +387,18 @@ export function ContinuousMonthView({
       anchorRef.current = {
         weekKey,
         absIndex,
-        offset: container.scrollTop - absIndex * WEEK_HEIGHT,
+        offset: container.scrollTop - absIndex * weekHeight,
       };
 
-      if (weekKey !== visibleWeekRef.current) {
-        visibleWeekRef.current = weekKey;
-        notifyRef.current.onVisibleWeekChange(weekKey);
+      // 表示形式を切り替えたときの移動先には画面中央にある週を使う。上端の週だと、
+      // 半分だけ見えている週を移動先に選ぶことになり、いま読んでいた内容とずれるため。
+      const centerWeekKey = weekKeyAt(container.scrollTop + container.clientHeight / 2);
+      if (centerWeekKey !== visibleWeekRef.current) {
+        visibleWeekRef.current = centerWeekKey;
+        notifyRef.current.onVisibleWeekChange(centerWeekKey);
       }
     },
-    [geometry],
+    [geometry, weekHeight, weekKeyAt],
   );
 
   /** いま見ている月。画面の上から1/3の位置にある週の、中日（4日目）の月を採る。 */
@@ -385,7 +423,13 @@ export function ContinuousMonthView({
 
       if (target >= 0) {
         appliedTargetRef.current = scrollTarget.nonce;
-        container.scrollTop = (geometry.lead + target) * WEEK_HEIGHT;
+
+        // day を指定した移動（今日・日表示からの切り替え）は、その週を画面中央へ置く。
+        // 上端に揃えるだけだと、指定した日が画面の外や端に埋もれて見えることがあるため。
+        // month だけの指定（前へ・次へ）は、従来どおりその月の先頭週を上端に揃える。
+        container.scrollTop = day
+          ? (geometry.lead + target) * weekHeight - (container.clientHeight - weekHeight) / 2
+          : (geometry.lead + target) * weekHeight;
         rememberAnchor(container);
         return;
       }
@@ -399,9 +443,9 @@ export function ContinuousMonthView({
     const absIndex = weeksBetween(geometry.originWeekKey, anchor.weekKey);
     if (absIndex === anchor.absIndex) return;
 
-    container.scrollTop += (absIndex - anchor.absIndex) * WEEK_HEIGHT;
+    container.scrollTop += (absIndex - anchor.absIndex) * weekHeight;
     anchorRef.current = { ...anchor, absIndex };
-  }, [geometry, weeks, scrollTarget, rememberAnchor]);
+  }, [geometry, weeks, scrollTarget, rememberAnchor, weekHeight]);
 
   const handleScroll = useCallback(() => {
     const container = scrollRef.current;
@@ -415,7 +459,7 @@ export function ContinuousMonthView({
       visibleMonthRef.current = month;
       notifyRef.current.onVisibleMonthChange(month);
     }
-  }, [monthAtScroll, rememberAnchor]);
+  }, [monthAtScroll, rememberAnchor, scrollRef]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -455,7 +499,7 @@ export function ContinuousMonthView({
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]"
       >
         {geometry.lead > 0 && (
-          <div aria-hidden style={{ ...VOID_STYLE, height: geometry.lead * WEEK_HEIGHT }} />
+          <div aria-hidden style={{ ...voidStyle(weekHeight), height: geometry.lead * weekHeight }} />
         )}
 
         {weeks.map((week, weekIndex) => {
@@ -467,7 +511,7 @@ export function ContinuousMonthView({
             <div
               key={week[0]}
               className="relative grid grid-cols-7 border-b border-outline-variant"
-              style={{ height: WEEK_HEIGHT }}
+              style={{ height: weekHeight }}
             >
               {week.map((dateKey) => {
                 const isFirstOfMonth = dateKey.slice(8, 10) === "01";
@@ -561,7 +605,9 @@ export function ContinuousMonthView({
           );
         })}
 
-        {trail > 0 && <div aria-hidden style={{ ...VOID_STYLE, height: trail * WEEK_HEIGHT }} />}
+        {trail > 0 && (
+          <div aria-hidden style={{ ...voidStyle(weekHeight), height: trail * weekHeight }} />
+        )}
       </div>
     </div>
   );
@@ -602,6 +648,10 @@ function renderChip(
   );
 }
 
+/**
+ * 日付リマインドは完了して消化するタスクとは別物。塗りつぶさず、ベルのアイコンで
+ * 予定・タスクと描き分ける（docs/spec.md §9）。
+ */
 function ReminderChip({
   reminder,
   utils,
@@ -611,18 +661,20 @@ function ReminderChip({
   utils: CalendarDateUtils;
   onOpen: () => void;
 }) {
+  const yearLabel = reminderAnnualYearLabel(reminder);
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4"
-      title={reminder.title}
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1 text-left text-[10px] leading-[15px] font-medium sm:h-[18px] sm:text-[11px] sm:leading-4"
+      title={yearLabel ? `${reminder.title} ${yearLabel}` : reminder.title}
     >
-      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
+      <Bell aria-hidden className="size-2.5 shrink-0 text-tertiary" />
       {reminder.hasTime && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
       )}
       <span className="clip-nowrap">{reminder.title}</span>
+      {yearLabel && <span className="hidden shrink-0 opacity-70 sm:inline">{yearLabel}</span>}
     </button>
   );
 }

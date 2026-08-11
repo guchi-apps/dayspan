@@ -119,11 +119,12 @@ export function CalendarShell({
   // 連続スクロール中の月は、サーバーの応答を待たずに見出しへ反映する。
   const [scrolledMonth, setScrolledMonth] = useState(anchorKey.slice(0, 7));
 
-  // 画面の一番上にある週の先頭日。月表示→日表示へ切り替えるとき、この週を起点にする
-  // （1日目固定だと、月の途中の週を見ていてもその月の1日目基準のタブへ飛んでしまうため）。
+  // 画面中央にある週の先頭日。月表示→日表示へ切り替えるとき、この週を起点にする
+  // （1日目固定だと、月の途中の週を見ていてもその月の1日目基準のタブへ飛んでしまうため。
+  // 上端の週だと、半分だけ見えている週を起点に選んでしまうこともあるため中央を採る）。
   // 読むのは表示形式を切り替える操作の中だけなので、状態にせず ref で持つ。
   // 状態にすると、スクロールで週が変わるたびにカレンダー全体が描き直される。
-  const topWeekRef = useRef(anchorKey);
+  const centerWeekRef = useRef(anchorKey);
 
   // 保持している月の中心。ここを動かすと、前後の月ぶんの並びとデータが張り直される。
   const [monthCenter, setMonthCenter] = useState(anchorKey.slice(0, 7));
@@ -422,9 +423,9 @@ export function CalendarShell({
     if (Math.abs(monthDistance(monthCenter, month)) >= 2) setMonthCenter(month);
   };
 
-  /** スクロールで画面の一番上に来た週が変わったとき。 */
+  /** スクロールで画面中央に来た週が変わったとき。 */
   const handleVisibleWeekChange = (weekKey: string) => {
-    topWeekRef.current = weekKey;
+    centerWeekRef.current = weekKey;
   };
 
   /**
@@ -464,7 +465,18 @@ export function CalendarShell({
 
   // 表示形式を切り替えたときの移動先。月表示はスクロールで移動するため anchorKey が
   // 更新されない（URLだけが replaceState で追従する）。見えている週を起点にする。
-  const viewSwitchAnchorKey = () => (nav.view === "month" ? topWeekRef.current : anchorKey);
+  const viewSwitchAnchorKey = () => (nav.view === "month" ? centerWeekRef.current : anchorKey);
+
+  /**
+   * 月表示から3日・1日表示へ切り替えるときの日。中央の週の先頭日をそのまま使うと、
+   * 3日表示の初日・1日表示の日が週の先頭の曜日（例: 日曜）に固定されてしまう。
+   * 今日と同じ曜日の日を中央の週から選び、切り替えても見ている曜日の感覚がずれないようにする。
+   */
+  const viewSwitchDayAnchorKey = () => {
+    const weekStart = parseDateKey(centerWeekRef.current);
+    const offset = (parseDateKey(utils.todayKey()).getUTCDay() - weekStartsOn + 7) % 7;
+    return toDateKey(addDays(weekStart, offset));
+  };
 
   return (
     <div className="flex h-dvh flex-col">
@@ -509,9 +521,11 @@ export function CalendarShell({
           月日がその中に埋もれて、目を留めないと読み取れないため。
         */}
         <h1 className="flex min-w-0 flex-1 items-baseline gap-1 md:gap-1.5">
-          <span className="type-label-medium md:type-title-small shrink-0 text-on-surface-variant">
-            {headerLabel.year}
-          </span>
+          {headerLabel.year && (
+            <span className="type-label-medium md:type-title-small shrink-0 text-on-surface-variant">
+              {headerLabel.year}
+            </span>
+          )}
           <span className="type-title-medium md:type-headline-small truncate">
             {headerLabel.main}
           </span>
@@ -548,6 +562,11 @@ export function CalendarShell({
                 if (item.view === "month") {
                   // 月表示のまま押しても、以前の位置合わせを乱さないよう何もしない。
                   if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey());
+                  return;
+                }
+
+                if (nav.view === "month" && item.view !== "day7") {
+                  navigate(item.view, viewSwitchDayAnchorKey());
                   return;
                 }
 
@@ -964,7 +983,8 @@ function AddButton({
  * 画面側で字の大きさと濃さを変えられる形で渡す。
  */
 type HeaderLabel = {
-  /** 「2026年」。範囲が年をまたぐときは先頭の年だけを出し、またいだ先は main に入れる */
+  /** 「2026年」。範囲が年をまたぐときは先頭の年だけを出し、またいだ先は main に入れる。
+   *  1日・3日表示は幅が足りず見切れるため空文字にする */
   year: string;
   /** 「8月」「8月12日」「8月10日 – 16日」 */
   main: string;
@@ -987,7 +1007,9 @@ function formatRangeLabel(view: CalendarView, anchorKey: string, days: string[])
 
   const first = days[0];
   const last = days[days.length - 1];
-  const year = `${first.slice(0, 4)}年`;
+  // 1日・3日表示は月日だけでもスマートフォンの幅いっぱいになるため、年を足すと見切れる。
+  // 週表示（desktopOnly）は幅に余裕があるため、そちらは従来どおり年も出す。
+  const year = view === "day1" || view === "day3" ? "" : `${first.slice(0, 4)}年`;
 
   if (first === last) {
     return {
