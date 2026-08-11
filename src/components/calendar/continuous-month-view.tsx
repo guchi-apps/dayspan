@@ -9,6 +9,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { Bell } from "lucide-react";
 
 import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
@@ -615,6 +616,10 @@ function renderChip(
   );
 }
 
+/**
+ * 日付リマインドは完了して消化するタスクとは別物。塗りつぶさず、ベルのアイコンで
+ * 予定・タスクと描き分ける（docs/spec.md §9）。
+ */
 function ReminderChip({
   reminder,
   utils,
@@ -629,10 +634,10 @@ function ReminderChip({
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4"
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1 text-left text-[10px] leading-[15px] font-medium sm:h-[18px] sm:text-[11px] sm:leading-4"
       title={yearLabel ? `${reminder.title} ${yearLabel}` : reminder.title}
     >
-      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
+      <Bell aria-hidden className="size-2.5 shrink-0 text-tertiary" />
       {reminder.hasTime && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
       )}
