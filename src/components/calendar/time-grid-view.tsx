@@ -23,6 +23,7 @@ import {
   type DragPreview,
   type DragTarget,
 } from "./use-grid-drag";
+import { useScrollbarGutter } from "./use-scrollbar-gutter";
 import { useTimeZoom } from "./use-time-zoom";
 
 /** 左から順に、前の期間・表示中の期間・次の期間。 */
@@ -108,6 +109,10 @@ export function TimeGridView({
   }, [cancelDrag, cancelAllDayDrag]);
 
   const { hourHeight, pinching, scrollRef, consumePinchClick } = useTimeZoom({ onPinchStart });
+
+  // 日付ヘッダー・終日エリアはスクロール領域の外にある。パソコンのスクロールバーは
+  // 場所を取るため、同じ幅を右へ空けないと下の時間グリッドと列の境目がずれる（issue #136）。
+  const scrollbarGutter = useScrollbarGutter(scrollRef);
   const gridHeight = hourHeight * 24;
 
   // ピンチのあとに残るclickで、予定や空き時間の画面が開かないようにする。
@@ -155,7 +160,10 @@ export function TimeGridView({
       className="flex min-h-0 flex-1 touch-pan-y flex-col"
       {...swipeHandlers}
     >
-      <div className="flex border-b border-outline-variant">
+      <div
+        className="flex border-b border-outline-variant"
+        style={{ paddingRight: scrollbarGutter }}
+      >
         <div className="w-12 shrink-0" />
         <SwipeTrack offset={swipeOffset} snapping={swipeSnapping} panes={panes}>
           {(paneDays) => <DayHeaderPane days={paneDays} todayKey={todayKey} />}
@@ -166,6 +174,7 @@ export function TimeGridView({
         panes={panes}
         swipeOffset={swipeOffset}
         swipeSnapping={swipeSnapping}
+        endGutter={scrollbarGutter}
         events={events}
         tasks={tasks}
         reminders={reminders}
@@ -697,6 +706,7 @@ function AllDayArea({
   panes,
   swipeOffset,
   swipeSnapping,
+  endGutter,
   events,
   tasks,
   reminders,
@@ -714,6 +724,8 @@ function AllDayArea({
   panes: PaneDays;
   swipeOffset: number;
   swipeSnapping: boolean;
+  /** 下の時間グリッドがスクロールバーに取られている幅。右へ同じだけ空けて列を揃える。 */
+  endGutter: number;
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
@@ -732,7 +744,9 @@ function AllDayArea({
     <div
       ref={rowRef}
       data-gutter-width="48"
+      data-gutter-end={endGutter}
       className="flex border-b border-outline-variant bg-surface-container-low"
+      style={{ paddingRight: endGutter }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}

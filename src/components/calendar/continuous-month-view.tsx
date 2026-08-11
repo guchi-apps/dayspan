@@ -17,6 +17,7 @@ import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/
 import { eventColors } from "./calendar-color";
 import { isAllDayItem, type CalendarDateUtils } from "./item-layout";
 import { useLongPress } from "./use-long-press";
+import { useScrollbarGutter } from "./use-scrollbar-gutter";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -132,6 +133,7 @@ export function ContinuousMonthView({
   onOpenReminder: (reminder: ReminderItem) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollbarGutter = useScrollbarGutter(scrollRef);
   const visibleMonthRef = useRef(scrollTarget.month);
   const visibleWeekRef = useRef(weeks[0][0]);
   const [todayKey] = useState(() => utils.todayKey());
@@ -405,7 +407,12 @@ export function ContinuousMonthView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid shrink-0 grid-cols-7 border-b border-outline-variant">
+      {/* 曜日の見出しはスクロール領域の外にある。パソコンのスクロールバーは場所を取るため、
+          同じ幅を右へ空けないと下の日付セルと列の境目がずれる（issue #136）。 */}
+      <div
+        className="grid shrink-0 grid-cols-7 border-b border-outline-variant"
+        style={{ paddingRight: scrollbarGutter }}
+      >
         {Array.from({ length: 7 }, (_, index) => {
           const weekday = (weekStartsOn + index) % 7;
 
