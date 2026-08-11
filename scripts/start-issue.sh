@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
+# issue-deck-local-session: v1
+#
 # Issueごとに専用ブランチ・git worktreeを作成し、実装エージェント用のClaude Codeセッションを起動する
+#
+# 冒頭の `issue-deck-local-session:` は、issue-deckのワンクリック起動（画面の「ローカルで開始」）が
+# 対応可否を判定するためのマーカー。issue-deck側の受け口と画面がこの行を見る。契約の内容は
+# issue-deck リポジトリの docs/multi-agent/local-quick-start.md を参照。
 #
 # 使い方:
 #   scripts/start-issue.sh <issue番号> [issue番号...]
@@ -12,7 +18,8 @@
 # （issue-deckの画面「ローカルで開始」から2回目以降に押しても使える）。
 #
 # 環境変数:
-#   ISSUE_DECK_SKIP_LAN_SETUP=1  LANアクセス設定（Windowsの管理者権限が必要）を行わない
+#   ISSUE_DECK_SKIP_LAN_SETUP=1   LANアクセス設定（Windowsの管理者権限が必要）を行わない
+#   ISSUE_DECK_DEV_PORT_BASE=6000 開発サーバーのポートのベース値（未設定なら既定の6000）
 #
 # 本体リポジトリの作業ツリー（ブランチ・uncommitted changes）には一切触れない。
 # develop の最新化は git fetch のみで行い、git worktree add で新しいブランチ・作業ディレクトリを作る。
@@ -126,7 +133,9 @@ prepare_issue() {
   # 開発サーバーのポートをIssueごとに一意にする（複数worktreeで同時にpnpm devしても衝突しないように）。
   # 6000始まりにしているのは、issue-deck（4000 + Issue番号）と同時に開いてもポートが
   # ぶつからないようにするため。DaySpanの本番ポート3113・dev既定の3000とも重ならない。
-  DEV_PORT=$((6000 + n))
+  # ワンクリック起動からはissue-deck側の受け口がベース値を渡してくる（全リポジトリのベース値を
+  # 一箇所で管理するため）。渡されない場合は上記の既定を使う。
+  DEV_PORT=$(( ${ISSUE_DECK_DEV_PORT_BASE:-6000} + n ))
   if [[ -f "$WORKTREE_DIR/.env.local" ]]; then
     sed -i '/^PORT=/d' "$WORKTREE_DIR/.env.local"
     printf '\nPORT=%s\n' "$DEV_PORT" >>"$WORKTREE_DIR/.env.local"
