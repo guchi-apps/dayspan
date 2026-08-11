@@ -37,12 +37,26 @@ const NOOP = () => {};
 // 全ての週に同じ高さを一律に適用するため、週をまたいで窓を張り直しても、通し位置
 // （絶対週インデックス）と高さの掛け算のままスクロール位置が求まる。
 
-// 帯を置ける段数。段の高さ（18/19px）×3段 ＋「ほか N件」1段 が、既定の週の高さで
-// 日付ボタンの下に残る高さ（週の高さ - 32 - 下余白）に収まる上限。ピンチで高さを変えても
-// 段数はここで揃えたままにする。高さに応じて増減させると、予定とタスクが変わったときだけ
-// 組み直している週ごとの配置計算（layoutByWeek、下記コメント参照）を指の動きのたびにも
-// 走らせることになり、操作が返ってこなくなるため。
-const LANES = 3;
+// 帯を置ける段数。段の高さ（18/19px）に応じて動的に計算する。
+// ピンチで高さを変えたときに表示できるアイテムを増やすため、weekHeight に応じて
+// 計算可能な段数を使う。配置計算（layoutByWeek）は memoized なので、
+// weekHeight が変わらない限りピンチ中に再計算は走らない。
+function calculateLanes(weekHeight: number): number {
+  // 各段の高さ（クラスで auto-rows-[18px] または auto-rows-[19px]）
+  const itemHeight = 18;
+  // 日付ボタン（h-7 sm:h-6 = 28px/24px）+ 下余白（0.5 or 1 = 2/4px）+ 上余白
+  // の合計約32-36px。保守性のため、固定値ではなく計算ベースで求める。
+  const reservedHeight = 36;
+  // 利用可能な高さから、表示可能な段数を計算する
+  const availableHeight = weekHeight - reservedHeight;
+  const maxLanes = Math.max(1, Math.floor(availableHeight / itemHeight));
+  // 最初は3段が目安（既定の見た目）だが、拡大されたら段数を増やす
+  return maxLanes;
+}
+
+function lanesForHeight(weekHeight: number): number {
+  return calculateLanes(weekHeight);
+}
 
 /**
  * 週の中での1本ぶんの帯。日をまたぐ予定は、週の境界で切って週ごとに1本にする。
@@ -245,6 +259,7 @@ export function ContinuousMonthView({
    * 操作が返ってこなくなる。予定とタスクが変わったときだけ組み直す。
    */
   const layoutByWeek = useMemo<WeekLayout[]>(() => {
+    const lanes = lanesForHeight(weekHeight);
     // 日付キーから「何週目の何列目か」を引けるようにする。
     const position = new Map<string, [number, number]>();
     weeks.forEach((week, weekIndex) => {
@@ -354,7 +369,7 @@ export function ContinuousMonthView({
           lane += 1;
         }
 
-        if (lane < LANES) {
+        if (lane < lanes) {
           segments.push({ ...raw_, lane });
         } else {
           for (let column = raw_.column; column < raw_.column + raw_.span; column += 1) {
@@ -365,7 +380,7 @@ export function ContinuousMonthView({
 
       return { segments, hiddenByColumn };
     });
-  }, [events, tasks, reminders, utils, weeks]);
+  }, [events, tasks, reminders, utils, weeks, weekHeight]);
 
   /** その高さにある週の先頭日。余白の中でも、窓の外の週として答える。 */
   const weekKeyAt = useCallback(
@@ -558,48 +573,55 @@ export function ContinuousMonthView({
                 日をまたぐ予定を1本につなげられず、日ごとに切れて見えるため。
               */}
               <div className="pointer-events-none absolute inset-x-0 top-8 bottom-0.5 grid auto-rows-[18px] grid-cols-7 overflow-hidden sm:bottom-1 sm:auto-rows-[19px]">
-                {pending
-                  ? PENDING_BARS.map((bar, index) => (
-                      <div
-                        key={index}
-                        className="mx-0.5 h-4 animate-pulse rounded-xs bg-on-surface/8 sm:mx-1"
-                        style={{ gridColumn: `${bar.column} / span ${bar.span}`, gridRow: bar.lane }}
-                      />
-                    ))
-                  : segments.map((segment) => (
-                      <div
-                        // 期限と予定日が同じ列に並ぶこともあるため、どちらの枠かまで含めて区別する。
-                        key={`${segment.item.id}-${segment.taskField ?? ""}-${segment.column}`}
-                        className={cn(
-                          "pointer-events-auto min-w-0",
-                          // 週をまたぐ側は余白を詰め、隣の週の端と地続きに見えるようにする。
-                          segment.continuesBefore ? "pl-0" : "pl-0.5 sm:pl-1",
-                          segment.continuesAfter ? "pr-0" : "pr-0.5 sm:pr-1",
-                        )}
-                        style={{
-                          gridColumn: `${segment.column + 1} / span ${segment.span}`,
-                          gridRow: segment.lane + 1,
-                        }}
-                      >
-                        {renderChip(segment, utils, onOpenEvent, onOpenTask, onOpenReminder)}
-                      </div>
-                    ))}
+                {(() => {
+                  const lanes = lanesForHeight(weekHeight);
+                  return (
+                    <>
+                      {pending
+                        ? PENDING_BARS.map((bar, index) => (
+                            <div
+                              key={index}
+                              className="mx-0.5 h-4 animate-pulse rounded-xs bg-on-surface/8 sm:mx-1"
+                              style={{ gridColumn: `${bar.column} / span ${bar.span}`, gridRow: bar.lane }}
+                            />
+                          ))
+                        : segments.map((segment) => (
+                            <div
+                              // 期限と予定日が同じ列に並ぶこともあるため、どちらの枠かまで含めて区別する。
+                              key={`${segment.item.id}-${segment.taskField ?? ""}-${segment.column}`}
+                              className={cn(
+                                "pointer-events-auto min-w-0",
+                                // 週をまたぐ側は余白を詰め、隣の週の端と地続きに見えるようにする。
+                                segment.continuesBefore ? "pl-0" : "pl-0.5 sm:pl-1",
+                                segment.continuesAfter ? "pr-0" : "pr-0.5 sm:pr-1",
+                              )}
+                              style={{
+                                gridColumn: `${segment.column + 1} / span ${segment.span}`,
+                                gridRow: segment.lane + 1,
+                              }}
+                            >
+                              {renderChip(segment, utils, onOpenEvent, onOpenTask, onOpenReminder)}
+                            </div>
+                          ))}
 
-                {!pending &&
-                  hiddenByColumn.map((hidden, column) =>
-                    hidden > 0 ? (
-                      <button
-                        key={week[column]}
-                        type="button"
-                        onClick={() => onSelectDay(week[column])}
-                        className="pointer-events-auto truncate px-0.5 text-left text-[10px] whitespace-nowrap text-on-surface-variant sm:px-1 sm:hover:text-foreground"
-                        style={{ gridColumn: column + 1, gridRow: LANES + 1 }}
-                      >
-                        <span className="sm:hidden">+{hidden}</span>
-                        <span className="hidden sm:inline">ほか {hidden}件</span>
-                      </button>
-                    ) : null,
-                  )}
+                      {!pending &&
+                        hiddenByColumn.map((hidden, column) =>
+                          hidden > 0 ? (
+                            <button
+                              key={week[column]}
+                              type="button"
+                              onClick={() => onSelectDay(week[column])}
+                              className="pointer-events-auto truncate px-0.5 text-left text-[10px] whitespace-nowrap text-on-surface-variant sm:px-1 sm:hover:text-foreground"
+                              style={{ gridColumn: column + 1, gridRow: lanes + 1 }}
+                            >
+                              <span className="sm:hidden">+{hidden}</span>
+                              <span className="hidden sm:inline">ほか {hidden}件</span>
+                            </button>
+                          ) : null,
+                        )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           );
