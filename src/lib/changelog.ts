@@ -21,6 +21,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.7.0",
+    date: "2026-08-11",
+    changes: [
+      "予定の詳細画面に複製ボタンが追加され、同じ内容の予定をすぐに作成できるようになりました。複製した予定の日時は現在の日時に合わせて自動調整されます",
+    ],
+  },
+  {
     version: "0.6.0",
     date: "2026-08-11",
     changes: [
