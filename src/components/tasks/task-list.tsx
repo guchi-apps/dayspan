@@ -218,7 +218,7 @@ export function TaskList({
 
       <Button
         size="icon"
-        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
+        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
         aria-label="タスクを追加"
         disabled={offline}
         onClick={() =>
