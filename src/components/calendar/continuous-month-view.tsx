@@ -696,7 +696,7 @@ function ReminderChip({
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
       )}
       <span className="clip-nowrap">{reminder.title}</span>
-      {yearLabel && <span className="hidden shrink-0 opacity-70 sm:inline">{yearLabel}</span>}
+      {yearLabel && <span className="shrink-0 opacity-70">{yearLabel}</span>}
     </button>
   );
 }
