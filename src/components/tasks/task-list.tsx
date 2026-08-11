@@ -122,13 +122,6 @@ export function TaskList({
       dueMode: "datetime",
       due: dateKeyPlusMinutes(defaultDayKey, DEFAULT_TASK_DUE_MINUTES),
     };
-    if (calendars.length > 0) {
-      drafts.event = {
-        allDay: false,
-        start: dateKeyPlusMinutes(defaultDayKey, DEFAULT_START_MINUTES),
-        end: dateKeyPlusMinutes(defaultDayKey, Math.min(DEFAULT_START_MINUTES + 60, 23 * 60 + 30)),
-      };
-    }
     drafts.reminder = { dateMode: "date", date: defaultDayKey };
     setItemDialog(drafts);
   };
