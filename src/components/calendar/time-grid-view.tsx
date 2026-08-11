@@ -32,6 +32,15 @@ type PaneDays = [string[], string[], string[]];
 // ここで作り直すと readOnly の間だけ毎回描き直しになる。
 const NOOP = () => {};
 
+/**
+ * 日付ヘッダー・時間グリッド・終日エリアの列幅を揃えるための共通定義。
+ * flexboxの`flex-1`とCSS Gridの`1fr`は端数pxの配分が異なり、列境界がずれることがあるため
+ * （issue #120）、日数ぶんの列を描く箇所は必ずこれを使う。
+ */
+function dayColumnsStyle(dayCount: number): React.CSSProperties {
+  return { gridTemplateColumns: `repeat(${dayCount}, minmax(0, 1fr))` };
+}
+
 export function TimeGridView({
   days,
   events,
@@ -281,9 +290,9 @@ const DayHeaderPane = memo(function DayHeaderPane({
   todayKey: string;
 }) {
   return (
-    <div className="flex">
+    <div className="grid" style={dayColumnsStyle(days.length)}>
       {days.map((dateKey) => (
-        <div key={dateKey} className="flex-1 py-1.5 text-center">
+        <div key={dateKey} className="py-1.5 text-center">
           <div
             className={cn(
               "type-label-small",
@@ -349,7 +358,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   const gridHeight = hourHeight * 24;
 
   return (
-    <div className="flex" style={{ height: gridHeight }}>
+    <div className="grid" style={{ height: gridHeight, ...dayColumnsStyle(days.length) }}>
       {days.map((dateKey, dayIndex) => (
         <DayColumn
           key={dateKey}
@@ -438,7 +447,7 @@ function DayColumn({
   };
 
   return (
-    <div className="relative flex-1 border-l border-outline-variant">
+    <div className="relative border-l border-outline-variant">
       {/* 空き時間の選択。予定・タスクはこの上に重ねて描画するので、
           クリックが背面へ抜けることはない（docs/spec.md §15）。 */}
       <button
@@ -928,7 +937,7 @@ const AllDayPane = memo(function AllDayPane({
       {/* 日ごとの区切り線。帯を置く格子とは別に、常に日数ぶんの列で敷いておく。 */}
       <div
         className="pointer-events-none absolute inset-0 grid"
-        style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+        style={dayColumnsStyle(days.length)}
       >
         {days.map((dateKey) => (
           <div key={dateKey} className="border-l border-outline-variant" />
@@ -938,7 +947,7 @@ const AllDayPane = memo(function AllDayPane({
       <div
         className="grid gap-y-0.5 py-1"
         style={{
-          gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`,
+          ...dayColumnsStyle(days.length),
           gridTemplateRows: laneCount > 0 ? `repeat(${laneCount}, min-content)` : undefined,
         }}
       >
