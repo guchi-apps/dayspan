@@ -20,6 +20,7 @@ import type { TagOption } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { reminderAnnualYearLabel } from "./item-layout";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export function ReminderDetailDialog({
@@ -107,7 +108,12 @@ export function ReminderDetailDialog({
 
           {reminder.annual && (
             <DetailRow icon={<RotateCw className="size-4" />}>
-              毎年同じ月日に表示されます
+              <div className="flex items-center gap-1">
+                <span>毎年同じ月日に表示されます</span>
+                {reminderAnnualYearLabel(reminder) && (
+                  <span className="opacity-70">{reminderAnnualYearLabel(reminder)}</span>
+                )}
+              </div>
             </DetailRow>
           )}
 
