@@ -485,11 +485,17 @@ export function CalendarShell({
           アイコンは狭い画面でも出す。他の画面（タスク・日付リマインド）は左上にアイコンがあり、
           カレンダーだけ日付から始まると、同じアプリの中で先頭の位置が揃わないため。
           アプリ名は幅の広いときだけ。狭い画面では年月の表示幅を優先する。
+          カレンダーアイコンをクリックすると今日の日付に飛ぶ。
         */}
-        <div className="flex shrink-0 items-center gap-1 font-semibold">
+        <Button
+          variant="ghost"
+          onClick={goToday}
+          className="shrink-0 gap-1 font-semibold px-2 py-1.5"
+          aria-label="今日に飛ぶ"
+        >
           <CalendarDays className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
-        </div>
+        </Button>
 
         <HeaderNav current="calendar" />
 
