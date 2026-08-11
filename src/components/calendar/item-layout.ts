@@ -1,4 +1,4 @@
-import type { CalendarEventItem, CalendarItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/types/calendar";
 
 // 日付・時刻の解釈は、ユーザー設定のタイムゾーン（既定 Asia/Tokyo）で固定する。
 // 実行環境のローカル時刻に依存させると、サーバー（VPSはUTC）とブラウザ（JST）で
@@ -285,4 +285,15 @@ export function isAllDayItem(item: CalendarItem, taskField: TaskDateField = "due
   if (item.kind === "event") return item.allDay;
   if (item.kind === "reminder") return !item.hasTime;
   return !taskDateOf(item, taskField).hasTime;
+}
+
+/**
+ * 毎年の日付リマインドが登録から何年目かを表すラベル（「(3年目)」）。
+ * 登録した年（sourceDate）を1年目として数える。毎年の項目でない場合は null（docs/spec.md §9）。
+ */
+export function reminderAnnualYearLabel(reminder: ReminderItem): string | null {
+  if (!reminder.annual) return null;
+  const sourceYear = Number(reminder.sourceDate.slice(0, 4));
+  const displayYear = Number(reminder.date.slice(0, 4));
+  return `(${displayYear - sourceYear + 1}年目)`;
 }

@@ -17,6 +17,7 @@ import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/
 import { eventColors } from "./calendar-color";
 import {
   isAllDayItem,
+  reminderAnnualYearLabel,
   taskOccurrences,
   type CalendarDateUtils,
   type TaskDateField,
@@ -611,18 +612,20 @@ function ReminderChip({
   utils: CalendarDateUtils;
   onOpen: () => void;
 }) {
+  const yearLabel = reminderAnnualYearLabel(reminder);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/40 bg-tertiary-container px-1 text-left text-[10px] leading-[15px] font-medium text-on-tertiary-container sm:h-[18px] sm:text-[11px] sm:leading-4"
-      title={reminder.title}
+      title={yearLabel ? `${reminder.title} ${yearLabel}` : reminder.title}
     >
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-tertiary" />
       {reminder.hasTime && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
       )}
       <span className="clip-nowrap">{reminder.title}</span>
+      {yearLabel && <span className="hidden shrink-0 opacity-70 sm:inline">{yearLabel}</span>}
     </button>
   );
 }
