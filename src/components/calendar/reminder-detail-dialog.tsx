@@ -108,12 +108,7 @@ export function ReminderDetailDialog({
 
           {reminder.annual && (
             <DetailRow icon={<RotateCw className="size-4" />}>
-              <div className="flex items-center gap-1">
-                <span>毎年同じ月日に表示されます</span>
-                {reminderAnnualYearLabel(reminder) && (
-                  <span className="opacity-70">{reminderAnnualYearLabel(reminder)}</span>
-                )}
-              </div>
+              毎年同じ月日に表示されます
             </DetailRow>
           )}
 
@@ -164,14 +159,14 @@ function DetailRow({ icon, children }: { icon: ReactNode; children: ReactNode })
   );
 }
 
-/** 表示用の日時。毎年の項目は、表示している年ではなく月日が読めることを優先する。 */
+/** 表示用の日時。年月日を表示し、毎年の項目は括弧で年目情報を追加する。 */
 export function formatReminderDate(reminder: ReminderItem, timeZone: string): string {
   const dateKey = reminder.date.slice(0, 10);
-  const date = reminder.annual
-    ? `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`
-    : `${dateKey.slice(0, 4)}年${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
+  const date = `${dateKey.slice(0, 4)}年${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
+  const yearLabel = reminderAnnualYearLabel(reminder);
+  const dateWithYear = yearLabel ? `${date}${yearLabel}` : date;
 
-  if (!reminder.hasTime) return date;
+  if (!reminder.hasTime) return dateWithYear;
 
   const parts = new Intl.DateTimeFormat("ja-JP", {
     timeZone,
@@ -182,5 +177,5 @@ export function formatReminderDate(reminder: ReminderItem, timeZone: string): st
   const get = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((part) => part.type === type)?.value ?? "";
 
-  return `${date} ${get("hour")}:${get("minute")}`;
+  return `${dateWithYear} ${get("hour")}:${get("minute")}`;
 }
