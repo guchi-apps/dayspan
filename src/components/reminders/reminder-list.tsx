@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
 import { BellRing, Plus, RefreshCw } from "lucide-react";
 
-import { ItemDialog } from "@/components/calendar/item-dialog";
+import { ItemDialog, type ItemDrafts } from "@/components/calendar/item-dialog";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { toReminderDraft, type ReminderDraft } from "@/components/calendar/reminder-form";
 import { ReminderDetailDialog } from "@/components/calendar/reminder-detail-dialog";
@@ -18,7 +18,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LinearProgress } from "@/components/ui/linear-progress";
 import type { TagCatalog } from "@/services/notion/tag-options";
-import type { ReminderItem } from "@/types/calendar";
+import type { PlaceCatalog } from "@/services/notion/places";
+import type { ReminderItem, WritableCalendar } from "@/types/calendar";
+import { dateKeyPlusMinutes } from "@/components/calendar/datetime-fields";
 
 function groupByYear(reminders: ReminderItem[]) {
   const groups = new Map<string, ReminderItem[]>();
@@ -31,21 +33,30 @@ function groupByYear(reminders: ReminderItem[]) {
   return Array.from(groups.entries());
 }
 
+const DEFAULT_START_MINUTES = 9 * 60;
+const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
+
 export function ReminderList({
   reminders,
   tagCatalog,
   timeZone,
   loadError,
+  calendars = [],
+  placeCatalog = { ready: false, places: [] },
+  weekStartsOn = 0,
 }: {
   reminders: ReminderItem[];
   /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
   tagCatalog: TagCatalog;
   timeZone: string;
   loadError: string | null;
+  calendars?: WritableCalendar[];
+  placeCatalog?: PlaceCatalog;
+  weekStartsOn?: number;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [draft, setDraft] = useState<ReminderDraft | null>(null);
+  const [itemDialog, setItemDialog] = useState<ItemDrafts | null>(null);
   // タップした直後は表示専用画面を開く。編集アイコンを押したときだけ draft へ切り替える。
   const [viewing, setViewing] = useState<ReminderItem | null>(null);
 
@@ -59,11 +70,29 @@ export function ReminderList({
   const edit = (reminder: ReminderItem) => {
     if (offline) return;
     setViewing(null);
-    setDraft(toReminderDraft(reminder, timeZone));
+    setItemDialog({ reminder: toReminderDraft(reminder, timeZone) });
   };
 
   // 追加の初期値は今日から。実行環境のローカル時刻ではなく設定タイムゾーンで求める。
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
+
+  const openAdd = () => {
+    const defaultDayKey = utils.todayKey();
+    const drafts: ItemDrafts = {};
+    drafts.reminder = { dateMode: "date", date: defaultDayKey };
+    if (calendars.length > 0) {
+      drafts.event = {
+        allDay: false,
+        start: dateKeyPlusMinutes(defaultDayKey, DEFAULT_START_MINUTES),
+        end: dateKeyPlusMinutes(defaultDayKey, Math.min(DEFAULT_START_MINUTES + 60, 23 * 60 + 30)),
+      };
+    }
+    drafts.task = {
+      dueMode: "datetime",
+      due: dateKeyPlusMinutes(defaultDayKey, DEFAULT_TASK_DUE_MINUTES),
+    };
+    setItemDialog(drafts);
+  };
 
   return (
     <div className="flex h-dvh flex-col">
@@ -120,25 +149,30 @@ export function ReminderList({
 
       <Button
         size="icon"
-        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
+        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
         aria-label="日付リマインドを追加"
         disabled={offline}
-        onClick={() => setDraft({ dateMode: "date", date: utils.todayKey() })}
+        onClick={openAdd}
       >
         <Plus className="size-6" />
       </Button>
 
       <BottomNav current="reminders" />
 
-      {draft && (
+      {itemDialog && (
         <ItemDialog
-          initialKind="reminder"
-          drafts={{ reminder: draft }}
+          initialKind={
+            itemDialog.event ? "event" : itemDialog.reminder ? "reminder" : "task"
+          }
+          drafts={itemDialog}
+          calendars={calendars}
           tagCatalog={tagCatalog}
+          placeCatalog={placeCatalog}
           timeZone={timeZone}
-          onClose={() => setDraft(null)}
+          weekStartsOn={weekStartsOn}
+          onClose={() => setItemDialog(null)}
           onSaved={() => {
-            setDraft(null);
+            setItemDialog(null);
             startTransition(() => router.refresh());
           }}
         />

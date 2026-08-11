@@ -9,7 +9,9 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
 import { loadTagCatalog } from "@/services/notion/tag-options";
+import { loadPlaceCatalog } from "@/services/notion/places";
 import { listAllTasks } from "@/services/notion/tasks";
+import { loadWritableCalendars } from "@/services/calendar/load";
 import type { TaskItem } from "@/types/calendar";
 
 export default async function TasksPage() {
@@ -28,6 +30,8 @@ export default async function TasksPage() {
   let tasks: TaskItem[] = [];
   let loadError: string | null = null;
   const tagCatalogPromise = loadTagCatalog(connection);
+  const placeCatalogPromise = loadPlaceCatalog(connection);
+  const calendarsPromise = loadWritableCalendars(user.id);
   try {
     tasks = await listAllTasks(createNotionClient(connection), connection);
   } catch {
@@ -38,6 +42,9 @@ export default async function TasksPage() {
     <TaskList
       tasks={tasks}
       tagCatalog={await tagCatalogPromise}
+      placeCatalog={await placeCatalogPromise}
+      calendars={await calendarsPromise}
+      weekStartsOn={uiSetting?.weekStartsOn ?? 0}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
       loadError={loadError}
     />
