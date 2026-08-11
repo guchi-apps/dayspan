@@ -15,6 +15,50 @@ import type {
 } from "@/types/calendar";
 
 /**
+ * 書き込み可能なカレンダーのリストを読み込む。
+ * タスク・日付リマインドページから予定を作成する際の保存先選択に使う。
+ */
+export async function loadWritableCalendars(userId: string): Promise<WritableCalendar[]> {
+  const accounts = await db.googleAccount.findMany({ where: { userId } });
+  if (accounts.length === 0) return [];
+
+  const calendars: WritableCalendar[] = [];
+
+  for (const account of accounts) {
+    const visibleSettings = await db.calendarSetting.findMany({
+      where: { googleAccountId: account.id, visible: true },
+      orderBy: SETTING_ORDER,
+    });
+    if (visibleSettings.length === 0) continue;
+
+    try {
+      const entries = await listCalendars(account);
+      const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
+      visibleSettings.forEach((setting) => {
+        const entry = entryById.get(setting.calendarId);
+        if (!entry) return;
+
+        // 読み取り専用で共有されたカレンダーには予定を作れないため、候補から外す。
+        if (entry.accessRole === "owner" || entry.accessRole === "writer") {
+          calendars.push({
+            calendarId: setting.calendarId,
+            name: entry.summaryOverride?.trim() || entry.summary,
+            color: entry.backgroundColor ?? null,
+            isCreateDefault: setting.isCreateDefault,
+          });
+        }
+      });
+    } catch {
+      // 1つのアカウントで失敗してもカレンダー一覧の読み込みは続ける
+      continue;
+    }
+  }
+
+  return calendars;
+}
+
+/**
  * カレンダー画面に表示する予定とタスクをまとめて取得する。
  * 片方の連携が失敗しても、もう片方は表示できるようにエラーを握って返す
  * （どちらも落ちていることに気付けるよう、errorsとして必ず伝える）。
