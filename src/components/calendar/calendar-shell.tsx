@@ -48,8 +48,13 @@ import { ReminderDetailDialog } from "./reminder-detail-dialog";
 import { toReminderDraft } from "./reminder-form";
 import { TaskDetailDialog } from "./task-detail-dialog";
 import { toTaskDraft } from "./task-form";
-import { TimeGridView } from "./time-grid-view";
-import { monthsOfRanges, useCalendarChunks, type TouchedRange } from "./use-calendar-chunks";
+import { TimeGridView, weekdayLabel, weekdayTone } from "./time-grid-view";
+import {
+  monthsOfRanges,
+  taskRanges,
+  useCalendarChunks,
+  type TouchedRange,
+} from "./use-calendar-chunks";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 
 // 日付だけが決まっている追加（右下の「＋」・月表示の長押し）で使う開始時刻。
@@ -225,10 +230,11 @@ export function CalendarShell({
           }),
         });
       } else {
+        // 掴んだのが期限の枠か予定日の枠かで、書き換える日付が違う。
         response = await fetch(`/api/tasks/${encodeURIComponent(commit.target.item.id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ due: startIso }),
+          body: JSON.stringify({ [commit.target.field]: startIso }),
         });
       }
 
@@ -272,7 +278,7 @@ export function CalendarShell({
         response = await fetch(`/api/tasks/${encodeURIComponent(commit.target.item.id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ due: commit.dayKey }),
+          body: JSON.stringify({ [commit.target.field]: commit.dayKey }),
         });
       }
 
@@ -497,9 +503,28 @@ export function CalendarShell({
           </Button>
         </div>
 
-        {/* どの期間を見ているかは常に読めなければならない。他の操作より優先して幅を与える。 */}
-        <h1 className="type-title-medium md:type-title-large min-w-0 flex-1 truncate">
-          {headerLabel}
+        {/*
+          どの期間を見ているかは常に読めなければならない。他の操作より優先して幅を与える。
+          年は控えめに、月日は大きく置く。年号まで同じ大きさで並べると、いま見ている
+          月日がその中に埋もれて、目を留めないと読み取れないため。
+        */}
+        <h1 className="flex min-w-0 flex-1 items-baseline gap-1 md:gap-1.5">
+          <span className="type-label-medium md:type-title-small shrink-0 text-on-surface-variant">
+            {headerLabel.year}
+          </span>
+          <span className="type-title-medium md:type-headline-small truncate">
+            {headerLabel.main}
+          </span>
+          {headerLabel.weekday && (
+            <span
+              className={cn(
+                "type-label-medium md:type-title-small shrink-0",
+                headerLabel.weekday.tone ?? "text-on-surface-variant",
+              )}
+            >
+              ({headerLabel.weekday.label})
+            </span>
+          )}
         </h1>
 
         {/* M3のタップ対象は最低48dp。狭い画面では見た目より当たり判定を優先して高さを取る。 */}
@@ -768,7 +793,9 @@ function CalendarBody({
       return;
     }
 
-    data.invalidate(task.due ? monthsOfRanges([{ start: task.due, end: task.due }]) : null);
+    // 完了にすると繰り返しの次回分が別の日に作られることもあるため、
+    // 期限と予定日の両方がかかる月を取り直す。
+    data.invalidate(monthsOfRanges(taskRanges(task)));
   };
 
   return (
@@ -931,21 +958,58 @@ function AddButton({
   );
 }
 
-function formatMonthLabel(monthKey: string): string {
-  return `${monthKey.slice(0, 4)}年${Number(monthKey.slice(5, 7))}月`;
+/**
+ * ヘッダーに出す年月日。1つの文字列ではなく年・月日・曜日に分けて返す。
+ * 同じ大きさで並べると、探している月日が年号に埋もれて一目で拾えないため、
+ * 画面側で字の大きさと濃さを変えられる形で渡す。
+ */
+type HeaderLabel = {
+  /** 「2026年」。範囲が年をまたぐときは先頭の年だけを出し、またいだ先は main に入れる */
+  year: string;
+  /** 「8月」「8月12日」「8月10日 – 16日」 */
+  main: string;
+  /** 1日表示のときだけ。曜日はグリッドと同じ配色にする */
+  weekday: { label: string; tone: string | null } | null;
+};
+
+function formatMonthLabel(monthKey: string): HeaderLabel {
+  return {
+    year: `${monthKey.slice(0, 4)}年`,
+    main: `${Number(monthKey.slice(5, 7))}月`,
+    weekday: null,
+  };
 }
 
-function formatRangeLabel(view: CalendarView, anchorKey: string, days: string[]): string {
+function formatRangeLabel(view: CalendarView, anchorKey: string, days: string[]): HeaderLabel {
   if (view === "month") {
-    return `${anchorKey.slice(0, 4)}年${Number(anchorKey.slice(5, 7))}月`;
+    return formatMonthLabel(anchorKey);
   }
 
   const first = days[0];
   const last = days[days.length - 1];
+  const year = `${first.slice(0, 4)}年`;
 
   if (first === last) {
-    return `${first.slice(0, 4)}年${Number(first.slice(5, 7))}月${Number(first.slice(8, 10))}日`;
+    return {
+      year,
+      main: formatMonthDay(first),
+      weekday: { label: weekdayLabel(first), tone: weekdayTone(first) },
+    };
   }
 
-  return `${first.slice(0, 4)}年${Number(first.slice(5, 7))}月${Number(first.slice(8, 10))}日 – ${Number(last.slice(5, 7))}月${Number(last.slice(8, 10))}日`;
+  // 同じ月に収まる範囲では終わりの月を繰り返さない。読む必要があるのは変わる側だけで、
+  // 繰り返すと数字の並びが長くなって、どこが範囲の切れ目か掴みにくくなる。
+  // 年をまたぐときだけ終わりにも年を添える（週表示は年末年始をまたぐ）。
+  const tail =
+    first.slice(0, 4) !== last.slice(0, 4)
+      ? `${last.slice(0, 4)}年${formatMonthDay(last)}`
+      : first.slice(5, 7) === last.slice(5, 7)
+        ? `${Number(last.slice(8, 10))}日`
+        : formatMonthDay(last);
+
+  return { year, main: `${formatMonthDay(first)} – ${tail}`, weekday: null };
+}
+
+function formatMonthDay(dateKey: string): string {
+  return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
 }

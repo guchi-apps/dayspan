@@ -31,6 +31,12 @@ export type TaskItem = {
   /** 期限。時刻なしは YYYY-MM-DD、時刻ありは ISO 8601。未設定は null */
   due: string | null;
   hasTime: boolean;
+  /**
+   * 予定日。期限（締切）とは別に、その辺りの日に片付けるつもりだという見込みを表す。
+   * 時刻なしは YYYY-MM-DD、時刻ありは ISO 8601。未設定は null。
+   */
+  planned: string | null;
+  plannedHasTime: boolean;
   done: boolean;
   priority: TaskPriority;
   tags: string[];

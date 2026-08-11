@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { shiftMonthKey } from "@/lib/calendar-range";
+
 import type {
   CalendarEventItem,
   CalendarLoadResult,
@@ -10,6 +11,8 @@ import type {
   TaskItem,
   WritableCalendar,
 } from "@/types/calendar";
+
+import { taskOccurrences } from "./item-layout";
 
 /**
  * 1ヶ月ぶんの保持データ。
@@ -51,6 +54,16 @@ function monthKeysBetween(start: string, end: string): string[] {
 /** 保存や削除で内容が変わった期間。取り直す月を絞り込むために使う。 */
 export type TouchedRange = { start: string; end: string };
 
+/**
+ * タスクがカレンダーで場所を取っている日付。期限と予定日で別の日に現れるため、
+ * 取り直しの対象も両方になる（どちらも未設定ならカレンダーに出ていない）。
+ */
+export function taskRanges(task: Pick<TaskItem, "due" | "planned">): TouchedRange[] {
+  return [task.due, task.planned]
+    .filter((date): date is string => Boolean(date))
+    .map((date) => ({ start: date, end: date }));
+}
+
 /** 変わった期間がかかる月すべて。 */
 export function monthsOfRanges(ranges: TouchedRange[]): string[] {
   const months = new Set<string>();
@@ -78,8 +91,18 @@ function splitByMonth(
   }
 
   for (const task of data.tasks) {
-    if (!task.due) continue;
-    chunks.get(task.due.slice(0, 7))?.tasks.push(task);
+    // 期限と予定日が別の月にあるタスクは、どちらの月にも入れる。片方だけに入れると、
+    // もう一方の月を見ているときにその日の枠が出てこない（表示は月ごとに保持している）。
+    // 同じ月に両方あるときは1件でよい（枠に分けるのは描画側）。
+    const months = new Set<string>();
+
+    for (const occurrence of taskOccurrences(task)) {
+      const month = occurrence.date.slice(0, 7);
+      if (months.has(month)) continue;
+
+      months.add(month);
+      chunks.get(month)?.tasks.push(task);
+    }
   }
   for (const reminder of data.reminders) {
     chunks.get(reminder.date.slice(0, 7))?.reminders.push(reminder);

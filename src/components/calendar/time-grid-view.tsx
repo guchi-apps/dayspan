@@ -10,7 +10,11 @@ import {
   eventTextLines,
   MIN_EVENT_HEIGHT,
   MINUTES_PER_DAY,
+  taskOccurrenceKey,
+  taskOccurrences,
   type CalendarDateUtils,
+  type TaskDateField,
+  type TaskOccurrence,
 } from "./item-layout";
 import { SWIPE_SNAP_EASING, SWIPE_SNAP_MS, useDaySwipe } from "./use-day-swipe";
 import {
@@ -23,6 +27,7 @@ import {
   type DragPreview,
   type DragTarget,
 } from "./use-grid-drag";
+import { useScrollbarGutter } from "./use-scrollbar-gutter";
 import { useTimeZoom } from "./use-time-zoom";
 
 /** 左から順に、前の期間・表示中の期間・次の期間。 */
@@ -108,6 +113,10 @@ export function TimeGridView({
   }, [cancelDrag, cancelAllDayDrag]);
 
   const { hourHeight, pinching, scrollRef, consumePinchClick } = useTimeZoom({ onPinchStart });
+
+  // 日付ヘッダー・終日エリアはスクロール領域の外にある。パソコンのスクロールバーは
+  // 場所を取るため、同じ幅を右へ空けないと下の時間グリッドと列の境目がずれる（issue #136）。
+  const scrollbarGutter = useScrollbarGutter(scrollRef);
   const gridHeight = hourHeight * 24;
 
   // ピンチのあとに残るclickで、予定や空き時間の画面が開かないようにする。
@@ -155,7 +164,10 @@ export function TimeGridView({
       className="flex min-h-0 flex-1 touch-pan-y flex-col"
       {...swipeHandlers}
     >
-      <div className="flex border-b border-outline-variant">
+      <div
+        className="flex border-b border-outline-variant"
+        style={{ paddingRight: scrollbarGutter }}
+      >
         <div className="w-12 shrink-0" />
         <SwipeTrack offset={swipeOffset} snapping={swipeSnapping} panes={panes}>
           {(paneDays) => <DayHeaderPane days={paneDays} todayKey={todayKey} />}
@@ -166,6 +178,7 @@ export function TimeGridView({
         panes={panes}
         swipeOffset={swipeOffset}
         swipeSnapping={swipeSnapping}
+        endGutter={scrollbarGutter}
         events={events}
         tasks={tasks}
         reminders={reminders}
@@ -376,7 +389,10 @@ const DayColumnsPane = memo(function DayColumnsPane({
           events={events.filter(
             (event) => !event.allDay && utils.eventCoversDay(event, dateKey),
           )}
-          tasks={tasks.filter((task) => task.hasTime && utils.taskCoversDay(task, dateKey))}
+          // 期限と予定日は別の枠として、それぞれの時刻の位置へ置く（docs/spec.md §6）。
+          taskMarks={utils
+            .taskOccurrencesOnDay(tasks, dateKey)
+            .filter((occurrence) => occurrence.hasTime)}
           reminders={reminders.filter(
             (reminder) => reminder.hasTime && utils.itemDateKey(reminder.date) === dateKey,
           )}
@@ -391,7 +407,7 @@ function DayColumn({
   dayIndex,
   hourHeight,
   events,
-  tasks,
+  taskMarks,
   reminders,
   utils,
   preview,
@@ -406,7 +422,8 @@ function DayColumn({
   dayIndex: number;
   hourHeight: number;
   events: CalendarEventItem[];
-  tasks: TaskItem[];
+  /** この日・この時刻に置くタスクの枠。期限と予定日はそれぞれ別の枠になる。 */
+  taskMarks: TaskOccurrence[];
   reminders: ReminderItem[];
   utils: CalendarDateUtils;
   preview: DragPreview | null;
@@ -596,56 +613,68 @@ function DayColumn({
         );
       })}
 
-      {/* 期限タスクは予定のような時間幅を持たせず、期限時刻の位置に置く（docs/spec.md §6）。 */}
-      {tasks.map((task) => isDraggedAway(task.id) ? null : (
-        <button
-          key={task.id}
-          type="button"
-          onPointerDown={(e) =>
-            onStartDrag(
-              e,
-              { kind: "task", item: task },
-              {
-                dayIndex,
-                startMinutes: utils.minutesFromMidnight(task.due!),
-                endMinutes: utils.minutesFromMidnight(task.due!),
-              },
-            )
-          }
-          onClick={() => {
-            if (onConsumeDragClick()) return;
-            onOpenTask(task);
-          }}
-          className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
-          style={{
-            top: offsetOf(previewFor(task.id)?.startMinutes ?? utils.minutesFromMidnight(task.due!)),
-          }}
-          title={`${utils.formatTime(task.due!)} ${task.title}`}
-        >
-          {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。 */}
-          <span
-            aria-hidden
-            className={cn(
-              "h-2.5 w-0.5 shrink-0",
-              task.done ? "bg-on-surface-variant/60" : "bg-primary",
-            )}
-          />
-          <span
-            className={cn(
-              "h-px flex-1",
-              task.done ? "bg-on-surface-variant/30" : "bg-primary/45",
-            )}
-          />
-          <span
-            className={cn(
-              "type-label-small clip-nowrap max-w-[78%] rounded-xs border border-outline bg-surface-container-lowest px-1",
-              task.done && "text-muted-foreground line-through",
-            )}
+      {/*
+        期限タスクは予定のような時間幅を持たせず、期限時刻の位置に置く（docs/spec.md §6）。
+        予定日の枠も同じ形で、線を破線・目盛りを薄くして締切と描き分ける。
+      */}
+      {taskMarks.map(({ task, field, date, key }) => {
+        if (isDraggedAway(key)) return null;
+
+        const planned = field === "planned";
+        const minutes = utils.minutesFromMidnight(date);
+
+        return (
+          <button
+            key={key}
+            type="button"
+            onPointerDown={(e) =>
+              onStartDrag(
+                e,
+                { kind: "task", item: task, field },
+                { dayIndex, startMinutes: minutes, endMinutes: minutes },
+              )
+            }
+            onClick={() => {
+              if (onConsumeDragClick()) return;
+              onOpenTask(task);
+            }}
+            className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
+            style={{ top: offsetOf(previewFor(key)?.startMinutes ?? minutes) }}
+            title={`${utils.formatTime(date)} ${planned ? "予定日: " : ""}${task.title}`}
           >
-            {task.title}
-          </span>
-        </button>
-      ))}
+            {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。 */}
+            <span
+              aria-hidden
+              className={cn(
+                "h-2.5 w-0.5 shrink-0",
+                task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
+              )}
+            />
+            <span
+              className={cn(
+                "flex-1",
+                planned ? "h-0 border-t border-dashed" : "h-px",
+                task.done
+                  ? planned
+                    ? "border-on-surface-variant/30"
+                    : "bg-on-surface-variant/30"
+                  : planned
+                    ? "border-primary/45"
+                    : "bg-primary/45",
+              )}
+            />
+            <span
+              className={cn(
+                "type-label-small clip-nowrap max-w-[78%] rounded-xs border border-outline bg-surface-container-lowest px-1",
+                planned && "border-dashed",
+                task.done && "text-muted-foreground line-through",
+              )}
+            >
+              {task.title}
+            </span>
+          </button>
+        );
+      })}
 
       {/* 日付リマインドは時刻の幅を持たないため、掴めない印（時刻の点）として置く。 */}
       {reminders.map((reminder) => (
@@ -697,6 +726,7 @@ function AllDayArea({
   panes,
   swipeOffset,
   swipeSnapping,
+  endGutter,
   events,
   tasks,
   reminders,
@@ -714,6 +744,8 @@ function AllDayArea({
   panes: PaneDays;
   swipeOffset: number;
   swipeSnapping: boolean;
+  /** 下の時間グリッドがスクロールバーに取られている幅。右へ同じだけ空けて列を揃える。 */
+  endGutter: number;
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
@@ -732,7 +764,9 @@ function AllDayArea({
     <div
       ref={rowRef}
       data-gutter-width="48"
+      data-gutter-end={endGutter}
       className="flex border-b border-outline-variant bg-surface-container-low"
+      style={{ paddingRight: endGutter }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
@@ -776,6 +810,8 @@ type AllDaySegment =
   | {
       kind: "task";
       item: TaskItem;
+      /** 期限と予定日のどちらの枠か。同じタスクが両方の日に現れる（docs/spec.md §5）。 */
+      taskField: TaskDateField;
       column: number;
       span: 1;
       lane: number;
@@ -791,6 +827,19 @@ type AllDaySegment =
       continuesBefore: false;
       continuesAfter: false;
     };
+
+/**
+ * 段（lane）を決める前の状態。ユニオンの枝ごとに分けて Omit する。
+ * ユニオン全体へ Omit をかけると、枝によって持つ項目が違うぶん（taskField）が削られてしまう。
+ */
+type WithoutLane<T> = T extends unknown ? Omit<T, "lane"> : never;
+
+/** 終日エリアの枠の識別子。タスクは期限と予定日で2枠になるため、どちらの枠かまで含める。 */
+function allDaySegmentKey(segment: WithoutLane<AllDaySegment>): string {
+  return segment.kind === "task"
+    ? taskOccurrenceKey(segment.item.id, segment.taskField)
+    : segment.item.id;
+}
 
 const AllDayPane = memo(function AllDayPane({
   days,
@@ -836,13 +885,13 @@ const AllDayPane = memo(function AllDayPane({
           }
         : { start: event.start, end: event.end };
 
-    const shiftedTaskDue = (task: TaskItem): string | null =>
-      preview?.id === task.id && task.due
-        ? shiftDateKey(task.due, preview.deltaDays)
-        : task.due;
+    // 掴んでいるのは期限・予定日のどちらか一方の枠。動かすのもその枠だけにする。
+    const shiftedTaskDate = (occurrence: TaskOccurrence): string =>
+      preview?.id === occurrence.key
+        ? shiftDateKey(occurrence.date, preview.deltaDays)
+        : occurrence.date;
 
-    type Raw = Omit<AllDaySegment, "lane">;
-    const raw: Raw[] = [];
+    const raw: WithoutLane<AllDaySegment>[] = [];
 
     for (const event of events) {
       if (!event.allDay) continue;
@@ -869,14 +918,22 @@ const AllDayPane = memo(function AllDayPane({
     }
 
     for (const task of tasks) {
-      if (task.hasTime || !task.due) continue;
+      for (const occurrence of taskOccurrences(task)) {
+        if (occurrence.hasTime) continue;
 
-      const dateKey = shiftedTaskDue(task);
-      if (!dateKey) continue;
-      const column = position.get(dateKey);
-      if (column === undefined) continue;
+        const column = position.get(shiftedTaskDate(occurrence));
+        if (column === undefined) continue;
 
-      raw.push({ kind: "task", item: task, column, span: 1, continuesBefore: false, continuesAfter: false });
+        raw.push({
+          kind: "task",
+          item: task,
+          taskField: occurrence.field,
+          column,
+          span: 1,
+          continuesBefore: false,
+          continuesAfter: false,
+        });
+      }
     }
 
     for (const reminder of reminders) {
@@ -895,7 +952,7 @@ const AllDayPane = memo(function AllDayPane({
       if (barDiff !== 0) return barDiff;
       if (a.column !== b.column) return a.column - b.column;
       if (a.span !== b.span) return b.span - a.span;
-      return utils.compareItems(a.item, b.item);
+      return utils.compareItems(a, b);
     });
 
     const occupied: boolean[][] = [];
@@ -953,7 +1010,7 @@ const AllDayPane = memo(function AllDayPane({
       >
         {segments.map((segment) => (
           <div
-            key={segment.item.id}
+            key={allDaySegmentKey(segment)}
             className={cn(
               "min-w-0",
               segment.continuesBefore ? "pl-0" : "pl-1",
@@ -994,29 +1051,18 @@ const AllDayPane = memo(function AllDayPane({
                 {segment.item.title}
               </button>
             ) : (
-              <button
-                type="button"
-                onPointerDown={(e) => onStartDrag(e, { kind: "task", item: segment.item })}
-                onClick={() => {
+              <AllDayTaskChip
+                task={segment.item}
+                field={segment.taskField}
+                dragging={preview?.id === allDaySegmentKey(segment)}
+                onStartDrag={(e) =>
+                  onStartDrag(e, { kind: "task", item: segment.item, field: segment.taskField })
+                }
+                onOpen={() => {
                   if (onConsumeDragClick()) return;
                   onOpenTask(segment.item);
                 }}
-                className={cn(
-                  "type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-outline bg-surface-container-lowest px-1.5 py-0.5 text-left",
-                  segment.item.done && "text-muted-foreground line-through",
-                  preview?.id === segment.item.id && "ring-2 ring-foreground/50",
-                )}
-                title={segment.item.title}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "h-2.5 w-0.5 shrink-0",
-                    segment.item.done ? "bg-on-surface-variant/60" : "bg-primary",
-                  )}
-                />
-                <span className="clip-nowrap">{segment.item.title}</span>
-              </button>
+              />
             )}
           </div>
         ))}
@@ -1024,6 +1070,50 @@ const AllDayPane = memo(function AllDayPane({
     </div>
   );
 });
+
+/**
+ * 終日エリアに置く時刻なしのタスク。予定日の枠は枠線を破線・目盛りを薄くして、
+ * 締切（期限）ではなく見込みであることを示す（docs/spec.md §5）。
+ */
+function AllDayTaskChip({
+  task,
+  field,
+  dragging,
+  onStartDrag,
+  onOpen,
+}: {
+  task: TaskItem;
+  field: TaskDateField;
+  dragging: boolean;
+  onStartDrag: (event: React.PointerEvent) => void;
+  onOpen: () => void;
+}) {
+  const planned = field === "planned";
+
+  return (
+    <button
+      type="button"
+      onPointerDown={onStartDrag}
+      onClick={onOpen}
+      className={cn(
+        "type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-outline bg-surface-container-lowest px-1.5 py-0.5 text-left",
+        planned && "border-dashed",
+        task.done && "text-muted-foreground line-through",
+        dragging && "ring-2 ring-foreground/50",
+      )}
+      title={planned ? `予定日: ${task.title}` : task.title}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "h-2.5 w-0.5 shrink-0",
+          task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
+        )}
+      />
+      <span className="clip-nowrap">{task.title}</span>
+    </button>
+  );
+}
 
 /**
  * 終日エリアに置く日付リマインド。押すと内容の画面を開く（docs/spec.md §9）。
@@ -1145,14 +1235,14 @@ function NowLine({
 }
 
 /** 土日は日本のカレンダーの慣習に合わせて色を変える。彩度は落とし、予定の色より前に出さない。 */
-function weekdayTone(dateKey: string): string | null {
+export function weekdayTone(dateKey: string): string | null {
   const day = new Date(`${dateKey}T12:00:00Z`).getUTCDay();
   if (day === 0) return "text-rose-700/80 dark:text-rose-300/80";
   if (day === 6) return "text-sky-700/80 dark:text-sky-300/80";
   return null;
 }
 
-function weekdayLabel(dateKey: string): string {
+export function weekdayLabel(dateKey: string): string {
   const labels = ["日", "月", "火", "水", "木", "金", "土"];
   return labels[new Date(`${dateKey}T12:00:00Z`).getUTCDay()];
 }

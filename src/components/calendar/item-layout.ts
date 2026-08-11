@@ -40,6 +40,64 @@ export function eventTextLines(height: number): number {
  */
 const MIN_EVENT_MINUTES = (MIN_EVENT_HEIGHT / DEFAULT_HOUR_HEIGHT) * 60;
 
+/**
+ * タスクがカレンダーに現れる日付の種類（docs/spec.md §5）。
+ *
+ * 期限は締切、予定日はその辺りで片付けるつもりだという見込み。1つのタスクが
+ * 別々の日に2つ現れるため、日付そのものではなく「どちらの日付か」を持ち回る。
+ */
+export type TaskDateField = "due" | "planned";
+
+/** カレンダー上の1枠。タスクは期限と予定日で別の枠になるため、どちらの日付かを併せて持つ。 */
+export type PlacedItem = { item: CalendarItem; taskField?: TaskDateField };
+
+/** タスクが持つ、その種類の日付。 */
+export function taskDateOf(
+  task: TaskItem,
+  field: TaskDateField,
+): { date: string | null; hasTime: boolean } {
+  return field === "planned"
+    ? { date: task.planned, hasTime: task.plannedHasTime }
+    : { date: task.due, hasTime: task.hasTime };
+}
+
+export type TaskOccurrence = {
+  task: TaskItem;
+  field: TaskDateField;
+  /** この枠が指す日付。時刻なしは YYYY-MM-DD、時刻ありは ISO 8601。 */
+  date: string;
+  hasTime: boolean;
+  /**
+   * 枠の識別子。1つのタスクが期限と予定日で2枠に現れるため、IDだけでは区別できない
+   * （どちらを掴んでいるのか・どちらのキーなのかが決まらなくなる）。
+   */
+  key: string;
+};
+
+export function taskOccurrenceKey(taskId: string, field: TaskDateField): string {
+  return `${taskId}:${field}`;
+}
+
+/**
+ * タスクをカレンダーに置く枠。期限と予定日の両方があれば2枠になる。
+ *
+ * 同じ日時を指しているときは期限の1枠にまとめる。同じ場所へ2つ並べても情報が増えず、
+ * 同じタイトルが2行に見えるだけのため。日が同じで時刻が違う場合は位置が別になるので分ける。
+ */
+export function taskOccurrences(task: TaskItem): TaskOccurrence[] {
+  const occurrences: TaskOccurrence[] = [];
+
+  for (const field of ["due", "planned"] as const) {
+    const { date, hasTime } = taskDateOf(task, field);
+    if (!date) continue;
+    if (field === "planned" && date === task.due) continue;
+
+    occurrences.push({ task, field, date, hasTime, key: taskOccurrenceKey(task.id, field) });
+  }
+
+  return occurrences;
+}
+
 type ZonedParts = { dateKey: string; hour: number; minute: number };
 
 function zonedParts(date: Date, formatter: Intl.DateTimeFormat): ZonedParts {
@@ -129,23 +187,27 @@ export function createCalendarDateUtils(timeZone: string) {
     return itemDateKey(event.start) <= dateKey && dateKey <= itemDateKey(event.end);
   };
 
-  const taskCoversDay = (task: TaskItem, dateKey: string): boolean => {
-    if (!task.due) return false;
-    return itemDateKey(task.due) === dateKey;
-  };
+  /** その日に置くタスクの枠。期限と予定日が別の日にあれば、日ごとに片方だけが返る。 */
+  const taskOccurrencesOnDay = (tasks: TaskItem[], dateKey: string): TaskOccurrence[] =>
+    tasks.flatMap((task) =>
+      taskOccurrences(task).filter((occurrence) => itemDateKey(occurrence.date) === dateKey),
+    );
 
-  const itemSortTime = (item: CalendarItem): number => {
-    if (isAllDayItem(item)) return -1;
+  const itemSortTime = ({ item, taskField }: PlacedItem): number => {
+    if (isAllDayItem(item, taskField)) return -1;
     if (item.kind === "event") return minutesFromMidnight(item.start);
-    if (item.kind === "task") return item.due ? minutesFromMidnight(item.due) : -1;
+    if (item.kind === "task") {
+      const { date } = taskDateOf(item, taskField ?? "due");
+      return date ? minutesFromMidnight(date) : -1;
+    }
     return minutesFromMidnight(item.date);
   };
 
   /** 日ごとの表示順。終日→時刻順→同時刻はタイトル順に並べる。 */
-  const compareItems = (a: CalendarItem, b: CalendarItem): number => {
+  const compareItems = (a: PlacedItem, b: PlacedItem): number => {
     const diff = itemSortTime(a) - itemSortTime(b);
     if (diff !== 0) return diff;
-    return a.title.localeCompare(b.title, "ja");
+    return a.item.title.localeCompare(b.item.title, "ja");
   };
 
   /**
@@ -209,15 +271,18 @@ export function createCalendarDateUtils(timeZone: string) {
     todayKey,
     eventRange,
     eventCoversDay,
-    taskCoversDay,
+    taskOccurrencesOnDay,
     compareItems,
     layoutOverlaps,
   };
 }
 
-/** 時刻のないタスクは時間グリッド上の位置が決まらないため、終日エリアへ入れる（docs/spec.md §6）。 */
-export function isAllDayItem(item: CalendarItem): boolean {
+/**
+ * 時刻のないタスクは時間グリッド上の位置が決まらないため、終日エリアへ入れる（docs/spec.md §6）。
+ * タスクは期限と予定日で時刻の有無が別々のため、どちらの枠かによって答えが変わる。
+ */
+export function isAllDayItem(item: CalendarItem, taskField: TaskDateField = "due"): boolean {
   if (item.kind === "event") return item.allDay;
   if (item.kind === "reminder") return !item.hasTime;
-  return !item.hasTime;
+  return !taskDateOf(item, taskField).hasTime;
 }

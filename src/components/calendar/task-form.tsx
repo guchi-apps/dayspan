@@ -28,19 +28,33 @@ import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { readErrorMessage } from "./response-error";
-import type { TouchedRange } from "./use-calendar-chunks";
+import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 
 const PRIORITY_OPTIONS = ["高", "中", "低"];
 const NO_VALUE = "__none__";
 
-/** 期限の指定方法（docs/spec.md §15）。 */
+/** 期限・予定日の指定方法（docs/spec.md §15）。 */
 type DueMode = "datetime" | "date" | "none";
+
+const DATE_MODES: [DueMode, string][] = [
+  ["datetime", "日時指定"],
+  ["date", "日付のみ"],
+  ["none", "未設定"],
+];
+
+// 日時指定へ切り替えたときの初期時刻。期限はその日のうちに片付ける想定の時刻、
+// 予定日は取りかかる時間帯として朝から始める。
+const DEFAULT_DUE_TIME = "18:00";
+const DEFAULT_PLANNED_TIME = "09:00";
 
 export type TaskDraft = {
   task?: TaskItem;
   dueMode: DueMode;
   /** dueMode に応じて YYYY-MM-DD または YYYY-MM-DDTHH:mm */
   due: string;
+  /** 予定日の指定方法。追加のときは省略してよい（未設定から始める）。 */
+  plannedMode?: DueMode;
+  planned?: string;
 };
 
 /**
@@ -73,6 +87,9 @@ export function TaskForm({
 
   const [dueMode, setDueMode] = useState<DueMode>(draft.dueMode);
   const [due, setDue] = useState(draft.due);
+  // 予定日は必須ではないため、追加のときは未設定から始める。
+  const [plannedMode, setPlannedMode] = useState<DueMode>(draft.plannedMode ?? "none");
+  const [planned, setPlanned] = useState(draft.planned ?? "");
   const [done, setDone] = useState(editing?.done ?? false);
   const [priority, setPriority] = useState(editing?.priority ?? NO_VALUE);
   const [memo, setMemo] = useState(editing?.memo ?? "");
@@ -86,28 +103,21 @@ export function TaskForm({
   // 開いている途中で通信が落ちることがある（docs/spec.md §21）。
   const offline = useOffline();
 
-  // 期限を選ぶモードなのに空欄のままだと、保存時の日時変換で失敗する。先に画面で知らせる。
-  const dueError =
-    dueMode !== "none" && !due
-      ? dueMode === "datetime"
-        ? "期限の日付と時刻を入力してください。"
-        : "期限の日付を入力してください。"
-      : null;
-
-  const changeDueMode = (next: DueMode) => {
-    if (next !== "none") {
-      // 期限未設定から切り替えた直後は日付を持っていない。設定タイムゾーンでの今日を入れる。
-      // 実行環境のローカル時刻ではなく設定タイムゾーンで求めるのは、他の日時と揃えるため。
-      const date = due.slice(0, 10) || isoToLocalInput(new Date().toISOString(), timeZone).slice(0, 10);
-      setDue(next === "datetime" ? `${date}T${due.slice(11, 16) || "18:00"}` : date);
-    }
-    setDueMode(next);
+  // 日付を選ぶモードなのに空欄のままだと、保存時の日時変換で失敗する。先に画面で知らせる。
+  const missingDateError = (label: string, mode: DueMode, value: string): string | null => {
+    if (mode === "none" || value) return null;
+    return mode === "datetime"
+      ? `${label}の日付と時刻を入力してください。`
+      : `${label}の日付を入力してください。`;
   };
 
-  const buildDue = (): string | null => {
-    if (dueMode === "none") return null;
-    if (dueMode === "date") return due.slice(0, 10);
-    return localInputToIso(due, timeZone);
+  const dueError = missingDateError("期限", dueMode, due);
+  const plannedError = missingDateError("予定日", plannedMode, planned);
+
+  const buildDate = (mode: DueMode, value: string): string | null => {
+    if (mode === "none") return null;
+    if (mode === "date") return value.slice(0, 10);
+    return localInputToIso(value, timeZone);
   };
 
   const save = async () => {
@@ -122,7 +132,8 @@ export function TaskForm({
     try {
       const payload = {
         title,
-        due: buildDue(),
+        due: buildDate(dueMode, due),
+        planned: buildDate(plannedMode, planned),
         done,
         priority: priority === NO_VALUE ? null : priority,
         memo: memo.trim() || null,
@@ -144,10 +155,12 @@ export function TaskForm({
         return;
       }
 
-      // 期限を動かした場合は移動元も変わる。期限なしはカレンダーに出ないため対象から外す。
-      const touched: TouchedRange[] = [];
-      if (payload.due) touched.push({ start: payload.due, end: payload.due });
-      if (editing?.due) touched.push({ start: editing.due, end: editing.due });
+      // 期限・予定日を動かした場合は移動元も変わる。どちらも未設定の状態は
+      // カレンダーに出ないため、対象から外れる。
+      const touched: TouchedRange[] = [
+        ...taskRanges(payload),
+        ...(editing ? taskRanges(editing) : []),
+      ];
 
       onSaved(touched);
     } catch (cause) {
@@ -177,46 +190,32 @@ export function TaskForm({
           autoFocus={autoFocusTitle}
         />
 
-        <div className="flex flex-col gap-1.5">
-          <Label>期限</Label>
-          <div className="flex gap-1">
-            {(
-              [
-                ["datetime", "日時指定"],
-                ["date", "日付のみ"],
-                ["none", "未設定"],
-              ] as const
-            ).map(([mode, label]) => (
-              <Button
-                key={mode}
-                type="button"
-                variant={dueMode === mode ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => changeDueMode(mode)}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
-          {dueMode === "datetime" && (
-            <DateTimeInput
-              id="task-due"
-              dateLabel="期限の日付"
-              timeLabel="期限の時刻"
-              value={due}
-              onChange={setDue}
-            />
-          )}
-          {dueMode === "date" && (
-            <Input
-              id="task-due-date"
-              label="期限の日付"
-              type="date"
-              value={due}
-              onChange={(e) => setDue(e.target.value)}
-            />
-          )}
-        </div>
+        <DateModeField
+          id="task-due"
+          label="期限"
+          mode={dueMode}
+          value={due}
+          timeZone={timeZone}
+          defaultTime={DEFAULT_DUE_TIME}
+          onChange={(next) => {
+            setDueMode(next.mode);
+            setDue(next.value);
+          }}
+        />
+
+        {/* 予定日は期限までのどの辺りで片付けるかの見込み。締切とは別に持つ（docs/spec.md §9）。 */}
+        <DateModeField
+          id="task-planned"
+          label="予定日"
+          mode={plannedMode}
+          value={planned}
+          timeZone={timeZone}
+          defaultTime={DEFAULT_PLANNED_TIME}
+          onChange={(next) => {
+            setPlannedMode(next.mode);
+            setPlanned(next.value);
+          }}
+        />
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
           <Select value={priority} onValueChange={setPriority}>
@@ -281,6 +280,7 @@ export function TaskForm({
         )}
 
         {dueError && <p className="text-sm text-destructive">{dueError}</p>}
+        {plannedError && <p className="text-sm text-destructive">{plannedError}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
@@ -302,7 +302,12 @@ export function TaskForm({
           <Button variant="ghost" disabled={busy} onClick={onCancel}>
             やめる
           </Button>
-          <Button disabled={busy || offline || !title.trim() || dueError !== null} onClick={save}>
+          <Button
+            disabled={
+              busy || offline || !title.trim() || dueError !== null || plannedError !== null
+            }
+            onClick={save}
+          >
             保存
           </Button>
         </div>
@@ -311,8 +316,99 @@ export function TaskForm({
   );
 }
 
+/**
+ * 期限・予定日の入力欄。指定方法（日時／日付のみ／未設定）と入力欄を組で出す。
+ * 2つの日付で形を揃えるため、1つの部品にまとめる。
+ */
+function DateModeField({
+  id,
+  label,
+  mode,
+  value,
+  timeZone,
+  defaultTime,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  mode: DueMode;
+  /** mode に応じて YYYY-MM-DD または YYYY-MM-DDTHH:mm */
+  value: string;
+  timeZone: string;
+  /** 日時指定へ切り替えたときの初期時刻（HH:mm）。 */
+  defaultTime: string;
+  onChange: (next: { mode: DueMode; value: string }) => void;
+}) {
+  const changeMode = (next: DueMode) => {
+    if (next === "none") {
+      onChange({ mode: next, value });
+      return;
+    }
+
+    // 未設定から切り替えた直後は日付を持っていない。設定タイムゾーンでの今日を入れる。
+    // 実行環境のローカル時刻ではなく設定タイムゾーンで求めるのは、他の日時と揃えるため。
+    const date =
+      value.slice(0, 10) || isoToLocalInput(new Date().toISOString(), timeZone).slice(0, 10);
+
+    onChange({
+      mode: next,
+      value: next === "datetime" ? `${date}T${value.slice(11, 16) || defaultTime}` : date,
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>{label}</Label>
+      <div className="flex gap-1">
+        {DATE_MODES.map(([option, optionLabel]) => (
+          <Button
+            key={option}
+            type="button"
+            variant={mode === option ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => changeMode(option)}
+          >
+            {optionLabel}
+          </Button>
+        ))}
+      </div>
+      {mode === "datetime" && (
+        <DateTimeInput
+          id={id}
+          dateLabel={`${label}の日付`}
+          timeLabel={`${label}の時刻`}
+          value={value}
+          onChange={(next) => onChange({ mode, value: next })}
+        />
+      )}
+      {mode === "date" && (
+        <Input
+          id={`${id}-date`}
+          label={`${label}の日付`}
+          type="date"
+          value={value}
+          onChange={(e) => onChange({ mode, value: e.target.value })}
+        />
+      )}
+    </div>
+  );
+}
+
 export function toTaskDraft(task: TaskItem, timeZone: string): TaskDraft {
-  if (!task.due) return { task, dueMode: "none", due: "" };
-  if (!task.hasTime) return { task, dueMode: "date", due: task.due };
-  return { task, dueMode: "datetime", due: isoToLocalInput(task.due, timeZone) };
+  const field = (date: string | null, hasTime: boolean) => {
+    if (!date) return { mode: "none" as DueMode, value: "" };
+    if (!hasTime) return { mode: "date" as DueMode, value: date };
+    return { mode: "datetime" as DueMode, value: isoToLocalInput(date, timeZone) };
+  };
+
+  const due = field(task.due, task.hasTime);
+  const planned = field(task.planned, task.plannedHasTime);
+
+  return {
+    task,
+    dueMode: due.mode,
+    due: due.value,
+    plannedMode: planned.mode,
+    planned: planned.value,
+  };
 }
