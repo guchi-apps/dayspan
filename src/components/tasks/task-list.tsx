@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { TaskDetailDialog } from "@/components/calendar/task-detail-dialog";
-import { ItemDialog } from "@/components/calendar/item-dialog";
+import { ItemDialog, type ItemDrafts } from "@/components/calendar/item-dialog";
 import { toTaskDraft, type TaskDraft } from "@/components/calendar/task-form";
 import { TagChipList } from "@/components/tags/tag-chip";
 import { cn } from "@/lib/utils";
@@ -27,26 +27,37 @@ import {
   type TaskSort,
 } from "@/services/notion/task-buckets";
 import type { TagCatalog } from "@/services/notion/tag-options";
-import type { TaskItem } from "@/types/calendar";
+import type { PlaceCatalog } from "@/services/notion/places";
+import type { TaskItem, WritableCalendar } from "@/types/calendar";
+import { dateKeyPlusMinutes } from "@/components/calendar/datetime-fields";
 
 const ORDER: TaskBucketKey[] = ["overdue", "today", "upcoming", "someday", "done"];
+
+const DEFAULT_START_MINUTES = 9 * 60;
+const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
 
 export function TaskList({
   tasks,
   tagCatalog,
   timeZone,
   loadError,
+  calendars = [],
+  placeCatalog = { ready: false, places: [] },
+  weekStartsOn = 0,
 }: {
   tasks: TaskItem[];
   /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
   tagCatalog: TagCatalog;
   timeZone: string;
   loadError: string | null;
+  calendars?: WritableCalendar[];
+  placeCatalog?: PlaceCatalog;
+  weekStartsOn?: number;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [sort, setSort] = useState<TaskSort>("due");
-  const [draft, setDraft] = useState<TaskDraft | null>(null);
+  const [itemDialog, setItemDialog] = useState<ItemDrafts | null>(null);
   // タップした直後は表示専用画面を開く。編集アイコンを押したときだけ draft へ切り替える。
   const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -100,7 +111,26 @@ export function TaskList({
   const editTask = (task: TaskItem) => {
     if (offline) return;
     setViewingTask(null);
-    setDraft(toTaskDraft(task, timeZone));
+    setItemDialog({ task: toTaskDraft(task, timeZone) });
+  };
+
+  const openAdd = () => {
+    const utils = createCalendarDateUtils(timeZone);
+    const defaultDayKey = utils.todayKey();
+    const drafts: ItemDrafts = {};
+    drafts.task = {
+      dueMode: "datetime",
+      due: dateKeyPlusMinutes(defaultDayKey, DEFAULT_TASK_DUE_MINUTES),
+    };
+    if (calendars.length > 0) {
+      drafts.event = {
+        allDay: false,
+        start: dateKeyPlusMinutes(defaultDayKey, DEFAULT_START_MINUTES),
+        end: dateKeyPlusMinutes(defaultDayKey, Math.min(DEFAULT_START_MINUTES + 60, 23 * 60 + 30)),
+      };
+    }
+    drafts.reminder = { dateMode: "date", date: defaultDayKey };
+    setItemDialog(drafts);
   };
 
   return (
@@ -221,24 +251,27 @@ export function TaskList({
         className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
         aria-label="タスクを追加"
         disabled={offline}
-        onClick={() =>
-          setDraft({ dueMode: "date", due: utils.todayKey() })
-        }
+        onClick={openAdd}
       >
         <Plus className="size-6" />
       </Button>
 
       <BottomNav current="tasks" />
 
-      {draft && (
+      {itemDialog && (
         <ItemDialog
-          initialKind="task"
-          drafts={{ task: draft }}
+          initialKind={
+            itemDialog.event ? "event" : itemDialog.task ? "task" : "reminder"
+          }
+          drafts={itemDialog}
+          calendars={calendars}
           tagCatalog={tagCatalog}
+          placeCatalog={placeCatalog}
           timeZone={timeZone}
-          onClose={() => setDraft(null)}
+          weekStartsOn={weekStartsOn}
+          onClose={() => setItemDialog(null)}
           onSaved={() => {
-            setDraft(null);
+            setItemDialog(null);
             startTransition(() => router.refresh());
           }}
         />
