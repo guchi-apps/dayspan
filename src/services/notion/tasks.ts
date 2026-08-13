@@ -111,9 +111,13 @@ async function queryTasks(
 /**
  * 指定期間に期限または予定日があるタスクを取得する。
  * どちらも未設定のタスクはカレンダーに置く日が決まらないため取得しない（docs/spec.md §10）。
+ * 完了したタスクもカレンダーには出さない。履歴はタスク画面の「完了」から確認できる（docs/spec.md §12）。
  *
  * 予定日だけが期間内のタスクも要る。期限が半年先でも、予定日がこの月にあれば
  * その日のカレンダーに出す必要があるため、期限での絞り込みだけでは足りない。
+ *
+ * 完了状態はcheckbox/statusのどちらでもありえ、Notion側のフィルタ条件を型ごとに
+ * 出し分けるより、取得後にnormalizeTaskの判定結果で絞るほうが単純なため後段で除く。
  */
 export async function listTasksInRange(
   notion: Client,
@@ -142,7 +146,7 @@ export async function listTasksInRange(
       : withinRange(dueProperty),
   );
 
-  return pages.map((page) => normalizeTask(page, propertyMap));
+  return pages.map((page) => normalizeTask(page, propertyMap)).filter((task) => !task.done);
 }
 
 /** タスク画面用に全件取得する（期限未設定・完了済みを含む）。 */
