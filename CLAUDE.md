@@ -136,7 +136,7 @@ pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 
 
 `@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成〜レビュー〜マージまでをGitHub Actions上で
 無人実行する運用を導入している。仕組みの本体は `guchi-apps/issue-deck` にあり、DaySpanはその
-再利用可能ワークフロー（`workflows/v6` タグ）を参照する側として構成している。
+再利用可能ワークフロー（`workflows/v9` タグ）を参照する側として構成している。
 
 設計の詳細・各モードの判定ロジックは issue-deck の `docs/multi-agent-workflow.md`・`docs/multi-agent/` を
 一次情報源とする。ここにはDaySpan側の運用に必要な事項のみを置く。
@@ -153,16 +153,25 @@ pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 
 - 開発サーバーのポートは `scripts/start-issue.sh` が `.env.local` に `PORT=6000 + Issue番号` を設定する
   （例: issue-12 → 6012）。issue-deck（`4000 + Issue番号`）や本番ポート3113・dev既定の3000と重ならない
 
-## Issueラベルの状態遷移
+## Issueの進捗
 
-原則として以下の順で遷移する。`01.planning` は `21.plan-required` が付いている場合のみ経由する。
+**進捗はGitHub ProjectsのStatusで管理する。唯一の正はStatusで、進捗ラベルは存在しない**
+（guchi-apps/issue-deck#1010 / #991 Phase 5 で `01.planning`〜`09.main` を廃止した）。
 
-1. `01.planning` — 計画を検討中
-2. `02.wip` — 実装中
-3. `03.d:marge` — developへPR作成・マージ待ち
-4. `05.develop` — developへマージ完了（main未反映）
-5. `07.m:marge` — mainへのPR作成・マージ待ち
-6. `09.main` — mainへマージ完了。**この時点でissueをclose**する
+原則として以下の順で遷移する。`Planning` は `21.plan-required` が付いている場合のみ経由する。
+
+1. `Ready` — 未着手
+2. `Planning` — 計画を検討中
+3. `Implementation` — 実装中
+4. `Develop PR` — developへPR作成・マージ中
+5. `Develop` — developへマージ完了（main未反映）
+6. `Release` — mainへのPR作成・マージ中
+7. `Done` — mainへマージ完了。**この時点でissueをclose**する
+
+**`gh issue edit` で進捗を進めることはできない。** Statusを書けるのはissue-deckだけで、
+ワークフローは進捗報告API（`POST /api/progress`）へ報告する。ブランチのpush・PR作成・PRマージを
+トリガーに自動で遷移するため、**エージェントが自分で進捗を動かす必要はない。**
+人が動かす場合はissue-deckのカンバンでカードをドラッグするか、画面のボタンを使う。
 
 `00.check-user`（ユーザーの確認・指示が必要）は、上記のどの段階でも他のラベルと併用して付与する。
 `00.check-user` を人間が外す操作が「承認」を意味する。
@@ -177,8 +186,8 @@ pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 
 | `24.screenshot-required` | PR作成前にスクリーンショットで確認し、承認を得る。**無人実行では現状使えない**（全画面がSupabase Auth + Google OAuthの背後にあり、CIログインバイパスもPlaywright依存も無いため） |
 | `11.local` | 付いている間、無人実行ワークフローが計画・実装・分割・追加対応を行わない。ローカルのClaude Codeセッションと二重に進めないための停止フラグ |
 
-ラベルの付け替えはエージェント側でも手動で行うが、`.github/workflows/issue-labels.yml` が
-ブランチpush・PR作成・PRマージをトリガーに同じ遷移を安全網として自動でも行う。
+進捗の報告は `.github/workflows/issue-labels.yml` が、ブランチpush・PR作成・PRマージを
+トリガーに自動で行う。**エージェントが手動で行う作業は無い。**
 
 ## 自動マージ不可カテゴリ
 
@@ -236,17 +245,24 @@ Windows側からは `scripts/start-issue.ps1` を使う。
 
 | ファイル | 方式 | 内容 |
 |---|---|---|
-| `issue-labels.yml` | 参照（`@workflows/v6`） | ラベル状態遷移の自動化 |
-| `claude-issue-dispatch.yml` | 参照（`@workflows/v6`） | `@claude` 起点の計画・実装・PR作成 |
-| `claude-review-develop.yml` | コピー | develop向けPRの自動レビュー・リスク判定・Auto-merge |
-| `claude-conflict-resolve.yml` | コピー | developとのコンフリクト自動解消 |
-| `claude-ci-fix.yml` | コピー | CI失敗の自動修正 |
+| `issue-labels.yml` | 参照（`@workflows/v9`） | 進捗（Project Status）の報告 |
+| `claude-issue-dispatch.yml` | 参照（`@workflows/v9`） | `@claude` 起点の計画・実装・PR作成 |
+| `claude-review-develop.yml` | 参照（`@workflows/v9`） | develop向けPRの自動レビュー・リスク判定・Auto-merge |
+| `claude-conflict-resolve.yml` | 参照（`@workflows/v9`） | developとのコンフリクト自動解消 |
+| `claude-ci-fix.yml` | 参照（`@workflows/v9`） | CI失敗の自動修正 |
 | `release-develop-to-main.yml` | コピー | バージョンbump PR・develop→mainのリリースPR作成 |
+
+**参照しているタグは正ではない。** 上げたらこの表も直すが、実態は
+`.github/workflows/` の `uses:` を見るのが確実。
 
 参照方式は `uses:` のタグを上げるだけでissue-deck側の改善が反映される。**`claude-issue-dispatch.yml` は
 `uses:` のタグと `prompts-ref` を必ず同じ値にする**（片方だけ上げると新しいワークフローで古い
-プロンプトが動く）。コピー方式は移植元コミットを各ファイル冒頭のコメントに記録しており、
-issue-deck側の改善を取り込む際はそこを更新する。
+プロンプトが動く）。コピー方式（`release-develop-to-main.yml` のみ）は移植元コミットをファイル冒頭のコメントに
+記録しており、issue-deck側の改善を取り込む際はそこを更新する。
+
+無人実行のたびに `.shared-context/`（共有知識）と `.shared-prompts/`（issue-deck側の
+実装プロンプト）がワークツリーへcheckoutされる。**どちらもこのリポジトリの管理対象ではない。**
+`.gitignore` 済みなので、**編集・`git add`・コミットを一切行わないこと。**
 
 `release-develop-to-main.yml` が生成する利用者向けの更新履歴は、`package.json` の `"version"`
 ライフサイクルスクリプト経由で `scripts/update-changelog.mjs` が `src/lib/changelog.ts` へ追記する。
