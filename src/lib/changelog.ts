@@ -21,6 +21,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.12.0",
+    date: "2026-08-14",
+    changes: [
+      "完了したタスクがカレンダー上に表示されなくなりました。完了済みのタスクを確認したい場合は、タスク画面の「完了」から履歴を確認できます。",
+    ],
+  },
+  {
     version: "0.11.0",
     date: "2026-08-12",
     changes: [
