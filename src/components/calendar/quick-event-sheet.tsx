@@ -25,12 +25,19 @@ export type QuickEventDraft = {
 /**
  * 押した位置から作る初期値。既定の長さは1時間とし、日をまたがないところで止める。
  * 日をまたぐ予定はこの画面では作れないため、23:00より後を押した場合はその日の終わりまでになる。
+ *
+ * 範囲を引いて選んだ場合は、その終了時刻を endMinutes で渡す（issue #119）。
+ * 24:00ちょうどまで引いた場合もその日の終わりへ丸める。時刻の入力欄は24:00を扱えないため。
  */
-export function toQuickEventDraft(dateKey: string, startMinutes: number): QuickEventDraft {
+export function toQuickEventDraft(
+  dateKey: string,
+  startMinutes: number,
+  endMinutes?: number,
+): QuickEventDraft {
   return {
     date: dateKey,
     startTime: formatMinutes(startMinutes),
-    endTime: formatMinutes(Math.min(startMinutes + 60, MINUTES_PER_DAY - 1)),
+    endTime: formatMinutes(Math.min(endMinutes ?? startMinutes + 60, MINUTES_PER_DAY - 1)),
   };
 }
 
