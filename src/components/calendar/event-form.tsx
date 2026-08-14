@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { dateKeyDiffDays } from "@/lib/calendar-range";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
 
@@ -387,13 +388,6 @@ function duplicateAllDayRange(event: CalendarEventItem, timeZone: string) {
   const durationDays = dateKeyDiffDays(event.start, event.end);
   const todayKey = isoToLocalInput(new Date().toISOString(), timeZone).slice(0, 10);
   return { start: todayKey, end: shiftDateKeyByDays(todayKey, durationDays) };
-}
-
-/** 終日の日数差。UTC正午で扱い、タイムゾーンによる日付ずれを避ける。 */
-function dateKeyDiffDays(startKey: string, endKey: string): number {
-  const start = new Date(`${startKey}T12:00:00Z`).getTime();
-  const end = new Date(`${endKey}T12:00:00Z`).getTime();
-  return Math.round((end - start) / 86_400_000);
 }
 
 function shiftDateKeyByDays(dateKey: string, days: number): string {
