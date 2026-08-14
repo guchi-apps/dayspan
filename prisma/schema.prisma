@@ -28,6 +28,8 @@ model User {
   calendarSettings CalendarSetting[]
   notionConnection NotionConnection?
   uiSetting        UiSetting?
+  activityPresets  ActivityPreset[]
+  runningActivity  RunningActivity?
 }
 
 // --- Google Calendar連携 ---
@@ -136,6 +138,53 @@ model UiSetting {
   weekStartsOn       Int              @default(0) // 0=日曜
   timeZone           String           @default("Asia/Tokyo")
   autoRefreshSeconds Int              @default(300) // 一定間隔での自動更新（docs/spec.md §20）
+
+  // 活動記録の初期項目（docs/spec.md §27）を入れたかどうか。
+  // 「項目が1件も無いなら入れる」だけで判断すると、利用者が全部消しても開き直すたびに
+  // 戻ってきて消せなくなる。入れたことがあるかどうかを別に持つ。
+  activityPresetsSeeded Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// --- 活動記録 ---
+// いましていることを押して記録し、終わった時点でGoogle Calendarの予定にする（docs/spec.md §27）。
+// 予定の本体はGoogle側に作られる。ここに置くのは選択肢と「まだ終わっていない1件」だけで、
+// 終わった記録をDaySpanへ残すことはしない（docs/spec.md §19）。
+
+model ActivityPreset {
+  id     String @id @default(cuid())
+  userId String
+
+  name      String
+  sortOrder Int    @default(0)
+
+  // 保存先カレンダー。未設定なら予定作成の既定の保存先（CalendarSetting.isCreateDefault）へ入れる。
+  // カレンダー名・色はGoogle側が一次情報源のため持たない。
+  calendarId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 同じ名前の選択肢が2つ並ぶと、押したときにどちらが選ばれたのか区別できない。
+  // 初期の選択肢を後から足すときも、この一意制約で二重登録を防いでいる。
+  @@unique([userId, name])
+}
+
+// 進行中の記録。同時に2つのことを記録しても、どちらが「いましていること」か決まらないため
+// ユーザーにつき1件（userId が一意）。停止・切り替えの時点でGoogleへ書き出して削除する。
+model RunningActivity {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  title      String
+  calendarId String
+  startedAt  DateTime
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -29,6 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { TagCatalog } from "@/services/notion/tag-options";
+import type { ActivityPresetItem, RunningActivityItem } from "@/types/activity";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
@@ -36,6 +37,8 @@ import type {
   TaskItem,
 } from "@/types/calendar";
 
+import { ActivityButton } from "./activity-button";
+import { ActivitySheet } from "./activity-sheet";
 import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, localInputToIso } from "./datetime-fields";
 import { EventDetailDialog } from "./event-detail-dialog";
@@ -80,6 +83,8 @@ export function CalendarShell({
   dataPromise,
   tagCatalogPromise,
   placeCatalogPromise,
+  activityPresets,
+  initialRunningActivity,
   weekStartsOn,
   timeZone,
   autoRefreshSeconds,
@@ -96,6 +101,10 @@ export function CalendarShell({
   tagCatalogPromise: Promise<TagCatalog>;
   /** 登録済みの場所。タグ・種類と同じく、月をまたいでも変わらないため別に解決させる。 */
   placeCatalogPromise: Promise<PlaceCatalog>;
+  /** 活動記録の選択肢。DaySpanのDBにあり、外部APIを待たないためそのまま渡す。 */
+  activityPresets: ActivityPresetItem[];
+  /** 記録中の活動。開始・停止のたびに画面側で持ち替える。 */
+  initialRunningActivity: RunningActivityItem | null;
   weekStartsOn: number;
   timeZone: string;
   autoRefreshSeconds: number;
@@ -179,6 +188,19 @@ export function CalendarShell({
   const [viewingEvent, setViewingEvent] = useState<CalendarEventItem | null>(null);
   const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
   const [viewingReminder, setViewingReminder] = useState<ReminderItem | null>(null);
+
+  // いま記録している活動と、その開始・停止・切り替えを行う画面（docs/spec.md §27）。
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [running, setRunning] = useState(initialRunningActivity);
+
+  // 開始・停止は画面側で先に反映するが、正はサーバーにある（別の端末で止めることもある）。
+  // 取り直しでサーバーの値が変わったら、そちらへ戻す。
+  const serverRunningKey = runningActivityKey(initialRunningActivity);
+  const [knownRunningKey, setKnownRunningKey] = useState(serverRunningKey);
+  if (knownRunningKey !== serverRunningKey) {
+    setKnownRunningKey(serverRunningKey);
+    setRunning(initialRunningActivity);
+  }
 
   const closeDialogs = () => {
     setItemDialog(null);
@@ -662,6 +684,11 @@ export function CalendarShell({
           onCloseDialogs={closeDialogs}
           onRefreshAll={refreshAll}
           onLoadingChange={setWindowLoading}
+          activityPresets={activityPresets}
+          runningActivity={running}
+          activityOpen={activityOpen}
+          onActivityOpenChange={setActivityOpen}
+          onRunningActivityChange={setRunning}
         />
       </Suspense>
 
@@ -722,6 +749,11 @@ function CalendarBody({
   onCloseDialogs,
   onRefreshAll,
   onLoadingChange,
+  activityPresets,
+  runningActivity,
+  activityOpen,
+  onActivityOpenChange,
+  onRunningActivityChange,
 }: {
   dataPromise: Promise<CalendarLoadResult>;
   tagCatalogPromise: Promise<TagCatalog>;
@@ -765,6 +797,11 @@ function CalendarBody({
   onCloseDialogs: () => void;
   onRefreshAll: () => void;
   onLoadingChange: (loading: boolean) => void;
+  activityPresets: ActivityPresetItem[];
+  runningActivity: RunningActivityItem | null;
+  activityOpen: boolean;
+  onActivityOpenChange: (open: boolean) => void;
+  onRunningActivityChange: (running: RunningActivityItem | null) => void;
 }) {
   const initial = use(dataPromise);
   const tagCatalog = use(tagCatalogPromise);
@@ -860,15 +897,26 @@ function CalendarBody({
           events={data.events}
           tasks={data.tasks}
           reminders={data.reminders}
+          runningActivity={runningActivity}
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
           onOpenReminder={onOpenReminder}
+          onOpenActivity={() => onActivityOpenChange(true)}
           onSelectSlot={onSelectSlot}
           onDragCommit={onDragCommit}
           onAllDayDragCommit={onAllDayDragCommit}
           onSwipe={onSwipe}
           readOnly={offline}
+        />
+      )}
+
+      {/* 記録先はGoogle Calendarなので、書き込めるカレンダーが無ければ置いても押せない。 */}
+      {data.calendars.length > 0 && (
+        <ActivityButton
+          running={runningActivity}
+          disabled={offline}
+          onOpen={() => onActivityOpenChange(true)}
         />
       )}
 
@@ -932,6 +980,21 @@ function CalendarBody({
         />
       )}
 
+      {activityOpen && (
+        <ActivitySheet
+          presets={activityPresets}
+          running={runningActivity}
+          timeZone={timeZone}
+          onClose={() => onActivityOpenChange(false)}
+          onRunningChange={onRunningActivityChange}
+          onSaved={(touched) => {
+            onActivityOpenChange(false);
+            // 止めた時点でGoogle側に予定ができている。その期間だけ取り直す。
+            handleSaved(touched);
+          }}
+        />
+      )}
+
       {viewingReminder && (
         <ReminderDetailDialog
           reminder={viewingReminder}
@@ -945,6 +1008,14 @@ function CalendarBody({
       )}
     </>
   );
+}
+
+/**
+ * 記録中の活動が同じものかを比べるための文字列。
+ * サーバーから来る値は取り直しのたびに別のオブジェクトになるため、参照では比べられない。
+ */
+function runningActivityKey(running: RunningActivityItem | null): string {
+  return running ? `${running.title} ${running.startedAt}` : "";
 }
 
 /** YYYY-MM-DD を日数分ずらす。UTC正午で扱い、タイムゾーンによる日付ずれを避ける。 */
