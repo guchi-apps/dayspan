@@ -1,0 +1,289 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { ActivityPresetItem } from "@/types/activity";
+import type { WritableCalendar } from "@/types/calendar";
+
+/** 保存先を選ぶ欄で「指定しない」を表す値。Radixのセレクトは空文字を値にできない。 */
+const DEFAULT_CALENDAR_VALUE = "__default__";
+
+/**
+ * 活動記録の項目（docs/spec.md §27）。
+ *
+ * 記録は押した順ではなく、ここに並んだ順でカレンダー画面に出る。よく使うものを
+ * 上へ持ってこられるよう、名前・保存先とあわせて並び順もここで変えられるようにする。
+ */
+export function ActivitySection({
+  presets,
+  calendars,
+}: {
+  presets: ActivityPresetItem[];
+  calendars: WritableCalendar[];
+}) {
+  const router = useRouter();
+
+  const [items, setItems] = useState(presets);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const defaultCalendarName =
+    calendars.find((calendar) => calendar.isCreateDefault)?.name ?? calendars[0]?.name;
+
+  /** 変更を送り、成功したら一覧を差し替える。カレンダー画面の選択肢も古くなるため取り直させる。 */
+  const send = async (
+    path: string,
+    init: RequestInit,
+    fallback: string,
+    apply: (body: Record<string, unknown>) => void,
+  ): Promise<boolean> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(path, init);
+      const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+
+      if (!response.ok) {
+        setError((body?.message as string) ?? fallback);
+        return false;
+      }
+
+      apply(body ?? {});
+      router.refresh();
+      return true;
+    } catch {
+      setError(fallback);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const add = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    const added = await send(
+      "/api/activities/presets",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      },
+      "項目を追加できませんでした。",
+      (body) => setItems((prev) => [...prev, body.preset as ActivityPresetItem]),
+    );
+
+    if (added) setName("");
+  };
+
+  const rename = async (preset: ActivityPresetItem, next: string) => {
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === preset.name) return;
+
+    await send(
+      `/api/activities/presets/${encodeURIComponent(preset.id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      },
+      "名前を変更できませんでした。",
+      (body) => replace(body.preset as ActivityPresetItem),
+    );
+  };
+
+  const changeCalendar = async (preset: ActivityPresetItem, value: string) => {
+    const calendarId = value === DEFAULT_CALENDAR_VALUE ? null : value;
+
+    await send(
+      `/api/activities/presets/${encodeURIComponent(preset.id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ calendarId }),
+      },
+      "保存先を変更できませんでした。",
+      (body) => replace(body.preset as ActivityPresetItem),
+    );
+  };
+
+  const remove = async (preset: ActivityPresetItem) => {
+    // 消えるのは押すための項目だけで、保存済みの予定はカレンダーに残る。
+    // それでも押し間違いで並びが変わるため、消す前に何が消えるかを示す。
+    const confirmed = window.confirm(
+      `「${preset.name}」を削除します。\nすでにカレンダーへ保存された予定はそのまま残ります。よろしいですか？`,
+    );
+    if (!confirmed) return;
+
+    await send(
+      `/api/activities/presets/${encodeURIComponent(preset.id)}`,
+      { method: "DELETE" },
+      "項目を削除できませんでした。",
+      () => setItems((prev) => prev.filter((item) => item.id !== preset.id)),
+    );
+  };
+
+  /**
+   * 並びを1つ入れ替える。上下ボタンにしているのは、指でつまんで動かす操作だと
+   * ページのスクロールと取り違えやすいため。
+   */
+  const move = async (index: number, delta: number) => {
+    const next = [...items];
+    const target = next[index + delta];
+    if (!target) return;
+
+    next[index + delta] = next[index];
+    next[index] = target;
+
+    // 応答を待ってから動かすと、押したのに動かない時間ができる。先に反映し、失敗したら戻す。
+    const previous = items;
+    setItems(next);
+
+    const ok = await send(
+      "/api/activities/presets",
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: next.map((item) => item.id) }),
+      },
+      "並び順を保存できませんでした。",
+      () => {},
+    );
+
+    if (!ok) setItems(previous);
+  };
+
+  const replace = (preset: ActivityPresetItem) =>
+    setItems((prev) => prev.map((item) => (item.id === preset.id ? preset : item)));
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-4">
+        {error && (
+          <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
+            {error}
+          </p>
+        )}
+
+        <ul className="flex flex-col divide-y divide-rule">
+          {items.map((preset, index) => (
+            <li key={preset.id} className="flex min-w-0 flex-col gap-2 py-3">
+              <div className="flex min-w-0 items-center gap-2">
+                {/* 名前は打ち終えて欄から離れた時点で保存する。1文字ごとに送ると、
+                    打っている途中の名前が保存されてしまう。 */}
+                <Input
+                  aria-label={`${preset.name} の名前`}
+                  className="h-10 min-w-0 flex-1"
+                  defaultValue={preset.name}
+                  disabled={busy}
+                  onBlur={(event) => rename(preset, event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                />
+
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`${preset.name} を上へ`}
+                  disabled={busy || index === 0}
+                  onClick={() => move(index, -1)}
+                >
+                  <ChevronUp className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`${preset.name} を下へ`}
+                  disabled={busy || index === items.length - 1}
+                  onClick={() => move(index, 1)}
+                >
+                  <ChevronDown className="size-4" />
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="icon-sm"
+                  aria-label={`${preset.name} を削除`}
+                  disabled={busy}
+                  onClick={() => remove(preset)}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+
+              <Select
+                value={preset.calendarId ?? DEFAULT_CALENDAR_VALUE}
+                disabled={busy}
+                onValueChange={(value) => changeCalendar(preset, value)}
+              >
+                <SelectTrigger size="sm" className="w-full" aria-label={`${preset.name} の保存先`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DEFAULT_CALENDAR_VALUE}>
+                    既定の保存先{defaultCalendarName ? `（${defaultCalendarName}）` : ""}
+                  </SelectItem>
+                  {calendars.map((calendar) => (
+                    <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
+                      {calendar.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </li>
+          ))}
+
+          {items.length === 0 && (
+            <li className="type-body-medium py-2 text-on-surface-variant">
+              項目がありません。よく記録するものを追加してください。
+            </li>
+          )}
+        </ul>
+
+        <div className="flex flex-col gap-2 border-t border-rule pt-4">
+          <Label htmlFor="activity-preset-name">新しく追加</Label>
+
+          <div className="flex min-w-0 items-center gap-2">
+            <Input
+              id="activity-preset-name"
+              className="h-10 min-w-0 flex-1"
+              placeholder="睡眠・移動・仕事など"
+              value={name}
+              disabled={busy}
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  add();
+                }
+              }}
+            />
+            <Button size="sm" disabled={busy || !name.trim()} onClick={add}>
+              <Plus className="size-4" />
+              追加
+            </Button>
+          </div>
+
+          <p className="type-body-small text-on-surface-variant">
+            保存先を指定しない項目は、予定を作るときの既定のカレンダーへ入ります。
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

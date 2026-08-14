@@ -44,6 +44,7 @@ export function TaskList({
   calendars = [],
   placeCatalog = { ready: false, places: [] },
   weekStartsOn = 0,
+  activityRunning = false,
 }: {
   tasks: TaskItem[];
   /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
@@ -53,6 +54,8 @@ export function TaskList({
   calendars?: WritableCalendar[];
   placeCatalog?: PlaceCatalog;
   weekStartsOn?: number;
+  /** 活動を記録中かどうか。ナビの記録の項目へ印を出すためだけに使う（docs/spec.md §27）。 */
+  activityRunning?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -134,7 +137,7 @@ export function TaskList({
           <span className="hidden lg:inline">DaySpan</span>
         </div>
 
-        <HeaderNav current="tasks" />
+        <HeaderNav current="tasks" activityRunning={activityRunning} />
 
         <span className="flex-1" />
 
@@ -249,7 +252,7 @@ export function TaskList({
         <Plus className="size-6" />
       </Button>
 
-      <BottomNav current="tasks" />
+      <BottomNav current="tasks" activityRunning={activityRunning} />
 
       {itemDialog && (
         <ItemDialog

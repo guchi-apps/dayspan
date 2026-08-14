@@ -6,7 +6,7 @@ import { useOffline } from "next/offline";
 import { BellRing, Plus, RefreshCw } from "lucide-react";
 
 import { ItemDialog, type ItemDrafts } from "@/components/calendar/item-dialog";
-import { createCalendarDateUtils } from "@/components/calendar/item-layout";
+import { createCalendarDateUtils, elapsedDaysLabel } from "@/components/calendar/item-layout";
 import { toReminderDraft, type ReminderDraft } from "@/components/calendar/reminder-form";
 import { ReminderDetailDialog } from "@/components/calendar/reminder-detail-dialog";
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
@@ -44,6 +44,7 @@ export function ReminderList({
   calendars = [],
   placeCatalog = { ready: false, places: [] },
   weekStartsOn = 0,
+  activityRunning = false,
 }: {
   reminders: ReminderItem[];
   /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
@@ -53,6 +54,8 @@ export function ReminderList({
   calendars?: WritableCalendar[];
   placeCatalog?: PlaceCatalog;
   weekStartsOn?: number;
+  /** 活動を記録中かどうか。ナビの記録の項目へ印を出すためだけに使う（docs/spec.md §27）。 */
+  activityRunning?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -75,6 +78,8 @@ export function ReminderList({
 
   // 追加の初期値は今日から。実行環境のローカル時刻ではなく設定タイムゾーンで求める。
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
+  // 経過日数の基準になる「今日」。設定タイムゾーンで求めるため、サーバーとブラウザで同じ値になる。
+  const todayKey = useMemo(() => utils.todayKey(), [utils]);
 
   const openAdd = () => {
     const defaultDayKey = utils.todayKey();
@@ -94,7 +99,7 @@ export function ReminderList({
           <BellRing className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
         </div>
-        <HeaderNav current="reminders" />
+        <HeaderNav current="reminders" activityRunning={activityRunning} />
         <span className="flex-1" />
         <Button variant="ghost" size="icon" aria-label="再取得" disabled={pending || offline} onClick={() => startTransition(() => router.refresh())}><RefreshCw className="size-4" /></Button>
       </header>
@@ -106,34 +111,40 @@ export function ReminderList({
           <section key={year}>
             <h2 className="sticky top-0 z-10 bg-surface-container-low px-4 py-1.5 type-label-large text-on-surface-variant">{year}年</h2>
             <ul className="divide-y divide-rule">
-              {items.map((reminder) => (
-                <li key={reminder.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-start gap-3 px-4 py-3 text-left"
-                    onClick={() => setViewing(reminder)}
-                  >
-                    <div className="min-w-14 rounded-lg bg-tertiary-container px-2 py-1 text-center text-on-tertiary-container">
-                      <div className="text-xs">{Number(reminder.date.slice(5, 7))}月</div>
-                      <div className="text-xl font-semibold leading-5">{Number(reminder.date.slice(8, 10))}</div>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="type-body-large">{reminder.title}</div>
-                      <div className="type-body-small flex flex-wrap items-center gap-1.5 text-on-surface-variant">
-                        <span>{reminder.date.slice(0, 10)}</span>
-                        {reminder.annual !== null && <Badge variant="outline">{reminder.annual ? "毎年" : "単発"}</Badge>}
-                        {reminder.category && (
-                          <TagChip
-                            name={reminder.category}
-                            color={tagColorOf(tagCatalog.reminder ?? [], reminder.category)}
-                          />
-                        )}
-                        {reminder.memo && <span className="clip-nowrap">{reminder.memo}</span>}
+              {items.map((reminder) => {
+                // 数え始めは登録した日（sourceDate）。毎年の項目でも、誕生日・記念日から
+                // 何日という起点は登録した日のままであるため。
+                const elapsed = elapsedDaysLabel(utils.itemDateKey(reminder.sourceDate), todayKey);
+                return (
+                  <li key={reminder.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-start gap-3 px-4 py-3 text-left"
+                      onClick={() => setViewing(reminder)}
+                    >
+                      <div className="min-w-14 rounded-lg bg-tertiary-container px-2 py-1 text-center text-on-tertiary-container">
+                        <div className="text-xs">{Number(reminder.date.slice(5, 7))}月</div>
+                        <div className="text-xl font-semibold leading-5">{Number(reminder.date.slice(8, 10))}</div>
                       </div>
-                    </div>
-                  </button>
-                </li>
-              ))}
+                      <div className="min-w-0 flex-1">
+                        <div className="type-body-large">{reminder.title}</div>
+                        <div className="type-body-small flex flex-wrap items-center gap-1.5 text-on-surface-variant">
+                          <span>{reminder.date.slice(0, 10)}</span>
+                          {elapsed && <span className="text-tertiary">{elapsed}</span>}
+                          {reminder.annual !== null && <Badge variant="outline">{reminder.annual ? "毎年" : "単発"}</Badge>}
+                          {reminder.category && (
+                            <TagChip
+                              name={reminder.category}
+                              color={tagColorOf(tagCatalog.reminder ?? [], reminder.category)}
+                            />
+                          )}
+                          {reminder.memo && <span className="clip-nowrap">{reminder.memo}</span>}
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ))}
@@ -150,7 +161,7 @@ export function ReminderList({
         <Plus className="size-6" />
       </Button>
 
-      <BottomNav current="reminders" />
+      <BottomNav current="reminders" activityRunning={activityRunning} />
 
       {itemDialog && (
         <ItemDialog

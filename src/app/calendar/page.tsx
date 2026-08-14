@@ -17,6 +17,7 @@ import {
   toDateKey,
 } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
+import { getRunningActivity } from "@/services/activity/running";
 import { loadCalendarData } from "@/services/calendar/load";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { loadTagCatalog } from "@/services/notion/tag-options";
@@ -72,6 +73,10 @@ export default async function CalendarPage({
   // 場所も月をまたいでは変わらない。予定・タスクの取得とは分けて解決させる。
   const placeCatalogPromise = loadPlaceCatalog(notionConnection);
 
+  // 記録中の活動（docs/spec.md §27）。まだGoogleに予定が無いぶんを時間グリッドへ帯として描く。
+  // DaySpanのDBだけで完結するため、外部APIを待たずにここで解決しておく。
+  const runningActivity = await getRunningActivity(user.id);
+
   return (
     <CalendarShell
       view={view}
@@ -81,6 +86,7 @@ export default async function CalendarPage({
       dataPromise={dataPromise}
       tagCatalogPromise={tagCatalogPromise}
       placeCatalogPromise={placeCatalogPromise}
+      initialRunningActivity={runningActivity}
       weekStartsOn={weekStartsOn}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
       autoRefreshSeconds={uiSetting?.autoRefreshSeconds ?? 300}

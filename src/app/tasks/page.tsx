@@ -18,9 +18,12 @@ export default async function TasksPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [uiSetting, connection] = await Promise.all([
+  const [uiSetting, connection, runningActivity] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
+    // ナビの記録の項目へ印を出すためだけに読む（docs/spec.md §27）。
+    // 止め忘れたまま別の画面で作業していると、その間ずっと同じ項目を記録し続けてしまう。
+    db.runningActivity.findUnique({ where: { userId: user.id }, select: { id: true } }),
   ]);
 
   if (!connection?.taskDataSourceId) return <ConnectPrompt />;
@@ -47,6 +50,7 @@ export default async function TasksPage() {
       weekStartsOn={uiSetting?.weekStartsOn ?? 0}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
       loadError={loadError}
+      activityRunning={runningActivity !== null}
     />
   );
 }

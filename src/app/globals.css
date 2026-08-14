@@ -21,6 +21,9 @@
   --color-secondary-container: var(--md-secondary-container);
   --color-on-secondary-container: var(--md-on-secondary-container);
 
+  /* 日付リマインドの印・枠線に使う。ロール名だけ書いて中身を出していなかったため、
+     `bg-tertiary` 等がCSSを生まず、時間グリッドの目盛りと引き出し線が消えていた（issue #171）。 */
+  --color-tertiary: var(--md-tertiary);
   --color-tertiary-container: var(--md-tertiary-container);
   --color-on-tertiary-container: var(--md-on-tertiary-container);
 
@@ -309,6 +312,26 @@
   box-shadow:
     0 4px 8px 3px rgb(0 0 0 / 0.15),
     0 1px 3px 0 rgb(0 0 0 / 0.3);
+}
+
+/* 時間グリッドで範囲を引いている最中の塗り（issue #119）。
+   斜めの縞が流れ続けることで、置かれた枠ではなく「いま押さえているところ」だと分かる。
+   確定前なので塗りは薄く保ち、下の目盛りと既存の予定が透けて見えるようにする。 */
+@utility slot-range-stripes {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, var(--md-primary) 26%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+  /* 縞の間隔12pxを45度に置いたときの横方向の周期（12×√2）。ここを1周期ぶん動かすと
+     継ぎ目なく流れる。半端な値に見えるが、丸めると1周ごとに縞が跳ねる。 */
+  animation: slot-range-stripes 700ms linear infinite;
+}
+
+@keyframes slot-range-stripes {
+  to {
+    background-position: 16.97px 0;
+  }
 }
 
 /* リニアプログレスの往復。M3のemphasizedに近い緩急にして、待ちの体感を短くする。 */
