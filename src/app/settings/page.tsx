@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   NotebookPen,
   Tags,
+  Timer,
   UserRound,
 } from "lucide-react";
 
@@ -24,10 +25,11 @@ export default async function SettingsPage() {
 
   // 一覧では外部APIを叩かない。カレンダー一覧やタスクDB一覧の取得はそれぞれの画面へ入って
   // からで足り、ここで待たせるとGoogle / Notionが遅い日は設定を開くこと自体ができなくなる。
-  const [googleAccounts, notionConnection, uiSetting] = await Promise.all([
+  const [googleAccounts, notionConnection, uiSetting, activityPresetCount] = await Promise.all([
     db.googleAccount.findMany({ where: { userId: user.id }, select: { email: true } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
     db.uiSetting.findUnique({ where: { userId: user.id } }),
+    db.activityPreset.count({ where: { userId: user.id } }),
   ]);
 
   return (
@@ -64,6 +66,19 @@ export default async function SettingsPage() {
             icon={Tags}
             label="タグ"
             value="タスクのタグと日付リマインドの種類"
+          />
+        )}
+        {/* 記録の保存先はGoogle Calendar。未接続では保存先が選べないため、行ごと出さない。 */}
+        {googleAccounts.length > 0 && (
+          <MenuItem
+            href="/settings/activities"
+            icon={Timer}
+            label="活動記録"
+            value={
+              activityPresetCount === 0
+                ? "項目なし"
+                : `${activityPresetCount}件の項目`
+            }
           />
         )}
         <MenuItem

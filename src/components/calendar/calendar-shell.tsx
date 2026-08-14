@@ -29,6 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { TagCatalog } from "@/services/notion/tag-options";
+import type { RunningActivityItem } from "@/types/activity";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
@@ -81,6 +82,7 @@ export function CalendarShell({
   dataPromise,
   tagCatalogPromise,
   placeCatalogPromise,
+  initialRunningActivity,
   weekStartsOn,
   timeZone,
   autoRefreshSeconds,
@@ -97,6 +99,11 @@ export function CalendarShell({
   tagCatalogPromise: Promise<TagCatalog>;
   /** 登録済みの場所。タグ・種類と同じく、月をまたいでも変わらないため別に解決させる。 */
   placeCatalogPromise: Promise<PlaceCatalog>;
+  /**
+   * 記録中の活動（docs/spec.md §27）。開始・停止は記録の画面で行うため、ここでは表示だけに使う。
+   * まだGoogleに予定が無いぶんを時間グリッドへ帯として描く。
+   */
+  initialRunningActivity: RunningActivityItem | null;
   weekStartsOn: number;
   timeZone: string;
   autoRefreshSeconds: number;
@@ -180,6 +187,14 @@ export function CalendarShell({
   const [viewingEvent, setViewingEvent] = useState<CalendarEventItem | null>(null);
   const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
   const [viewingReminder, setViewingReminder] = useState<ReminderItem | null>(null);
+
+  /**
+   * 記録中の帯を押したとき。開始・停止は記録の画面で行う（docs/spec.md §27）。
+   * カレンダーに出しているのは、まだ予定になっていないぶんの表示だけ。
+   */
+  const openActivity = () => {
+    startTransition(() => router.push("/activity"));
+  };
 
   const closeDialogs = () => {
     setItemDialog(null);
@@ -498,7 +513,7 @@ export function CalendarShell({
           <span className="hidden lg:inline">DaySpan</span>
         </Button>
 
-        <HeaderNav current="calendar" />
+        <HeaderNav current="calendar" activityRunning={initialRunningActivity !== null} />
 
         {/* スマートフォンはスワイプで移動できるため、年月の表示幅を優先する。 */}
         <div className="hidden items-center md:flex">
@@ -667,10 +682,12 @@ export function CalendarShell({
           onCloseDialogs={closeDialogs}
           onRefreshAll={refreshAll}
           onLoadingChange={setWindowLoading}
+          runningActivity={initialRunningActivity}
+          onOpenActivity={openActivity}
         />
       </Suspense>
 
-      <BottomNav current="calendar" />
+      <BottomNav current="calendar" activityRunning={initialRunningActivity !== null} />
     </div>
   );
 }
@@ -728,6 +745,8 @@ function CalendarBody({
   onCloseDialogs,
   onRefreshAll,
   onLoadingChange,
+  runningActivity,
+  onOpenActivity,
 }: {
   dataPromise: Promise<CalendarLoadResult>;
   tagCatalogPromise: Promise<TagCatalog>;
@@ -772,6 +791,9 @@ function CalendarBody({
   onCloseDialogs: () => void;
   onRefreshAll: () => void;
   onLoadingChange: (loading: boolean) => void;
+  runningActivity: RunningActivityItem | null;
+  /** 記録中の帯を押したとき。開始・停止は記録の画面で行う。 */
+  onOpenActivity: () => void;
 }) {
   const initial = use(dataPromise);
   const tagCatalog = use(tagCatalogPromise);
@@ -867,10 +889,12 @@ function CalendarBody({
           events={data.events}
           tasks={data.tasks}
           reminders={data.reminders}
+          runningActivity={runningActivity}
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
           onOpenReminder={onOpenReminder}
+          onOpenActivity={onOpenActivity}
           onSelectSlot={onSelectSlot}
           onSelectRange={onSelectRange}
           onDragCommit={onDragCommit}

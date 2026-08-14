@@ -44,6 +44,7 @@ export function ReminderList({
   calendars = [],
   placeCatalog = { ready: false, places: [] },
   weekStartsOn = 0,
+  activityRunning = false,
 }: {
   reminders: ReminderItem[];
   /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
@@ -53,6 +54,8 @@ export function ReminderList({
   calendars?: WritableCalendar[];
   placeCatalog?: PlaceCatalog;
   weekStartsOn?: number;
+  /** 活動を記録中かどうか。ナビの記録の項目へ印を出すためだけに使う（docs/spec.md §27）。 */
+  activityRunning?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -96,7 +99,7 @@ export function ReminderList({
           <BellRing className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
         </div>
-        <HeaderNav current="reminders" />
+        <HeaderNav current="reminders" activityRunning={activityRunning} />
         <span className="flex-1" />
         <Button variant="ghost" size="icon" aria-label="再取得" disabled={pending || offline} onClick={() => startTransition(() => router.refresh())}><RefreshCw className="size-4" /></Button>
       </header>
@@ -158,7 +161,7 @@ export function ReminderList({
         <Plus className="size-6" />
       </Button>
 
-      <BottomNav current="reminders" />
+      <BottomNav current="reminders" activityRunning={activityRunning} />
 
       {itemDialog && (
         <ItemDialog

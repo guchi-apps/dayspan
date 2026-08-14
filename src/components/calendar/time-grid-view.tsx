@@ -1,11 +1,14 @@
 "use client";
 
-import { memo, useCallback, useMemo, useSyncExternalStore } from "react";
+import { memo, useCallback, useMemo } from "react";
 
 import { cn } from "@/lib/utils";
 import { eventColors } from "./calendar-color";
+import type { RunningActivityItem } from "@/types/activity";
 import type { CalendarEventItem, ReminderItem, TaskItem } from "@/types/calendar";
 
+import { RunningActivityBlock } from "./running-activity-block";
+import { useMinuteBucket } from "./use-clock";
 import {
   eventTextLines,
   MIN_EVENT_HEIGHT,
@@ -55,10 +58,12 @@ export function TimeGridView({
   events,
   tasks,
   reminders,
+  runningActivity,
   utils,
   onOpenEvent,
   onOpenTask,
   onOpenReminder,
+  onOpenActivity,
   onSelectSlot,
   onSelectRange,
   onDragCommit,
@@ -70,10 +75,14 @@ export function TimeGridView({
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
+  /** 記録中の活動。まだGoogleに予定は無く、開始時刻から現在時刻までを画面上で伸ばす。 */
+  runningActivity: RunningActivityItem | null;
   utils: CalendarDateUtils;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
+  /** 記録中の枠を押したとき。記録の画面（停止・切り替え）を開く。 */
+  onOpenActivity: () => void;
   /** 空き時間の選択。minutes は 0:00 からの分数（30分単位に丸める）。 */
   onSelectSlot: (dateKey: string, minutes: number) => void;
   /** 空き時間を縦にドラッグして時間帯まで決めた場合（マウス・ペンのみ）。 */
@@ -289,6 +298,7 @@ export function TimeGridView({
                 events={events}
                 tasks={tasks}
                 reminders={reminders}
+                runningActivity={runningActivity}
                 utils={utils}
                 // 掴んでいる予定は、表示中の期間の中でだけ動かす。
                 preview={isCenter ? preview : null}
@@ -298,6 +308,7 @@ export function TimeGridView({
                 onOpenEvent={onOpenEvent}
                 onOpenTask={onOpenTask}
                 onOpenReminder={onOpenReminder}
+                onOpenActivity={onOpenActivity}
                 onSelectSlot={selectSlot}
                 onStartSelect={startSelect}
               />
@@ -396,6 +407,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   events,
   tasks,
   reminders,
+  runningActivity,
   utils,
   preview,
   rangePreview,
@@ -404,6 +416,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onOpenEvent,
   onOpenTask,
   onOpenReminder,
+  onOpenActivity,
   onSelectSlot,
   onStartSelect,
 }: {
@@ -413,6 +426,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
+  runningActivity: RunningActivityItem | null;
   utils: CalendarDateUtils;
   preview: DragPreview | null;
   /** 空き時間を引いて選んでいる最中の時間帯。 */
@@ -426,6 +440,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
+  onOpenActivity: () => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onStartSelect: (event: React.PointerEvent, dayIndex: number) => void;
 }) {
@@ -444,9 +459,11 @@ const DayColumnsPane = memo(function DayColumnsPane({
           onStartDrag={onStartDrag}
           onConsumeDragClick={onConsumeDragClick}
           utils={utils}
+          runningActivity={runningActivity}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
           onOpenReminder={onOpenReminder}
+          onOpenActivity={onOpenActivity}
           onSelectSlot={onSelectSlot}
           onStartSelect={onStartSelect}
           events={events.filter(
@@ -472,6 +489,7 @@ function DayColumn({
   events,
   taskMarks,
   reminders,
+  runningActivity,
   utils,
   preview,
   rangePreview,
@@ -480,6 +498,7 @@ function DayColumn({
   onOpenEvent,
   onOpenTask,
   onOpenReminder,
+  onOpenActivity,
   onSelectSlot,
   onStartSelect,
 }: {
@@ -490,6 +509,7 @@ function DayColumn({
   /** この日・この時刻に置くタスクの枠。期限と予定日はそれぞれ別の枠になる。 */
   taskMarks: TaskOccurrence[];
   reminders: ReminderItem[];
+  runningActivity: RunningActivityItem | null;
   utils: CalendarDateUtils;
   preview: DragPreview | null;
   /** この列で引いている最中の時間帯。他の列を引いている間は null。 */
@@ -503,6 +523,7 @@ function DayColumn({
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
+  onOpenActivity: () => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onStartSelect: (event: React.PointerEvent, dayIndex: number) => void;
 }) {
@@ -563,6 +584,24 @@ function DayColumn({
           />
         );
       })}
+
+      {/*
+        記録中の活動。予定より先に置いて、予定・タスクがその上に描かれるようにする。
+        記録中は終わりが決まっておらず、時間が経つほど帯が伸びる。同じ時間帯の予定を
+        覆い隠すと、いま何の予定が入っているかが読めなくなるため、背面の帯として置く。
+      */}
+      {runningActivity && (
+        <RunningActivityBlock
+          running={runningActivity}
+          dateKey={dateKey}
+          utils={utils}
+          gridHeight={gridHeight}
+          onOpen={() => {
+            if (onConsumeDragClick()) return;
+            onOpenActivity();
+          }}
+        />
+      )}
 
       {positioned.map(({ event, column, columns }) => {
         if (isDraggedAway(event.id)) return null;
@@ -1330,21 +1369,6 @@ function ResizeHandle({
 
 function formatMinutes(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-}
-
-/**
- * 分単位の現在時刻。時計はReactの外にある変化する値なので、状態として持たず購読する。
- * サーバー側では値を返さないため、ハイドレーションのずれも起きない。
- */
-function useMinuteBucket(): number | null {
-  return useSyncExternalStore(
-    (onStoreChange) => {
-      const timer = setInterval(onStoreChange, 30_000);
-      return () => clearInterval(timer);
-    },
-    () => Math.floor(Date.now() / 60_000),
-    () => null,
-  );
 }
 
 /**

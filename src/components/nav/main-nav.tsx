@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BellRing, CalendarDays, ListChecks, Settings } from "lucide-react";
+import { BellRing, CalendarDays, ListChecks, Settings, Timer } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// 活動記録を先頭に置く（docs/spec.md §27）。押した時点から記録が始まる画面で、
+// 開くのは「いま何かを始める・終える」その瞬間に限られる。探してから押すのでは間に合わない。
 const ITEMS = [
+  { href: "/activity", key: "activity", label: "記録", icon: Timer },
   { href: "/calendar", key: "calendar", label: "カレンダー", icon: CalendarDays },
   { href: "/tasks", key: "tasks", label: "タスク", icon: ListChecks },
   { href: "/reminders", key: "reminders", label: "日付", icon: BellRing },
@@ -16,11 +19,33 @@ const ITEMS = [
 export type NavKey = (typeof ITEMS)[number]["key"];
 
 /**
+ * 記録中であることを示す印。
+ *
+ * 記録中かどうかは、記録の画面を開かなくても分かる必要がある。止め忘れたまま
+ * 別の画面で作業していると、その間ずっと同じ項目を記録し続けてしまうため。
+ */
+function RunningDot() {
+  return (
+    <span
+      aria-hidden
+      className="absolute -top-0.5 -right-0.5 size-2 animate-pulse rounded-full bg-primary"
+    />
+  );
+}
+
+/**
  * M3のナビゲーションバー（docs/spec.md §4）。
  * 選択中の項目はアイコンの背後に「アクティブインジケーター」の丸みを表示し、
  * 色だけに頼らずに現在地が分かるようにする。
  */
-export function BottomNav({ current }: { current: NavKey }) {
+export function BottomNav({
+  current,
+  activityRunning = false,
+}: {
+  current: NavKey;
+  /** 活動を記録中かどうか。記録の項目へ印を出す。 */
+  activityRunning?: boolean;
+}) {
   const router = useRouter();
 
   const handleCalendarClick = () => {
@@ -48,7 +73,7 @@ export function BottomNav({ current }: { current: NavKey }) {
               key={item.href}
               onClick={handleCalendarClick}
               aria-current={active ? "page" : undefined}
-              className="flex w-full max-w-[112px] flex-col items-center gap-1"
+              className="flex w-full max-w-[112px] min-w-0 flex-col items-center gap-1"
             >
               <span
                 className={cn(
@@ -60,7 +85,9 @@ export function BottomNav({ current }: { current: NavKey }) {
               </span>
               <span
                 className={cn(
-                  "type-label-medium",
+                  // 項目が5つ並ぶため、狭い画面では「カレンダー」の幅が1項目分を超える。
+                  // min-w-0 と truncate が無いと、縮まずにナビごと横へはみ出す。
+                  "type-label-medium w-full truncate text-center tracking-tight",
                   active ? "text-on-surface" : "text-on-surface-variant",
                 )}
               >
@@ -75,7 +102,7 @@ export function BottomNav({ current }: { current: NavKey }) {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className="flex w-full max-w-[112px] flex-col items-center gap-1"
+            className="flex w-full max-w-[112px] min-w-0 flex-col items-center gap-1"
           >
             <span
               className={cn(
@@ -83,11 +110,15 @@ export function BottomNav({ current }: { current: NavKey }) {
                 active ? "bg-secondary-container text-on-secondary-container" : "text-on-surface-variant",
               )}
             >
-              <Icon className="size-6" />
+              {/* 印はアイコンの角に添える。丸みの端に置くと、アイコンから離れて別の飾りに見える。 */}
+              <span className="relative flex items-center">
+                <Icon className="size-6" />
+                {item.key === "activity" && activityRunning && <RunningDot />}
+              </span>
             </span>
             <span
               className={cn(
-                "type-label-medium",
+                "type-label-medium w-full truncate text-center tracking-tight",
                 active ? "text-on-surface" : "text-on-surface-variant",
               )}
             >
@@ -101,7 +132,13 @@ export function BottomNav({ current }: { current: NavKey }) {
 }
 
 /** PC向け。ナビゲーションバーは持たず、トップアプリバー内に切り替えを置く。 */
-export function HeaderNav({ current }: { current: NavKey }) {
+export function HeaderNav({
+  current,
+  activityRunning = false,
+}: {
+  current: NavKey;
+  activityRunning?: boolean;
+}) {
   return (
     <div className="hidden items-center gap-1 md:flex">
       {ITEMS.filter((item) => item.key !== "settings").map((item) => {
@@ -120,7 +157,10 @@ export function HeaderNav({ current }: { current: NavKey }) {
                 : "text-on-surface-variant hover:bg-on-surface/8",
             )}
           >
-            <Icon className="size-[18px]" />
+            <span className="relative flex items-center">
+              <Icon className="size-[18px]" />
+              {item.key === "activity" && activityRunning && <RunningDot />}
+            </span>
             {item.label}
           </Link>
         );
