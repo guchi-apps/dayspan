@@ -34,6 +34,7 @@ import {
   type DragTarget,
 } from "./use-grid-drag";
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
+import { useSlotRange, type SlotRangeCommit, type SlotRangePreview } from "./use-slot-range";
 import { useTimeZoom } from "./use-time-zoom";
 
 /** 左から順に、前の期間・表示中の期間・次の期間。 */
@@ -64,6 +65,7 @@ export function TimeGridView({
   onOpenReminder,
   onOpenActivity,
   onSelectSlot,
+  onSelectRange,
   onDragCommit,
   onAllDayDragCommit,
   onSwipe,
@@ -83,6 +85,8 @@ export function TimeGridView({
   onOpenActivity: () => void;
   /** 空き時間の選択。minutes は 0:00 からの分数（30分単位に丸める）。 */
   onSelectSlot: (dateKey: string, minutes: number) => void;
+  /** 空き時間を縦にドラッグして時間帯まで決めた場合（マウス・ペンのみ）。 */
+  onSelectRange: (commit: SlotRangeCommit) => void;
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
   /** 左右スワイプで日付を送る。正で先の日付へ。 */
@@ -117,12 +121,24 @@ export function TimeGridView({
     consumeDragClick: consumeAllDayDragClick,
   } = useAllDayDrag({ days, onCommit: onAllDayDragCommit });
 
+  const {
+    preview: rangePreview,
+    selecting: rangeSelecting,
+    startSelect: startSelectWhenEditable,
+    cancelSelect,
+    handlePointerMove: handleRangePointerMove,
+    handlePointerUp: handleRangePointerUp,
+    consumeSelectClick,
+    resetSelectClick,
+  } = useSlotRange({ days, onCommit: onSelectRange });
+
   // 2本指のピンチで時間の幅を変える。掴みかけの予定があれば、そちらは取りやめる
   // （2本目の指が乗った時点で、予定を動かす操作ではなくなっているため）。
   const onPinchStart = useCallback(() => {
     cancelDrag();
     cancelAllDayDrag();
-  }, [cancelDrag, cancelAllDayDrag]);
+    cancelSelect();
+  }, [cancelDrag, cancelAllDayDrag, cancelSelect]);
 
   const { hourHeight, pinching, scrollRef, consumePinchClick } = useTimeZoom({ onPinchStart });
 
@@ -131,11 +147,15 @@ export function TimeGridView({
   const scrollbarGutter = useScrollbarGutter(scrollRef);
   const gridHeight = hourHeight * 24;
 
-  // ピンチのあとに残るclickで、予定や空き時間の画面が開かないようにする。
-  const consumeGridClick = useCallback(
-    () => consumeDragClick() || consumePinchClick(),
-    [consumeDragClick, consumePinchClick],
-  );
+  // ピンチ・ドラッグのあとに残るclickで、予定や空き時間の画面が開かないようにする。
+  // どれか1つで打ち切らず全て確かめる。確かめなかった側の「動かした」印が残ると、
+  // 次に普通に押したときのclickがそちらに食われてしまう。
+  const consumeGridClick = useCallback(() => {
+    const dragged = consumeDragClick();
+    const ranged = consumeSelectClick();
+    const pinched = consumePinchClick();
+    return dragged || ranged || pinched;
+  }, [consumeDragClick, consumeSelectClick, consumePinchClick]);
   const consumeAllDayClick = useCallback(
     () => consumeAllDayDragClick() || consumePinchClick(),
     [consumeAllDayDragClick, consumePinchClick],
@@ -146,6 +166,34 @@ export function TimeGridView({
   const startDrag = readOnly ? NOOP : startDragWhenEditable;
   const startAllDayDrag = readOnly ? NOOP : startAllDayDragWhenEditable;
   const selectSlot = readOnly ? NOOP : onSelectSlot;
+  const startSelect = readOnly ? NOOP : startSelectWhenEditable;
+
+  // 時間グリッドの上で起きるポインタ操作は、予定のドラッグと範囲選択のどちらかになる。
+  // 始まっていない側は何もしないため、同じ入口へまとめて渡す。
+  //
+  // 押し始めの時点で、前の操作が残した「動かした」印は落とす。範囲を引いたあとにclickが
+  // 来ないことがあり、残ったままだと次に押した予定のclickがその印に食われる。
+  const handleGridPointerDown = useCallback(() => resetSelectClick(), [resetSelectClick]);
+
+  const handleGridPointerMove = useCallback(
+    (event: React.PointerEvent) => {
+      handlePointerMove(event);
+      handleRangePointerMove(event);
+    },
+    [handlePointerMove, handleRangePointerMove],
+  );
+
+  const handleGridPointerUp = useCallback(() => {
+    handlePointerUp();
+    handleRangePointerUp();
+  }, [handlePointerUp, handleRangePointerUp]);
+
+  // 端末側のジェスチャーなどで取り上げられた場合。どこまで引くつもりだったかは分からないため、
+  // 範囲選択は入力画面を開かずに取りやめる（予定のドラッグは従来どおり、その位置で確定する）。
+  const handleGridPointerCancel = useCallback(() => {
+    handlePointerUp();
+    cancelSelect();
+  }, [handlePointerUp, cancelSelect]);
 
   // 予定を掴んでいる間の横移動は、日付ではなくその予定を動かす操作。
   const {
@@ -157,7 +205,7 @@ export function TimeGridView({
   } = useDaySwipe({
     daysKey: days[0],
     step: days.length,
-    enabled: !dragging && !allDayDragging && !pinching,
+    enabled: !dragging && !allDayDragging && !pinching && !rangeSelecting,
     onSwipe,
   });
 
@@ -210,11 +258,14 @@ export function TimeGridView({
         <div
           ref={gridRef}
           data-gutter-width="48"
-          className="relative flex"
+          // 範囲を引いている間は文字の選択を止める。カーソルが予定の上を通ると、
+          // 時間帯を引いているつもりでタイトルが選択され、青く反転してしまう。
+          className={cn("relative flex", rangeSelecting && "select-none")}
           style={{ height: gridHeight }}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
+          onPointerDown={handleGridPointerDown}
+          onPointerMove={handleGridPointerMove}
+          onPointerUp={handleGridPointerUp}
+          onPointerCancel={handleGridPointerCancel}
         >
           <div className="relative w-12 shrink-0">
             {Array.from({ length: 24 }, (_, hour) => (
@@ -251,6 +302,7 @@ export function TimeGridView({
                 utils={utils}
                 // 掴んでいる予定は、表示中の期間の中でだけ動かす。
                 preview={isCenter ? preview : null}
+                rangePreview={isCenter ? rangePreview : null}
                 onStartDrag={startDrag}
                 onConsumeDragClick={consumeGridClick}
                 onOpenEvent={onOpenEvent}
@@ -258,6 +310,7 @@ export function TimeGridView({
                 onOpenReminder={onOpenReminder}
                 onOpenActivity={onOpenActivity}
                 onSelectSlot={selectSlot}
+                onStartSelect={startSelect}
               />
             )}
           </SwipeTrack>
@@ -357,6 +410,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   runningActivity,
   utils,
   preview,
+  rangePreview,
   onStartDrag,
   onConsumeDragClick,
   onOpenEvent,
@@ -364,6 +418,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onOpenReminder,
   onOpenActivity,
   onSelectSlot,
+  onStartSelect,
 }: {
   days: string[];
   /** 1時間あたりの高さ（px）。ピンチで変わる（use-time-zoom.ts）。 */
@@ -374,6 +429,8 @@ const DayColumnsPane = memo(function DayColumnsPane({
   runningActivity: RunningActivityItem | null;
   utils: CalendarDateUtils;
   preview: DragPreview | null;
+  /** 空き時間を引いて選んでいる最中の時間帯。 */
+  rangePreview: SlotRangePreview | null;
   onStartDrag: (
     event: React.PointerEvent,
     target: DragTarget,
@@ -385,6 +442,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onOpenReminder: (reminder: ReminderItem) => void;
   onOpenActivity: () => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
+  onStartSelect: (event: React.PointerEvent, dayIndex: number) => void;
 }) {
   const gridHeight = hourHeight * 24;
 
@@ -397,6 +455,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
           dayIndex={dayIndex}
           hourHeight={hourHeight}
           preview={preview}
+          rangePreview={rangePreview?.dayIndex === dayIndex ? rangePreview : null}
           onStartDrag={onStartDrag}
           onConsumeDragClick={onConsumeDragClick}
           utils={utils}
@@ -406,6 +465,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
           onOpenReminder={onOpenReminder}
           onOpenActivity={onOpenActivity}
           onSelectSlot={onSelectSlot}
+          onStartSelect={onStartSelect}
           events={events.filter(
             (event) => !event.allDay && utils.eventCoversDay(event, dateKey),
           )}
@@ -432,6 +492,7 @@ function DayColumn({
   runningActivity,
   utils,
   preview,
+  rangePreview,
   onStartDrag,
   onConsumeDragClick,
   onOpenEvent,
@@ -439,6 +500,7 @@ function DayColumn({
   onOpenReminder,
   onOpenActivity,
   onSelectSlot,
+  onStartSelect,
 }: {
   dateKey: string;
   dayIndex: number;
@@ -450,6 +512,8 @@ function DayColumn({
   runningActivity: RunningActivityItem | null;
   utils: CalendarDateUtils;
   preview: DragPreview | null;
+  /** この列で引いている最中の時間帯。他の列を引いている間は null。 */
+  rangePreview: SlotRangePreview | null;
   onStartDrag: (
     event: React.PointerEvent,
     target: DragTarget,
@@ -461,6 +525,7 @@ function DayColumn({
   onOpenReminder: (reminder: ReminderItem) => void;
   onOpenActivity: () => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
+  onStartSelect: (event: React.PointerEvent, dayIndex: number) => void;
 }) {
   const positioned = utils.layoutOverlaps(events, dateKey);
   const gridHeight = hourHeight * 24;
@@ -490,11 +555,13 @@ function DayColumn({
   return (
     <div className="relative border-l border-outline-variant">
       {/* 空き時間の選択。予定・タスクはこの上に重ねて描画するので、
-          クリックが背面へ抜けることはない（docs/spec.md §15）。 */}
+          クリックが背面へ抜けることはない（docs/spec.md §15）。
+          押しただけなら既定の長さで、縦に引けば引いた範囲で入力画面を開く。 */}
       <button
         type="button"
         aria-label={`${dateKey} の空き時間に追加`}
         className="absolute inset-0 h-full w-full cursor-default"
+        onPointerDown={(e) => onStartSelect(e, dayIndex)}
         onClick={(e) => handleBackgroundClick(e.clientY, e.currentTarget)}
       />
 
@@ -728,8 +795,76 @@ function DayColumn({
           onOpen={() => onOpenReminder(reminder)}
         />
       ))}
+
+      {/* 引いている最中の時間帯。既存の予定より前に出して、いま何時から何時を
+          押さえようとしているのかが重なりに紛れないようにする。 */}
+      {rangePreview && (
+        <SlotRangeBlock
+          top={offsetOf(rangePreview.startMinutes)}
+          height={Math.max(
+            offsetOf(rangePreview.endMinutes - rangePreview.startMinutes),
+            MIN_EVENT_HEIGHT,
+          )}
+          startMinutes={rangePreview.startMinutes}
+          endMinutes={rangePreview.endMinutes}
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * 空き時間を引いている最中に出す枠（issue #119）。
+ *
+ * 引いた範囲がそのまま予定の時間帯になるため、確定前でも予定と同じ形・同じ位置で見せる。
+ * ただし保存前であることが分かるよう、枠線は破線にし、塗りには斜めの縞を流しておく。
+ * 「いまこの時間を押さえているところ」という進行中の状態を、静止した枠より伝えやすい。
+ */
+function SlotRangeBlock({
+  top,
+  height,
+  startMinutes,
+  endMinutes,
+}: {
+  top: number;
+  height: number;
+  startMinutes: number;
+  endMinutes: number;
+}) {
+  // 高さに収まらない行は出さない。予定ブロックと同じ考え方で、まずは時刻を残す。
+  const lines = eventTextLines(height);
+
+  return (
+    <div
+      // ポインタは下の背景ボタンが受け取り続ける必要がある。枠が指の下に入った時点で
+      // 受け取り先が変わると、そこから先の動きが範囲に反映されなくなる。
+      className="pointer-events-none absolute inset-x-0 z-30 px-px"
+      style={{ top, height }}
+      aria-hidden
+    >
+      <div className="animate-in fade-in relative size-full overflow-hidden rounded-md border-2 border-dashed border-primary bg-primary/10 duration-150">
+        <span className="slot-range-stripes absolute inset-0" />
+        <div className="relative flex h-full flex-col justify-center px-1.5 text-primary">
+          <span className="clip-nowrap text-[10px] leading-tight font-semibold">
+            {formatMinutes(startMinutes)}–{formatMinutes(endMinutes)}
+          </span>
+          {lines > 1 && (
+            <span className="clip-nowrap text-[10px] leading-tight opacity-80">
+              {durationLabel(endMinutes - startMinutes)}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 引いた長さ。分だけで示すと1時間を超えたあたりから量が掴みにくくなるため、時間と分に分ける。 */
+function durationLabel(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest}分`;
+  return rest === 0 ? `${hours}時間` : `${hours}時間${rest}分`;
 }
 
 /**
