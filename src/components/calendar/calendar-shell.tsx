@@ -56,6 +56,7 @@ import {
   type TouchedRange,
 } from "./use-calendar-chunks";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
+import type { SlotRangeCommit } from "./use-slot-range";
 
 // 日付だけが決まっている追加（右下の「＋」・月表示の長押し）で使う開始時刻。
 const DEFAULT_START_MINUTES = 9 * 60;
@@ -651,6 +652,10 @@ export function CalendarShell({
             if (offline) return;
             setQuickDraft(toQuickEventDraft(dateKey, minutes));
           }}
+          onSelectRange={({ dateKey, startMinutes, endMinutes }) => {
+            if (offline) return;
+            setQuickDraft(toQuickEventDraft(dateKey, startMinutes, endMinutes));
+          }}
           onQuickAddOnDay={(dateKey) => {
             if (offline) return;
             setQuickDraft(toQuickEventDraft(dateKey, DEFAULT_START_MINUTES));
@@ -714,6 +719,7 @@ function CalendarBody({
   onEditTask,
   onEditReminder,
   onSelectSlot,
+  onSelectRange,
   onQuickAddOnDay,
   onOpenEventForm,
   onDragCommit,
@@ -756,6 +762,7 @@ function CalendarBody({
   onEditTask: (task: TaskItem) => void;
   onEditReminder: (reminder: ReminderItem) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
+  onSelectRange: (commit: SlotRangeCommit) => void;
   onQuickAddOnDay: (dateKey: string) => void;
   onOpenEventForm: (draft: EventDraft) => void;
   onDragCommit: (commit: DragCommit) => void;
@@ -865,6 +872,7 @@ function CalendarBody({
           onOpenTask={onOpenTask}
           onOpenReminder={onOpenReminder}
           onSelectSlot={onSelectSlot}
+          onSelectRange={onSelectRange}
           onDragCommit={onDragCommit}
           onAllDayDragCommit={onAllDayDragCommit}
           onSwipe={onSwipe}
