@@ -1,3 +1,4 @@
+import { dateKeyDiffDays } from "@/lib/calendar-range";
 import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/types/calendar";
 
 // 日付・時刻の解釈は、ユーザー設定のタイムゾーン（既定 Asia/Tokyo）で固定する。
@@ -308,4 +309,20 @@ export function reminderAnnualYearShortLabel(reminder: ReminderItem): string | n
   const sourceYear = Number(reminder.sourceDate.slice(0, 4));
   const displayYear = Number(reminder.date.slice(0, 4));
   return `${displayYear - sourceYear}年目`;
+}
+
+// 桁区切りは環境の既定ロケールに任せず固定する。サーバー（VPSはUTC・enロケール）とブラウザで
+// 区切りが変わると、描画結果がずれてハイドレーションが一致しなくなるため。
+const ELAPSED_DAYS_FORMAT = new Intl.NumberFormat("ja-JP");
+
+/**
+ * 過ぎた日付に添える経過日数のラベル（「13,252日経過」）。今日・これから来る日付では null。
+ *
+ * 日付リマインドには、誕生日・記念日のように過ぎた日付と、契約更新・有効期限のように
+ * これから来る日付が混ざっている。前者は「その日から何日経ったか」が知りたい情報だが、
+ * 後者には当てはまらないため、過去の日付のときだけ返す（issue #165）。
+ */
+export function elapsedDaysLabel(dateKey: string, todayKey: string): string | null {
+  if (dateKey >= todayKey) return null;
+  return `${ELAPSED_DAYS_FORMAT.format(dateKeyDiffDays(dateKey, todayKey))}日経過`;
 }
