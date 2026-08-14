@@ -28,6 +28,11 @@ export function addDays(date: Date, days: number): Date {
   return next;
 }
 
+/** 日付キーどうしの日数差（endKey − startKey）。UTC正午で扱い、タイムゾーンによる日付ずれを避ける。 */
+export function dateKeyDiffDays(startKey: string, endKey: string): number {
+  return Math.round((parseDateKey(endKey).getTime() - parseDateKey(startKey).getTime()) / 86_400_000);
+}
+
 export function addMonths(date: Date, months: number): Date {
   const next = new Date(date);
   next.setUTCMonth(next.getUTCMonth() + months);
