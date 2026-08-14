@@ -21,6 +21,9 @@
   --color-secondary-container: var(--md-secondary-container);
   --color-on-secondary-container: var(--md-on-secondary-container);
 
+  /* 日付リマインドの印・枠線に使う。ロール名だけ書いて中身を出していなかったため、
+     `bg-tertiary` 等がCSSを生まず、時間グリッドの目盛りと引き出し線が消えていた（issue #171）。 */
+  --color-tertiary: var(--md-tertiary);
   --color-tertiary-container: var(--md-tertiary-container);
   --color-on-tertiary-container: var(--md-on-tertiary-container);
 

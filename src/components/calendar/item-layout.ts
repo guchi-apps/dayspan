@@ -297,3 +297,15 @@ export function reminderAnnualYearLabel(reminder: ReminderItem): string | null {
   const displayYear = Number(reminder.date.slice(0, 4));
   return `(${displayYear}年で${displayYear - sourceYear}年目)`;
 }
+
+/**
+ * カレンダーの枠に添える短い年目ラベル（「6年目」）。
+ * 何年の分かは置かれている日付そのものが示しているため、枠の中では年を繰り返さない。
+ * 枠の幅は項目名を出すだけで足りないことが多く、括弧付きの長い形だと名前が読めなくなる（issue #171）。
+ */
+export function reminderAnnualYearShortLabel(reminder: ReminderItem): string | null {
+  if (!reminder.annual) return null;
+  const sourceYear = Number(reminder.sourceDate.slice(0, 4));
+  const displayYear = Number(reminder.date.slice(0, 4));
+  return `${displayYear - sourceYear}年目`;
+}

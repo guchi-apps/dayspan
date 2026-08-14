@@ -1,7 +1,6 @@
 "use client";
 
 import { memo, useCallback, useMemo, useSyncExternalStore } from "react";
-import { Bell } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { eventColors } from "./calendar-color";
@@ -12,12 +11,14 @@ import {
   MIN_EVENT_HEIGHT,
   MINUTES_PER_DAY,
   reminderAnnualYearLabel,
+  reminderAnnualYearShortLabel,
   taskOccurrenceKey,
   taskOccurrences,
   type CalendarDateUtils,
   type TaskDateField,
   type TaskOccurrence,
 } from "./item-layout";
+import { ReminderMark } from "./reminder-mark";
 import { SWIPE_SNAP_EASING, SWIPE_SNAP_MS, useDaySwipe } from "./use-day-swipe";
 import {
   useAllDayDrag,
@@ -707,19 +708,24 @@ function ReminderMarker({
   time: string;
   onOpen: () => void;
 }) {
-  const yearLabel = reminderAnnualYearLabel(reminder);
+  const yearLabel = reminderAnnualYearShortLabel(reminder);
+  const fullYearLabel = reminderAnnualYearLabel(reminder);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
       style={{ top }}
-      title={yearLabel ? `${time} ${reminder.title} ${yearLabel}` : `${time} ${reminder.title}`}
+      title={
+        fullYearLabel
+          ? `${time} ${reminder.title} ${fullYearLabel}`
+          : `${time} ${reminder.title}`
+      }
     >
       <span aria-hidden className="h-2.5 w-0.5 shrink-0 bg-tertiary" />
       <span className="h-px flex-1 bg-tertiary/45" />
       <span className="type-label-small clip-nowrap flex max-w-[78%] items-center gap-1 rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1">
-        <Bell aria-hidden className="size-2.5 shrink-0 text-tertiary" />
+        <ReminderMark className="size-1.5" />
         <span className="clip-nowrap">
           {reminder.title}
           {yearLabel && <span className="opacity-70"> {yearLabel}</span>}
@@ -1125,7 +1131,10 @@ function AllDayTaskChip({
 /**
  * 終日エリアに置く日付リマインド。押すと内容の画面を開く（docs/spec.md §9）。
  * 日付そのものを覚えておくための項目で時間の幅を持たないため、掴めるようには見せない。
- * 完了して消化するタスクとは別物なので、塗りつぶさずベルのアイコンで描き分ける。
+ * 完了して消化するタスクとは別物なので、塗りつぶさず菱形の印で描き分ける。
+ *
+ * 年目のラベルは項目名と同じ1つの文字列として流し、枠が狭いときに削られるのが
+ * 名前ではなく年目の側になるようにする（issue #171）。
  */
 function AllDayReminderChip({
   reminder,
@@ -1134,17 +1143,20 @@ function AllDayReminderChip({
   reminder: ReminderItem;
   onOpen: () => void;
 }) {
-  const yearLabel = reminderAnnualYearLabel(reminder);
+  const yearLabel = reminderAnnualYearShortLabel(reminder);
+  const fullYearLabel = reminderAnnualYearLabel(reminder);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1.5 py-0.5 text-left"
-      title={yearLabel ? `${reminder.title} ${yearLabel}` : reminder.title}
+      title={fullYearLabel ? `${reminder.title} ${fullYearLabel}` : reminder.title}
     >
-      <Bell aria-hidden className="size-3 shrink-0 text-tertiary" />
-      <span className="clip-nowrap">{reminder.title}</span>
-      {yearLabel && <span className="shrink-0 opacity-70">{yearLabel}</span>}
+      <ReminderMark className="size-2" />
+      <span className="clip-nowrap">
+        {reminder.title}
+        {yearLabel && <span className="opacity-70"> {yearLabel}</span>}
+      </span>
     </button>
   );
 }

@@ -9,7 +9,6 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { Bell } from "lucide-react";
 
 import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
@@ -19,10 +18,12 @@ import { eventColors } from "./calendar-color";
 import {
   isAllDayItem,
   reminderAnnualYearLabel,
+  reminderAnnualYearShortLabel,
   taskOccurrences,
   type CalendarDateUtils,
   type TaskDateField,
 } from "./item-layout";
+import { ReminderMark } from "./reminder-mark";
 import { useLongPress } from "./use-long-press";
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
 import { useWeekZoom } from "./use-week-zoom";
@@ -671,8 +672,11 @@ function renderChip(
 }
 
 /**
- * 日付リマインドは完了して消化するタスクとは別物。塗りつぶさず、ベルのアイコンで
+ * 日付リマインドは完了して消化するタスクとは別物。塗りつぶさず、菱形の印で
  * 予定・タスクと描き分ける（docs/spec.md §9）。
+ *
+ * 年目のラベルは項目名と同じ1つの文字列として流す。別の要素に分けて縮まないようにすると、
+ * 枠が狭いときに名前のほうが削られ、年目だけが残って何の項目か読めなくなるため（issue #171）。
  */
 function ReminderChip({
   reminder,
@@ -683,20 +687,23 @@ function ReminderChip({
   utils: CalendarDateUtils;
   onOpen: () => void;
 }) {
-  const yearLabel = reminderAnnualYearLabel(reminder);
+  const yearLabel = reminderAnnualYearShortLabel(reminder);
+  const fullYearLabel = reminderAnnualYearLabel(reminder);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
-      title={yearLabel ? `${reminder.title} ${yearLabel}` : reminder.title}
+      title={fullYearLabel ? `${reminder.title} ${fullYearLabel}` : reminder.title}
     >
-      <Bell aria-hidden className="size-2.5 shrink-0 text-tertiary" />
+      <ReminderMark className="size-1.5" />
       {reminder.hasTime && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
       )}
-      <span className="clip-nowrap">{reminder.title}</span>
-      {yearLabel && <span className="shrink-0 opacity-70">{yearLabel}</span>}
+      <span className="clip-nowrap">
+        {reminder.title}
+        {yearLabel && <span className="opacity-70"> {yearLabel}</span>}
+      </span>
     </button>
   );
 }
