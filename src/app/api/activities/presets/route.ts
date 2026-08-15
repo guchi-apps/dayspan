@@ -8,7 +8,7 @@ import {
   reorderActivityPresets,
 } from "@/services/activity/presets";
 
-type CreateBody = { name?: string; calendarId?: string | null };
+type CreateBody = { name?: string };
 type ReorderBody = { ids?: string[] };
 
 /** 記録の選択肢を1つ足す（docs/spec.md §27）。 */
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const created = await createActivityPreset(userId, { name, calendarId: body.calendarId ?? null });
+  const created = await createActivityPreset(userId, { name });
   return NextResponse.json({ preset: created });
 }
 

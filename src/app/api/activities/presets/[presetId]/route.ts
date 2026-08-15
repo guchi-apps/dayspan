@@ -8,9 +8,9 @@ import {
   updateActivityPreset,
 } from "@/services/activity/presets";
 
-type Body = { name?: string; calendarId?: string | null };
+type Body = { name?: string };
 
-/** 選択肢の名前・保存先カレンダーを変える。 */
+/** 選択肢の名前を変える。保存先カレンダーは項目ごとではなく設定（PATCH /api/activities/settings）で持つ。 */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ presetId: string }> },
@@ -44,11 +44,7 @@ export async function PATCH(
     }
   }
 
-  const updated = await updateActivityPreset(userId, presetId, {
-    name,
-    // 「既定の保存先に戻す」は null を送って表す。未指定（undefined）とは区別する必要がある。
-    calendarId: body.calendarId === undefined ? undefined : body.calendarId,
-  });
+  const updated = await updateActivityPreset(userId, presetId, { name });
 
   if (!updated) {
     return NextResponse.json({ error: "preset_not_found" }, { status: 404 });

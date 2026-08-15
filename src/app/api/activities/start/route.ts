@@ -7,11 +7,10 @@ import { ACTIVITY_NAME_MAX_LENGTH } from "@/services/activity/presets";
 import { ActivityCalendarNotFoundError, startActivity } from "@/services/activity/running";
 
 type Body = {
-  /** 選択肢から始める場合。名前と保存先はこちらが優先される。 */
+  /** 選択肢から始める場合。記録する名前は選択肢のものになる。 */
   presetId?: string;
   /** 選択肢に無いことを1回だけ記録する場合。 */
   title?: string;
-  calendarId?: string | null;
 };
 
 /**
@@ -30,8 +29,8 @@ export async function POST(request: Request) {
 
   // 開始時刻はサーバーの時計で決める。端末の時計がずれていると、記録した時間帯そのものが
   // ずれた予定になる。押し忘れの修正は開始時刻を直す経路（PATCH /api/activities/running）で行う。
+  // 保存先は項目ごとではなく記録全体で1つのため、ここでは受け取らない（設定から選ぶ）。
   let title = body.title?.trim() ?? "";
-  let calendarId = body.calendarId ?? null;
 
   if (body.presetId) {
     const preset = await db.activityPreset.findFirst({
@@ -41,7 +40,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "preset_not_found" }, { status: 404 });
     }
     title = preset.name;
-    calendarId = body.calendarId ?? preset.calendarId;
   }
 
   if (!title) {
@@ -55,7 +53,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await startActivity(userId, { title, calendarId });
+    const result = await startActivity(userId, { title });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof ActivityCalendarNotFoundError) {

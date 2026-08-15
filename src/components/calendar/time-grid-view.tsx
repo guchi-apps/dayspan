@@ -3,10 +3,11 @@
 import { memo, useCallback, useMemo } from "react";
 
 import { cn } from "@/lib/utils";
-import { eventColors } from "./calendar-color";
+import { eventColors, subduedEventColors } from "./calendar-color";
 import type { RunningActivityItem } from "@/types/activity";
 import type { CalendarEventItem, ReminderItem, TaskItem } from "@/types/calendar";
 
+import { ActivityMark } from "./activity-mark";
 import { RunningActivityBlock } from "./running-activity-block";
 import { useMinuteBucket } from "./use-clock";
 import {
@@ -59,6 +60,7 @@ export function TimeGridView({
   tasks,
   reminders,
   runningActivity,
+  activityCalendarIds,
   utils,
   onOpenEvent,
   onOpenTask,
@@ -77,6 +79,12 @@ export function TimeGridView({
   reminders: ReminderItem[];
   /** 記録中の活動。まだGoogleに予定は無く、開始時刻から現在時刻までを画面上で伸ばす。 */
   runningActivity: RunningActivityItem | null;
+  /**
+   * 活動記録の保存先に選ばれているカレンダー。ここに入っている予定は塗りを落として描く
+   * （issue #241）。呼び出し側で参照を保つこと。日ごとの列は memo で包んであるため、
+   * 毎回作り直すと全ての列が描き直しになる。
+   */
+  activityCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
@@ -242,6 +250,7 @@ export function TimeGridView({
         events={events}
         tasks={tasks}
         reminders={reminders}
+        activityCalendarIds={activityCalendarIds}
         utils={utils}
         rowRef={allDayRowRef}
         preview={allDayPreview}
@@ -299,6 +308,7 @@ export function TimeGridView({
                 tasks={tasks}
                 reminders={reminders}
                 runningActivity={runningActivity}
+                activityCalendarIds={activityCalendarIds}
                 utils={utils}
                 // 掴んでいる予定は、表示中の期間の中でだけ動かす。
                 preview={isCenter ? preview : null}
@@ -408,6 +418,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   tasks,
   reminders,
   runningActivity,
+  activityCalendarIds,
   utils,
   preview,
   rangePreview,
@@ -427,6 +438,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   tasks: TaskItem[];
   reminders: ReminderItem[];
   runningActivity: RunningActivityItem | null;
+  activityCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
   preview: DragPreview | null;
   /** 空き時間を引いて選んでいる最中の時間帯。 */
@@ -460,6 +472,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
           onConsumeDragClick={onConsumeDragClick}
           utils={utils}
           runningActivity={runningActivity}
+          activityCalendarIds={activityCalendarIds}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
           onOpenReminder={onOpenReminder}
@@ -490,6 +503,7 @@ function DayColumn({
   taskMarks,
   reminders,
   runningActivity,
+  activityCalendarIds,
   utils,
   preview,
   rangePreview,
@@ -510,6 +524,7 @@ function DayColumn({
   taskMarks: TaskOccurrence[];
   reminders: ReminderItem[];
   runningActivity: RunningActivityItem | null;
+  activityCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
   preview: DragPreview | null;
   /** この列で引いている最中の時間帯。他の列を引いている間は null。 */
@@ -622,6 +637,10 @@ function DayColumn({
           (utils.itemDateKey(event.start) === utils.itemDateKey(event.end) ||
             utils.itemDateKey(event.start) === dateKey);
 
+        // 活動記録のカレンダーの予定は塗りを落とし、色は左の縦帯として残す（issue #241）。
+        const subdued = activityCalendarIds.has(event.calendarId)
+          ? subduedEventColors(event.color)
+          : null;
         const colors = eventColors(event.color);
 
         // 高さに収まる行数ぶんだけ、タイトルの下へ順に添える（issue #73）。
@@ -674,16 +693,29 @@ function DayColumn({
                 // ボタンは中身を上下中央へ寄せるため、flexにして上揃えへ戻す。
                 // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
                 "flex size-full flex-col overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[10px] leading-tight",
+                // 塗りが薄いぶん、文字色は背景の明るさから選ばずテーマの文字色に任せる。
+                subdued && "border-l-[3px] text-on-surface",
                 eventPreview && "ring-2 ring-foreground/50",
               )}
-              style={{
-                backgroundColor: colors.background,
-                color: colors.foreground,
-                borderColor: colors.border,
-              }}
+              style={
+                subdued
+                  ? {
+                      backgroundColor: subdued.background,
+                      borderColor: subdued.border,
+                      borderLeftColor: subdued.accent,
+                    }
+                  : {
+                      backgroundColor: colors.background,
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                    }
+              }
               title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
             >
-              <div className="clip-nowrap shrink-0 font-semibold">{event.title}</div>
+              <div className="clip-nowrap flex shrink-0 items-center gap-1 font-semibold">
+                {subdued && <ActivityMark className="size-1.5" />}
+                <span className="clip-nowrap">{event.title}</span>
+              </div>
               {/* 短い予定に詰め込むと文字が潰れるため、高さに収まるぶんだけ出す。 */}
               {details.map((detail) => (
                 <div key={detail.key} className="clip-nowrap shrink-0 opacity-75">
@@ -919,6 +951,7 @@ function AllDayArea({
   events,
   tasks,
   reminders,
+  activityCalendarIds,
   utils,
   rowRef,
   preview,
@@ -938,6 +971,7 @@ function AllDayArea({
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
+  activityCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
   rowRef: React.Ref<HTMLDivElement>;
   preview: AllDayDragPreview | null;
@@ -971,6 +1005,7 @@ function AllDayArea({
             events={events}
             tasks={tasks}
             reminders={reminders}
+            activityCalendarIds={activityCalendarIds}
             utils={utils}
             preview={isCenter ? preview : null}
             onStartDrag={onStartDrag}
@@ -1035,6 +1070,7 @@ const AllDayPane = memo(function AllDayPane({
   events,
   tasks,
   reminders,
+  activityCalendarIds,
   utils,
   preview,
   onStartDrag,
@@ -1047,6 +1083,7 @@ const AllDayPane = memo(function AllDayPane({
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
+  activityCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
   preview: AllDayDragPreview | null;
   onStartDrag: (event: React.PointerEvent, target: AllDayDragTarget) => void;
@@ -1216,34 +1253,23 @@ const AllDayPane = memo(function AllDayPane({
                 onOpen={() => onOpenReminder(segment.item)}
               />
             ) : segment.kind === "event" ? (
-              <button
-                type="button"
-                onPointerDown={(e) => {
+              <AllDayEventChip
+                event={segment.item}
+                subdued={activityCalendarIds.has(segment.item.calendarId)}
+                continuesBefore={segment.continuesBefore}
+                continuesAfter={segment.continuesAfter}
+                dragging={preview?.id === segment.item.id}
+                onStartDrag={(e) => {
                   // 使用していないカレンダーの予定は動かせない。掴めてしまうと、
                   // 離した先で断られるまで移せたように見える。
                   if (segment.item.readOnly) return;
                   onStartDrag(e, { kind: "event", item: segment.item });
                 }}
-                onClick={() => {
+                onOpen={() => {
                   if (onConsumeDragClick()) return;
                   onOpenEvent(segment.item);
                 }}
-                className={cn(
-                  "clip-nowrap w-full rounded-sm border px-1.5 text-left text-[10px] leading-5 font-medium",
-                  // 期間の境界で切れた続きの側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
-                  segment.continuesBefore && "rounded-l-none border-l-0",
-                  segment.continuesAfter && "rounded-r-none border-r-0",
-                  preview?.id === segment.item.id && "ring-2 ring-foreground/50",
-                )}
-                style={{
-                  backgroundColor: eventColors(segment.item.color).background,
-                  color: eventColors(segment.item.color).foreground,
-                  borderColor: eventColors(segment.item.color).border,
-                }}
-                title={segment.item.title}
-              >
-                {segment.item.title}
-              </button>
+              />
             ) : (
               <AllDayTaskChip
                 task={segment.item}
@@ -1264,6 +1290,65 @@ const AllDayPane = memo(function AllDayPane({
     </div>
   );
 });
+
+/**
+ * 終日エリアに置く予定。活動記録のカレンダーの予定は、時間グリッドと同じく
+ * 塗りを落として印を添える（issue #241）。記録は時刻を持つため終日にはまず現れないが、
+ * 同じカレンダーの終日予定だけ濃く残ると、どちらのカレンダーの予定か読み違えるため揃える。
+ */
+function AllDayEventChip({
+  event,
+  subdued,
+  continuesBefore,
+  continuesAfter,
+  dragging,
+  onStartDrag,
+  onOpen,
+}: {
+  event: CalendarEventItem;
+  subdued: boolean;
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+  dragging: boolean;
+  onStartDrag: (event: React.PointerEvent) => void;
+  onOpen: () => void;
+}) {
+  const colors = eventColors(event.color);
+  const quiet = subdued ? subduedEventColors(event.color) : null;
+
+  return (
+    <button
+      type="button"
+      onPointerDown={onStartDrag}
+      onClick={onOpen}
+      className={cn(
+        "clip-nowrap flex w-full items-center gap-1 rounded-sm border px-1.5 text-left text-[10px] leading-5 font-medium",
+        quiet && "border-l-[3px] text-on-surface",
+        // 期間の境界で切れた続きの側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
+        continuesBefore && "rounded-l-none border-l-0",
+        continuesAfter && "rounded-r-none border-r-0",
+        dragging && "ring-2 ring-foreground/50",
+      )}
+      style={
+        quiet
+          ? {
+              backgroundColor: quiet.background,
+              borderColor: quiet.border,
+              borderLeftColor: continuesBefore ? undefined : quiet.accent,
+            }
+          : {
+              backgroundColor: colors.background,
+              color: colors.foreground,
+              borderColor: colors.border,
+            }
+      }
+      title={event.title}
+    >
+      {quiet && !continuesBefore && <ActivityMark className="size-1.5" />}
+      <span className="clip-nowrap">{event.title}</span>
+    </button>
+  );
+}
 
 /**
  * 終日エリアに置く時刻なしのタスク。予定日の枠は枠線を破線・目盛りを薄くして、
