@@ -2,11 +2,13 @@
  * アプリアイコンの配色。favicon・apple-icon・PWAアイコンの4箇所で同じ色を使うため、
  * 各ファイルへ直接書かず、ここを一次情報源にする。
  *
- * 図柄は背景より暗い色にする。背景が淡い青のとき図柄を白のままにすると
- * カレンダー枠と背景のコントラストが1.7:1まで落ち、32pxのfaviconで枠が背景に沈むため。
+ * 背景はアプリのテーマ色（globals.css の --md-primary）と同じ紫にする。ログイン画面の
+ * 「Googleでログイン」ボタンと同じ色で、manifest の theme_color とも揃う。
+ * 図柄は白。この紫と白のコントラストは6.4:1あり、32pxのfaviconでも枠が背景に沈まない。
+ * 背景を淡い色に変える場合は、白のままだとコントラストが3.0を割るため図柄側も暗い色に戻す。
  */
-export const APP_ICON_BACKGROUND = "#5094d3";
-export const APP_ICON_FOREGROUND = "#082540";
+export const APP_ICON_BACKGROUND = "#6750a4";
+export const APP_ICON_FOREGROUND = "#ffffff";
 
 /**
  * DaySpanのアプリアイコン。カレンダー枠の中に「1日分の時間帯（span）」を表す縦棒を置き、
