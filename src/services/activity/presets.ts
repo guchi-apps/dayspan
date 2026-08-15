@@ -61,6 +61,27 @@ export async function listActivityPresets(userId: string): Promise<ActivityPrese
 }
 
 /**
+ * 記録の保存先に選ばれているカレンダーのID（issue #241）。
+ *
+ * カレンダー画面は、ここに挙がったカレンダーの予定を活動記録として描き分ける。
+ * 記録は後から見返す事実で、これから動くために見る予定とは読む理由が違うため、
+ * 時間グリッドでは塗りを落として描き、月表示には出さない。
+ *
+ * 保存先を指定していない選択肢は、予定作成の既定のカレンダーへ入る（running.ts の
+ * resolveActivityCalendarId）。そこには普通の予定も入るため、ここには含めない。
+ * 含めてしまうと、活動記録を1つも入れていないカレンダーまで薄く描かれる。
+ */
+export async function listActivityCalendarIds(userId: string): Promise<string[]> {
+  const presets = await db.activityPreset.findMany({
+    where: { userId, calendarId: { not: null } },
+    select: { calendarId: true },
+    distinct: ["calendarId"],
+  });
+
+  return presets.map((preset) => preset.calendarId).filter((id): id is string => id !== null);
+}
+
+/**
  * 選択肢を1つ足す。並びの末尾へ置く。
  * 途中へ割り込ませると、押す位置を覚えている利用者にとって並びが変わって見えるため。
  */
