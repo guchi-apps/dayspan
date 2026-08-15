@@ -61,6 +61,35 @@ export function eventColors(color: string | null): EventColors {
   };
 }
 
+export type SubduedEventColors = {
+  background: string;
+  border: string;
+  /** 左端に立てる色帯。塗りを落としても、どのカレンダーの予定かが分かるように残す。 */
+  accent: string;
+};
+
+/**
+ * 活動記録のカレンダーに入っている予定の色（issue #241）。
+ *
+ * 記録は「後から見返す事実」で、これから動くために見る予定とは読む理由が違う。
+ * 睡眠のように長い記録をベタ塗りで描くと、その時間帯に入っている予定が読めなくなるため、
+ * 塗りを落とし、カレンダー色は左の縦帯として残す。
+ *
+ * 塗りを完全に外さないのは、長い記録で上下の枠線しか見えなくなり、どの時間帯を
+ * 占めているのかが面として追えなくなるため。文字色は背景の明るさから選び直さず
+ * テーマの文字色に任せる（塗りが薄いので、下地は常に画面の背景になる）。
+ */
+export function subduedEventColors(color: string | null): SubduedEventColors {
+  const base = color ?? FALLBACK;
+
+  return {
+    background: `color-mix(in srgb, ${base} 20%, transparent)`,
+    border: `color-mix(in srgb, ${base} 46%, transparent)`,
+    // 淡いカレンダー色（バナナ等）だと枠線と同じ濃さでは背景に沈むため、縦帯だけ濃く取る。
+    accent: `color-mix(in srgb, ${base} 80%, transparent)`,
+  };
+}
+
 /** 月表示のタスクなど、色を面ではなく線として使う場面向け。 */
 export function eventAccent(color: string | null): string {
   return color ?? FALLBACK;
