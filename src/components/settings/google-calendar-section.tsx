@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConnectionStatusBadge } from "@/components/settings/connection-status-badge";
+import { readErrorMessage } from "@/components/calendar/response-error";
 import { cn } from "@/lib/utils";
 import type { CalendarSettingsResult } from "@/services/google-calendar/settings";
 
@@ -22,6 +23,7 @@ export function GoogleCalendarSection({
   const [pending, startTransition] = useTransition();
   const [busySettingId, setBusySettingId] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   // 並べ替えは押した直後に反映する。サーバーから取り直すとGoogleへのカレンダー一覧の
   // 往復が挟まり、押してから動くまでが空いて効いていないように見えるため、
@@ -87,6 +89,7 @@ export function GoogleCalendarSection({
     patch: { visible?: boolean; writeEnabled?: boolean; isCreateDefault?: boolean },
   ) => {
     setBusySettingId(settingId);
+    setUpdateError(null);
     try {
       const response = await fetch("/api/google/calendars", {
         method: "PATCH",
@@ -95,7 +98,12 @@ export function GoogleCalendarSection({
       });
       if (response.ok) {
         startTransition(() => router.refresh());
+        return;
       }
+      // 断られたときにチップが黙って元へ戻ると、押せていないのか設定できないのかが分からない。
+      setUpdateError(await readErrorMessage(response, "設定を変更できませんでした。"));
+    } catch {
+      setUpdateError("設定を変更できませんでした。");
     } finally {
       setBusySettingId(null);
     }
@@ -152,9 +160,9 @@ export function GoogleCalendarSection({
               </p>
             </div>
 
-            {orderError && (
+            {(orderError || updateError) && (
               <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
-                {orderError}
+                {orderError ?? updateError}
               </p>
             )}
 

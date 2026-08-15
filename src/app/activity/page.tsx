@@ -25,7 +25,9 @@ export default async function ActivityPage() {
   ]);
 
   // 保存先が無いと、止めた記録を予定にできない。押せてしまう前に接続へ誘導する。
-  if (calendarCount === 0) return <ConnectPrompt />;
+  // ただし記録中は画面を出す。記録の途中で保存先の「使用」を全部オフにされたときに
+  // ここで止めると、止めることも取り消すこともできない記録が残り続ける。
+  if (calendarCount === 0 && !running) return <ConnectPrompt />;
 
   return (
     <ActivityScreen

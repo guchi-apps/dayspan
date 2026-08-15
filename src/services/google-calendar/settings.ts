@@ -122,23 +122,55 @@ async function ensureCalendarSettings(
     await db.calendarSetting.createMany({
       data: missing.map((entry, index) => {
         const visible = entry.selected ?? Boolean(entry.primary);
+        // 後から増えたカレンダーは、書き込める権限があるものだけ使用オンで始める。
+        // 読み取り専用の共有はどのみち書き込めないため、選べる状態にしない。
+        const writeEnabled = visible && canWriteCalendar(entry.accessRole);
         return {
           userId,
           googleAccountId,
           calendarId: entry.id,
           visible,
-          // 後から増えたカレンダーは、書き込める権限があるものだけ使用オンで始める。
-          // 読み取り専用の共有はどのみち書き込めないため、選べる状態にしない。
-          writeEnabled: visible && canWriteCalendar(entry.accessRole),
-          isCreateDefault: Boolean(entry.primary) && existing.length === 0,
+          writeEnabled,
+          // 使用オフのカレンダーを既定の保存先にはしない。保存先の選択肢に出ないカレンダーが
+          // 初期値になると、入力画面を開いた時点で保存できない状態になる。
+          isCreateDefault: writeEnabled && Boolean(entry.primary) && existing.length === 0,
           sortOrder: nextOrder + index,
         };
       }),
     });
   }
 
+  await disableWritesForReadOnlyCalendars(existing, entries);
+
   return db.calendarSetting.findMany({
     where: { googleAccountId },
     orderBy: SETTING_ORDER,
+  });
+}
+
+/**
+ * Google側で書き込めないカレンダーの「使用」を落とす。
+ *
+ * writeEnabled を足したマイグレーションは、これまでの表示設定をそのまま引き継いでいる。
+ * DBにはアクセス権限が無いため、読み取り専用で共有されたカレンダーも使用オンのまま残る。
+ * 設定画面ではオフにできず（そもそも選べない）、書き込みの判定も通ってしまうので、
+ * 一覧を取れたこの時点で実態に合わせる。共有の権限が上がった場合は利用者が選び直す。
+ */
+async function disableWritesForReadOnlyCalendars(
+  existing: { id: string; calendarId: string; writeEnabled: boolean }[],
+  entries: GoogleCalendarListEntry[],
+) {
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
+  const stale = existing.filter((setting) => {
+    const entry = entryById.get(setting.calendarId);
+    return setting.writeEnabled && entry !== undefined && !canWriteCalendar(entry.accessRole);
+  });
+
+  if (stale.length === 0) return;
+
+  await db.calendarSetting.updateMany({
+    where: { id: { in: stale.map((setting) => setting.id) } },
+    data: { writeEnabled: false, isCreateDefault: false },
   });
 }

@@ -79,7 +79,7 @@ export async function stopRunningActivity(userId: string, endedAt: Date): Promis
   // 記録を始めたあとで保存先の「使用」がオフにされることもある。そのときもここで止まる。
   const target = await resolveGoogleAccountForCalendar(userId, running.calendarId);
   if (!target.ok) {
-    throw new ActivityCalendarNotFoundError();
+    throw new ActivityCalendarNotFoundError(target.reason);
   }
 
   const start = running.startedAt;
@@ -161,10 +161,19 @@ export async function resolveActivityCalendarId(
   return fallback?.calendarId ?? null;
 }
 
-/** 書き込めるカレンダーが決まらない状態。Google未接続や、保存先を消したあとに起きる。 */
+/**
+ * 書き込めるカレンダーが決まらない状態。Google未接続や、保存先を消したあとに起きる。
+ *
+ * 記録を始めたあとで保存先の「使用」がオフにされた場合も同じ経路に入る。文面を分けないと、
+ * 消えたカレンダーを探しにいくことになる（実際は設定を戻せば保存できる）。
+ */
 export class ActivityCalendarNotFoundError extends Error {
-  constructor() {
-    super("保存先のカレンダーが見つかりません。設定からGoogle Calendarを確認してください。");
+  constructor(reason: "not_found" | "write_disabled" = "not_found") {
+    super(
+      reason === "write_disabled"
+        ? "保存先のカレンダーが使用しない設定になっています。設定のGoogle Calendarで「使用」をオンにしてから、もう一度停止してください。"
+        : "保存先のカレンダーが見つかりません。設定からGoogle Calendarを確認してください。",
+    );
     this.name = "ActivityCalendarNotFoundError";
   }
 }
