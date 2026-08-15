@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { externalApiError } from "@/lib/api-error";
+import { calendarWriteError, externalApiError } from "@/lib/api-error";
 
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
@@ -23,15 +23,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const account = await resolveGoogleAccountForCalendar(userId, body.calendarId);
-  if (!account) {
-    return NextResponse.json({ error: "calendar_not_found" }, { status: 404 });
+  const target = await resolveGoogleAccountForCalendar(userId, body.calendarId);
+  if (!target.ok) {
+    return calendarWriteError(target.reason);
   }
 
   const uiSetting = await db.uiSetting.findUnique({ where: { userId } });
 
   try {
-    const created = await createEvent(account, body.calendarId, {
+    const created = await createEvent(target.account, body.calendarId, {
       title: body.title.trim(),
       allDay: Boolean(body.allDay),
       start: body.start,

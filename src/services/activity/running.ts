@@ -77,9 +77,10 @@ export async function stopRunningActivity(userId: string, endedAt: Date): Promis
   const running = await db.runningActivity.findUnique({ where: { userId } });
   if (!running) return { status: "not_running" };
 
-  const account = await resolveGoogleAccountForCalendar(userId, running.calendarId);
-  if (!account) {
-    throw new ActivityCalendarNotFoundError();
+  // 記録を始めたあとで保存先の「使用」がオフにされることもある。そのときもここで止まる。
+  const target = await resolveGoogleAccountForCalendar(userId, running.calendarId);
+  if (!target.ok) {
+    throw new ActivityCalendarNotFoundError(target.reason);
   }
 
   const start = running.startedAt;
@@ -89,7 +90,7 @@ export async function stopRunningActivity(userId: string, endedAt: Date): Promis
 
   const uiSetting = await db.uiSetting.findUnique({ where: { userId } });
 
-  await createEvent(account, running.calendarId, {
+  await createEvent(target.account, running.calendarId, {
     title: running.title,
     allDay: false,
     start: start.toISOString(),
@@ -137,22 +138,23 @@ export async function updateRunningActivityStart(
  *
  * 保存先は項目ごとではなく、記録全体で1つ（UiSetting.activityCalendarId）。指定されていれば
  * それを使い、無ければ予定作成の既定の保存先へ入れる。
- * 指定があってもそのユーザーの設定に無いカレンダーは使わない（設定したあとにカレンダーを
- * 消した・共有を外された場合に、書けない保存先のまま止まらないようにするため）。
+ * 指定があってもそのユーザーの設定に無いカレンダー、および「使用」がオフのカレンダーは
+ * 使わない（設定したあとにカレンダーを消した・共有を外された場合や、始めた時点では
+ * 使用オンだったが後でオフにされた場合に、書けない保存先のまま止まらないようにするため）。
  */
 export async function resolveActivityCalendarId(userId: string): Promise<string | null> {
   const preferred = await getActivityCalendarId(userId);
 
   if (preferred) {
     const owned = await db.calendarSetting.findFirst({
-      where: { userId, calendarId: preferred },
+      where: { userId, calendarId: preferred, writeEnabled: true },
       select: { calendarId: true },
     });
     if (owned) return owned.calendarId;
   }
 
   const fallback = await db.calendarSetting.findFirst({
-    where: { userId, visible: true },
+    where: { userId, writeEnabled: true },
     orderBy: [{ isCreateDefault: "desc" }, ...SETTING_ORDER],
     select: { calendarId: true },
   });
@@ -160,10 +162,19 @@ export async function resolveActivityCalendarId(userId: string): Promise<string 
   return fallback?.calendarId ?? null;
 }
 
-/** 書き込めるカレンダーが決まらない状態。Google未接続や、保存先を消したあとに起きる。 */
+/**
+ * 書き込めるカレンダーが決まらない状態。Google未接続や、保存先を消したあとに起きる。
+ *
+ * 記録を始めたあとで保存先の「使用」がオフにされた場合も同じ経路に入る。文面を分けないと、
+ * 消えたカレンダーを探しにいくことになる（実際は設定を戻せば保存できる）。
+ */
 export class ActivityCalendarNotFoundError extends Error {
-  constructor() {
-    super("保存先のカレンダーが見つかりません。設定からGoogle Calendarを確認してください。");
+  constructor(reason: "not_found" | "write_disabled" = "not_found") {
+    super(
+      reason === "write_disabled"
+        ? "保存先のカレンダーが使用しない設定になっています。設定のGoogle Calendarで「使用」をオンにしてから、もう一度停止してください。"
+        : "保存先のカレンダーが見つかりません。設定からGoogle Calendarを確認してください。",
+    );
     this.name = "ActivityCalendarNotFoundError";
   }
 }

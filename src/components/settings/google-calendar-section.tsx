@@ -2,15 +2,15 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConnectionStatusBadge } from "@/components/settings/connection-status-badge";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import type { CalendarSettingsResult, CalendarSummary } from "@/services/google-calendar/settings";
+import { readErrorMessage } from "@/components/calendar/response-error";
+import { cn } from "@/lib/utils";
+import type { CalendarSettingsResult } from "@/services/google-calendar/settings";
 
 export function GoogleCalendarSection({
   result,
@@ -23,6 +23,7 @@ export function GoogleCalendarSection({
   const [pending, startTransition] = useTransition();
   const [busySettingId, setBusySettingId] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   // 並べ替えは押した直後に反映する。サーバーから取り直すとGoogleへのカレンダー一覧の
   // 往復が挟まり、押してから動くまでが空いて効いていないように見えるため、
@@ -85,9 +86,10 @@ export function GoogleCalendarSection({
 
   const updateSetting = async (
     settingId: string,
-    patch: { visible?: boolean; isCreateDefault?: boolean },
+    patch: { visible?: boolean; writeEnabled?: boolean; isCreateDefault?: boolean },
   ) => {
     setBusySettingId(settingId);
+    setUpdateError(null);
     try {
       const response = await fetch("/api/google/calendars", {
         method: "PATCH",
@@ -96,7 +98,12 @@ export function GoogleCalendarSection({
       });
       if (response.ok) {
         startTransition(() => router.refresh());
+        return;
       }
+      // 断られたときにチップが黙って元へ戻ると、押せていないのか設定できないのかが分からない。
+      setUpdateError(await readErrorMessage(response, "設定を変更できませんでした。"));
+    } catch {
+      setUpdateError("設定を変更できませんでした。");
     } finally {
       setBusySettingId(null);
     }
@@ -140,14 +147,22 @@ export function GoogleCalendarSection({
 
         {result.status === "ok" && (
           <div className="flex flex-col gap-5">
-            <p className="type-body-small text-on-surface-variant">
-              上下の矢印で並べ替えます。ここでの並びは、予定の入力画面に出る保存先カレンダーの
-              並び順にも使われます。
-            </p>
+            <div className="type-body-small flex flex-col gap-1 rounded-lg bg-surface-container px-3 py-2 text-on-surface-variant">
+              <p>
+                <span className="font-medium text-on-surface">表示</span>
+                はカレンダー画面に予定を出すかどうか、
+                <span className="font-medium text-on-surface">使用</span>
+                はそのカレンダーへ書き込んでよいかどうかです。使用がオフのカレンダーには、DaySpanの画面からも外部アプリからも書き込みません。
+              </p>
+              <p>
+                上下の矢印で並べ替えます。ここでの並びは、予定の入力画面に出る保存先カレンダーの
+                並び順にも使われます。
+              </p>
+            </div>
 
-            {orderError && (
+            {(orderError || updateError) && (
               <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
-                {orderError}
+                {orderError ?? updateError}
               </p>
             )}
 
@@ -168,69 +183,92 @@ export function GoogleCalendarSection({
                   </Button>
                 </div>
 
+                {/*
+                  カレンダー1つを1枚の枠にする。名前と並べ替えを上段、選択を下段に固定すると、
+                  名前が長くても操作が行をまたがず、どれがどのカレンダーの操作か分かる。
+                */}
                 <ul className="flex flex-col gap-2">
-                  {calendarsOf(account.id).map((calendar, index, list) => (
-                    // 名前が長いと、既定の保存先の表示と並べ替えのボタンまで入りきらない。
-                    // 折り返して2行にする（名前だけを削って読めなくしない）。
-                    <li key={calendar.settingId} className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <Switch
-                        id={`visible-${calendar.settingId}`}
-                        checked={calendar.visible}
-                        disabled={busySettingId === calendar.settingId}
-                        onCheckedChange={(checked) =>
-                          updateSetting(calendar.settingId, { visible: checked })
-                        }
-                      />
-                      <span
-                        aria-hidden
-                        className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15"
-                        style={{ backgroundColor: calendar.backgroundColor ?? "transparent" }}
-                      />
-                      <Label
-                        htmlFor={`visible-${calendar.settingId}`}
-                        className="min-w-0 flex-1 cursor-pointer font-normal"
-                      >
-                        {calendar.name}
-                      </Label>
+                  {calendarsOf(account.id).map((calendar, index, list) => {
+                    const busy = busySettingId === calendar.settingId;
 
-                      <div className="ml-auto flex items-center gap-1">
-                        {calendar.isCreateDefault ? (
-                          <Badge variant="secondary">既定の保存先</Badge>
-                        ) : (
-                          canCreateEvents(calendar) && (
+                    return (
+                      <li
+                        key={calendar.settingId}
+                        className="flex flex-col gap-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            aria-hidden
+                            className="size-3 shrink-0 rounded-full ring-1 ring-foreground/15"
+                            style={{ backgroundColor: calendar.backgroundColor ?? "transparent" }}
+                          />
+                          <span className="type-body-large min-w-0 flex-1 truncate font-medium">
+                            {calendar.name}
+                          </span>
+                          {!calendar.canWrite && <Badge variant="outline">読み取り専用</Badge>}
+                          <div className="flex shrink-0 items-center gap-0.5">
                             <Button
                               variant="ghost"
-                              size="sm"
-                              disabled={busySettingId === calendar.settingId}
+                              size="icon"
+                              aria-label={`${calendar.name}を上へ移動`}
+                              disabled={index === 0}
+                              onClick={() => move(account.id, calendar.settingId, -1)}
+                            >
+                              <ChevronUp />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`${calendar.name}を下へ移動`}
+                              disabled={index === list.length - 1}
+                              onClick={() => move(account.id, calendar.settingId, 1)}
+                            >
+                              <ChevronDown />
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <SettingChip
+                            label="表示"
+                            selected={calendar.visible}
+                            disabled={busy}
+                            onClick={() =>
+                              updateSetting(calendar.settingId, { visible: !calendar.visible })
+                            }
+                          />
+                          <SettingChip
+                            label="使用"
+                            selected={calendar.writeEnabled}
+                            // Googleが読み取り専用で共有しているカレンダーは、そもそも書き込めない。
+                            disabled={busy || !calendar.canWrite}
+                            title={
+                              calendar.canWrite
+                                ? undefined
+                                : "読み取り専用で共有されているため、書き込めません。"
+                            }
+                            onClick={() =>
+                              updateSetting(calendar.settingId, {
+                                writeEnabled: !calendar.writeEnabled,
+                              })
+                            }
+                          />
+                          {calendar.writeEnabled && calendar.canWrite && (
+                            <SettingChip
+                              label={calendar.isCreateDefault ? "既定の保存先" : "既定にする"}
+                              tone="primary"
+                              selected={calendar.isCreateDefault}
+                              // 既定は1つだけ。外すのではなく、別のカレンダーを既定にして移す。
+                              disabled={busy || calendar.isCreateDefault}
                               onClick={() =>
                                 updateSetting(calendar.settingId, { isCreateDefault: true })
                               }
-                            >
-                              既定にする
-                            </Button>
-                          )
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`${calendar.name}を上へ移動`}
-                          disabled={index === 0}
-                          onClick={() => move(account.id, calendar.settingId, -1)}
-                        >
-                          <ChevronUp />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`${calendar.name}を下へ移動`}
-                          disabled={index === list.length - 1}
-                          onClick={() => move(account.id, calendar.settingId, 1)}
-                        >
-                          <ChevronDown />
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
+                            />
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))}
@@ -256,9 +294,49 @@ export function GoogleCalendarSection({
   );
 }
 
-// 読み取り専用で共有されたカレンダーには予定を作れないため、既定の保存先の候補から外す。
-function canCreateEvents(calendar: CalendarSummary): boolean {
-  return calendar.accessRole === "owner" || calendar.accessRole === "writer";
+/**
+ * 表示・使用・既定の選択チップ。
+ *
+ * スイッチではなくチップにしているのは、ラベルそのものが当たり判定になり、
+ * つまみの左右どちらがオンかを読まずに済むため。高さは指で押し分けられる36pxにする。
+ */
+function SettingChip({
+  label,
+  selected,
+  disabled,
+  title,
+  tone = "secondary",
+  onClick,
+}: {
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  title?: string;
+  tone?: "secondary" | "primary";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      disabled={disabled}
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "type-label-large flex h-9 min-w-0 items-center gap-1.5 rounded-lg px-3.5 transition-colors",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        "disabled:pointer-events-none disabled:opacity-38",
+        selected
+          ? tone === "primary"
+            ? "bg-primary-container text-on-primary-container"
+            : "bg-secondary-container text-on-secondary-container"
+          : "border border-outline text-on-surface-variant hover:bg-muted",
+      )}
+    >
+      {selected && <Check className="size-3.5 shrink-0" aria-hidden />}
+      <span className="truncate">{label}</span>
+    </button>
+  );
 }
 
 function ConnectResultMessage({ result }: { result: string }) {

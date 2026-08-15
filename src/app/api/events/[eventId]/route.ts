@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { externalApiError } from "@/lib/api-error";
+import { calendarWriteError, externalApiError } from "@/lib/api-error";
 
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
@@ -37,17 +37,18 @@ export async function PATCH(
   const moving = Boolean(body.previousCalendarId) && body.previousCalendarId !== body.calendarId;
   const sourceCalendarId = moving ? body.previousCalendarId! : body.calendarId;
 
-  const account = await resolveGoogleAccountForCalendar(userId, sourceCalendarId);
-  if (!account) {
-    return NextResponse.json({ error: "calendar_not_found" }, { status: 404 });
+  const source = await resolveGoogleAccountForCalendar(userId, sourceCalendarId);
+  if (!source.ok) {
+    return calendarWriteError(source.reason);
   }
+  const account = source.account;
 
   if (moving) {
-    const destinationAccount = await resolveGoogleAccountForCalendar(userId, body.calendarId);
-    if (!destinationAccount) {
-      return NextResponse.json({ error: "calendar_not_found" }, { status: 404 });
+    const destination = await resolveGoogleAccountForCalendar(userId, body.calendarId);
+    if (!destination.ok) {
+      return calendarWriteError(destination.reason);
     }
-    if (destinationAccount.id !== account.id) {
+    if (destination.account.id !== account.id) {
       return NextResponse.json(
         {
           error: "cross_account_move_unsupported",
@@ -104,13 +105,13 @@ export async function DELETE(
   }
   const scope = requestedScope ?? "single";
 
-  const account = await resolveGoogleAccountForCalendar(userId, calendarId);
-  if (!account) {
-    return NextResponse.json({ error: "calendar_not_found" }, { status: 404 });
+  const target = await resolveGoogleAccountForCalendar(userId, calendarId);
+  if (!target.ok) {
+    return calendarWriteError(target.reason);
   }
 
   try {
-    await deleteEventWithScope(account, calendarId, eventId, scope);
+    await deleteEventWithScope(target.account, calendarId, eventId, scope);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return externalApiError("google", "予定の削除", error);

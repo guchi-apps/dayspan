@@ -66,7 +66,11 @@ model CalendarSetting {
   googleAccountId String
   calendarId      String // Google Calendar API上のカレンダーID
 
-  visible         Boolean @default(true)
+  visible Boolean @default(true) // カレンダー画面に予定を出すか
+  // 書き込んでよいか。表示とは別に持つ。見たいだけのカレンダー（共有された予定表など）へ
+  // 書き込ませないため、また画面に出さないカレンダーを保存先には使えるようにするため。
+  // 判定は services/calendar/write-context.ts で行い、UIではなくサービス層で塞ぐ。
+  writeEnabled    Boolean @default(true)
   sortOrder       Int     @default(0)
   isCreateDefault Boolean @default(false) // 予定新規作成時の既定の保存先
 
