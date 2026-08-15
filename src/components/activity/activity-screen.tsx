@@ -277,7 +277,7 @@ export function ActivityScreen({
           </div>
 
           <p className="type-body-small text-on-surface-variant">
-            止めた時点までがGoogle Calendarの予定になります。保存先は「項目を編集」から項目ごとに選べます。
+            止めた時点までがGoogle Calendarの予定になります。保存先のカレンダーは「項目を編集」から選べます。
           </p>
         </div>
       </div>

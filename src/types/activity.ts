@@ -5,11 +5,14 @@
 export type ActivityPresetItem = {
   id: string;
   name: string;
-  /** 保存先カレンダー。未設定なら予定作成の既定の保存先へ入れる。 */
-  calendarId: string | null;
 };
 
-/** いま記録している最中の1件。終わるまでGoogle Calendarには存在しない。 */
+/**
+ * いま記録している最中の1件。終わるまでGoogle Calendarには存在しない。
+ *
+ * 保存先は記録全体で1つ（設定）だが、始めた時点の値をここへ写して持つ。
+ * 記録中に設定を変えても、その記録は始めたときの保存先へ入る。
+ */
 export type RunningActivityItem = {
   title: string;
   calendarId: string;

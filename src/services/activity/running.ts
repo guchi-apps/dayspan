@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getActivityCalendarId } from "@/services/activity/settings";
 import { createEvent } from "@/services/google-calendar/events";
 import { SETTING_ORDER } from "@/services/google-calendar/settings";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
@@ -32,7 +33,7 @@ export async function getRunningActivity(userId: string): Promise<RunningActivit
  */
 export async function startActivity(
   userId: string,
-  input: { title: string; calendarId: string | null },
+  input: { title: string },
 ): Promise<{ running: RunningActivityItem; saved: ActivitySavedRange | null }> {
   // 切り替えでは、前の記録の終わりと次の記録の始まりを同じ時刻にする。
   // それぞれで現在時刻を取ると、その間に何も記録していない数ミリ秒の隙間ができる。
@@ -40,7 +41,7 @@ export async function startActivity(
 
   const saved = await stopRunningActivity(userId, now);
 
-  const calendarId = await resolveActivityCalendarId(userId, input.calendarId);
+  const calendarId = await resolveActivityCalendarId(userId);
   if (!calendarId) {
     throw new ActivityCalendarNotFoundError();
   }
@@ -134,14 +135,14 @@ export async function updateRunningActivityStart(
 /**
  * 保存先カレンダーを決める。
  *
- * 選択肢に保存先が指定されていればそれを使い、無ければ予定作成の既定の保存先へ入れる。
- * 指定があってもそのユーザーの設定に無いカレンダーは使わない（他人のカレンダーIDを
- * 渡されても書き込ませないため）。
+ * 保存先は項目ごとではなく、記録全体で1つ（UiSetting.activityCalendarId）。指定されていれば
+ * それを使い、無ければ予定作成の既定の保存先へ入れる。
+ * 指定があってもそのユーザーの設定に無いカレンダーは使わない（設定したあとにカレンダーを
+ * 消した・共有を外された場合に、書けない保存先のまま止まらないようにするため）。
  */
-export async function resolveActivityCalendarId(
-  userId: string,
-  preferred: string | null,
-): Promise<string | null> {
+export async function resolveActivityCalendarId(userId: string): Promise<string | null> {
+  const preferred = await getActivityCalendarId(userId);
+
   if (preferred) {
     const owned = await db.calendarSetting.findFirst({
       where: { userId, calendarId: preferred },
