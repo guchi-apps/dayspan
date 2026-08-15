@@ -21,6 +21,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.13.1",
+    date: "2026-08-15",
+    changes: [
+      "アプリアイコンの配色を、背景を紫・図柄を白に変更し、視認性を改善しました。",
+    ],
+  },
+  {
     version: "0.13.0",
     date: "2026-08-14",
     changes: [
