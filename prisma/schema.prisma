@@ -66,9 +66,9 @@ model CalendarSetting {
   googleAccountId String
   calendarId      String // Google Calendar API上のカレンダーID
 
-  visible          Boolean @default(true)
-  sortOrder        Int     @default(0)
-  isCreateDefault  Boolean @default(false) // 予定新規作成時の既定の保存先
+  visible         Boolean @default(true)
+  sortOrder       Int     @default(0)
+  isCreateDefault Boolean @default(false) // 予定新規作成時の既定の保存先
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -144,6 +144,11 @@ model UiSetting {
   // 戻ってきて消せなくなる。入れたことがあるかどうかを別に持つ。
   activityPresetsSeeded Boolean @default(false)
 
+  // 活動記録の保存先カレンダー。全ての項目で共通の1つ（docs/spec.md §27）。
+  // 未設定なら予定作成の既定の保存先（CalendarSetting.isCreateDefault）へ入れる。
+  // カレンダー名・色はGoogle側が一次情報源のため持たない。
+  activityCalendarId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -162,9 +167,7 @@ model ActivityPreset {
   name      String
   sortOrder Int    @default(0)
 
-  // 保存先カレンダー。未設定なら予定作成の既定の保存先（CalendarSetting.isCreateDefault）へ入れる。
-  // カレンダー名・色はGoogle側が一次情報源のため持たない。
-  calendarId String?
+  // 保存先カレンダーはここには持たない。項目によらず1つ（UiSetting.activityCalendarId）。
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

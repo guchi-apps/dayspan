@@ -66,7 +66,7 @@ export async function listActivityPresets(userId: string): Promise<ActivityPrese
  */
 export async function createActivityPreset(
   userId: string,
-  input: { name: string; calendarId: string | null },
+  input: { name: string },
 ): Promise<ActivityPresetItem> {
   const last = await db.activityPreset.findFirst({
     where: { userId },
@@ -77,7 +77,6 @@ export async function createActivityPreset(
     data: {
       userId,
       name: input.name,
-      calendarId: input.calendarId,
       sortOrder: (last?.sortOrder ?? -1) + 1,
     },
   });
@@ -85,17 +84,16 @@ export async function createActivityPreset(
   return toItem(created);
 }
 
-/** 選択肢の名前・保存先を変える。他ユーザーの行を触れないよう userId で必ず絞る。 */
+/** 選択肢の名前を変える。他ユーザーの行を触れないよう userId で必ず絞る。 */
 export async function updateActivityPreset(
   userId: string,
   presetId: string,
-  input: { name?: string; calendarId?: string | null },
+  input: { name?: string },
 ): Promise<ActivityPresetItem | null> {
   const result = await db.activityPreset.updateMany({
     where: { id: presetId, userId },
     data: {
       ...(input.name === undefined ? {} : { name: input.name }),
-      ...(input.calendarId === undefined ? {} : { calendarId: input.calendarId }),
     },
   });
   if (result.count === 0) return null;
@@ -131,6 +129,6 @@ export async function reorderActivityPresets(userId: string, ids: string[]): Pro
   return true;
 }
 
-function toItem(preset: { id: string; name: string; calendarId: string | null }): ActivityPresetItem {
-  return { id: preset.id, name: preset.name, calendarId: preset.calendarId };
+function toItem(preset: { id: string; name: string }): ActivityPresetItem {
+  return { id: preset.id, name: preset.name };
 }
