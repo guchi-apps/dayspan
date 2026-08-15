@@ -8,9 +8,37 @@ name: Claude Conflict Resolve
 # (同じ設計・同じ値)。
 #
 # 参照はタグ固定にする。@developを参照するとissue-deck側の不具合が即座に波及するため。
+#
+# トリガー(`on:`)はジョブ本体と違って各リポジトリのcallerが持つコピーなので、issue-deck側で
+# 直しても波及しない。issue-deck側のトリガーを変えたときはこのファイルも合わせて直す
+# (guchi-apps/issue-deck#1366)。
+#
+# トリガー:
+# - workflow_run(CI / requested / develop): developへ新たな変更が入るとOPENなPRが
+#   コンフリクトしうるため、その都度検知する(最も速報性が高い経路)。
+#   本来はpush(develop)で直接受けたいが、claude-code-actionはpushイベントに対応して
+#   おらず`Unsupported event type: push`で必ず失敗する(guchi-apps/issue-deck#1330。
+#   対応するのはissues / issue_comment / pull_request / pull_request_target /
+#   pull_request_review / pull_request_review_comment / workflow_dispatch /
+#   repository_dispatch / schedule / workflow_runの10種類のみ)。このリポジトリの
+#   ci.ymlがpush(develop)で走るため、その`requested`(=CI実行がキューされた時点)を
+#   代理のpush通知として使う。completedではなくrequestedにするのは、CIの完走を待つ分だけ
+#   検知が遅れるのを避けるためで、コンフリクト検知自体はCIの成否と無関係なため待つ必要がない。
+#   なお workflow_run は「デフォルトブランチ上のワークフローファイル」でのみ発火する。
+#   このリポジトリのデフォルトブランチはdevelopなので、developへマージした時点で有効。
+#   仮に発火しなくても後述のschedule(15分おき)が拾うため、取りこぼしても検知は止まらない。
+# - pull_request(develop向け、opened/reopened): develop向けPRが作成された時点で
+#   既にdevelopとコンフリクトしているケースを即座に拾うため。
+# - schedule(15分おき): 上2つの直後はGitHubのmergeable判定が終わっておらずUNKNOWNの
+#   ままの場合があるため、取りこぼしを拾い直す安全網。
+# - workflow_dispatch: 手動実行用。
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - requested
     branches:
       - develop
   pull_request:
