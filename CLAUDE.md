@@ -229,6 +229,20 @@ pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 
 `00.check-user` を付与して停止する（依存追加はユーザー確認が必須のため）。シークレットの実値も
 コミット・コメントのいずれにも書かない。
 
+## 並行Issueの意味的コンフリクト（develop向けPRを出す前に確認する）
+
+develop向けPRのCIは、PRを出した時点の `develop` に取り込んだ結果に対して走る。その後に別のIssueが
+developへマージされてもCIは自動では回り直さず、`develop` のブランチ保護も最新化を要求していない
+（`required_status_checks.strict` が `false`）。このため、**テキスト上は競合しないのに develop 上で
+壊れる変更**が、そのまま自動マージで入る。
+
+実際に issue #241 のPRが、直前にマージされた issue #239 で削除された `ActivityPreset.calendarId` を
+使ったまま develop へ入り、develop と v1.0.0 のリリースPRの両方でCIが落ちた（issue #247）。
+
+Prismaスキーマのフィールド削除・関数やエクスポートの改名・型の変更を含むIssueと並行して作業している
+場合、PR作成の直前に `git fetch origin && git merge origin/develop`（またはrebase）してから
+`pnpm typecheck` を通す。CIの結果だけを根拠にしない。
+
 ## 実装エージェントの禁止事項
 
 - `main` / `develop` への直接コミット・push

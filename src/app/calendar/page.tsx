@@ -17,8 +17,8 @@ import {
   toDateKey,
 } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
-import { listActivityCalendarIds } from "@/services/activity/presets";
 import { getRunningActivity } from "@/services/activity/running";
+import { listActivityCalendarIds } from "@/services/activity/settings";
 import { loadCalendarData } from "@/services/calendar/load";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { loadTagCatalog } from "@/services/notion/tag-options";
