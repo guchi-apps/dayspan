@@ -19,6 +19,11 @@ export type CalendarEventItem = {
   /** 繰り返し予定の1回分かどうか。編集時に「この回だけ変わる」ことを伝えるために持つ。 */
   recurring: boolean;
   color: string | null;
+  /**
+   * このカレンダーへ書き込めないかどうか。設定で「使用」をオフにしたカレンダーと、
+   * 読み取り専用で共有されたカレンダーが該当する。移動・編集・削除の入口を出さない判断に使う。
+   */
+  readOnly: boolean;
   url: string | null;
 };
 

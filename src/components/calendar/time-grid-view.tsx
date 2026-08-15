@@ -616,9 +616,11 @@ function DayColumn({
         );
 
         // 日をまたぐ予定は、どの日を動かしているのかが決まらないためドラッグの対象外にする。
+        // 使用していないカレンダーの予定も動かせない（書き込みはサーバー側で断られる）。
         const draggable =
-          utils.itemDateKey(event.start) === utils.itemDateKey(event.end) ||
-          utils.itemDateKey(event.start) === dateKey;
+          !event.readOnly &&
+          (utils.itemDateKey(event.start) === utils.itemDateKey(event.end) ||
+            utils.itemDateKey(event.start) === dateKey);
 
         const colors = eventColors(event.color);
 
@@ -1216,7 +1218,12 @@ const AllDayPane = memo(function AllDayPane({
             ) : segment.kind === "event" ? (
               <button
                 type="button"
-                onPointerDown={(e) => onStartDrag(e, { kind: "event", item: segment.item })}
+                onPointerDown={(e) => {
+                  // 使用していないカレンダーの予定は動かせない。掴めてしまうと、
+                  // 離した先で断られるまで移せたように見える。
+                  if (segment.item.readOnly) return;
+                  onStartDrag(e, { kind: "event", item: segment.item });
+                }}
                 onClick={() => {
                   if (onConsumeDragClick()) return;
                   onOpenEvent(segment.item);

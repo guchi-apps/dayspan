@@ -20,7 +20,7 @@ export default async function ActivityPage() {
   const [presets, running, calendarCount, uiSetting] = await Promise.all([
     listActivityPresets(user.id),
     getRunningActivity(user.id),
-    db.calendarSetting.count({ where: { userId: user.id, visible: true } }),
+    db.calendarSetting.count({ where: { userId: user.id, writeEnabled: true } }),
     db.uiSetting.findUnique({ where: { userId: user.id } }),
   ]);
 

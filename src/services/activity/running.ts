@@ -76,8 +76,9 @@ export async function stopRunningActivity(userId: string, endedAt: Date): Promis
   const running = await db.runningActivity.findUnique({ where: { userId } });
   if (!running) return { status: "not_running" };
 
-  const account = await resolveGoogleAccountForCalendar(userId, running.calendarId);
-  if (!account) {
+  // 記録を始めたあとで保存先の「使用」がオフにされることもある。そのときもここで止まる。
+  const target = await resolveGoogleAccountForCalendar(userId, running.calendarId);
+  if (!target.ok) {
     throw new ActivityCalendarNotFoundError();
   }
 
@@ -88,7 +89,7 @@ export async function stopRunningActivity(userId: string, endedAt: Date): Promis
 
   const uiSetting = await db.uiSetting.findUnique({ where: { userId } });
 
-  await createEvent(account, running.calendarId, {
+  await createEvent(target.account, running.calendarId, {
     title: running.title,
     allDay: false,
     start: start.toISOString(),
@@ -135,8 +136,9 @@ export async function updateRunningActivityStart(
  * 保存先カレンダーを決める。
  *
  * 選択肢に保存先が指定されていればそれを使い、無ければ予定作成の既定の保存先へ入れる。
- * 指定があってもそのユーザーの設定に無いカレンダーは使わない（他人のカレンダーIDを
- * 渡されても書き込ませないため）。
+ * 指定があってもそのユーザーの設定に無いカレンダー、および「使用」がオフのカレンダーは
+ * 使わない（他人のカレンダーIDを渡されても書き込ませないため。また、始めた時点で
+ * 書けないと分かるなら、止めるまで待たずに選び直させたい）。
  */
 export async function resolveActivityCalendarId(
   userId: string,
@@ -144,14 +146,14 @@ export async function resolveActivityCalendarId(
 ): Promise<string | null> {
   if (preferred) {
     const owned = await db.calendarSetting.findFirst({
-      where: { userId, calendarId: preferred },
+      where: { userId, calendarId: preferred, writeEnabled: true },
       select: { calendarId: true },
     });
     if (owned) return owned.calendarId;
   }
 
   const fallback = await db.calendarSetting.findFirst({
-    where: { userId, visible: true },
+    where: { userId, writeEnabled: true },
     orderBy: [{ isCreateDefault: "desc" }, ...SETTING_ORDER],
     select: { calendarId: true },
   });

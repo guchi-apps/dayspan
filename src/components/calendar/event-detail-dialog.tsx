@@ -79,41 +79,42 @@ export function EventDetailDialog({
           />
         )}
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="削除"
-          className="absolute top-2 right-18"
-          disabled={readOnly}
-          onClick={() => setConfirmingDelete(true)}
-        >
-          <Trash2 className="size-4" />
-        </Button>
+        {/*
+          使用していないカレンダーの予定は、編集・削除の入口ごと出さない。押せるまま残すと、
+          サーバーが断るまで直せるように見える。複製は残す（別のカレンダーへ写せる）。
+        */}
+        <div className="absolute top-2 right-10 flex items-center">
+          <Button variant="ghost" size="icon-sm" aria-label="複製" disabled={readOnly} onClick={duplicate}>
+            <Copy className="size-4" />
+          </Button>
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="複製"
-          className="absolute top-2 right-26"
-          disabled={readOnly}
-          onClick={duplicate}
-        >
-          <Copy className="size-4" />
-        </Button>
+          {!event.readOnly && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="削除"
+                disabled={readOnly}
+                onClick={() => setConfirmingDelete(true)}
+              >
+                <Trash2 className="size-4" />
+              </Button>
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="編集"
-          className="absolute top-2 right-10"
-          disabled={readOnly}
-          onClick={edit}
-        >
-          <Pencil className="size-4" />
-        </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="編集"
+                disabled={readOnly}
+                onClick={edit}
+              >
+                <Pencil className="size-4" />
+              </Button>
+            </>
+          )}
+        </div>
 
         <DialogHeader>
-          <DialogTitle className="pr-30">{event.title}</DialogTitle>
+          <DialogTitle className={event.readOnly ? "pr-22" : "pr-38"}>{event.title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 text-sm">
@@ -148,6 +149,13 @@ export function EventDetailDialog({
 
           {event.description && (
             <p className="whitespace-pre-wrap text-on-surface-variant">{event.description}</p>
+          )}
+
+          {event.readOnly && (
+            <p className="text-xs text-on-surface-variant">
+              このカレンダーは表示のみに設定されています。予定を変更するには、設定のGoogle
+              Calendarで「使用」をオンにしてください。
+            </p>
           )}
 
           {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}

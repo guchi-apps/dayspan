@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { listCalendars } from "@/services/google-calendar/calendars";
 import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google-calendar/events";
-import { SETTING_ORDER } from "@/services/google-calendar/settings";
+import { canWriteCalendar, SETTING_ORDER } from "@/services/google-calendar/settings";
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
 import { listTasksInRange } from "@/services/notion/tasks";
@@ -17,6 +17,9 @@ import type {
 /**
  * 書き込み可能なカレンダーのリストを読み込む。
  * タスク・日付リマインドページから予定を作成する際の保存先選択に使う。
+ *
+ * 絞り込みは表示（visible）ではなく使用（writeEnabled）で行う。画面に出さないカレンダーを
+ * 保存先には使う、という選び方ができる（docs/spec.md §7）。
  */
 export async function loadWritableCalendars(userId: string): Promise<WritableCalendar[]> {
   const accounts = await db.googleAccount.findMany({ where: { userId } });
@@ -25,22 +28,21 @@ export async function loadWritableCalendars(userId: string): Promise<WritableCal
   const calendars: WritableCalendar[] = [];
 
   for (const account of accounts) {
-    const visibleSettings = await db.calendarSetting.findMany({
-      where: { googleAccountId: account.id, visible: true },
+    const writableSettings = await db.calendarSetting.findMany({
+      where: { googleAccountId: account.id, writeEnabled: true },
       orderBy: SETTING_ORDER,
     });
-    if (visibleSettings.length === 0) continue;
+    if (writableSettings.length === 0) continue;
 
     try {
       const entries = await listCalendars(account);
       const entryById = new Map(entries.map((entry) => [entry.id, entry]));
 
-      visibleSettings.forEach((setting) => {
+      writableSettings.forEach((setting) => {
         const entry = entryById.get(setting.calendarId);
         if (!entry) return;
 
-        // 読み取り専用で共有されたカレンダーには予定を作れないため、候補から外す。
-        if (entry.accessRole === "owner" || entry.accessRole === "writer") {
+        if (canWriteCalendar(entry.accessRole)) {
           calendars.push({
             calendarId: setting.calendarId,
             name: entry.summaryOverride?.trim() || entry.summary,
@@ -104,11 +106,18 @@ async function loadGoogleEvents(
   const errors: CalendarLoadResult["errors"] = [];
 
   for (const account of accounts) {
-    const visibleSettings = await db.calendarSetting.findMany({
-      where: { googleAccountId: account.id, visible: true },
+    // 表示と使用は別々に選べる。予定を取りにいくのは表示オンのもの、保存先の候補になるのは
+    // 使用オンのものなので、どちらかがオンの設定をまとめて取り、用途ごとに振り分ける。
+    const settings = await db.calendarSetting.findMany({
+      where: {
+        googleAccountId: account.id,
+        OR: [{ visible: true }, { writeEnabled: true }],
+      },
       orderBy: SETTING_ORDER,
     });
-    if (visibleSettings.length === 0) continue;
+    if (settings.length === 0) continue;
+
+    const visibleSettings = settings.filter((setting) => setting.visible);
 
     // 予定の取得に要るのはカレンダーIDだけで、それはDBにある。名前と色のために
     // calendarList の応答を待ってから予定を取りにいくと、Googleへの往復が直列に2回積み上がる。
@@ -143,6 +152,21 @@ async function loadGoogleEvents(
 
     const entryById = new Map(entries.map((entry) => [entry.id, entry]));
 
+    // 保存先の候補。表示していないカレンダーも、使用がオンなら候補に出す。
+    settings.forEach((setting) => {
+      const entry = entryById.get(setting.calendarId);
+      if (!entry) return;
+
+      if (setting.writeEnabled && canWriteCalendar(entry.accessRole)) {
+        calendars.push({
+          calendarId: setting.calendarId,
+          name: entry.summaryOverride?.trim() || entry.summary,
+          color: entry.backgroundColor ?? null,
+          isCreateDefault: setting.isCreateDefault,
+        });
+      }
+    });
+
     visibleSettings.forEach((setting, index) => {
       const entry = entryById.get(setting.calendarId);
       // Google側で削除・共有解除されたカレンダーは設定だけ残る。表示対象から外す
@@ -153,12 +177,10 @@ async function loadGoogleEvents(
         calendarId: setting.calendarId,
         name: entry.summaryOverride?.trim() || entry.summary,
         color: entry.backgroundColor ?? null,
+        // 使用がオフのカレンダーの予定は、出すが触らせない。押せてしまうと、
+        // サーバー側で断られるまで動かせたように見える。
+        readOnly: !(setting.writeEnabled && canWriteCalendar(entry.accessRole)),
       };
-
-      // 読み取り専用で共有されたカレンダーには予定を作れないため、保存先の候補から外す。
-      if (entry.accessRole === "owner" || entry.accessRole === "writer") {
-        calendars.push({ ...display, isCreateDefault: setting.isCreateDefault });
-      }
 
       const result = eventResults[index];
       if (!result.ok) {

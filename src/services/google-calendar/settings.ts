@@ -24,6 +24,9 @@ export type CalendarSummary = {
   primary: boolean;
   accessRole: string;
   visible: boolean;
+  writeEnabled: boolean;
+  /** Google側で書き込みを許されているか。読み取り専用の共有では「使用」を選べない。 */
+  canWrite: boolean;
   isCreateDefault: boolean;
 };
 
@@ -79,6 +82,8 @@ export async function loadCalendarSettings(userId: string): Promise<CalendarSett
         primary: Boolean(entry.primary),
         accessRole: entry.accessRole,
         visible: setting.visible,
+        writeEnabled: setting.writeEnabled,
+        canWrite: canWriteCalendar(entry.accessRole),
         isCreateDefault: setting.isCreateDefault,
       });
     }
@@ -89,6 +94,11 @@ export async function loadCalendarSettings(userId: string): Promise<CalendarSett
     accounts: accounts.map((a) => ({ id: a.id, email: a.email })),
     calendars,
   };
+}
+
+/** 読み取り専用で共有されたカレンダーには、そもそも予定を作れない。 */
+export function canWriteCalendar(accessRole: string): boolean {
+  return accessRole === "owner" || accessRole === "writer";
 }
 
 /**
@@ -110,14 +120,20 @@ async function ensureCalendarSettings(
     const nextOrder = existing.reduce((max, s) => Math.max(max, s.sortOrder), -1) + 1;
 
     await db.calendarSetting.createMany({
-      data: missing.map((entry, index) => ({
-        userId,
-        googleAccountId,
-        calendarId: entry.id,
-        visible: entry.selected ?? Boolean(entry.primary),
-        isCreateDefault: Boolean(entry.primary) && existing.length === 0,
-        sortOrder: nextOrder + index,
-      })),
+      data: missing.map((entry, index) => {
+        const visible = entry.selected ?? Boolean(entry.primary);
+        return {
+          userId,
+          googleAccountId,
+          calendarId: entry.id,
+          visible,
+          // 後から増えたカレンダーは、書き込める権限があるものだけ使用オンで始める。
+          // 読み取り専用の共有はどのみち書き込めないため、選べる状態にしない。
+          writeEnabled: visible && canWriteCalendar(entry.accessRole),
+          isCreateDefault: Boolean(entry.primary) && existing.length === 0,
+          sortOrder: nextOrder + index,
+        };
+      }),
     });
   }
 
