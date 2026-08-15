@@ -4,6 +4,7 @@ import { ActivitySection } from "@/components/settings/activity-section";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { getCurrentUser } from "@/lib/auth-user";
 import { listActivityPresets } from "@/services/activity/presets";
+import { getActivityCalendarId } from "@/services/activity/settings";
 import { loadWritableCalendars } from "@/services/calendar/load";
 
 export default async function ActivitySettingsPage() {
@@ -12,9 +13,10 @@ export default async function ActivitySettingsPage() {
 
   // 記録の保存先はGoogle Calendar。接続していないと保存先が選べないため、
   // 先にGoogleの設定へ回ってもらう。
-  const [presets, calendars] = await Promise.all([
+  const [presets, calendars, activityCalendarId] = await Promise.all([
     listActivityPresets(user.id),
     loadWritableCalendars(user.id),
+    getActivityCalendarId(user.id),
   ]);
 
   if (calendars.length === 0) redirect("/settings/google");
@@ -26,7 +28,11 @@ export default async function ActivitySettingsPage() {
       backHref="/settings"
       backLabel="設定"
     >
-      <ActivitySection presets={presets} calendars={calendars} />
+      <ActivitySection
+        presets={presets}
+        calendars={calendars}
+        activityCalendarId={activityCalendarId}
+      />
     </SettingsShell>
   );
 }

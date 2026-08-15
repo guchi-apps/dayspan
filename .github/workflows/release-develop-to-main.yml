@@ -11,7 +11,17 @@ name: Release develop to main
 # バージョンが変わると、push(develop, paths)で本ワークフローが再度起動し、develop→mainの
 # PRを自動作成する。**develop→mainの実際のマージは人間が手動で行う。**
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      bump_kind:
+        # バージョンの上げ幅を人が決められるようにするための入口
+        # （guchi-apps/issue-deck#1548）。issue-deckの画面のリリース起動ダイアログから渡る。
+        # 既定の`auto`はコード差分からの自動判定。
+        description: "バージョンの上げ幅（autoならコード差分から自動判定）"
+        required: false
+        type: choice
+        default: auto
+        options: [auto, patch, minor, major]
   # バンプPRがdevelopへ（auto-mergeで）マージされ、バージョンが変わったときに再起動して
   # develop→mainのPRを自動作成する。通常のフィーチャーpushではpackage.jsonが変わらないため
   # 起動しない。
@@ -26,10 +36,14 @@ concurrency:
 
 jobs:
   release:
-    uses: guchi-apps/issue-deck/.github/workflows/reusable-release-develop-to-main.yml@workflows/v18
+    uses: guchi-apps/issue-deck/.github/workflows/reusable-release-develop-to-main.yml@workflows/v19
     # このリポジトリはルートのpackage.jsonにversionを持ち、"version" lifecycleスクリプトも
-    # 定義しているため、inputsは全て既定値でよい（version-file: package.json /
-    # version-query: .version / bump-command: 空）。
+    # 定義しているため、バージョンの読み書きに関するinputsは既定値でよい
+    # （version-file: package.json / version-query: .version / bump-command: 空）。
+    with:
+      # pushトリガー（バンプPRのマージ）で起動したときは`inputs`自体が無いため空文字を渡す。
+      # そちらの実行はdevelop→mainのPR作成だけを行い、上げ幅を使わない。
+      bump-kind: ${{ github.event_name == 'workflow_dispatch' && inputs.bump_kind || '' }}
     secrets: inherit
     # **呼ばれる側の権限はcallerの付与範囲を超えられない。** issues が write なのは、
     # 呼ばれる側の notify-failure ジョブがリリース対象issueへ失敗を通知するため。

@@ -83,6 +83,7 @@ export function CalendarShell({
   tagCatalogPromise,
   placeCatalogPromise,
   initialRunningActivity,
+  activityCalendarIds,
   weekStartsOn,
   timeZone,
   autoRefreshSeconds,
@@ -104,6 +105,11 @@ export function CalendarShell({
    * まだGoogleに予定が無いぶんを時間グリッドへ帯として描く。
    */
   initialRunningActivity: RunningActivityItem | null;
+  /**
+   * 活動記録の保存先に選ばれているカレンダー（issue #241）。
+   * ここに入っている予定は、時間グリッドでは塗りを落として描き、月表示には出さない。
+   */
+  activityCalendarIds: string[];
   weekStartsOn: number;
   timeZone: string;
   autoRefreshSeconds: number;
@@ -120,6 +126,13 @@ export function CalendarShell({
   // 進行の表示はヘッダー直下（境界の外）にあるため、ここまで上げてもらう。
   const [windowLoading, setWindowLoading] = useState(false);
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
+
+  // 日ごとの列・終日エリアは memo で包んであるため、判定に使う集合の参照を保つ。
+  // 描くたびに作り直すと、活動記録の有無に関わらず全ての列が描き直しになる。
+  const activityCalendars = useMemo(
+    () => new Set(activityCalendarIds),
+    [activityCalendarIds],
+  );
 
   // 押した直後に見出しが変わるよう、遷移中は指定した期間を先に表示する。
   const [nav, setNav] = useOptimistic({ view, anchorKey });
@@ -683,6 +696,7 @@ export function CalendarShell({
           onRefreshAll={refreshAll}
           onLoadingChange={setWindowLoading}
           runningActivity={initialRunningActivity}
+          activityCalendars={activityCalendars}
           onOpenActivity={openActivity}
         />
       </Suspense>
@@ -746,6 +760,7 @@ function CalendarBody({
   onRefreshAll,
   onLoadingChange,
   runningActivity,
+  activityCalendars,
   onOpenActivity,
 }: {
   dataPromise: Promise<CalendarLoadResult>;
@@ -792,6 +807,8 @@ function CalendarBody({
   onRefreshAll: () => void;
   onLoadingChange: (loading: boolean) => void;
   runningActivity: RunningActivityItem | null;
+  /** 活動記録の保存先に選ばれているカレンダー（issue #241）。 */
+  activityCalendars: ReadonlySet<string>;
   /** 記録中の帯を押したとき。開始・停止は記録の画面で行う。 */
   onOpenActivity: () => void;
 }) {
@@ -808,6 +825,21 @@ function CalendarBody({
     autoRefreshSeconds,
     onLoadingChange,
   });
+
+  /**
+   * 月表示に出す予定。活動記録は除く（issue #241）。
+   *
+   * 月表示は1日に数件しか置けない。睡眠のように毎日必ず入る記録がその枠を占めると、
+   * その日に何があるかが読めなくなる。記録は何時から何時までという時刻の情報が主で、
+   * 日単位の一覧である月表示では読み取れないため、時間グリッド側にだけ残す。
+   */
+  const monthEvents = useMemo(
+    () =>
+      activityCalendars.size === 0
+        ? data.events
+        : data.events.filter((event) => !activityCalendars.has(event.calendarId)),
+    [data.events, activityCalendars],
+  );
 
   /**
    * 保存・削除のあとの取り直し。
@@ -867,7 +899,7 @@ function CalendarBody({
       {view === "month" ? (
         <ContinuousMonthView
           weeks={weeks}
-          events={data.events}
+          events={monthEvents}
           tasks={data.tasks}
           reminders={data.reminders}
           weekStartsOn={weekStartsOn}
@@ -890,6 +922,7 @@ function CalendarBody({
           tasks={data.tasks}
           reminders={data.reminders}
           runningActivity={runningActivity}
+          activityCalendarIds={activityCalendars}
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
