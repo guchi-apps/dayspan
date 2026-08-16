@@ -6,7 +6,11 @@ import { WidgetSection } from "@/components/settings/widget-section";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { getOriginFromHeaders } from "@/lib/request-origin";
-import { WIDGET_REFRESH_MINUTES, buildScriptableWidgetScript } from "@/lib/scriptable-widget";
+import {
+  WIDGET_REFRESH_MINUTES,
+  buildScriptableWidgetScript,
+  buildWidgetOpenUrls,
+} from "@/lib/scriptable-widget";
 import { getWidgetToken } from "@/services/activity/widget-token";
 
 /**
@@ -48,6 +52,9 @@ export default async function WidgetSettingsPage() {
         lastUsedLabel={
           info?.lastUsedAt ? isoToLocalInput(info.lastUsedAt, timeZone).replace("T", " ") : null
         }
+        // 開く先はトークンの有無に関係なくoriginだけで決まる。台本と違って発行APIの応答には
+        // 含めず、ここで作って渡す。
+        openUrls={buildWidgetOpenUrls(origin)}
         refreshMinutes={WIDGET_REFRESH_MINUTES}
       />
     </SettingsShell>
