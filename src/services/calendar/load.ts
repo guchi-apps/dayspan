@@ -4,6 +4,7 @@ import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google
 import { canWriteCalendar, SETTING_ORDER } from "@/services/google-calendar/settings";
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
+import { listGarbageDaysInRange } from "@/services/notion/garbage";
 import { listTasksInRange } from "@/services/notion/tasks";
 import { listRemindersInRange } from "@/services/notion/reminders";
 import type {
@@ -209,7 +210,11 @@ async function loadNotionItems(
   errors: CalendarLoadResult["errors"];
 }> {
   const connection = await db.notionConnection.findUnique({ where: { userId } });
-  if (!connection?.taskDataSourceId && !connection?.reminderDataSourceId) {
+  if (
+    !connection?.taskDataSourceId &&
+    !connection?.reminderDataSourceId &&
+    !connection?.garbageDataSourceId
+  ) {
     return { tasks: [], reminders: [], ready: false, reminderReady: false, errors: [] };
   }
 
@@ -220,13 +225,15 @@ async function loadNotionItems(
       from: range.timeMin.slice(0, 10),
       to: range.timeMax.slice(0, 10),
     };
-    const [tasks, reminders] = await Promise.all([
+    // ゴミの日は日付リマインドと同じ形で描くため、同じ配列へ混ぜて返す（docs/spec.md §9）。
+    const [tasks, reminders, garbageDays] = await Promise.all([
       connection.taskDataSourceId ? listTasksInRange(notion, connection, dateRange) : [],
       connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],
+      connection.garbageDataSourceId ? listGarbageDaysInRange(notion, connection, dateRange) : [],
     ]);
     return {
       tasks,
-      reminders,
+      reminders: [...reminders, ...garbageDays],
       ready: Boolean(connection.taskDataSourceId),
       reminderReady: Boolean(connection.reminderDataSourceId),
       errors: [],
@@ -237,7 +244,12 @@ async function loadNotionItems(
       reminders: [],
       ready: Boolean(connection.taskDataSourceId),
       reminderReady: Boolean(connection.reminderDataSourceId),
-      errors: [{ source: "notion", reason: "Notionのタスクまたは日付リマインドを取得できませんでした。" }],
+      errors: [
+        {
+          source: "notion",
+          reason: "Notionのタスク・日付リマインド・ゴミの日を取得できませんでした。",
+        },
+      ],
     };
   }
 }
