@@ -31,10 +31,21 @@ export function buildScriptableWidgetScript(options: {
   /** ウィジェットを押したときに開くDaySpanのURL。 */
   appUrl: string;
 }): string {
-  return SCRIPTABLE_TEMPLATE.replaceAll(ENDPOINT_MARK, options.endpoint)
-    .replaceAll(TOKEN_MARK, options.token)
-    .replaceAll(APP_URL_MARK, options.appUrl)
+  return SCRIPTABLE_TEMPLATE.replaceAll(ENDPOINT_MARK, escapeForJsString(options.endpoint))
+    .replaceAll(TOKEN_MARK, escapeForJsString(options.token))
+    .replaceAll(APP_URL_MARK, escapeForJsString(options.appUrl))
     .replaceAll(REFRESH_MARK, String(WIDGET_REFRESH_MINUTES));
+}
+
+/**
+ * JavaScriptの文字列リテラルの中身として安全な形にする。
+ *
+ * 差し込む値はどれも `"..."` の中へ入る。originは Host ヘッダーから組み立てているため、
+ * 引用符や改行が混ざると台本の文字列リテラルを抜けて、その先が構文の壊れた台本になる。
+ * JSON.stringify はダブルクォートで囲んだ結果を返すので、その外側だけを外して使う。
+ */
+function escapeForJsString(value: string): string {
+  return JSON.stringify(value).slice(1, -1);
 }
 
 const SCRIPTABLE_TEMPLATE = String.raw`// DaySpan 活動記録ウィジェット
