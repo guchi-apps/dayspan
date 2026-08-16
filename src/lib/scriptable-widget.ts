@@ -13,6 +13,7 @@
 const ENDPOINT_MARK = "__DAYSPAN_ENDPOINT__";
 const TOKEN_MARK = "__DAYSPAN_TOKEN__";
 const APP_URL_MARK = "__DAYSPAN_APP_URL__";
+const WEBAPP_URL_MARK = "__DAYSPAN_WEBAPP_URL__";
 const REFRESH_MARK = "__DAYSPAN_REFRESH_MINUTES__";
 
 /**
@@ -34,7 +35,24 @@ export function buildScriptableWidgetScript(options: {
   return SCRIPTABLE_TEMPLATE.replaceAll(ENDPOINT_MARK, escapeForJsString(options.endpoint))
     .replaceAll(TOKEN_MARK, escapeForJsString(options.token))
     .replaceAll(APP_URL_MARK, escapeForJsString(options.appUrl))
+    .replaceAll(WEBAPP_URL_MARK, escapeForJsString(toWebAppUrl(options.appUrl)))
     .replaceAll(REFRESH_MARK, String(WIDGET_REFRESH_MINUTES));
+}
+
+/**
+ * ホーム画面に追加したDaySpan（Webアプリ）を開くURLへ直す。
+ *
+ * iOSは `https://` のリンクを必ずSafariで開き、ホーム画面のWebアプリへは渡さない。
+ * Webアプリを直接開けるのは `webapp://` スキーム（iOS 16.4以降）だけ。SafariとWebアプリは
+ * ストレージが別扱いのため、Safariへ落ちるとログインし直しになることがある。
+ *
+ * `http` のアドレス（LAN経由の開発サーバー等）では空文字を返す。httpのサイトはWebアプリとして
+ * ホーム画面へ追加できず、`webapp://` の宛先になりようがないため。台本側はこのとき
+ * ブラウザで開く側へ倒す。
+ */
+export function toWebAppUrl(origin: string): string {
+  const scheme = "https://";
+  return origin.startsWith(scheme) ? `webapp://${origin.slice(scheme.length)}` : "";
 }
 
 /**
@@ -55,10 +73,22 @@ const SCRIPTABLE_TEMPLATE = String.raw`// DaySpan 活動記録ウィジェット
 //
 // 使い方: Scriptableで新しいスクリプトを作り、この内容を貼り付けて保存します。
 // ホーム画面を長押し > ウィジェットを追加 > Scriptable > このスクリプトを選びます。
+//
+// ウィジェットを押したときと、Scriptableの一覧でこの台本のアイコンを押したときは、
+// どちらもDaySpanが開きます（ウィジェットの見本は表示しません）。
 
 const ENDPOINT = "__DAYSPAN_ENDPOINT__";
 const TOKEN = "__DAYSPAN_TOKEN__";
 const APP_URL = "__DAYSPAN_APP_URL__";
+
+// ホーム画面に追加したDaySpan（Webアプリ）を開くためのURL。iOS 16.4以降のスキームです。
+// httpのアドレスで作った台本では空になります（httpのサイトはWebアプリとして追加できないため）。
+const WEBAPP_URL = "__DAYSPAN_WEBAPP_URL__";
+
+// 押したときに開く先。
+//   "app"     … ホーム画面に追加したDaySpan
+//   "browser" … ブラウザ（ホーム画面に追加していないときはこちらにしてください）
+const OPEN_IN = "app";
 
 // 次の更新までの目安（分）。iOSは要求どおりに更新するとは限りません。
 const REFRESH_MINUTES = __DAYSPAN_REFRESH_MINUTES__;
@@ -74,22 +104,27 @@ const TRACK = new Color("#8a8a8a", 0.3);
 const FAMILY = config.widgetFamily || "small";
 const IS_ACCESSORY = FAMILY.indexOf("accessory") === 0;
 
-const data = await load();
-const widget = build(data);
-
-// 押したら記録画面を開く。ウィジェットの中では記録を start / stop できないため、
+// 押したときに開く先。ウィジェットの中では記録を start / stop できないため、
 // 「止めたい」と思った操作がそのまま画面へつながるようにする。
-widget.url = APP_URL + "/activity";
-widget.refreshAfterDate = new Date(Date.now() + REFRESH_MINUTES * 60 * 1000);
+//
+// iOSは webapp:// のパスを無視し、Webアプリの最初の画面から開きます（すでに開いていたときは
+// 前の画面のまま）。それでも /activity を付けているのは、ブラウザで開くときにはこのパスが効き、
+// 同じ組み立てで両方をまかなえるためです。
+const OPEN_URL = (OPEN_IN === "app" && WEBAPP_URL ? WEBAPP_URL : APP_URL) + "/activity";
 
 if (config.runsInWidget) {
+  const data = await load();
+  const widget = build(data);
+
+  widget.url = OPEN_URL;
+  widget.refreshAfterDate = new Date(Date.now() + REFRESH_MINUTES * 60 * 1000);
+
   Script.setWidget(widget);
-} else if (FAMILY === "medium") {
-  widget.presentMedium();
-} else if (FAMILY === "large") {
-  widget.presentLarge();
 } else {
-  widget.presentSmall();
+  // Scriptableの一覧からこの台本のアイコンを押したときは、ウィジェットの見本を出さずにDaySpanを開く。
+  // 押す理由は「いまの記録を見たい・止めたい」で、見本を挟むと目的の画面まで1手増える。
+  // 記録の取得もしない。開くだけなら要らない往復のため（docs/spec.md §20）。
+  Safari.open(OPEN_URL);
 }
 Script.complete();
 

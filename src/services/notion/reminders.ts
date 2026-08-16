@@ -12,18 +12,30 @@ type PropertyValue = {
   date?: { start?: string | null } | null;
   checkbox?: boolean;
 };
-type Page = { id: string; url?: string; properties?: Record<string, PropertyValue> };
+/** 日付リマインドDBと同じプロパティ構成を持つページ。ゴミの日DBもこの形で読む。 */
+export type DatePage = { id: string; url?: string; properties?: Record<string, PropertyValue> };
 
 const text = (items?: Array<{ plain_text?: string }>) =>
   items?.map((item) => item.plain_text ?? "").join("").trim() || "";
 
-function normalize(page: Page, map: ReminderPropertyMap): ReminderItem | null {
+/**
+ * Notionのページを表示用の形へ直す。
+ *
+ * ゴミの日DB（myroomが書き出す・docs/spec.md §9）はプロパティ構成が日付リマインドDBの部分集合で、
+ * 読み方も同じため、出どころだけを引数で分けてこの関数を共用する。
+ */
+export function normalizeDatePage(
+  page: DatePage,
+  map: ReminderPropertyMap,
+  source: ReminderItem["source"],
+): ReminderItem | null {
   const get = (field: keyof ReminderPropertyMap) => map[field] ? page.properties?.[map[field]!] : undefined;
   const date = get("date")?.date?.start ?? null;
   if (!date) return null;
   const annualProperty = get("annual");
   return {
     kind: "reminder",
+    source,
     id: page.id,
     pageId: page.id,
     title: text(get("title")?.title) || "(タイトルなし)",
@@ -73,8 +85,12 @@ function expandAnnual(reminder: ReminderItem, range: { from: string; to: string 
   return items;
 }
 
-async function query(notion: Client, dataSourceId: string, filter?: Record<string, unknown>): Promise<Page[]> {
-  const pages: Page[] = [];
+export async function queryDatePages(
+  notion: Client,
+  dataSourceId: string,
+  filter?: Record<string, unknown>,
+): Promise<DatePage[]> {
+  const pages: DatePage[] = [];
   let cursor: string | undefined;
   do {
     const response = await notion.dataSources.query({
@@ -84,11 +100,21 @@ async function query(notion: Client, dataSourceId: string, filter?: Record<strin
       ...(cursor ? { start_cursor: cursor } : {}),
     });
     for (const result of response.results) {
-      if (result.object === "page" && "properties" in result) pages.push(result as Page);
+      if (result.object === "page" && "properties" in result) pages.push(result as DatePage);
     }
     cursor = response.has_more && response.next_cursor ? response.next_cursor : undefined;
   } while (cursor);
   return pages;
+}
+
+/** 日付プロパティが表示範囲に入っているページだけを取るフィルタ。 */
+export function dateRangeFilter(propertyName: string, range: { from: string; to: string }) {
+  return {
+    and: [
+      { property: propertyName, date: { on_or_after: range.from } },
+      { property: propertyName, date: { on_or_before: range.to } },
+    ],
+  };
 }
 
 export async function listRemindersInRange(notion: Client, connection: NotionConnection, range: { from: string; to: string }) {
@@ -96,20 +122,20 @@ export async function listRemindersInRange(notion: Client, connection: NotionCon
   if (!connection.reminderDataSourceId || !map.date) return [];
 
   const dataSourceId = connection.reminderDataSourceId;
-  const toItems = (pages: Page[]) =>
-    pages.map((page) => normalize(page, map)).filter((item): item is ReminderItem => item !== null);
+  const toItems = (pages: DatePage[]) =>
+    pages
+      .map((page) => normalizeDatePage(page, map, "reminder"))
+      .filter((item): item is ReminderItem => item !== null);
 
   // 毎年の項目は、登録した年（＝日付プロパティの年）が表示範囲の外にあっても表示する。
   // 日付では絞り込めないため、日付で絞る取得とは別に、毎年の項目だけを丸ごと取りにいく。
   const [dated, annual] = await Promise.all([
-    query(notion, dataSourceId, {
-      and: [
-        { property: map.date, date: { on_or_after: range.from } },
-        { property: map.date, date: { on_or_before: range.to } },
-      ],
-    }).then(toItems),
+    queryDatePages(notion, dataSourceId, dateRangeFilter(map.date, range)).then(toItems),
     map.annual
-      ? query(notion, dataSourceId, { property: map.annual, checkbox: { equals: true } }).then(toItems)
+      ? queryDatePages(notion, dataSourceId, {
+          property: map.annual,
+          checkbox: { equals: true },
+        }).then(toItems)
       : Promise.resolve([]),
   ]);
 
@@ -125,8 +151,10 @@ export async function listRemindersInRange(notion: Client, connection: NotionCon
 export async function listAllReminders(notion: Client, connection: NotionConnection) {
   const map = (connection.reminderPropertyMap as ReminderPropertyMap | null) ?? {};
   if (!connection.reminderDataSourceId) return [];
-  const pages = await query(notion, connection.reminderDataSourceId);
-  return pages.map((page) => normalize(page, map)).filter((item): item is ReminderItem => item !== null);
+  const pages = await queryDatePages(notion, connection.reminderDataSourceId);
+  return pages
+    .map((page) => normalizeDatePage(page, map, "reminder"))
+    .filter((item): item is ReminderItem => item !== null);
 }
 
 // --- 日付リマインドの作成・更新・削除 ---
@@ -186,12 +214,48 @@ export async function createReminder(
   return { id: page.id };
 }
 
+/** 日付リマインドDB以外のページを書き換えようとしたときのエラー。API側で403に変える。 */
+export class ReminderNotEditableError extends Error {
+  constructor() {
+    super("This page is not in the reminder data source");
+    this.name = "ReminderNotEditableError";
+  }
+}
+
+/**
+ * 対象ページが日付リマインドDBのものか確かめる。
+ *
+ * ゴミの日DBのように外部アプリ（myroom）が正で、DaySpanからは読むだけのDBを、
+ * APIから直接書き換えられないようにする。UIで入口を隠すだけだと、DaySpanのAPIや
+ * 将来のMCPから直接呼ばれた要求が素通りするため、経路によらず同じ結果になるここで断る。
+ *
+ * 代償として更新・削除のたびにNotionへの往復が1回増える。読み取り側は増えない。
+ */
+async function assertReminderPage(
+  notion: Client,
+  connection: NotionConnection,
+  reminderId: string,
+): Promise<void> {
+  if (!connection.reminderDataSourceId) throw new ReminderNotEditableError();
+
+  const page = await notion.pages.retrieve({ page_id: reminderId });
+  const parent = "parent" in page ? page.parent : null;
+  const dataSourceId = parent?.type === "data_source_id" ? parent.data_source_id : null;
+  // NotionのIDはハイフン付き・無しのどちらの表記でも同じものを指す。取得元によって表記が
+  // 変わっても弾かないよう、比較の前に揃える。
+  const sameId = (a: string | null, b: string | null) =>
+    a !== null && b !== null && a.replaceAll("-", "").toLowerCase() === b.replaceAll("-", "").toLowerCase();
+
+  if (!sameId(dataSourceId, connection.reminderDataSourceId)) throw new ReminderNotEditableError();
+}
+
 export async function updateReminder(
   notion: Client,
   connection: NotionConnection,
   reminderId: string,
   input: ReminderWriteInput,
 ): Promise<void> {
+  await assertReminderPage(notion, connection, reminderId);
   const map = (connection.reminderPropertyMap as ReminderPropertyMap | null) ?? {};
   await notion.pages.update({
     page_id: reminderId,
@@ -203,6 +267,11 @@ export async function updateReminder(
  * 日付リマインドを消す。完了状態を持たないため、残す意味のない項目は消せる必要がある。
  * Notionのゴミ箱へ移すだけなので、間違えてもNotion側で戻せる。
  */
-export async function deleteReminder(notion: Client, reminderId: string): Promise<void> {
+export async function deleteReminder(
+  notion: Client,
+  connection: NotionConnection,
+  reminderId: string,
+): Promise<void> {
+  await assertReminderPage(notion, connection, reminderId);
   await notion.pages.update({ page_id: reminderId, in_trash: true });
 }

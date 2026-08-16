@@ -46,6 +46,21 @@ export default async function ChangelogPage() {
                   </li>
                 ))}
               </ul>
+
+              {/* Card自体が surface-container-low のため、1段濃い面に置いて変更点と読み分けられるようにする */}
+              {entry.usage && entry.usage.length > 0 && (
+                <div className="mt-3 rounded-lg bg-surface-container p-3">
+                  <h3 className="mb-1.5 type-label-large text-on-surface">使い方</h3>
+                  <ol className="type-body-medium flex flex-col gap-1.5 text-on-surface-variant">
+                    {entry.usage.map((step, stepIndex) => (
+                      <li key={step} className="flex gap-2">
+                        <span className="shrink-0 tabular-nums">{stepIndex + 1}.</span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
             </section>
           ))}
         </CardContent>
