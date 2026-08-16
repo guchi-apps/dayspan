@@ -30,6 +30,7 @@ model User {
   uiSetting        UiSetting?
   activityPresets  ActivityPreset[]
   runningActivity  RunningActivity?
+  widgetToken      WidgetToken?
 }
 
 // --- Google Calendar連携 ---
@@ -192,6 +193,28 @@ model RunningActivity {
   title      String
   calendarId String
   startedAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// --- iPhoneウィジェット連携 ---
+// Scriptableから活動記録を読むための専用トークン（docs/spec.md §28）。
+// Scriptableはブラウザのログインセッションを持てず、ウィジェットの更新は利用者の操作なしに
+// 走るため、Supabaseのセッションでは認証できない。読み取り専用のトークンを1本だけ発行する。
+model WidgetToken {
+  id     String @id @default(cuid())
+  userId String @unique // ウィジェット用は1ユーザー1本。複数の端末でも同じ台本を使い回す
+
+  // 暗号文はIVが毎回変わるため値では引けない。照合はハッシュ側で行い、
+  // 暗号文は設定画面での再表示（台本の作り直し・機種変更）にだけ使う。
+  tokenHash String @unique @db.VarChar(64) // SHA-256（hex）
+  token     String @db.Text // secret-cipher.ts でAES-256-GCM暗号化
+
+  // 最後に使われた日時。ウィジェットが生きているか、古い端末が読み続けていないかを見るため。
+  lastUsedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
