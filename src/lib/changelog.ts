@@ -21,6 +21,15 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.1.0",
+    date: "2026-08-16",
+    changes: [
+      "カレンダーごとに「表示」と「使用」を分けて設定できるようになりました。見るだけのカレンダーへ誤って書き込まれる心配がなくなります。",
+      "iPhoneのウィジェットに活動記録を表示できるようになりました。",
+      "3日表示のヘッダーで日付が見切れてしまう表示崩れを修正しました。",
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-08-16",
     changes: [
