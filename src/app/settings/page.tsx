@@ -7,6 +7,7 @@ import {
   History,
   LayoutGrid,
   NotebookPen,
+  Smartphone,
   Tags,
   Timer,
   UserRound,
@@ -25,12 +26,15 @@ export default async function SettingsPage() {
 
   // 一覧では外部APIを叩かない。カレンダー一覧やタスクDB一覧の取得はそれぞれの画面へ入って
   // からで足り、ここで待たせるとGoogle / Notionが遅い日は設定を開くこと自体ができなくなる。
-  const [googleAccounts, notionConnection, uiSetting, activityPresetCount] = await Promise.all([
-    db.googleAccount.findMany({ where: { userId: user.id }, select: { email: true } }),
-    db.notionConnection.findUnique({ where: { userId: user.id } }),
-    db.uiSetting.findUnique({ where: { userId: user.id } }),
-    db.activityPreset.count({ where: { userId: user.id } }),
-  ]);
+  const [googleAccounts, notionConnection, uiSetting, activityPresetCount, widgetToken] =
+    await Promise.all([
+      db.googleAccount.findMany({ where: { userId: user.id }, select: { email: true } }),
+      db.notionConnection.findUnique({ where: { userId: user.id } }),
+      db.uiSetting.findUnique({ where: { userId: user.id } }),
+      db.activityPreset.count({ where: { userId: user.id } }),
+      // 発行の有無だけを見る。復号は開いてからで足りる。
+      db.widgetToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
+    ]);
 
   return (
     <SettingsShell title="設定" backHref="/calendar" backLabel="カレンダー">
@@ -81,6 +85,13 @@ export default async function SettingsPage() {
             }
           />
         )}
+        {/* 記録中の1件はGoogle未接続でも出せるため、Google接続の有無にかかわらず出す。 */}
+        <MenuItem
+          href="/settings/widget"
+          icon={Smartphone}
+          label="iPhoneウィジェット"
+          value={widgetToken ? "発行済み" : "未設定"}
+        />
         <MenuItem
           href="/settings/display"
           icon={LayoutGrid}
