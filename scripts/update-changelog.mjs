@@ -9,6 +9,11 @@
 //
 // RELEASE_CHANGELOG が未設定・空のとき（ローカルで `npm version` を叩いた場合など）は
 // 何もしない。ワークフロー側はこのリポジトリの書き込み先を一切知らない。
+//
+// RELEASE_USAGE には、そのリリースで増えた機能の使い方（どこを開く / 何を押す /
+// どうなれば成功か）が番号付きの複数行で渡る（guchi-apps/issue-deck#1729）。
+// 画面で使える変化が無いリリースでは生成されず空になるため、そのときは usage を
+// 持たせない（空の見出しだけが残ると書き漏らしに見える）。
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -36,10 +41,16 @@ const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format
 
 // 生成される文面は箇条書き・段落のどちらもありうる。行単位に分解し、
 // 箇条書き記号と番号を落として1行1項目にそろえる。
-const changes = raw
-  .split("\n")
-  .map((line) => line.trim().replace(/^(?:[-*・]|\d+[.)])\s*/, "").trim())
-  .filter((line) => line !== "");
+// 使い方は番号付きの複数行で渡るため、同じ分解をかけて行の並びをそのまま保つ
+// （1行へ潰さない。番号は表示側で振り直す）。
+const toItems = (value) =>
+  value
+    .split("\n")
+    .map((line) => line.trim().replace(/^(?:[-*・]|\d+[.)])\s*/, "").trim())
+    .filter((line) => line !== "");
+
+const changes = toItems(raw);
+const usage = toItems(process.env.RELEASE_USAGE ?? "");
 
 if (changes.length === 0) {
   console.log("RELEASE_CHANGELOG から項目を抽出できなかったため、更新履歴は変更しません。");
@@ -71,6 +82,9 @@ const entry = [
   "    changes: [",
   ...changes.map((change) => `      "${escape(change)}",`),
   "    ],",
+  ...(usage.length > 0
+    ? ["    usage: [", ...usage.map((step) => `      "${escape(step)}",`), "    ],"]
+    : []),
   "  },",
   "",
 ].join("\n");
@@ -82,4 +96,7 @@ writeFileSync(
   "utf8",
 );
 
-console.log(`更新履歴に ${version}（${date}）のエントリを ${changes.length} 件追記しました。`);
+console.log(
+  `更新履歴に ${version}（${date}）のエントリを ${changes.length} 件追記しました。` +
+    (usage.length > 0 ? `使い方も ${usage.length} 手順追記しました。` : ""),
+);

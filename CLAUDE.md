@@ -313,6 +313,12 @@ Windows側からは `scripts/start-issue.ps1` を使う。
 ライフサイクルスクリプト経由で `scripts/update-changelog.mjs` が `src/lib/changelog.ts` へ追記する。
 文面のルールは changelog-ja スキルに従う。
 
+同じ経路で**使い方**（`RELEASE_USAGE`）も渡る。「何が変わったか」の `RELEASE_CHANGELOG` に対し、
+どこを開く・何を押す・どうなれば成功かを番号付きの複数行で渡すもので、`ChangelogEntry.usage`
+（`changes` とは別の項目）として保存し、更新履歴の画面でそのバージョンの変更点の下に出す。
+画面で使える変化が無いリリースでは空文字で渡るため、そのときは `usage` の項目ごと持たせない。
+共有ワークフロー側の生成は `@workflows/vN` の配布後に有効になる（それまでは常に空文字）。
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
