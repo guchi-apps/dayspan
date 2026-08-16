@@ -117,6 +117,12 @@ model NotionConnection {
   placeTitle        String?
   placePropertyMap  Json?
 
+  // ゴミの収集日。myroomが日次で書き直すDBで、DaySpanからは読むだけ（docs/spec.md §9）。
+  garbageDataSourceId String?
+  garbageDatabaseId   String?
+  garbageTitle        String?
+  garbagePropertyMap  Json?
+
   lastValidatedAt DateTime?
 
   createdAt DateTime @default(now())

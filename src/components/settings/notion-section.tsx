@@ -21,6 +21,7 @@ import {
   type PlacePropertyMap,
 } from "@/services/notion/place-database";
 import {
+  GARBAGE_FIELD_REQUIREMENTS,
   REMINDER_FIELD_REQUIREMENTS,
   type ReminderPropertyMap,
 } from "@/services/notion/reminder-database";
@@ -62,6 +63,9 @@ export type NotionSectionState = {
   placeDataSourceId: string | null;
   placeTitle: string | null;
   placePropertyMap: PlacePropertyMap | null;
+  garbageDataSourceId: string | null;
+  garbageTitle: string | null;
+  garbagePropertyMap: ReminderPropertyMap | null;
   dataSources: DataSourceSummary[];
   sharedPages: SharedPageSummary[];
   dataSourcesFailed: boolean;
@@ -191,6 +195,33 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
         return;
       }
       setMessage({ text: "場所DBを設定しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectGarbageDataSource = async (dataSourceId: string) => {
+    setBusy(true);
+    setMissing(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/garbage-database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataSourceId }),
+      });
+      if (response.status === 422) {
+        const body = (await response.json()) as { missingRequired: MissingProperty[] };
+        setMissing(body.missingRequired);
+        setMessage({ text: "ゴミの日DBに必要なプロパティが不足しています。", tone: "error" });
+        return;
+      }
+      if (!response.ok) {
+        setMessage({ text: "ゴミの日DBを設定できませんでした。", tone: "error" });
+        return;
+      }
+      setMessage({ text: "ゴミの日DBを設定しました。", tone: "ok" });
       startTransition(() => router.refresh());
     } finally {
       setBusy(false);
@@ -423,6 +454,51 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                         state.reminderDataSourceId === dataSource.dataSourceId
                       }
                       onClick={() => selectPlaceDataSource(dataSource.dataSourceId)}
+                    >
+                      {dataSource.title}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <Separator />
+
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">ゴミの日DBを選択</span>
+              <p className="text-xs text-muted-foreground">
+                myroomが書き出すゴミの収集日をカレンダーに表示します。DaySpanからは読むだけで、
+                編集・削除はできません（myroomが毎日書き直すため）。タイトルと日付が必要です。
+              </p>
+              {state.garbageDataSourceId && (
+                <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="secondary">ゴミの日DB</Badge>
+                    <span className="font-medium">{state.garbageTitle}</span>
+                  </div>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {GARBAGE_FIELD_REQUIREMENTS.map((requirement) => (
+                      <div key={requirement.field} className="contents">
+                        <dt>{requirement.label}</dt>
+                        <dd>{state.garbagePropertyMap?.[requirement.field] ?? "未対応"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
+              <ul className="flex flex-wrap gap-2">
+                {state.dataSources.map((dataSource) => (
+                  <li key={dataSource.dataSourceId}>
+                    <Button
+                      variant={state.garbageDataSourceId === dataSource.dataSourceId ? "secondary" : "outline"}
+                      size="sm"
+                      disabled={
+                        disabled ||
+                        state.taskDataSourceId === dataSource.dataSourceId ||
+                        state.reminderDataSourceId === dataSource.dataSourceId ||
+                        state.placeDataSourceId === dataSource.dataSourceId
+                      }
+                      onClick={() => selectGarbageDataSource(dataSource.dataSourceId)}
                     >
                       {dataSource.title}
                     </Button>

@@ -20,6 +20,15 @@ export const REMINDER_FIELD_REQUIREMENTS: Requirement[] = [
   { field: "annual", label: "毎年", types: ["checkbox"], required: false, hints: ["毎年", "annual", "繰り返し", "recurring", "repeat"] },
 ];
 
+/**
+ * ゴミの日DB（docs/spec.md §9）が使う項目。日付リマインドDBから「毎年」を除いたもの。
+ * myroomは収集日ごとに1ページを書き出すため、毎年の繰り返しは持たない。
+ * 検証そのものは日付リマインドDBと同じ（毎年は任意項目なので、無くても接続できる）。
+ */
+export const GARBAGE_FIELD_REQUIREMENTS = REMINDER_FIELD_REQUIREMENTS.filter(
+  (requirement) => requirement.field !== "annual",
+);
+
 export type ReminderValidation = {
   propertyMap: ReminderPropertyMap;
   missingRequired: { field: ReminderField; label: string; types: string[] }[];

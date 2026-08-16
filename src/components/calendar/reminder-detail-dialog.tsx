@@ -64,6 +64,10 @@ export function ReminderDetailDialog({
     setTimeout(() => onDeleted(touched), 150);
   };
 
+  // ゴミの日はmyroomが正で、DaySpanからは読むだけ（docs/spec.md §9）。押せるまま残すと
+  // サーバーが断るまで直せるように見えるため、編集・削除は入口ごと出さない。
+  const external = reminder.source === "garbage";
+
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
@@ -75,30 +79,34 @@ export function ReminderDetailDialog({
           />
         )}
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="削除"
-          className="absolute top-2 right-18"
-          disabled={readOnly}
-          onClick={() => setConfirmingDelete(true)}
-        >
-          <Trash2 className="size-4" />
-        </Button>
+        {!external && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="削除"
+              className="absolute top-2 right-18"
+              disabled={readOnly}
+              onClick={() => setConfirmingDelete(true)}
+            >
+              <Trash2 className="size-4" />
+            </Button>
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="編集"
-          className="absolute top-2 right-10"
-          disabled={readOnly}
-          onClick={edit}
-        >
-          <Pencil className="size-4" />
-        </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="編集"
+              className="absolute top-2 right-10"
+              disabled={readOnly}
+              onClick={edit}
+            >
+              <Pencil className="size-4" />
+            </Button>
+          </>
+        )}
 
         <DialogHeader>
-          <DialogTitle className="pr-22">{reminder.title}</DialogTitle>
+          <DialogTitle className={external ? "pr-6" : "pr-22"}>{reminder.title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 text-sm">
@@ -112,7 +120,9 @@ export function ReminderDetailDialog({
             </DetailRow>
           )}
 
-          {reminder.category && (
+          {/* ゴミの日の種類は常に「ゴミの日」で、myroomが自分の書いたページを見分けるための
+              目印でしかない。画面に出しても読める情報が増えないため出さない。 */}
+          {reminder.category && !external && (
             <DetailRow icon={<Tag className="size-4" />}>
               <TagChip
                 name={reminder.category}
@@ -137,7 +147,15 @@ export function ReminderDetailDialog({
             </a>
           )}
 
-          {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
+          {external && (
+            <p className="text-xs text-on-surface-variant">
+              ゴミの日はmyroomが毎日書き直すため、DaySpanからは変更できません。
+            </p>
+          )}
+
+          {!external && readOnly && (
+            <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>
+          )}
         </div>
 
         <DialogFooter>
