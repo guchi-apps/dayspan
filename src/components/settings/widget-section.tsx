@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Copy, Eye, EyeOff, RefreshCw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+
+/** コピーボタンの識別子。どのボタンで「コピーしました」を出すかを決めるために使う。 */
+type CopyTarget = "script" | "appUrl" | "browserUrl";
 
 /**
  * iPhoneウィジェットの設定（docs/spec.md §28）。
@@ -18,6 +21,7 @@ export function WidgetSection({
   initialToken,
   initialScript,
   lastUsedLabel,
+  openUrls,
   refreshMinutes,
 }: {
   /** 発行済みのトークン。未発行なら null。 */
@@ -30,6 +34,11 @@ export function WidgetSection({
    * ハイドレーションが一致しない（CLAUDE.md）。
    */
   lastUsedLabel: string | null;
+  /**
+   * ウィジェットを押したときに開くURL。iOSのウィジェット編集画面へ手で入れる値。
+   * `app` は http のアドレスで開いているときに null（`webapp://` を組み立てられないため）。
+   */
+  openUrls: { app: string | null; browser: string };
   refreshMinutes: number;
 }) {
   const router = useRouter();
@@ -37,7 +46,7 @@ export function WidgetSection({
   const [token, setToken] = useState(initialToken);
   const [script, setScript] = useState(initialScript);
   const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedTarget, setCopiedTarget] = useState<CopyTarget | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +78,7 @@ export function WidgetSection({
       setToken(body.token);
       setScript(body.script);
       setRevealed(false);
-      setCopied(false);
+      setCopiedTarget(null);
       router.refresh();
     } catch {
       setError("トークンを発行できませんでした。");
@@ -96,7 +105,7 @@ export function WidgetSection({
       setToken(null);
       setScript(null);
       setRevealed(false);
-      setCopied(false);
+      setCopiedTarget(null);
       router.refresh();
     } catch {
       setError("トークンを削除できませんでした。");
@@ -106,23 +115,28 @@ export function WidgetSection({
   };
 
   /**
-   * 台本をクリップボードへ入れる。
+   * クリップボードへ入れる。台本とURLで同じ経路を通す。
    *
    * navigator.clipboard は https か localhost でしか使えない。LAN経由のhttpで開いている
-   * ときは失敗するため、その場合は下の台本を選んでコピーしてもらう案内へ倒す。
+   * ときは失敗するため、その場合は画面に出ている値を選んでコピーしてもらう案内へ倒す。
+   * どこを選べばよいかは対象で違うため、案内文は呼び出し側から渡す。
    */
-  const copy = async () => {
-    if (!script) return;
-
+  const copy = async (target: CopyTarget, text: string, hint: string) => {
     try {
-      await navigator.clipboard.writeText(script);
-      setCopied(true);
+      await navigator.clipboard.writeText(text);
+      setCopiedTarget(target);
       setError(null);
-      window.setTimeout(() => setCopied(false), 2000);
+      // 別のボタンを押したあとに前のタイマーが起きても、いま出ている印を消さない。
+      window.setTimeout(() => setCopiedTarget((prev) => (prev === target ? null : prev)), 2000);
     } catch {
-      setError("コピーできませんでした。下の「台本を見る」を開いて、内容を選択してコピーしてください。");
+      setError(`コピーできませんでした。${hint}`);
     }
   };
+
+  // ウィジェット編集画面の `URL` 欄へ入れる値。ホーム画面のDaySpanを開けるなら
+  // そちらを既定にし、httpのアドレスで開いていて作れないときはブラウザで開くURLを案内する。
+  const openUrl = openUrls.app ?? openUrls.browser;
+  const openUrlTarget: CopyTarget = openUrls.app ? "appUrl" : "browserUrl";
 
   return (
     <Card>
@@ -174,9 +188,18 @@ export function WidgetSection({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button disabled={busy} onClick={copy}>
-                {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                {copied ? "コピーしました" : "台本をコピー"}
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  copy("script", script, "下の「台本を見る」を開いて、内容を選択してコピーしてください。")
+                }
+              >
+                {copiedTarget === "script" ? (
+                  <Check className="size-4" />
+                ) : (
+                  <Copy className="size-4" />
+                )}
+                {copiedTarget === "script" ? "コピーしました" : "台本をコピー"}
               </Button>
               <Button variant="outline" disabled={busy} onClick={() => issue(true)}>
                 <RefreshCw className="size-4" />
@@ -202,7 +225,85 @@ export function WidgetSection({
                 ホーム画面を長押し → ウィジェットを追加 → Scriptable →
                 スクリプトに「DaySpan」を選ぶ
               </li>
+              <li>
+                置いたウィジェットを長押し → <span className="text-on-surface">ウィジェットを編集</span>
+                を押し、下のとおりに設定する
+              </li>
             </ol>
+
+            {/*
+              iOSのウィジェット編集画面の写し。Scriptableのこの画面は英語表記のままなので、
+              ラベルは画面に出ているとおりの英語で並べる。訳語にすると、どの行のことか
+              端末の画面と見比べられない。
+            */}
+            <div className="flex flex-col gap-2 rounded-lg border border-outline-variant p-3">
+              <span className="type-label-large text-on-surface-variant">
+                ウィジェットを編集（Scriptable）
+              </span>
+
+              <dl className="flex flex-col gap-2">
+                <SettingRow label="Script">
+                  DaySpan<span className="text-on-surface-variant">（4で付けた名前）</span>
+                </SettingRow>
+                <SettingRow label="When Interacting">Open URL</SettingRow>
+                <SettingRow label="URL">
+                  {/* 打ち間違いに気付ける場所が実機のウィジェット（何も出ない）しかないため、
+                      値はコピーさせる。httpのアドレスで開いているときは webapp:// を作れないので、
+                      ブラウザで開くURLをそのまま案内する。 */}
+                  <code className="type-body-small min-w-0 flex-1 overflow-x-auto whitespace-nowrap">
+                    {openUrl}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      copy(openUrlTarget, openUrl, "上のURLを選択してコピーしてください。")
+                    }
+                  >
+                    {copiedTarget === openUrlTarget ? (
+                      <Check className="size-4" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
+                    {copiedTarget === openUrlTarget ? "コピーしました" : "コピー"}
+                  </Button>
+                </SettingRow>
+                <SettingRow label="Parameter">
+                  <span className="text-on-surface-variant">空のまま</span>
+                </SettingRow>
+              </dl>
+
+              {openUrls.app ? (
+                <p className="type-body-small flex flex-wrap items-center gap-2 text-on-surface-variant">
+                  <span>
+                    ホーム画面に追加していないときや、ブラウザで開きたいときは、URLに
+                    <code className="mx-1">{openUrls.browser}</code>
+                    を入れ、台本の先頭にある<code className="mx-1">OPEN_IN</code>も
+                    <code className="mx-1">&quot;browser&quot;</code>に変えてください。
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      copy("browserUrl", openUrls.browser, "上のURLを選択してコピーしてください。")
+                    }
+                  >
+                    {copiedTarget === "browserUrl" ? (
+                      <Check className="size-4" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
+                    {copiedTarget === "browserUrl" ? "コピーしました" : "ブラウザ用をコピー"}
+                  </Button>
+                </p>
+              ) : (
+                <p className="type-body-small text-on-surface-variant">
+                  いまhttpのアドレスでこの画面を開いているため、ホーム画面のDaySpanを開くURL
+                  （<code className="mx-1">webapp://</code>）は作れません。httpsのアドレスで開き直すと、
+                  そちらのURLが出ます。
+                </p>
+              )}
+            </div>
 
             <details className="rounded-lg bg-surface-container-high">
               <summary className="type-body-medium cursor-pointer px-3 py-2">台本を見る</summary>
@@ -222,9 +323,9 @@ export function WidgetSection({
                 （すでに開いていたときは前の画面のまま）。記録の画面はメインナビの先頭にあります。
               </p>
               <p>
-                ホーム画面に追加していないときや、ブラウザで開きたいときは、台本の先頭にある
-                <code className="mx-1">OPEN_IN</code>を<code className="mx-1">&quot;browser&quot;</code>
-                に変えてください。
+                押してもScriptableが開いてしまうときは、ウィジェットを編集の
+                <code className="mx-1">When Interacting</code>が
+                <code className="mx-1">Run Script</code>のままです。上のとおりに直してください。
               </p>
               <p>
                 ウィジェットは約{refreshMinutes}分ごとの更新を要求します（iOSの都合で前後します）。
@@ -239,6 +340,23 @@ export function WidgetSection({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * ウィジェット編集画面の1行（項目名と入れる値）。
+ *
+ * 狭い画面では項目名を値の上へ折り返す。`When Interacting` は横並びのままだと値の幅を奪い、
+ * URLが数文字しか見えなくなる。
+ */
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-lg bg-surface-container-high px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+      <dt className="type-body-small shrink-0 font-mono text-on-surface-variant sm:w-36">
+        {label}
+      </dt>
+      <dd className="type-body-medium flex min-w-0 flex-1 items-center gap-2">{children}</dd>
+    </div>
   );
 }
 
