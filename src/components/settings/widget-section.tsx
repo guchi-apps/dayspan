@@ -189,6 +189,10 @@ export function WidgetSection({
             </div>
 
             <ol className="type-body-medium flex list-decimal flex-col gap-1 pl-5 text-on-surface-variant">
+              <li>
+                iPhoneのSafariでDaySpanを開き、共有 → <span className="text-on-surface">ホーム画面に追加</span>
+                （ウィジェットから開く先がこのアプリになります）
+              </li>
               <li>App Storeから「Scriptable」を入れる</li>
               <li>
                 上の<span className="text-on-surface">台本をコピー</span>を押す
@@ -211,6 +215,16 @@ export function WidgetSection({
               <p>
                 台本の中のURLは、いまこの画面を開いているアドレスから作られます。iPhoneから
                 見られるアドレスで開いてコピーしてください。
+              </p>
+              <p>
+                ウィジェットと、Scriptableの一覧にある台本のアイコンを押すと、ホーム画面に追加した
+                DaySpanが開きます。iOSの仕様でWebアプリは最初の画面（カレンダー）から開きます
+                （すでに開いていたときは前の画面のまま）。記録の画面はメインナビの先頭にあります。
+              </p>
+              <p>
+                ホーム画面に追加していないときや、ブラウザで開きたいときは、台本の先頭にある
+                <code className="mx-1">OPEN_IN</code>を<code className="mx-1">&quot;browser&quot;</code>
+                に変えてください。
               </p>
               <p>
                 ウィジェットは約{refreshMinutes}分ごとの更新を要求します（iOSの都合で前後します）。
