@@ -35,7 +35,13 @@ type EventsResponse = {
 };
 
 /** 表示に必要なカレンダーの情報。一次情報源は calendarList 側にある。 */
-export type CalendarDisplay = { calendarId: string; name: string; color: string | null };
+export type CalendarDisplay = {
+  calendarId: string;
+  name: string;
+  color: string | null;
+  /** このカレンダーへ書き込めないかどうか。使用オフ、または読み取り専用の共有。 */
+  readOnly: boolean;
+};
 
 /**
  * 指定期間の予定を取得する。繰り返し予定は singleEvents で個別の回へ展開させ、
@@ -122,6 +128,7 @@ function normalizeEvent(event: GoogleEvent, calendar: CalendarDisplay): Calendar
       attendees: (event.attendees ?? []).map((a) => a.email ?? "").filter(Boolean),
       recurring: Boolean(event.recurringEventId),
       color: calendar.color,
+      readOnly: calendar.readOnly,
       url: event.htmlLink ?? null,
     };
   }
@@ -142,6 +149,7 @@ function normalizeEvent(event: GoogleEvent, calendar: CalendarDisplay): Calendar
     attendees: (event.attendees ?? []).map((a) => a.email ?? "").filter(Boolean),
     recurring: Boolean(event.recurringEventId),
     color: calendar.color,
+    readOnly: calendar.readOnly,
     url: event.htmlLink ?? null,
   };
 }

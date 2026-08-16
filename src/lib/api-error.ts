@@ -22,6 +22,26 @@ export function externalApiError(
   );
 }
 
+/**
+ * 書き込み先のカレンダーを引けなかったときの応答。
+ * 「使用」がオフで断ったのか、そもそも見つからないのかを分けて伝える。同じ404にまとめると、
+ * 設定を変えれば書けるのかどうかが画面から分からなくなる。
+ */
+export function calendarWriteError(reason: "not_found" | "write_disabled"): NextResponse {
+  if (reason === "write_disabled") {
+    return NextResponse.json(
+      {
+        error: "calendar_not_writable",
+        message:
+          "このカレンダーは使用しない設定になっています。設定のGoogle Calendarで「使用」をオンにしてください。",
+      },
+      { status: 403 },
+    );
+  }
+
+  return NextResponse.json({ error: "calendar_not_found" }, { status: 404 });
+}
+
 /** Google / Notion のエラー本文はJSONで長い。利用者に見せる1文へ縮める。 */
 function summarize(detail: string): string {
   const match = detail.match(/"message"\s*:\s*"([^"]+)"/);

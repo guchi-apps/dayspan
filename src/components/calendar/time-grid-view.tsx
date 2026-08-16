@@ -631,9 +631,11 @@ function DayColumn({
         );
 
         // 日をまたぐ予定は、どの日を動かしているのかが決まらないためドラッグの対象外にする。
+        // 使用していないカレンダーの予定も動かせない（書き込みはサーバー側で断られる）。
         const draggable =
-          utils.itemDateKey(event.start) === utils.itemDateKey(event.end) ||
-          utils.itemDateKey(event.start) === dateKey;
+          !event.readOnly &&
+          (utils.itemDateKey(event.start) === utils.itemDateKey(event.end) ||
+            utils.itemDateKey(event.start) === dateKey);
 
         // 活動記録のカレンダーの予定は塗りを落とし、色は左の縦帯として残す（issue #241）。
         const subdued = activityCalendarIds.has(event.calendarId)
@@ -1257,7 +1259,12 @@ const AllDayPane = memo(function AllDayPane({
                 continuesBefore={segment.continuesBefore}
                 continuesAfter={segment.continuesAfter}
                 dragging={preview?.id === segment.item.id}
-                onStartDrag={(e) => onStartDrag(e, { kind: "event", item: segment.item })}
+                onStartDrag={(e) => {
+                  // 使用していないカレンダーの予定は動かせない。掴めてしまうと、
+                  // 離した先で断られるまで移せたように見える。
+                  if (segment.item.readOnly) return;
+                  onStartDrag(e, { kind: "event", item: segment.item });
+                }}
                 onOpen={() => {
                   if (onConsumeDragClick()) return;
                   onOpenEvent(segment.item);

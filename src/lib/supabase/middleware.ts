@@ -10,7 +10,25 @@ function isPublicPath(pathname: string): boolean {
   return publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+/**
+ * ウィジェット用API。Supabaseのセッションではなく専用トークンで認証する（docs/spec.md §28）。
+ *
+ * ここを通常の経路に通すと、ウィジェットの更新のたびにSupabase Authへ往復が1回増えるうえ、
+ * Supabaseへ到達できない間は（下の authUnreachable の分岐で）トークンだけで判定できる要求まで
+ * 503になる。matcherから外さずここで分けるのは、外すと詐称されたユーザーIDヘッダーが
+ * そのまま後段へ届くため。
+ */
+function isWidgetApiPath(pathname: string): boolean {
+  return pathname.startsWith("/api/widget/");
+}
+
 export async function updateSession(request: NextRequest) {
+  if (isWidgetApiPath(request.nextUrl.pathname)) {
+    const widgetHeaders = new Headers(request.headers);
+    widgetHeaders.delete(SUPABASE_USER_ID_HEADER);
+    return NextResponse.next({ request: { headers: widgetHeaders } });
+  }
+
   // セッション更新でSupabaseが発行したCookieは、最終的に返すレスポンスへ必ず載せる必要がある。
   // 素通しとリダイレクトのどちらを返すかはユーザーの有無を見てからでないと決まらないため、
   // ここではいったん溜めておき、レスポンスを組み立てる時点でまとめて付ける。

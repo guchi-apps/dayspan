@@ -369,7 +369,9 @@ export function duplicateEventDraft(event: CalendarEventItem, timeZone: string):
     start,
     end,
     title: event.title,
-    calendarId: event.calendarId,
+    // 使用していないカレンダーの予定を複製するときは、元のカレンダーを引き継がない。
+    // 保存先の選択肢に出ないカレンダーが初期値になると、そのままでは保存できない。
+    calendarId: event.readOnly ? undefined : event.calendarId,
     location: event.location ?? undefined,
     description: event.description ?? undefined,
   };

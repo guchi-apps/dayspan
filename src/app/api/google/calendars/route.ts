@@ -16,6 +16,7 @@ export async function GET() {
 type PatchBody = {
   settingId?: string;
   visible?: boolean;
+  writeEnabled?: boolean;
   isCreateDefault?: boolean;
 };
 
@@ -38,6 +39,18 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  // 使用オフのカレンダーは書き込み先にできない。既定の保存先にも選べない。
+  const writeEnabled = body.writeEnabled ?? setting.writeEnabled;
+  if (body.isCreateDefault && !writeEnabled) {
+    return NextResponse.json(
+      {
+        error: "calendar_not_writable",
+        message: "使用していないカレンダーは、既定の保存先にできません。",
+      },
+      { status: 400 },
+    );
+  }
+
   // 予定の既定の保存先は1つだけ。新しく既定にしたものがあれば、他を落とす。
   if (body.isCreateDefault) {
     await db.calendarSetting.updateMany({
@@ -46,17 +59,27 @@ export async function PATCH(request: Request) {
     });
   }
 
+  // 既定の保存先を使用オフにしたら、既定からも外す。残しておくと、入力画面の初期値が
+  // 選べないカレンダーのままになる。
+  const clearsDefault = body.writeEnabled === false && setting.isCreateDefault;
+
   const updated = await db.calendarSetting.update({
     where: { id: setting.id },
     data: {
       ...(body.visible === undefined ? {} : { visible: body.visible }),
-      ...(body.isCreateDefault === undefined ? {} : { isCreateDefault: body.isCreateDefault }),
+      ...(body.writeEnabled === undefined ? {} : { writeEnabled: body.writeEnabled }),
+      ...(clearsDefault
+        ? { isCreateDefault: false }
+        : body.isCreateDefault === undefined
+          ? {}
+          : { isCreateDefault: body.isCreateDefault }),
     },
   });
 
   return NextResponse.json({
     settingId: updated.id,
     visible: updated.visible,
+    writeEnabled: updated.writeEnabled,
     isCreateDefault: updated.isCreateDefault,
   });
 }

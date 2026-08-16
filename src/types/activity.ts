@@ -22,3 +22,39 @@ export type RunningActivityItem = {
 
 /** 記録の停止で作られた予定がかかる時間帯。呼び出し側がその範囲だけ取り直すために返す。 */
 export type ActivitySavedRange = { start: string; end: string };
+
+/** 今日の記録を項目名でまとめた1行。 */
+export type ActivityTotalItem = { title: string; minutes: number };
+
+/**
+ * 今日どれに何分使ったか。保存先カレンダーを指定しているときだけ求められる（docs/spec.md §28）。
+ * 記録中のぶんも含めた、その時点までの合計。
+ */
+export type ActivityTodayTotals = {
+  /** 設定タイムゾーンでの今日（YYYY-MM-DD）。 */
+  date: string;
+  totalMinutes: number;
+  /** 項目名ごとの合計。長い順。 */
+  items: ActivityTotalItem[];
+  /** 直前に終わった記録。停止中のウィジェットに「最後は何を何時まで」を出すために使う。 */
+  last: { title: string; endedAt: string } | null;
+};
+
+/** 今日の集計を出せなかった理由。ウィジェットに何が足りないかを出すために分ける。 */
+export type ActivityTodayUnavailable = "calendar_not_selected" | "google_unavailable";
+
+/**
+ * iPhoneウィジェットへ返す活動記録の一式（docs/spec.md §28）。
+ *
+ * 経過時間はサーバーの時計で決める。端末の時計がずれていると、そのぶんずれた時間が出る
+ * （記録そのものの時刻もサーバーの時計で決めている＝§27）。
+ */
+export type ActivityWidgetSummary = {
+  timeZone: string;
+  /** サーバーが応答を作った時刻。ウィジェットは「いつ時点の値か」をこれで出す。 */
+  now: string;
+  running: (RunningActivityItem & { elapsedMinutes: number }) | null;
+  today: ActivityTodayTotals | null;
+  /** today が null のときだけ理由が入る。 */
+  todayUnavailable: ActivityTodayUnavailable | null;
+};

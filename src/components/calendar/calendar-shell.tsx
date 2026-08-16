@@ -562,12 +562,25 @@ export function CalendarShell({
             </span>
           )}
           <span className="type-title-medium md:type-headline-small truncate">
-            {headerLabel.main}
+            {/*
+              狭い画面では月だけに切り替える。日と曜日は列ヘッダーに出ているため、
+              ここで繰り返すと入り切らずに truncate され、いま見ている期間そのものが読めなくなる。
+              表示中の幅で文字列を選ぶとサーバーとブラウザで結果が変わるため、両方を描いてCSSで隠す。
+            */}
+            {headerLabel.compact ? (
+              <>
+                <span className="md:hidden">{headerLabel.compact}</span>
+                <span className="hidden md:inline">{headerLabel.main}</span>
+              </>
+            ) : (
+              headerLabel.main
+            )}
           </span>
           {headerLabel.weekday && (
             <span
               className={cn(
                 "type-label-medium md:type-title-small shrink-0",
+                headerLabel.compact && "hidden md:inline",
                 headerLabel.weekday.tone ?? "text-on-surface-variant",
               )}
             >
@@ -1059,6 +1072,11 @@ type HeaderLabel = {
   year: string;
   /** 「8月」「8月12日」「8月10日 – 16日」 */
   main: string;
+  /**
+   * 狭い画面で main の代わりに出す短い表記（「8月」「8月 – 9月」）。
+   * null なら幅に関わらず main を使う。
+   */
+  compact: string | null;
   /** 1日表示のときだけ。曜日はグリッドと同じ配色にする */
   weekday: { label: string; tone: string | null } | null;
 };
@@ -1067,6 +1085,7 @@ function formatMonthLabel(monthKey: string): HeaderLabel {
   return {
     year: `${monthKey.slice(0, 4)}年`,
     main: `${Number(monthKey.slice(5, 7))}月`,
+    compact: null,
     weekday: null,
   };
 }
@@ -1082,10 +1101,17 @@ function formatRangeLabel(view: CalendarView, anchorKey: string, days: string[])
   // 週表示（desktopOnly）は幅に余裕があるため、そちらは従来どおり年も出す。
   const year = view === "day1" || view === "day3" ? "" : `${first.slice(0, 4)}年`;
 
+  // 1日・3日表示は、狭い画面では月日を並べるだけで幅を使い切る。列ヘッダーに日と曜日が
+  // 出ているため、狭いときは月だけに落として範囲が読めなくなるのを避ける。
+  // 週表示（desktopOnly）は幅に余裕があり、月だけに落とす必要が無い。
+  const compact =
+    view === "day1" || view === "day3" ? formatMonthRange(first, last) : null;
+
   if (first === last) {
     return {
       year,
       main: formatMonthDay(first),
+      compact,
       weekday: { label: weekdayLabel(first), tone: weekdayTone(first) },
     };
   }
@@ -1100,9 +1126,16 @@ function formatRangeLabel(view: CalendarView, anchorKey: string, days: string[])
         ? `${Number(last.slice(8, 10))}日`
         : formatMonthDay(last);
 
-  return { year, main: `${formatMonthDay(first)} – ${tail}`, weekday: null };
+  return { year, main: `${formatMonthDay(first)} – ${tail}`, compact, weekday: null };
 }
 
 function formatMonthDay(dateKey: string): string {
   return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
+}
+
+/** 「8月」。月をまたぐ範囲だけ「8月 – 9月」にする */
+function formatMonthRange(first: string, last: string): string {
+  const firstMonth = `${Number(first.slice(5, 7))}月`;
+  if (first.slice(0, 7) === last.slice(0, 7)) return firstMonth;
+  return `${firstMonth} – ${Number(last.slice(5, 7))}月`;
 }
