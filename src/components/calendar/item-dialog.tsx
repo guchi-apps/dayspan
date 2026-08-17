@@ -12,9 +12,10 @@ import type { WritableCalendar } from "@/types/calendar";
 import { EventForm, type EventDraft } from "./event-form";
 import { ReminderForm, type ReminderDraft } from "./reminder-form";
 import { TaskForm, type TaskDraft } from "./task-form";
+import { TravelForm, type TravelDraft } from "./travel-form";
 import type { TouchedRange } from "./use-calendar-chunks";
 
-export type ItemKind = "event" | "task" | "reminder";
+export type ItemKind = "event" | "task" | "reminder" | "travel";
 
 /**
  * 開く対象。追加では作れる種類ぶんを渡し、画面上で切り替えられるようにする。
@@ -24,12 +25,14 @@ export type ItemDrafts = {
   event?: EventDraft;
   task?: TaskDraft;
   reminder?: ReminderDraft;
+  travel?: TravelDraft;
 };
 
 const KIND_LABELS: { kind: ItemKind; label: string }[] = [
   { kind: "event", label: "予定" },
   { kind: "task", label: "タスク" },
   { kind: "reminder", label: "リマインド" },
+  { kind: "travel", label: "移動" },
 ];
 
 /**
@@ -150,6 +153,17 @@ export function ItemDialog({
             categories={tagCatalog.reminder ?? []}
           />
         )}
+        {/* 移動はタイトルを持たない（出発地と目的地から決まる）。共通の項目のうち
+            タイトルに関わるものは渡さない。 */}
+        {kind === "travel" && drafts.travel && (
+          <TravelForm
+            draft={drafts.travel}
+            placeCatalog={placeCatalog}
+            timeZone={timeZone}
+            onCancel={close}
+            onSaved={finish}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -159,11 +173,14 @@ export function ItemDialog({
 function draftTitle(kind: ItemKind, drafts: ItemDrafts): string {
   if (kind === "event") return drafts.event?.event?.title ?? drafts.event?.title ?? "";
   if (kind === "task") return drafts.task?.task?.title ?? "";
+  // 移動のタイトルは出発地と目的地から決まるため、切り替えで引き継ぐ文字列を持たない。
+  if (kind === "travel") return "";
   return drafts.reminder?.reminder?.title ?? "";
 }
 
 function isEditing(kind: ItemKind, drafts: ItemDrafts): boolean {
   if (kind === "event") return Boolean(drafts.event?.event);
   if (kind === "task") return Boolean(drafts.task?.task);
+  if (kind === "travel") return Boolean(drafts.travel?.travel);
   return Boolean(drafts.reminder?.reminder);
 }

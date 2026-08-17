@@ -24,12 +24,17 @@ const MAX_CANDIDATES = 6;
  * スクロール領域の端で隠れてどこまで候補があるのか分からなくなるため。
  */
 export function LocationInput({
+  id = "event-location",
+  label = "場所",
   value,
   onChange,
   places,
   eventTitle,
   placeDatabaseReady,
 }: {
+  /** 入力欄のid。移動では出発地・目的地の2つが同じ画面に並ぶため、呼び出し側で分ける。 */
+  id?: string;
+  label?: string;
   value: string;
   onChange: (value: string) => void;
   /** Notionの場所DBに登録済みの場所。 */
@@ -147,8 +152,8 @@ export function LocationInput({
   return (
     <div className="flex flex-col gap-2">
       <Input
-        id="event-location"
-        label="場所"
+        id={id}
+        label={label}
         value={value}
         onChange={(event) => change(event.target.value)}
         onFocus={() => setOpen(true)}

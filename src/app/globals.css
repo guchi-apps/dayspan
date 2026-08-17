@@ -27,6 +27,15 @@
   --color-tertiary-container: var(--md-tertiary-container);
   --color-on-tertiary-container: var(--md-on-tertiary-container);
 
+  /* 移動（docs/spec.md §29）。予定の色は利用者がGoogle側で選んだものが入るため、
+     どの色とも重ならない役割色として、案内標識に近い青緑を1色だけ足す。
+     ロール名だけ書いて `--color-travel` を出さないと、Tailwind v4 は `bg-travel` を
+     未定義のユーティリティとして黙って捨てる（issue #171 と同じ落とし穴）。 */
+  --color-travel: var(--md-travel);
+  --color-on-travel: var(--md-on-travel);
+  --color-travel-container: var(--md-travel-container);
+  --color-on-travel-container: var(--md-on-travel-container);
+
   --color-surface: var(--md-surface);
   --color-on-surface: var(--md-on-surface);
   --color-surface-variant: var(--md-surface-variant);
@@ -119,6 +128,11 @@
   --md-tertiary-container: #ffd8e4;
   --md-on-tertiary-container: #31111d;
 
+  --md-travel: #00696d;
+  --md-on-travel: #ffffff;
+  --md-travel-container: #bdeced;
+  --md-on-travel-container: #002021;
+
   --md-error: #b3261e;
   --md-on-error: #ffffff;
   --md-error-container: #f9dedc;
@@ -189,6 +203,11 @@
     --md-on-tertiary: #492532;
     --md-tertiary-container: #633b48;
     --md-on-tertiary-container: #ffd8e4;
+
+    --md-travel: #80d5d7;
+    --md-on-travel: #003739;
+    --md-travel-container: #004f51;
+    --md-on-travel-container: #9cf1f3;
 
     --md-error: #f2b8b5;
     --md-on-error: #601410;

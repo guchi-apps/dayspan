@@ -35,10 +35,12 @@ import type {
   CalendarLoadResult,
   ReminderItem,
   TaskItem,
+  TravelItem,
 } from "@/types/calendar";
+import type { TravelSettings } from "@/services/travel/settings";
 
 import { CalendarGridSkeleton } from "./calendar-skeleton";
-import { dateKeyPlusMinutes, localInputToIso } from "./datetime-fields";
+import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { EventDetailDialog } from "./event-detail-dialog";
 import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
 import { ItemDialog, type ItemDrafts, type ItemKind } from "./item-dialog";
@@ -50,6 +52,8 @@ import { toReminderDraft } from "./reminder-form";
 import { TaskDetailDialog } from "./task-detail-dialog";
 import { toTaskDraft } from "./task-form";
 import { TimeGridView, weekdayLabel, weekdayTone } from "./time-grid-view";
+import { TravelDetailDialog } from "./travel-detail-dialog";
+import { toTravelDraft } from "./travel-form";
 import {
   monthsOfRanges,
   taskRanges,
@@ -64,6 +68,10 @@ const DEFAULT_START_MINUTES = 9 * 60;
 
 // タスクの期限は、その日のうちに片付ける想定の時刻から始める（予定の既定より遅い）。
 const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
+
+// 移動の仮の長さ。押した時点では所要時間が分からないが、出発と到着を同じ時刻にすると
+// 開いた瞬間に入力の注意が出るため、直す前提の長さを置いておく。
+const DEFAULT_TRAVEL_MINUTES = 30;
 
 // 期間の短い順に並べる。同じ並びの中で右へ行くほど広い範囲を見ることになり、
 // 「今いる形式より広く／狭く見たい」がどちら向きに押せばよいか迷わずに済む。
@@ -84,6 +92,7 @@ export function CalendarShell({
   placeCatalogPromise,
   initialRunningActivity,
   activityCalendarIds,
+  travelSettings,
   weekStartsOn,
   timeZone,
   autoRefreshSeconds,
@@ -110,6 +119,8 @@ export function CalendarShell({
    * ここに入っている予定は、時間グリッドでは塗りを落として描き、月表示には出さない。
    */
   activityCalendarIds: string[];
+  /** 移動の既定値（docs/spec.md §29）。予定から移動を足すときの初期値に使う。 */
+  travelSettings: TravelSettings;
   weekStartsOn: number;
   timeZone: string;
   autoRefreshSeconds: number;
@@ -200,6 +211,7 @@ export function CalendarShell({
   const [viewingEvent, setViewingEvent] = useState<CalendarEventItem | null>(null);
   const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
   const [viewingReminder, setViewingReminder] = useState<ReminderItem | null>(null);
+  const [viewingTravel, setViewingTravel] = useState<TravelItem | null>(null);
 
   /**
    * 記録中の帯を押したとき。開始・停止は記録の画面で行う（docs/spec.md §27）。
@@ -215,6 +227,7 @@ export function CalendarShell({
     setViewingEvent(null);
     setViewingTask(null);
     setViewingReminder(null);
+    setViewingTravel(null);
   };
 
   /** 月表示以外の取り直し。ページごと描き直すため、表示中の期間ぶんをすべて取り直す。 */
@@ -366,6 +379,43 @@ export function CalendarShell({
         );
   const openTask = (task: TaskItem) => setViewingTask(task);
   const openReminder = (reminder: ReminderItem) => setViewingReminder(reminder);
+  const openTravel = (travel: TravelItem) => setViewingTravel(travel);
+
+  const editTravel = (travel: TravelItem) => {
+    if (offline) return;
+    setViewingTravel(null);
+    setItemDialog({ initialKind: "travel", drafts: { travel: toTravelDraft(travel, timeZone) } });
+  };
+
+  /**
+   * 予定から移動を足す（docs/spec.md §29）。
+   *
+   * 目的地はその予定の場所、到着時刻は予定の開始時刻を初期値にする。出発地は設定の既定の
+   * 出発地（自宅など）から入れる。押した時点では所要時間が分からないが、出発と到着を同じ時刻に
+   * すると開いた瞬間に「到着が出発より後になるように」と出る。仮の長さを置いてから、
+   * 「所要時間を調べる」か手入力で直してもらう。
+   */
+  const addTravelForEvent = (event: CalendarEventItem) => {
+    if (offline) return;
+    setViewingEvent(null);
+    setItemDialog({
+      initialKind: "travel",
+      drafts: {
+        travel: {
+          origin: travelSettings.defaultOrigin ?? "",
+          destination: event.location ?? "",
+          mode: travelSettings.defaultMode,
+          departAt: isoToLocalInput(
+            new Date(new Date(event.start).getTime() - DEFAULT_TRAVEL_MINUTES * 60_000).toISOString(),
+            timeZone,
+          ),
+          arriveAt: isoToLocalInput(event.start, timeZone),
+          linkedEvent: { id: event.id, calendarId: event.calendarId, endAt: event.end },
+          roundTrip: travelSettings.roundTrip,
+        },
+      },
+    });
+  };
 
   /** 新規作成の初期値。指定の日時から1時間ぶんで開く。 */
   const newEventDraft = (dateKey: string, minutes: number): EventDraft => ({
@@ -486,9 +536,25 @@ export function CalendarShell({
       };
     }
     if (available.reminder) drafts.reminder = { dateMode: "date", date: defaultDayKey };
+    if (available.travel) {
+      // 単独の移動は往復の起点になる予定が無いため、行きだけを作る。
+      drafts.travel = {
+        origin: travelSettings.defaultOrigin ?? "",
+        destination: "",
+        mode: travelSettings.defaultMode,
+        departAt: dateKeyPlusMinutes(defaultDayKey, DEFAULT_START_MINUTES),
+        arriveAt: dateKeyPlusMinutes(defaultDayKey, DEFAULT_START_MINUTES + 30),
+      };
+    }
 
     // 「＋」は予定を足す操作として使われることが多い。作れるなら予定から開く。
-    const initialKind: ItemKind = available.event ? "event" : available.task ? "task" : "reminder";
+    const initialKind: ItemKind = available.event
+      ? "event"
+      : available.task
+        ? "task"
+        : available.reminder
+          ? "reminder"
+          : "travel";
     setItemDialog({ initialKind, drafts });
   };
 
@@ -677,6 +743,7 @@ export function CalendarShell({
           viewingEvent={viewingEvent}
           viewingTask={viewingTask}
           viewingReminder={viewingReminder}
+          viewingTravel={viewingTravel}
           virtual={virtual}
           onVisibleMonthChange={handleVisibleMonthChange}
           onVisibleWeekChange={handleVisibleWeekChange}
@@ -685,10 +752,13 @@ export function CalendarShell({
           onOpenEvent={openEvent}
           onOpenTask={openTask}
           onOpenReminder={openReminder}
+          onOpenTravel={openTravel}
           onEditEvent={editEvent}
           onDuplicateEvent={duplicateEvent}
           onEditTask={editTask}
           onEditReminder={editReminder}
+          onEditTravel={editTravel}
+          onAddTravelForEvent={addTravelForEvent}
           onSelectSlot={(dateKey, minutes) => {
             if (offline) return;
             setQuickDraft(toQuickEventDraft(dateKey, minutes));
@@ -750,6 +820,7 @@ function CalendarBody({
   viewingEvent,
   viewingTask,
   viewingReminder,
+  viewingTravel,
   virtual,
   onVisibleMonthChange,
   onVisibleWeekChange,
@@ -758,10 +829,13 @@ function CalendarBody({
   onOpenEvent,
   onOpenTask,
   onOpenReminder,
+  onOpenTravel,
   onEditEvent,
   onDuplicateEvent,
   onEditTask,
   onEditReminder,
+  onEditTravel,
+  onAddTravelForEvent,
   onSelectSlot,
   onSelectRange,
   onQuickAddOnDay,
@@ -796,6 +870,7 @@ function CalendarBody({
   viewingEvent: CalendarEventItem | null;
   viewingTask: TaskItem | null;
   viewingReminder: ReminderItem | null;
+  viewingTravel: TravelItem | null;
   virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
   onVisibleWeekChange: (weekKey: string) => void;
@@ -804,10 +879,14 @@ function CalendarBody({
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
+  onOpenTravel: (travel: TravelItem) => void;
   onEditEvent: (event: CalendarEventItem) => void;
   onDuplicateEvent: (event: CalendarEventItem) => void;
   onEditTask: (task: TaskItem) => void;
   onEditReminder: (reminder: ReminderItem) => void;
+  onEditTravel: (travel: TravelItem) => void;
+  /** 予定の詳細から移動を足す。目的地・到着時刻はその予定から埋める。 */
+  onAddTravelForEvent: (event: CalendarEventItem) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onSelectRange: (commit: SlotRangeCommit) => void;
   onQuickAddOnDay: (dateKey: string) => void;
@@ -915,6 +994,7 @@ function CalendarBody({
           events={monthEvents}
           tasks={data.tasks}
           reminders={data.reminders}
+          travels={data.travels}
           weekStartsOn={weekStartsOn}
           utils={utils}
           scrollTarget={scrollTarget}
@@ -927,6 +1007,7 @@ function CalendarBody({
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
           onOpenReminder={onOpenReminder}
+          onOpenTravel={onOpenTravel}
         />
       ) : (
         <TimeGridView
@@ -934,12 +1015,14 @@ function CalendarBody({
           events={data.events}
           tasks={data.tasks}
           reminders={data.reminders}
+          travels={data.travels}
           runningActivity={runningActivity}
           activityCalendarIds={activityCalendars}
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
           onOpenReminder={onOpenReminder}
+          onOpenTravel={onOpenTravel}
           onOpenActivity={onOpenActivity}
           onSelectSlot={onSelectSlot}
           onSelectRange={onSelectRange}
@@ -955,6 +1038,8 @@ function CalendarBody({
           event: !offline && data.calendars.length > 0,
           task: !offline && data.notionReady,
           reminder: !offline && data.reminderReady,
+          // 移動の本体はDaySpanのDBにあるため、外部連携が済んでいなくても作れる。
+          travel: !offline,
         }}
         onAdd={onAdd}
       />
@@ -993,6 +1078,7 @@ function CalendarBody({
           onClose={onCloseDialogs}
           onEdit={() => onEditEvent(viewingEvent)}
           onDuplicate={() => onDuplicateEvent(viewingEvent)}
+          onAddTravel={() => onAddTravelForEvent(viewingEvent)}
           onDeleted={handleSaved}
         />
       )}
@@ -1007,6 +1093,17 @@ function CalendarBody({
           onEdit={() => onEditTask(viewingTask)}
           onDeleted={handleSaved}
           onToggleDone={handleToggleTaskDone}
+        />
+      )}
+
+      {viewingTravel && (
+        <TravelDetailDialog
+          travel={viewingTravel}
+          timeZone={timeZone}
+          readOnly={offline}
+          onClose={onCloseDialogs}
+          onEdit={() => onEditTravel(viewingTravel)}
+          onDeleted={handleSaved}
         />
       )}
 
@@ -1044,7 +1141,7 @@ function AddButton({
   available: Record<ItemKind, boolean>;
   onAdd: (available: Record<ItemKind, boolean>) => void;
 }) {
-  if (!available.event && !available.task && !available.reminder) return null;
+  if (!available.event && !available.task && !available.reminder && !available.travel) return null;
 
   return (
     <div className="fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-30 md:bottom-6">

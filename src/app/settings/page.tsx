@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
+  ArrowRight,
   CalendarDays,
   ChevronRight,
   History,
@@ -19,6 +20,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { weekStartLabel } from "@/lib/week-start";
+import { TRAVEL_MODE_LABELS } from "@/types/calendar";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
@@ -85,6 +87,17 @@ export default async function SettingsPage() {
             }
           />
         )}
+        {/* 移動の本体はDaySpanのDBにあるため、Google・Notionが未接続でも使える。常に出す。 */}
+        <MenuItem
+          href="/settings/travel"
+          icon={ArrowRight}
+          label="移動"
+          value={
+            uiSetting?.travelDefaultOrigin
+              ? `${uiSetting.travelDefaultOrigin}から / ${TRAVEL_MODE_LABELS[uiSetting.travelDefaultMode]}`
+              : `既定の交通手段: ${TRAVEL_MODE_LABELS[uiSetting?.travelDefaultMode ?? "TRAIN"]}`
+          }
+        />
         {/* 記録中の1件はGoogle未接続でも出せるため、Google接続の有無にかかわらず出す。 */}
         <MenuItem
           href="/settings/widget"

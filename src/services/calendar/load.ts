@@ -7,11 +7,13 @@ import { createNotionClient } from "@/services/notion/client";
 import { listGarbageDaysInRange } from "@/services/notion/garbage";
 import { listTasksInRange } from "@/services/notion/tasks";
 import { listRemindersInRange } from "@/services/notion/reminders";
+import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
   ReminderItem,
   TaskItem,
+  TravelItem,
   WritableCalendar,
 } from "@/types/calendar";
 
@@ -70,15 +72,27 @@ export async function loadCalendarData(
   userId: string,
   range: { timeMin: string; timeMax: string },
 ): Promise<CalendarLoadResult> {
-  const [events, notion] = await Promise.all([
+  // 移動はDaySpanのDBにあるため、外部APIの往復は増えない。Google・Notionと並行に読む。
+  const [events, notion, travelPlans] = await Promise.all([
     loadGoogleEvents(userId, range),
     loadNotionItems(userId, range),
+    listTravelsInRange(userId, range),
   ]);
 
+  // 書き出した移動はGoogleからも予定として返ってくる。同じものを予定と移動の2つで描かないよう、
+  // 書き出し先のIDと一致する予定を落とす（docs/spec.md §29）。
+  const exportedEventIds = new Set(
+    travelPlans.map((plan) => plan.googleEventId).filter((id): id is string => Boolean(id)),
+  );
+  const travels: TravelItem[] = travelPlans.map(toTravelItem);
+
   return {
-    events: events.items,
+    events: exportedEventIds.size
+      ? events.items.filter((item) => !exportedEventIds.has(item.id))
+      : events.items,
     tasks: notion.tasks,
     reminders: notion.reminders,
+    travels,
     calendars: events.calendars,
     notionReady: notion.ready,
     reminderReady: notion.reminderReady,
