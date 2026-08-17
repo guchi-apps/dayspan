@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { CalendarClock, Copy, MapPin, Pencil, RotateCw, Trash2, Users } from "lucide-react";
+import { ArrowRight, CalendarClock, Copy, MapPin, Pencil, RotateCw, Trash2, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +26,7 @@ export function EventDetailDialog({
   onClose,
   onEdit,
   onDuplicate,
+  onAddTravel,
   onDeleted,
 }: {
   event: CalendarEventItem;
@@ -35,6 +36,8 @@ export function EventDetailDialog({
   onClose: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
+  /** この予定への移動を作る（docs/spec.md §29）。終日予定では出さない。 */
+  onAddTravel: () => void;
   /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onDeleted: (touched: TouchedRange[] | null) => void;
 }) {
@@ -62,6 +65,17 @@ export function EventDetailDialog({
     setOpen(false);
     setTimeout(onDuplicate, 150);
   };
+
+  const addTravel = () => {
+    setOpen(false);
+    setTimeout(onAddTravel, 150);
+  };
+
+  /*
+   * 移動を足せるのは時刻のある予定だけ。終日予定には「何時までに着けばよいか」が無く、
+   * 出発時刻を逆算する起点が決まらない。
+   */
+  const canAddTravel = !event.allDay;
 
   const deleted = (touched: TouchedRange[] | null) => {
     setOpen(false);
@@ -159,6 +173,23 @@ export function EventDetailDialog({
           )}
 
           {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
+
+          {/*
+            移動を足す導線はここに置く。アイコンだけの操作にすると、矢印が何を指すのか
+            押してみるまで分からない。目的地・到着時刻をこの予定から埋めることも添える。
+          */}
+          {canAddTravel && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-fit bg-travel-container text-on-travel-container"
+              disabled={readOnly}
+              onClick={addTravel}
+            >
+              <ArrowRight className="size-4" />
+              移動を足す
+            </Button>
+          )}
         </div>
 
         <DialogFooter>

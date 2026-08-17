@@ -22,6 +22,7 @@ import { listActivityCalendarIds } from "@/services/activity/settings";
 import { loadCalendarData } from "@/services/calendar/load";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { loadTagCatalog } from "@/services/notion/tag-options";
+import { getTravelSettings } from "@/services/travel/settings";
 
 export default async function CalendarPage({
   searchParams,
@@ -77,9 +78,12 @@ export default async function CalendarPage({
   // 記録中の活動（docs/spec.md §27）。まだGoogleに予定が無いぶんを時間グリッドへ帯として描く。
   // 活動記録の保存先カレンダーは、記録から作られた予定を描き分けるのに使う（issue #241）。
   // どちらもDaySpanのDBだけで完結するため、外部APIを待たずにここで解決しておく。
-  const [runningActivity, activityCalendarIds] = await Promise.all([
+  // 移動の既定値（docs/spec.md §29）も同じくDaySpanのDBだけで完結する。
+  // 予定から移動を足すときの初期値に使うため、画面と一緒に渡しておく。
+  const [runningActivity, activityCalendarIds, travelSettings] = await Promise.all([
     getRunningActivity(user.id),
     listActivityCalendarIds(user.id),
+    getTravelSettings(user.id),
   ]);
 
   return (
@@ -93,6 +97,7 @@ export default async function CalendarPage({
       placeCatalogPromise={placeCatalogPromise}
       initialRunningActivity={runningActivity}
       activityCalendarIds={activityCalendarIds}
+      travelSettings={travelSettings}
       weekStartsOn={weekStartsOn}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
       autoRefreshSeconds={uiSetting?.autoRefreshSeconds ?? 300}

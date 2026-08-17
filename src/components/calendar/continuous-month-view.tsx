@@ -12,7 +12,13 @@ import {
 
 import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
-import type { CalendarEventItem, CalendarItem, ReminderItem, TaskItem } from "@/types/calendar";
+import type {
+  CalendarEventItem,
+  CalendarItem,
+  ReminderItem,
+  TaskItem,
+  TravelItem,
+} from "@/types/calendar";
 
 import { eventColors } from "./calendar-color";
 import {
@@ -24,6 +30,7 @@ import {
   type TaskDateField,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
+import { TravelMark } from "./travel-mark";
 import { useLongPress } from "./use-long-press";
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
 import { useWeekZoom } from "./use-week-zoom";
@@ -126,6 +133,7 @@ export function ContinuousMonthView({
   events,
   tasks,
   reminders,
+  travels,
   weekStartsOn,
   utils,
   scrollTarget,
@@ -138,11 +146,13 @@ export function ContinuousMonthView({
   onOpenEvent,
   onOpenTask,
   onOpenReminder,
+  onOpenTravel,
 }: {
   weeks: string[][];
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
+  travels: TravelItem[];
   weekStartsOn: number;
   utils: CalendarDateUtils;
   /**
@@ -171,6 +181,7 @@ export function ContinuousMonthView({
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
+  onOpenTravel: (travel: TravelItem) => void;
 }) {
   // ピンチ直後に残るclickやピンチ中の長押しを無視するためのフラグ。use-week-zoom.ts の
   // consumePinchClick を、長押しタイマーの発火時にも古い判定値を読まないようrefで持つ
@@ -329,6 +340,13 @@ export function ContinuousMonthView({
       push(dateKey, dateKey, reminder);
     }
 
+    // 移動は日をまたぐこともある（夜行バス・飛行機）。予定と同じく、かかる日すべてに置く。
+    for (const travel of travels) {
+      const startKey = utils.itemDateKey(travel.start);
+      const endKey = utils.itemDateKey(travel.end);
+      push(startKey, endKey < startKey ? startKey : endKey, travel);
+    }
+
     return rawByWeek.map((raw) => {
       raw.sort((a, b) => {
         // 帯（日をまたぐ・終日）を先に置く。後から来た1日ぶんの予定が、
@@ -381,7 +399,7 @@ export function ContinuousMonthView({
 
       return { segments, hiddenByColumn };
     });
-  }, [events, tasks, reminders, utils, weeks, weekHeight]);
+  }, [events, tasks, reminders, travels, utils, weeks, weekHeight]);
 
   /** その高さにある週の先頭日。余白の中でも、窓の外の週として答える。 */
   const weekKeyAt = useCallback(
@@ -601,7 +619,7 @@ export function ContinuousMonthView({
                                 gridRow: segment.lane + 1,
                               }}
                             >
-                              {renderChip(segment, utils, onOpenEvent, onOpenTask, onOpenReminder)}
+                              {renderChip(segment, utils, onOpenEvent, onOpenTask, onOpenReminder, onOpenTravel)}
                             </div>
                           ))}
 
@@ -642,6 +660,7 @@ function renderChip(
   onOpenEvent: (event: CalendarEventItem) => void,
   onOpenTask: (task: TaskItem) => void,
   onOpenReminder: (reminder: ReminderItem) => void,
+  onOpenTravel: (travel: TravelItem) => void,
 ) {
   const item = segment.item;
 
@@ -659,6 +678,17 @@ function renderChip(
 
   if (item.kind === "reminder") {
     return <ReminderChip reminder={item} utils={utils} onOpen={() => onOpenReminder(item)} />;
+  }
+
+  if (item.kind === "travel") {
+    return (
+      <TravelChip
+        travel={item}
+        utils={utils}
+        continuesBefore={segment.continuesBefore}
+        onOpen={() => onOpenTravel(item)}
+      />
+    );
   }
 
   return (
@@ -799,6 +829,41 @@ function TaskChip({
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(date)}</span>
       )}
       <span className="clip-nowrap">{task.title}</span>
+    </button>
+  );
+}
+
+/**
+ * 移動は塗らず、矢印の印と行き先だけを出す（docs/spec.md §29）。
+ *
+ * 月表示で1日に置ける件数は限られている。移動は予定に1件ずつ付くため、予定と同じように
+ * 塗った帯にすると、その日に何があるかを読む前に枠が埋まる。出発地まで出さないのも同じ理由で、
+ * 「どこへ向かうか」が分かれば予定と結び付けられる。
+ */
+function TravelChip({
+  travel,
+  utils,
+  continuesBefore,
+  onOpen,
+}: {
+  travel: TravelItem;
+  utils: CalendarDateUtils;
+  continuesBefore: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-travel/50 bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
+      title={`${travel.title}（${utils.formatTime(travel.start)}発）`}
+    >
+      <TravelMark className="size-2 text-travel" />
+      {/* 出発時刻は実際に出発する日にだけ添える。日をまたいだ続きの側に出すと、その日に出発したように読める。 */}
+      {!continuesBefore && (
+        <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(travel.start)}</span>
+      )}
+      <span className="clip-nowrap">{travel.destination}</span>
     </button>
   );
 }
