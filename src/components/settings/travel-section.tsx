@@ -1,0 +1,181 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
+import type { TravelSettings } from "@/services/travel/settings";
+import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type WritableCalendar } from "@/types/calendar";
+
+/** 書き出し先を選ぶ欄で「指定しない」を表す値。Radixのセレクトは空文字を値にできない。 */
+const DEFAULT_CALENDAR_VALUE = "__default__";
+
+/**
+ * 移動の既定値（docs/spec.md §29）。
+ *
+ * 項目ごとではなく利用者につき1組にする。移動は予定に1件ずつ付くもので、
+ * 予定ごとに出発地や交通手段を選ばせると、そのほとんどが同じ値になるため。
+ */
+export function TravelSection({
+  settings,
+  calendars,
+}: {
+  settings: TravelSettings;
+  calendars: WritableCalendar[];
+}) {
+  const router = useRouter();
+
+  const [value, setValue] = useState(settings);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const defaultCalendarName =
+    calendars.find((calendar) => calendar.isCreateDefault)?.name ?? calendars[0]?.name;
+
+  /**
+   * 変更を送る。応答を待ってから欄を動かすと、選んだのに変わらない時間ができるため
+   * 先に反映し、失敗したら元へ戻す（活動記録の設定と同じ扱い）。
+   */
+  const send = async (patch: Partial<TravelSettings>) => {
+    const previous = value;
+    setValue({ ...value, ...patch });
+    setBusy(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/settings/travel", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+
+      if (!response.ok) {
+        setError((body?.message as string) ?? "設定を保存できませんでした。");
+        setValue(previous);
+        return;
+      }
+
+      router.refresh();
+    } catch {
+      setError("設定を保存できませんでした。");
+      setValue(previous);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-5">
+        {error && (
+          <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
+            {error}
+          </p>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="travel-origin">既定の出発地</Label>
+          {/* 打ち終えて欄から離れた時点で保存する。1文字ごとに送ると、打っている途中が保存される。 */}
+          <Input
+            id="travel-origin"
+            className="h-10"
+            placeholder="自宅"
+            defaultValue={value.defaultOrigin ?? ""}
+            disabled={busy}
+            onBlur={(event) => {
+              const next = event.target.value.trim() || null;
+              if (next !== value.defaultOrigin) void send({ defaultOrigin: next });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+          />
+          <p className="type-body-small text-on-surface-variant">
+            予定から移動を足すとき、出発地の初期値になります。
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Label>既定の交通手段</Label>
+          <div className="flex flex-wrap gap-2">
+            {TRAVEL_MODES.map((mode) => (
+              <Button
+                key={mode}
+                type="button"
+                variant={mode === value.defaultMode ? "secondary" : "outline"}
+                size="sm"
+                className={cn(
+                  "rounded-full",
+                  mode === value.defaultMode && "bg-travel-container text-on-travel-container",
+                )}
+                disabled={busy}
+                onClick={() => send({ defaultMode: mode })}
+              >
+                {TRAVEL_MODE_LABELS[mode]}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <label className="flex min-h-11 items-center justify-between gap-4">
+          <span className="flex flex-col">
+            <span className="type-body-large">帰りの移動も作る</span>
+            <span className="type-body-small text-on-surface-variant">
+              予定の終了時刻に出発する移動を、行きと一緒に作ります。
+            </span>
+          </span>
+          <Switch
+            checked={value.roundTrip}
+            disabled={busy}
+            onCheckedChange={(checked) => send({ roundTrip: checked })}
+          />
+        </label>
+
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="travel-calendar">Googleカレンダーへの書き出し先</Label>
+
+          <Select
+            value={value.calendarId ?? DEFAULT_CALENDAR_VALUE}
+            disabled={busy || calendars.length === 0}
+            onValueChange={(next) =>
+              send({ calendarId: next === DEFAULT_CALENDAR_VALUE ? null : next })
+            }
+          >
+            <SelectTrigger id="travel-calendar" size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DEFAULT_CALENDAR_VALUE}>
+                既定の保存先{defaultCalendarName ? `（${defaultCalendarName}）` : ""}
+              </SelectItem>
+              {calendars.map((calendar) => (
+                <SelectItem key={calendar.calendarId} value={calendar.calendarId}>
+                  {calendar.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <p className="type-body-small text-on-surface-variant">
+            {calendars.length === 0
+              ? "Google Calendarを接続すると、移動を他の端末のカレンダーからも見られるようになります。接続していない間、移動はDaySpanの中だけに出ます。"
+              : "移動はDaySpanが一次情報源です。ここへ書き出した予定を Google 側で直しても、DaySpanで保存し直すと元に戻ります。"}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

@@ -31,6 +31,7 @@ model User {
   activityPresets  ActivityPreset[]
   runningActivity  RunningActivity?
   widgetToken      WidgetToken?
+  travelPlans      TravelPlan[]
 }
 
 // --- Google Calendar連携 ---
@@ -160,6 +161,15 @@ model UiSetting {
   // カレンダー名・色はGoogle側が一次情報源のため持たない。
   activityCalendarId String?
 
+  // 移動の既定値（docs/spec.md §29）。活動記録の保存先と同じく、項目ごとではなく
+  // 利用者につき1組にする。移動のたびに同じ出発地・交通手段を選び直さずに済ませるため。
+  travelDefaultOrigin String?
+  travelDefaultMode   TravelMode @default(TRAIN)
+  // 行きだけ作られても帰りは手で入れ直すことになるため、往復を既定にする。
+  travelRoundTrip     Boolean    @default(true)
+  // 移動をGoogle Calendarへ書き出す先。未設定なら予定作成の既定の保存先へ入れる。
+  travelCalendarId    String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -204,6 +214,63 @@ model RunningActivity {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// --- 移動 ---
+// 出発地から目的地までの移動（docs/spec.md §29）。
+//
+// Google Calendarの予定はタイトル・場所・説明しか持てず、出発地と目的地を別々の欄には
+// 入れられない。移動に固有の項目を持たせるため、本体はここに置く。
+// Google側へは写しを書き出し、他の端末のカレンダーからも見えるようにする（一次情報源はこちら）。
+
+enum TravelMode {
+  TRAIN
+  CAR
+  BUS
+  WALK
+  BICYCLE
+  PLANE
+  OTHER
+}
+
+/// 所要時間の出どころ。AIの見積もりは目安でしかないため、手で入れた値と区別して示す。
+/// 将来Routes APIなどへ差し替えるときも、既存の記録がどちらで入ったか分かるようにする。
+enum TravelEstimateSource {
+  MANUAL
+  AI
+}
+
+model TravelPlan {
+  id     String @id @default(cuid())
+  userId String
+
+  origin      String
+  destination String
+  mode        TravelMode @default(TRAIN)
+
+  departAt DateTime
+  arriveAt DateTime
+
+  note           String?              @db.Text
+  estimateSource TravelEstimateSource @default(MANUAL)
+
+  // 元になった予定。往路・復路の2件が同じ予定を指す。予定側から移動の有無を引くために持つ。
+  linkedEventId    String?
+  linkedCalendarId String?
+  returnLeg        Boolean @default(false)
+
+  // Googleへ書き出した予定。書き出しに失敗した場合はnullのまま残す（移動そのものは失われない）。
+  googleCalendarId String?
+  googleEventId    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, departAt])
+  // 書き出した予定はGoogleからも取得される。二重に描かないよう、取得した予定のIDで引いて落とす。
+  @@index([userId, googleEventId])
 }
 
 // --- iPhoneウィジェット連携 ---

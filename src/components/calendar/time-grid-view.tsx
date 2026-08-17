@@ -5,7 +5,7 @@ import { memo, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { eventColors, subduedEventColors } from "./calendar-color";
 import type { RunningActivityItem } from "@/types/activity";
-import type { CalendarEventItem, ReminderItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, ReminderItem, TaskItem, TravelItem } from "@/types/calendar";
 
 import { ActivityMark } from "./activity-mark";
 import { RunningActivityBlock } from "./running-activity-block";
@@ -23,6 +23,7 @@ import {
   type TaskOccurrence,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
+import { TravelBlock } from "./travel-block";
 import { SWIPE_SNAP_EASING, SWIPE_SNAP_MS, useDaySwipe } from "./use-day-swipe";
 import {
   useAllDayDrag,
@@ -59,12 +60,14 @@ export function TimeGridView({
   events,
   tasks,
   reminders,
+  travels,
   runningActivity,
   activityCalendarIds,
   utils,
   onOpenEvent,
   onOpenTask,
   onOpenReminder,
+  onOpenTravel,
   onOpenActivity,
   onSelectSlot,
   onSelectRange,
@@ -77,6 +80,7 @@ export function TimeGridView({
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
+  travels: TravelItem[];
   /** 記録中の活動。まだGoogleに予定は無く、開始時刻から現在時刻までを画面上で伸ばす。 */
   runningActivity: RunningActivityItem | null;
   /**
@@ -89,6 +93,7 @@ export function TimeGridView({
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
+  onOpenTravel: (travel: TravelItem) => void;
   /** 記録中の枠を押したとき。記録の画面（停止・切り替え）を開く。 */
   onOpenActivity: () => void;
   /** 空き時間の選択。minutes は 0:00 からの分数（30分単位に丸める）。 */
@@ -307,6 +312,7 @@ export function TimeGridView({
                 events={events}
                 tasks={tasks}
                 reminders={reminders}
+                travels={travels}
                 runningActivity={runningActivity}
                 activityCalendarIds={activityCalendarIds}
                 utils={utils}
@@ -318,6 +324,7 @@ export function TimeGridView({
                 onOpenEvent={onOpenEvent}
                 onOpenTask={onOpenTask}
                 onOpenReminder={onOpenReminder}
+                onOpenTravel={onOpenTravel}
                 onOpenActivity={onOpenActivity}
                 onSelectSlot={selectSlot}
                 onStartSelect={startSelect}
@@ -417,6 +424,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   events,
   tasks,
   reminders,
+  travels,
   runningActivity,
   activityCalendarIds,
   utils,
@@ -427,6 +435,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onOpenEvent,
   onOpenTask,
   onOpenReminder,
+  onOpenTravel,
   onOpenActivity,
   onSelectSlot,
   onStartSelect,
@@ -437,6 +446,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
+  travels: TravelItem[];
   runningActivity: RunningActivityItem | null;
   activityCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
@@ -452,6 +462,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
+  onOpenTravel: (travel: TravelItem) => void;
   onOpenActivity: () => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onStartSelect: (event: React.PointerEvent, dayIndex: number) => void;
@@ -476,6 +487,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
           onOpenReminder={onOpenReminder}
+          onOpenTravel={onOpenTravel}
           onOpenActivity={onOpenActivity}
           onSelectSlot={onSelectSlot}
           onStartSelect={onStartSelect}
@@ -488,6 +500,11 @@ const DayColumnsPane = memo(function DayColumnsPane({
             .filter((occurrence) => occurrence.hasTime)}
           reminders={reminders.filter(
             (reminder) => reminder.hasTime && utils.itemDateKey(reminder.date) === dateKey,
+          )}
+          // 日をまたぐ移動は、かかっている日すべての列に置く（予定と同じ扱い）。
+          travels={travels.filter(
+            (travel) =>
+              utils.itemDateKey(travel.start) <= dateKey && dateKey <= utils.itemDateKey(travel.end),
           )}
         />
       ))}
@@ -502,6 +519,7 @@ function DayColumn({
   events,
   taskMarks,
   reminders,
+  travels,
   runningActivity,
   activityCalendarIds,
   utils,
@@ -512,6 +530,7 @@ function DayColumn({
   onOpenEvent,
   onOpenTask,
   onOpenReminder,
+  onOpenTravel,
   onOpenActivity,
   onSelectSlot,
   onStartSelect,
@@ -523,6 +542,7 @@ function DayColumn({
   /** この日・この時刻に置くタスクの枠。期限と予定日はそれぞれ別の枠になる。 */
   taskMarks: TaskOccurrence[];
   reminders: ReminderItem[];
+  travels: TravelItem[];
   runningActivity: RunningActivityItem | null;
   activityCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
@@ -538,6 +558,7 @@ function DayColumn({
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
+  onOpenTravel: (travel: TravelItem) => void;
   onOpenActivity: () => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onStartSelect: (event: React.PointerEvent, dayIndex: number) => void;
@@ -617,6 +638,32 @@ function DayColumn({
           }}
         />
       )}
+
+      {/*
+        移動は予定より先に置く。予定の重なり計算（layoutOverlaps）には混ぜず、列を分けない。
+        移動は予定に付随するもので、横に並べると予定の幅がそのぶん狭くなるため（docs/spec.md §29）。
+        重なったときに読みたいのは予定のほうなので、移動を背面に置く。
+      */}
+      {travels.map((travel) => {
+        const startsToday = utils.itemDateKey(travel.start) === dateKey;
+        const endsToday = utils.itemDateKey(travel.end) === dateKey;
+        const startMinutes = startsToday ? utils.minutesFromMidnight(travel.start) : 0;
+        const endMinutes = endsToday ? utils.minutesFromMidnight(travel.end) : MINUTES_PER_DAY;
+
+        return (
+          <TravelBlock
+            key={travel.id}
+            travel={travel}
+            top={offsetOf(startMinutes)}
+            height={Math.max(offsetOf(endMinutes - startMinutes), MIN_EVENT_HEIGHT)}
+            timeText={`${utils.formatTime(travel.start)}–${utils.formatTime(travel.end)}`}
+            onOpen={() => {
+              if (onConsumeDragClick()) return;
+              onOpenTravel(travel);
+            }}
+          />
+        );
+      })}
 
       {positioned.map(({ event, column, columns }) => {
         if (isDraggedAway(event.id)) return null;

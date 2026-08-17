@@ -81,7 +81,63 @@ export type ReminderItem = {
   url: string | null;
 };
 
-export type CalendarItem = CalendarEventItem | TaskItem | ReminderItem;
+/** 交通手段。Prismaの TravelMode と同じ並びにする。 */
+export const TRAVEL_MODES = [
+  "TRAIN",
+  "CAR",
+  "BUS",
+  "WALK",
+  "BICYCLE",
+  "PLANE",
+  "OTHER",
+] as const;
+
+export type TravelMode = (typeof TRAVEL_MODES)[number];
+
+export const TRAVEL_MODE_LABELS: Record<TravelMode, string> = {
+  TRAIN: "電車",
+  CAR: "車",
+  BUS: "バス",
+  WALK: "徒歩",
+  BICYCLE: "自転車",
+  PLANE: "飛行機",
+  OTHER: "その他",
+};
+
+export function isTravelMode(value: unknown): value is TravelMode {
+  return typeof value === "string" && (TRAVEL_MODES as readonly string[]).includes(value);
+}
+
+/**
+ * 移動（docs/spec.md §29）。出発地・目的地・交通手段はGoogle Calendarの予定には入らないため、
+ * 本体はDaySpanのDBにあり、Googleへは写しを書き出す。
+ */
+export type TravelItem = {
+  kind: "travel";
+  id: string;
+  /**
+   * 表示名（「自宅 → 渋谷」）。出発地・目的地から組み立てた文字列を持つのは、
+   * 並び順や検索のように種類を問わず名前だけを見る処理から、移動だけ別扱いにしないため。
+   */
+  title: string;
+  origin: string;
+  destination: string;
+  mode: TravelMode;
+  /** ISO 8601。移動は必ず時刻を持つ（終日の移動という概念が無い）。 */
+  start: string;
+  end: string;
+  note: string | null;
+  /** 所要時間がAIの見積もりかどうか。目安であることを画面で示すために持つ。 */
+  estimated: boolean;
+  /** 元になった予定。予定側から「移動を足す」の済み・未済を判断するために持つ。 */
+  linkedEventId: string | null;
+  /** 復路かどうか。同じ予定から2件作られたときの並び順・表示に使う。 */
+  returnLeg: boolean;
+  /** Googleへ書き出せているか。未設定・失敗のときは画面で理由を示す。 */
+  exported: boolean;
+};
+
+export type CalendarItem = CalendarEventItem | TaskItem | ReminderItem | TravelItem;
 
 /** 予定の保存先として選べるカレンダー。 */
 export type WritableCalendar = {
@@ -95,6 +151,7 @@ export type CalendarLoadResult = {
   events: CalendarEventItem[];
   tasks: TaskItem[];
   reminders: ReminderItem[];
+  travels: TravelItem[];
   calendars: WritableCalendar[];
   notionReady: boolean;
   /** 日付リマインドDBが設定済みかどうか。追加画面にリマインドを出してよいかの判断に使う。 */

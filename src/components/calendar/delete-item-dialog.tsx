@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import type { CalendarEventItem, ReminderItem, TaskItem } from "@/types/calendar";
+import type { CalendarEventItem, ReminderItem, TaskItem, TravelItem } from "@/types/calendar";
 
 import { readErrorMessage } from "./response-error";
 import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
@@ -23,7 +23,8 @@ import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 export type DeletableItem =
   | { kind: "event"; event: CalendarEventItem }
   | { kind: "task"; task: TaskItem }
-  | { kind: "reminder"; reminder: ReminderItem };
+  | { kind: "reminder"; reminder: ReminderItem }
+  | { kind: "travel"; travel: TravelItem };
 
 /** 繰り返し予定をどこまで消すか。Google Calendarの画面と同じ3通り。 */
 type EventDeleteScope = "single" | "following" | "all";
@@ -149,6 +150,7 @@ const TITLES: Record<DeletableItem["kind"], string> = {
   event: "予定を削除しますか？",
   task: "タスクを削除しますか？",
   reminder: "日付リマインドを削除しますか？",
+  travel: "移動を削除しますか？",
 };
 
 /** 何がどこまで消えるかを1文で示す。戻せるかどうかは保存先によって違うため必ず添える。 */
@@ -169,6 +171,14 @@ function describe(item: DeletableItem): string {
     return `「${item.task.title}」をNotionのゴミ箱へ移します。${recurring}Notionのゴミ箱から元に戻せます。`;
   }
 
+  if (item.kind === "travel") {
+    // Googleへ書き出してある移動は、そちらの予定も一緒に消える。往復のもう片方は残る。
+    const exported = item.travel.exported
+      ? "Googleカレンダーへ書き出した予定も削除します。"
+      : "";
+    return `「${item.travel.title}」を削除します。${exported}元に戻せません。`;
+  }
+
   // 毎年の項目はカレンダー上の各年へ展開されている。元ページを消すとすべての年から消える。
   const annual = item.reminder.annual ? "毎年の項目のため、すべての年から消えます。" : "";
   return `「${item.reminder.title}」をNotionのゴミ箱へ移します。${annual}Notionのゴミ箱から元に戻せます。`;
@@ -181,6 +191,9 @@ function deleteUrl(item: DeletableItem, scope: EventDeleteScope): string {
   }
   if (item.kind === "task") {
     return `/api/tasks/${encodeURIComponent(item.task.id)}`;
+  }
+  if (item.kind === "travel") {
+    return `/api/travels/${encodeURIComponent(item.travel.id)}`;
   }
   // 毎年の項目を展開した回のIDは元ページを指さない。宛先には pageId を使う。
   return `/api/reminders/${encodeURIComponent(item.reminder.pageId)}`;
@@ -200,6 +213,10 @@ function touchedRanges(item: DeletableItem, scope: EventDeleteScope): TouchedRan
   if (item.kind === "task") {
     // 期限も予定日も無いタスクはカレンダーに出ないため、取り直す期間もない。
     return taskRanges(item.task);
+  }
+
+  if (item.kind === "travel") {
+    return [{ start: item.travel.start, end: item.travel.end }];
   }
 
   if (item.reminder.annual) return null;

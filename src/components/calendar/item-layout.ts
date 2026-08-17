@@ -196,7 +196,7 @@ export function createCalendarDateUtils(timeZone: string) {
 
   const itemSortTime = ({ item, taskField }: PlacedItem): number => {
     if (isAllDayItem(item, taskField)) return -1;
-    if (item.kind === "event") return minutesFromMidnight(item.start);
+    if (item.kind === "event" || item.kind === "travel") return minutesFromMidnight(item.start);
     if (item.kind === "task") {
       const { date } = taskDateOf(item, taskField ?? "due");
       return date ? minutesFromMidnight(date) : -1;
@@ -285,6 +285,8 @@ export function createCalendarDateUtils(timeZone: string) {
 export function isAllDayItem(item: CalendarItem, taskField: TaskDateField = "due"): boolean {
   if (item.kind === "event") return item.allDay;
   if (item.kind === "reminder") return !item.hasTime;
+  // 移動は必ず出発時刻と到着時刻を持つ。終日の移動という形は作らせない。
+  if (item.kind === "travel") return false;
   return !taskDateOf(item, taskField).hasTime;
 }
 

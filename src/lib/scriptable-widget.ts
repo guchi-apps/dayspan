@@ -56,6 +56,34 @@ export function toWebAppUrl(origin: string): string {
 }
 
 /**
+ * ウィジェットを押したときに開くURL。設定画面の案内とコピー用に使う。
+ *
+ * 台本の中でも同じ組み立てをしている（`OPEN_URL`）。iOSのウィジェット編集画面
+ * （長押し ▸ ウィジェットを編集）の `URL` 欄へ入れる値がこれで、そこは利用者が手で
+ * 入力する欄のため、ホスト名を打ち間違えても気付ける場所が実機のウィジェット（何も出ない）
+ * しかない。台本と同じく、値はこちらで作って渡す。
+ *
+ * `app` が null になるのは `http` のアドレス（LAN経由の開発サーバー等）で開いたとき。
+ * httpのサイトはWebアプリとしてホーム画面へ追加できず、`webapp://` の宛先になりようがない。
+ */
+export function buildWidgetOpenUrls(origin: string): { app: string | null; browser: string } {
+  const webApp = toWebAppUrl(origin);
+
+  return {
+    app: webApp ? `${webApp}${WIDGET_OPEN_PATH}` : null,
+    browser: `${origin}${WIDGET_OPEN_PATH}`,
+  };
+}
+
+/**
+ * 開く先のパス。記録の画面。
+ *
+ * `webapp://` ではiOSがパスを無視して最初の画面から開くが、ブラウザで開くときはこのパスが効く。
+ * 同じ組み立てで両方をまかなうため、どちらにも付ける。
+ */
+const WIDGET_OPEN_PATH = "/activity";
+
+/**
  * JavaScriptの文字列リテラルの中身として安全な形にする。
  *
  * 差し込む値はどれも `"..."` の中へ入る。originは Host ヘッダーから組み立てているため、
