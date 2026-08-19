@@ -282,7 +282,7 @@ export function ActivityScreen({
         </div>
       </div>
 
-      <BottomNav current="activity" activityRunning={running !== null} />
+      <BottomNav current="activity" activityRunning={running !== null} timeZone={timeZone} />
     </div>
   );
 }
