@@ -3,7 +3,16 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useOffline } from "next/offline";
-import { Suspense, use, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
+import {
+  Suspense,
+  use,
+  useEffect,
+  useMemo,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
@@ -26,6 +35,7 @@ import {
   VIRTUAL_MONTHS_AROUND,
   type CalendarView,
 } from "@/lib/calendar-range";
+import { rememberCalendarView } from "@/lib/calendar-view-memory";
 import { cn } from "@/lib/utils";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { TagCatalog } from "@/services/notion/tag-options";
@@ -138,6 +148,14 @@ export function CalendarShell({
   const [windowLoading, setWindowLoading] = useState(false);
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
 
+  // いま描いている表示形式・日付を、次に開いたときの初期表示として覚える（issue #279）。
+  // 覚えるのは「URLに出ている状態」で、開いた直後（サーバーが描いた状態）と、前へ・次へ・
+  // スワイプ・表示形式の切り替えのあとがここを通る。月表示のスクロールだけは props が
+  // 変わらないため、URLを書き換えている syncMonthUrl の側で覚える。
+  useEffect(() => {
+    rememberCalendarView(view, anchorKey);
+  }, [view, anchorKey]);
+
   // 日ごとの列・終日エリアは memo で包んであるため、判定に使う集合の参照を保つ。
   // 描くたびに作り直すと、活動記録の有無に関わらず全ての列が描き直しになる。
   const activityCalendars = useMemo(
@@ -164,10 +182,17 @@ export function CalendarShell({
   // 月表示の移動はスクロールで行う。同じ月を続けて指しても効くよう、指示に通し番号を付ける。
   // day は特定の日を含む週へ位置合わせしたいときだけ指定する（今日・日表示からの切り替え）。
   // 前へ・次へは行き先の日が決まらないため、月単位のまま指定しない。
-  const [scrollTarget, setScrollTarget] = useState<{ month: string; day?: string; nonce: number }>({
-    month: anchorKey.slice(0, 7),
-    nonce: 0,
-  });
+  const [scrollTarget, setScrollTarget] = useState<{ month: string; day?: string; nonce: number }>(
+    () => ({
+      month: anchorKey.slice(0, 7),
+      // 今月を開いたときは、今日を含む週を画面中央へ置く（「今日」ボタンと同じ位置）。
+      // 月の先頭週を上端に合わせるだけだと、月末の今日が画面の外に出ることがある。
+      // 別の月から開いたときは行き先に今日が無いため、従来どおり先頭週を上端にそろえる。
+      day:
+        anchorKey.slice(0, 7) === utils.todayKey().slice(0, 7) ? utils.todayKey() : undefined,
+      nonce: 0,
+    }),
+  );
 
   // 月表示の週の並びは、サーバーの anchor ではなく保持中の窓から決まる。
   const monthWeeks = useMemo(
@@ -784,7 +809,11 @@ export function CalendarShell({
         />
       </Suspense>
 
-      <BottomNav current="calendar" activityRunning={initialRunningActivity !== null} />
+      <BottomNav
+        current="calendar"
+        activityRunning={initialRunningActivity !== null}
+        onCalendarClick={goToday}
+      />
     </div>
   );
 }
@@ -796,6 +825,7 @@ export function CalendarShell({
  */
 function syncMonthUrl(month: string) {
   window.history.replaceState(null, "", `/calendar?view=month&date=${month}-01`);
+  rememberCalendarView("month", `${month}-01`);
 }
 
 /** 取得した予定とタスクに依存する部分。ここだけが読み込みを待つ。 */

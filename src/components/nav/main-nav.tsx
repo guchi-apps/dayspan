@@ -41,20 +41,40 @@ function RunningDot() {
 export function BottomNav({
   current,
   activityRunning = false,
+  onCalendarClick,
 }: {
   current: NavKey;
   /** 活動を記録中かどうか。記録の項目へ印を出す。 */
   activityRunning?: boolean;
+  /**
+   * カレンダー画面から押されたときの移動。
+   *
+   * 画面の中で今日へ動かす（月表示のスクロールを含む）。指定が無ければURLで移動する。
+   * カレンダー画面ではURLだけ書き換えても、すでに描かれている月表示はその場に留まるため。
+   */
+  onCalendarClick?: () => void;
 }) {
   const router = useRouter();
 
+  /**
+   * カレンダーの項目は「今日へ移動」も兼ねる（issue #175）。
+   *
+   * 動かすのは日付だけで、表示形式は指定しない。月表示で使っていても1日表示へ落ちると、
+   * 今日を見るたびに表示形式を選び直すことになるため。指定しなければ、前回の表示形式
+   * （記憶が無ければ月表示）でその日が開く（issue #279）。
+   */
   const handleCalendarClick = () => {
+    if (onCalendarClick) {
+      onCalendarClick();
+      return;
+    }
+
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, "0");
     const day = String(today.getDate()).padStart(2, "0");
     const todayKey = `${year}-${month}-${day}`;
-    router.push(`/calendar?view=day1&date=${todayKey}`);
+    router.push(`/calendar?date=${todayKey}`);
   };
 
   return (

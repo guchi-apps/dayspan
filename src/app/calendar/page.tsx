@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CalendarDays } from "lucide-react";
 
 import { CalendarShell } from "@/components/calendar/calendar-shell";
+import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth-user";
@@ -16,6 +18,7 @@ import {
   parseView,
   toDateKey,
 } from "@/lib/calendar-range";
+import { CALENDAR_VIEW_COOKIE, parseCalendarMemory } from "@/lib/calendar-view-memory";
 import { db } from "@/lib/db";
 import { getRunningActivity } from "@/services/activity/running";
 import { listActivityCalendarIds } from "@/services/activity/settings";
@@ -33,14 +36,26 @@ export default async function CalendarPage({
   if (!user) redirect("/login");
 
   const params = await searchParams;
-  const view = parseView(params.view);
-  const anchor = parseDateKey(params.date);
+
+  // 前回この端末で見ていた表示形式・日付（issue #279）。URLに書かれている項目のほうが常に優先で、
+  // 書かれていない項目だけをここで埋める。再読み込み・ブックマーク・共有されたURLの意味を変えないため。
+  // 記憶が無い・古い（Cookieの期限切れ）ときは、今日の月表示になる。
+  const memory = parseCalendarMemory((await cookies()).get(CALENDAR_VIEW_COOKIE)?.value);
+  const view = parseView(params.view ?? memory?.view);
 
   const [uiSetting, googleAccountCount, notionConnection] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id } }),
     db.googleAccount.count({ where: { userId: user.id } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
   ]);
+
+  const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
+
+  // URLにも記憶にも日付が無いときの「今日」は、設定タイムゾーンで決める。サーバー（VPS）の
+  // ローカル時刻はUTCのため、new Date() 任せにすると日本時間の 00:00〜09:00 が前日になる。
+  const anchor = parseDateKey(
+    params.date ?? memory?.dateKey ?? createCalendarDateUtils(timeZone).todayKey(),
+  );
 
   // どちらも未接続の状態でカレンダーだけ出しても何も表示されないため、設定へ誘導する。
   if (googleAccountCount === 0 && !notionConnection?.taskDataSourceId && !notionConnection?.reminderDataSourceId) {
@@ -99,7 +114,7 @@ export default async function CalendarPage({
       activityCalendarIds={activityCalendarIds}
       travelSettings={travelSettings}
       weekStartsOn={weekStartsOn}
-      timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
+      timeZone={timeZone}
       autoRefreshSeconds={uiSetting?.autoRefreshSeconds ?? 300}
     />
   );
