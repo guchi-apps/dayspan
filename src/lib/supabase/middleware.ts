@@ -11,22 +11,24 @@ function isPublicPath(pathname: string): boolean {
 }
 
 /**
- * ウィジェット用API。Supabaseのセッションではなく専用トークンで認証する（docs/spec.md §28）。
+ * Supabaseのセッションではなく、それぞれ専用のトークン・APIキーで認証するAPI。
  *
- * ここを通常の経路に通すと、ウィジェットの更新のたびにSupabase Authへ往復が1回増えるうえ、
- * Supabaseへ到達できない間は（下の authUnreachable の分岐で）トークンだけで判定できる要求まで
- * 503になる。matcherから外さずここで分けるのは、外すと詐称されたユーザーIDヘッダーが
- * そのまま後段へ届くため。
+ * - `/api/widget/` … iPhoneウィジェット用（docs/spec.md §28）
+ * - `/api/internal/` … サーバー間参照用（docs/internal-api.md）
+ *
+ * ここを通常の経路に通すと、呼ばれるたびにSupabase Authへ往復が1回増えるうえ、Supabaseへ
+ * 到達できない間は（下の authUnreachable の分岐で）トークンだけで判定できる要求まで503になる。
+ * matcherから外さずここで分けるのは、外すと詐称されたユーザーIDヘッダーがそのまま後段へ届くため。
  */
-function isWidgetApiPath(pathname: string): boolean {
-  return pathname.startsWith("/api/widget/");
+function isTokenAuthApiPath(pathname: string): boolean {
+  return pathname.startsWith("/api/widget/") || pathname.startsWith("/api/internal/");
 }
 
 export async function updateSession(request: NextRequest) {
-  if (isWidgetApiPath(request.nextUrl.pathname)) {
-    const widgetHeaders = new Headers(request.headers);
-    widgetHeaders.delete(SUPABASE_USER_ID_HEADER);
-    return NextResponse.next({ request: { headers: widgetHeaders } });
+  if (isTokenAuthApiPath(request.nextUrl.pathname)) {
+    const tokenAuthHeaders = new Headers(request.headers);
+    tokenAuthHeaders.delete(SUPABASE_USER_ID_HEADER);
+    return NextResponse.next({ request: { headers: tokenAuthHeaders } });
   }
 
   // セッション更新でSupabaseが発行したCookieは、最終的に返すレスポンスへ必ず載せる必要がある。

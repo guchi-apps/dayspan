@@ -37,6 +37,10 @@ Google Calendar の予定、Notion のタスクと日付リマインドを、1�
 
 ログイン用の Google OAuth（Supabase Auth 側、他アプリと共有）と、Google Calendar API 用の OAuth（DaySpan 専用クライアント）を分けています。共有 Supabase / Google Cloud プロジェクトの同意画面にカレンダーのセンシティブスコープを追加せずに済ませるためです。カレンダー連携は設定画面から個別に接続し、リフレッシュトークンは AES-256-GCM で暗号化して DaySpan の DB に保存します。
 
+### 他アプリからの参照
+
+同じ VPS 上で動く他アプリ（AIDE）が、その日の予定・タスク・日付リマインド・移動をまとめて読むための読み取り専用 API（`GET /api/internal/schedule`）があります。認証は共有シークレット 1 本で、外部公開はしていません。詳細は [docs/internal-api.md](docs/internal-api.md) を参照してください。
+
 ## ローカル開発
 
 ```bash
