@@ -15,6 +15,7 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `token-encryption-key` | `openssl rand -base64 32` で生成した32byte鍵 |
 | `google-calendar-client-id` | 本番用のDaySpan専用OAuthクライアントID |
 | `google-calendar-client-secret` | 同シークレット |
+| `internal-api-key` | サーバー間参照用APIの共有シークレット（`openssl rand -hex 32` で生成。呼び出し元のAIDE側にも同じ値を設定する。docs/internal-api.md） |
 | `ci-webhook-url` | Signaly の DaySpan 用チャンネルWebhook URL |
 
 共通アイテム（`DB` / `Server` / `githubaction-sshkey` / `Supabase`）は既存のものをそのまま参照する（`.github/deploy.env.tpl` 参照）。
