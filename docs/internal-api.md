@@ -3,7 +3,8 @@
 同一VPS上で動く他アプリ（現状は [guchi-apps/aide](https://github.com/guchi-apps/aide)）が、その日の予定・タスク・日付リマインド・移動を参照するためのGET API。ブラウザからの利用は想定しておらず、Supabaseのセッションではなく**共有シークレット1本**で守る。
 
 - 経緯: guchi-apps/dayspan#236、guchi-apps/question#7
-- 到達経路: DaySpanはVPS上で `127.0.0.1:3113`（`deploy/ecosystem.config.js` の `PORT`）で待ち受ける。呼び出し元も同じVPS上にいるため、**このAPIを外部公開する必要はない**
+- 到達経路: DaySpanはVPS上で `127.0.0.1:3113`（`deploy/ecosystem.config.js` の `PORT`）で待ち受ける。呼び出し元も同じVPS上にいるため、**呼び出しにインターネットを経由する必要はない**
+- ただし **`https://dayspan.gucchii.com/api/internal/...` として外部からも到達する。** Apacheがドメイン配下を丸ごと `127.0.0.1:3113` へ渡しており、このパスだけを閉じてはいない。守りは共有シークレット1本だけなので、**キーは推測できない長さの乱数にする**（`openssl rand -base64 32`）
 - 同じ方式の先行事例: guchi-apps/subscription-lists の `docs/internal-api.md`（環境変数名・認証の作りを揃えてある）
 
 ## 認証
@@ -36,6 +37,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
 | --- | --- | --- |
 | `date` | 設定タイムゾーンでの今日 | `YYYY-MM-DD`。返す範囲の初日。形式が不正なら `400` |
 | `days` | `1` | 1〜31の整数。`date` から何日ぶん返すか。範囲外・整数でなければ `400` |
+| `overdueDays` | `30` | 0〜90の整数。期限切れタスクを何日前まで遡るか。`0` で取りにいかない（Notionへの往復が1回減る）。範囲外・整数でなければ `400` |
 
 > **基準日は渡さなくてよい。** VPSのタイムゾーンはUTCだが、DaySpanは日付の解釈に利用者の設定タイムゾーン（`UiSetting.timeZone`、既定 `Asia/Tokyo`）を使うため、省略時の「今日」もそのタイムゾーンで決まる。呼び出し側でJSTの日付を作る必要はない。
 
@@ -46,6 +48,11 @@ Authorization: Bearer <INTERNAL_API_KEY>
   "generatedAt": "2026-08-19T21:00:00.000Z",
   "timeZone": "Asia/Tokyo",
   "range": { "from": "2026-08-19", "to": "2026-08-19" },
+  "sources": {
+    "googleConnected": true,   // Googleアカウントを1つ以上接続しているか
+    "notionReady": true,       // NotionのタスクDBが設定済みか
+    "reminderReady": true      // Notionの日付リマインドDBが設定済みか
+  },
   "days": [
     {
       "date": "2026-08-19",
@@ -142,7 +149,13 @@ Authorization: Bearer <INTERNAL_API_KEY>
 
 `range.from` より前に期限があり、範囲内の日には現れない未完了タスク。範囲内にも出るタスク（期限は過ぎているが予定日が今日、など）は `days` 側にだけ入れる。同じタスクを「今日やること」と「積み残し」の両方へ出しても、読む側で件数が水増しされるだけのため。
 
-遡るのは **30日**まで（`OVERDUE_LOOKBACK_DAYS`）。半年前に期限が過ぎたタスクを朝に読み上げても行動は変わらず、遡る範囲を広げるほどNotionの応答が重くなる。この30日ぶんはカレンダーの取得範囲そのものを広げて賄っており、外部APIへの往復は1回のまま。
+遡るのは既定で **30日**まで（`overdueDays` で0〜90に変えられる）。半年前に期限が過ぎたタスクを朝に読み上げても行動は変わらず、遡る範囲を広げるほどNotionの応答が重くなる。
+
+**この遡りぶんは、カレンダーの取得とは別のNotionへの1回で取る。** カレンダーの取得範囲そのものを過去へ広げると、同じ範囲がGoogleと移動へも渡り、タスク1種類のために表示中のカレンダー全部の予定を毎回その日数ぶん取ることになる（docs/spec.md §20「外部APIへ過剰なアクセスを発生させない」）。予定の取得とは並行に投げるため、待ち時間は増えない。
+
+### 連携が設定されていないとき（`sources`）
+
+Google未接続・NotionのDB未設定は「失敗」ではないため `errors` には出ず、該当する配列が空で返る。**これだけでは「今日は何も無い」と区別が付かない**ため、連携そのものの状態を `sources` に添える。呼び出し元は `sources.googleConnected` が `false` なら「予定は取得できていない」と伝えられる。
 
 ### 外部サービスが落ちているとき
 
@@ -166,6 +179,10 @@ curl -s -H "Authorization: Bearer $INTERNAL_API_KEY" \
 # 明日から3日ぶん
 curl -s -H "Authorization: Bearer $INTERNAL_API_KEY" \
   "http://127.0.0.1:3113/api/internal/schedule?date=2026-08-20&days=3" | jq '.range, [.days[].date]'
+
+# 期限切れタスクを取りにいかない（Notionへの往復が1回減る）
+curl -s -H "Authorization: Bearer $INTERNAL_API_KEY" \
+  "http://127.0.0.1:3113/api/internal/schedule?overdueDays=0" | jq '.sources, .overdueTasks'
 
 # 認証エラー（401 が返る）
 curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:3113/api/internal/schedule"

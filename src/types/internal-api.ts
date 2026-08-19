@@ -105,11 +105,27 @@ export type InternalScheduleDay = {
   travels: InternalTravel[];
 };
 
+/**
+ * 連携そのものが設定されているか。
+ *
+ * 未接続のときGoogle・Notionは「失敗」ではなく空で返るため、これが無いと呼び出し元には
+ * 「今日は何も無い」と区別が付かない。
+ */
+export type InternalSources = {
+  /** Googleアカウントを1つ以上接続しているか */
+  googleConnected: boolean;
+  /** NotionのタスクDBが設定済みか */
+  notionReady: boolean;
+  /** Notionの日付リマインドDBが設定済みか */
+  reminderReady: boolean;
+};
+
 export type InternalScheduleResponse = {
   generatedAt: string;
   /** 日付の解釈に使ったタイムゾーン（UiSetting.timeZone、既定 Asia/Tokyo） */
   timeZone: string;
   range: { from: string; to: string };
+  sources: InternalSources;
   days: InternalScheduleDay[];
   overdueTasks: InternalOverdueTask[];
   /**

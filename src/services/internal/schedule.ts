@@ -1,6 +1,16 @@
 import { dateKeyDiffDays } from "@/lib/calendar-range";
+import { db } from "@/lib/db";
 import type { CalendarDateUtils } from "@/components/calendar/item-layout";
-import type { CalendarEventItem, ReminderItem, TaskItem, TravelItem } from "@/types/calendar";
+import { getNotionConnection } from "@/services/calendar/write-context";
+import { createNotionClient } from "@/services/notion/client";
+import { listTasksInRange } from "@/services/notion/tasks";
+import type {
+  CalendarEventItem,
+  CalendarLoadResult,
+  ReminderItem,
+  TaskItem,
+  TravelItem,
+} from "@/types/calendar";
 import type {
   InternalEvent,
   InternalOverdueTask,
@@ -15,6 +25,65 @@ import type {
 // ルートハンドラに置かない理由は他のサービス層と同じで、外部から呼ばれる形（HTTP）と
 // 中身の組み立てを分けておくため。日ごとの振り分けと並び順はカレンダー画面と同じ関数
 // （createCalendarDateUtils）を通す。ここで書き直すと、同じ日を画面で見たときと違う結果が返る。
+
+/**
+ * 連携そのものが設定されているか。
+ *
+ * 未接続のときGoogle・Notionの取得は「失敗」ではなく空で返るため、そのままだと呼び出し元には
+ * 「今日は何も無い」と区別が付かない（services/calendar/load.ts）。朝のブリーフィングで
+ * 「予定なし」と誤って伝わるのを避けるため、状態そのものを添える。
+ */
+export type InternalSources = {
+  googleConnected: boolean;
+  notionReady: boolean;
+  reminderReady: boolean;
+};
+
+export async function loadSources(
+  userId: string,
+  data: Pick<CalendarLoadResult, "notionReady" | "reminderReady">,
+): Promise<InternalSources> {
+  // 予定を取れるかどうかは「表示オンのカレンダーがあるか」ではなくアカウントの有無で見る。
+  // 表示を全部オフにしている状態と、そもそも繋いでいない状態は別の話。
+  const googleAccounts = await db.googleAccount.count({ where: { userId } });
+
+  return {
+    googleConnected: googleAccounts > 0,
+    notionReady: data.notionReady,
+    reminderReady: data.reminderReady,
+  };
+}
+
+/**
+ * 期限切れタスクだけを、カレンダーの取得とは別にNotionへ取りにいく。
+ *
+ * カレンダーの取得範囲そのものを過去へ広げると、同じ範囲がGoogle・移動へも渡り、期限切れ
+ * タスクのためだけに表示中のカレンダー全部の予定を毎回その日数ぶん取ることになる
+ * （docs/spec.md §20「外部APIへ過剰なアクセスを発生させない」）。往復1回を惜しむより、
+ * Notionへの1回を足して取得量を要求された日数に留めるほうが軽い。
+ *
+ * 失敗しても投げない。予定は取れているのに全体が落ちるのを避け、理由は errors に載せる。
+ */
+export async function loadOverdueSource(
+  userId: string,
+  range: { lookbackFrom: string; lastDay: string },
+): Promise<{ tasks: TaskItem[]; errors: CalendarLoadResult["errors"] }> {
+  const connection = await getNotionConnection(userId);
+  if (!connection) return { tasks: [], errors: [] };
+
+  try {
+    const tasks = await listTasksInRange(createNotionClient(connection), connection, {
+      from: range.lookbackFrom,
+      to: range.lastDay,
+    });
+    return { tasks, errors: [] };
+  } catch {
+    return {
+      tasks: [],
+      errors: [{ source: "notion", reason: "期限を過ぎたタスクを取得できませんでした。" }],
+    };
+  }
+}
 
 export type LoadedItems = {
   events: CalendarEventItem[];

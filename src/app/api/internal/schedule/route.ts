@@ -3,7 +3,12 @@ import { db } from "@/lib/db";
 import { requireInternalApiKey, resolveInternalUserId } from "@/lib/internal-auth";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { loadCalendarData } from "@/services/calendar/load";
-import { buildDay, buildOverdueTasks } from "@/services/internal/schedule";
+import {
+  buildDay,
+  buildOverdueTasks,
+  loadOverdueSource,
+  loadSources,
+} from "@/services/internal/schedule";
 import type { InternalScheduleResponse } from "@/types/internal-api";
 
 // 呼び出し元は毎回その時点の予定を読む。途中の経路に残されると、動かした予定が古いまま返る。
@@ -15,13 +20,16 @@ const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_DAYS = 31;
 
 /**
- * 期限切れタスクをどこまで遡るか（日）。
+ * 期限切れタスクをどこまで遡るか（日）の既定値。0を渡せば取りにいかない。
  *
  * 遡る範囲を広げるほどNotionの応答が重くなる一方、半年前に期限が過ぎたタスクを朝に読み上げても
- * 行動は変わらない。取得はカレンダーの取得と同じ1回に含めるため、この幅ぶんGoogleの取得範囲も
- * 広がるが、月表示が既に前後3ヶ月ぶんを1回で取っており、それより狭い。
+ * 行動は変わらない。カレンダーの取得範囲は要求された日数のままにし、この遡りぶんはNotionへの
+ * 別の1回で賄う（docs/spec.md §20）。
  */
-const OVERDUE_LOOKBACK_DAYS = 30;
+const DEFAULT_OVERDUE_DAYS = 30;
+
+/** 遡りの上限。ここを超える指定は、朝に読む用途では意味を持たない。 */
+const MAX_OVERDUE_DAYS = 90;
 
 /**
  * サーバー間（AIDE）から、指定した日の予定・タスク・日付リマインド・移動をまとめて返す
@@ -51,6 +59,15 @@ export async function GET(request: Request) {
     return json({ error: `days must be an integer between 1 and ${MAX_DAYS}` }, 400);
   }
 
+  const overdueParam = params.get("overdueDays");
+  const overdueDays = overdueParam === null ? DEFAULT_OVERDUE_DAYS : Number(overdueParam);
+  if (!Number.isInteger(overdueDays) || overdueDays < 0 || overdueDays > MAX_OVERDUE_DAYS) {
+    return json(
+      { error: `overdueDays must be an integer between 0 and ${MAX_OVERDUE_DAYS}` },
+      400,
+    );
+  }
+
   try {
     const userId = await resolveInternalUserId();
     if (!userId) {
@@ -73,11 +90,20 @@ export async function GET(request: Request) {
     );
     const to = dayKeys[dayKeys.length - 1];
 
-    // 期限切れタスクのぶんだけ手前へ広げ、外部APIへの往復は1回のままにする。
-    const lookbackFrom = toDateKey(addDays(parseDateKey(from), -OVERDUE_LOOKBACK_DAYS));
+    const lookbackFrom = toDateKey(addDays(parseDateKey(from), -overdueDays));
+    const dayBeforeFrom = toDateKey(addDays(parseDateKey(from), -1));
 
+    // 期限切れは別に取る。カレンダーの取得範囲を過去へ広げると、同じ範囲がGoogleと移動へも
+    // 渡り、タスク1種類のために予定を何十日ぶんも取ることになる（docs/spec.md §20）。
+    // 互いに依存しないので並行に投げる。
+    //
     // loadCalendarData は Google / Notion の失敗を errors に載せて返すため、ここでは投げない。
-    const data = await loadCalendarData(userId, getFetchRange([lookbackFrom, to]));
+    const [data, overdue] = await Promise.all([
+      loadCalendarData(userId, getFetchRange([from, to])),
+      overdueDays > 0
+        ? loadOverdueSource(userId, { lookbackFrom, lastDay: dayBeforeFrom })
+        : { tasks: [], errors: [] },
+    ]);
 
     const scheduleDays = dayKeys.map((dateKey) => buildDay(utils, data, dateKey));
 
@@ -85,9 +111,10 @@ export async function GET(request: Request) {
       generatedAt: new Date().toISOString(),
       timeZone,
       range: { from, to },
+      sources: await loadSources(userId, data),
       days: scheduleDays,
-      overdueTasks: buildOverdueTasks(utils, data.tasks, { from, lookbackFrom }, scheduleDays),
-      errors: data.errors,
+      overdueTasks: buildOverdueTasks(utils, overdue.tasks, { from, lookbackFrom }, scheduleDays),
+      errors: [...data.errors, ...overdue.errors],
     };
 
     return json(response, 200);
