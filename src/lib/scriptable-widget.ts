@@ -21,8 +21,12 @@ const REFRESH_MARK = "__DAYSPAN_REFRESH_MINUTES__";
  *
  * 更新のたびにGoogle Calendarへ1回問い合わせるため、短くするほど外部APIへの往復が増える
  * （docs/spec.md §20「過剰なアクセスを発生させない」）。画面の案内文もこの値から作る。
+ *
+ * ロック画面ぶんを足すとウィジェットの数だけ更新が走るため、今日の合計は
+ * サーバー側で短時間だけ持ち回す（services/activity/today-cache.ts）。往復の数は
+ * ウィジェットの数ではなくその保持時間で決まる。
  */
-export const WIDGET_REFRESH_MINUTES = 10;
+export const WIDGET_REFRESH_MINUTES = 5;
 
 export function buildScriptableWidgetScript(options: {
   /** ウィジェットが読むAPIの絶対URL。 */
@@ -223,9 +227,7 @@ function renderSmall(widget, ink, summary) {
 
   if (running) {
     widget.addSpacer(2);
-    const elapsed = addText(widget, ink, formatDuration(running.elapsedMinutes), Font.boldSystemFont(38));
-    elapsed.minimumScaleFactor = 0.6;
-    elapsed.lineLimit = 1;
+    addTimer(widget, ink, running.startedAt, Font.boldSystemFont(32));
   }
 
   widget.addSpacer();
@@ -262,9 +264,7 @@ function renderMedium(widget, ink, summary) {
 
   if (running) {
     left.addSpacer(2);
-    const elapsed = addText(left, ink, formatDuration(running.elapsedMinutes), Font.boldSystemFont(34));
-    elapsed.minimumScaleFactor = 0.6;
-    elapsed.lineLimit = 1;
+    addTimer(left, ink, running.startedAt, Font.boldSystemFont(30));
     left.addSpacer();
     const from = addText(left, ink, formatTime(running.startedAt, summary.timeZone) + " から", Font.systemFont(11));
     from.textOpacity = 0.75;
@@ -368,8 +368,7 @@ function renderRectangular(widget, ink, summary) {
   title.minimumScaleFactor = 0.7;
 
   if (running) {
-    const elapsed = addText(widget, ink, formatDuration(running.elapsedMinutes), Font.boldSystemFont(20));
-    elapsed.lineLimit = 1;
+    addTimer(widget, ink, running.startedAt, Font.boldSystemFont(20));
   }
 
   const lines = metaLines(summary).slice(0, 1);
@@ -385,10 +384,14 @@ function renderCircular(widget, ink, summary) {
   const running = summary.running;
 
   widget.addSpacer();
-  const value = addText(widget, ink, running ? formatDuration(running.elapsedMinutes) : "—", Font.boldSystemFont(15));
-  value.centerAlignText();
-  value.lineLimit = 1;
-  value.minimumScaleFactor = 0.6;
+  if (running) {
+    const timer = addTimer(widget, ink, running.startedAt, Font.boldSystemFont(15));
+    timer.centerAlignText();
+  } else {
+    const value = addText(widget, ink, "—", Font.boldSystemFont(15));
+    value.centerAlignText();
+    value.lineLimit = 1;
+  }
 
   const label = addText(widget, ink, running ? running.title : "停止中", Font.systemFont(9));
   label.centerAlignText();
@@ -399,10 +402,15 @@ function renderCircular(widget, ink, summary) {
 
 function renderInline(widget, ink, summary) {
   const running = summary.running;
-  const text = running
-    ? running.title + " " + formatDuration(running.elapsedMinutes)
-    : "記録していません";
-  addText(widget, ink, text, Font.systemFont(12));
+
+  // インラインの枠（時計の上の1行）は要素を1つしか置けない。項目名と経過時間の両方は入らないため、
+  // 進み続ける経過時間のほうを採る。項目名は円形・横長の枠に出ている。
+  if (running) {
+    addTimer(widget, ink, running.startedAt, Font.systemFont(12));
+    return;
+  }
+
+  addText(widget, ink, "記録していません", Font.systemFont(12));
 }
 
 // --- 共通 ---
@@ -467,6 +475,25 @@ function addText(container, ink, value, font) {
   text.font = font;
   text.textColor = ink;
   return text;
+}
+
+/**
+ * 経過時間。数字は開始時刻だけ渡してiOSに数えさせる（WidgetDate のタイマー表示）。
+ *
+ * サーバーが求めた分数を文字として置くと、次に台本が動くまでその値で止まる。iOSはウィジェットを
+ * 要求どおりの間隔では更新しないため、開いて見るたびに古い時間が出ることになる。タイマー表示なら
+ * 台本を動かさずにiOSが描き直し続ける（31:05 / 1時間を超えると 1:02:03）。
+ *
+ * 桁が増えると枠に収まらなくなるため、縮小を許す。
+ */
+function addTimer(container, ink, startedAt, font) {
+  const timer = container.addDate(new Date(startedAt));
+  timer.applyTimerStyle();
+  timer.font = font;
+  timer.textColor = ink;
+  timer.lineLimit = 1;
+  timer.minimumScaleFactor = 0.6;
+  return timer;
 }
 
 /** 枠の下に添える補足。記録中は開始時刻、停止中は最後に何を記録したか。 */

@@ -211,6 +211,8 @@ export function WidgetSection({
               </Button>
             </div>
 
+            <span className="type-label-large text-on-surface-variant">ホーム画面に置く</span>
+
             <ol className="type-body-medium flex list-decimal flex-col gap-1 pl-5 text-on-surface-variant">
               <li>
                 iPhoneのSafariでDaySpanを開き、共有 → <span className="text-on-surface">ホーム画面に追加</span>
@@ -305,6 +307,35 @@ export function WidgetSection({
               )}
             </div>
 
+            {/*
+              ロック画面はホーム画面と入口も枠の形も違う。手順を書かないと、置けることに気付けない。
+              枠ごとに出るものが変わるのは、iOSがロック画面のウィジェットに渡す大きさが
+              3種類あり、入る行数がそれぞれ違うため（台本の renderCircular / renderRectangular /
+              renderInline）。
+            */}
+            <span className="type-label-large text-on-surface-variant">ロック画面に置く</span>
+
+            <ol className="type-body-medium flex list-decimal flex-col gap-1 pl-5 text-on-surface-variant">
+              <li>
+                ロック画面を長押し → <span className="text-on-surface">カスタマイズ</span> →
+                ロック画面 を押す
+              </li>
+              <li>時計の下のウィジェットの枠を押す</li>
+              <li>一覧から Scriptable を選び、置きたい形を押す</li>
+              <li>
+                置いたウィジェットを押して、スクリプトに「DaySpan」を選ぶ（
+                <code className="mx-1">When Interacting</code>と
+                <code className="mx-1">URL</code>は上と同じ値にする）
+              </li>
+              <li>右上の完了 → 画面を押して閉じる</li>
+            </ol>
+
+            <ul className="type-body-small flex list-disc flex-col gap-1 pl-5 text-on-surface-variant">
+              <li>丸い枠: 経過時間と項目名</li>
+              <li>横長の枠: 項目名・経過時間・開始時刻（いちばん多く読める）</li>
+              <li>時計の上の1行: 経過時間のみ（この枠には1つしか置けません）</li>
+            </ul>
+
             <details className="rounded-lg bg-surface-container-high">
               <summary className="type-body-medium cursor-pointer px-3 py-2">台本を見る</summary>
               <pre className="type-body-small max-h-80 overflow-auto px-3 pb-3 whitespace-pre">
@@ -328,8 +359,9 @@ export function WidgetSection({
                 <code className="mx-1">Run Script</code>のままです。上のとおりに直してください。
               </p>
               <p>
-                ウィジェットは約{refreshMinutes}分ごとの更新を要求します（iOSの都合で前後します）。
-                経過時間は更新した時点の値で止まり、次の更新まで進みません。
+                記録中の経過時間はiOSが数えるため、常に進みます。項目名と今日の合計は約
+                {refreshMinutes}分ごとの更新で取り直します（iOSの都合で前後します）。別の端末で
+                記録を止めたときは、次の更新までウィジェットが記録中のまま進み続けます。
               </p>
               <p>
                 今日の合計と内訳は、活動記録の保存先カレンダーを選んでいるときだけ出せます

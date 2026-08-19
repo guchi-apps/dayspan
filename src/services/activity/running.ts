@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getActivityCalendarId } from "@/services/activity/settings";
+import { clearTodayEventsCache } from "@/services/activity/today-cache";
 import { createEvent } from "@/services/google-calendar/events";
 import { SETTING_ORDER } from "@/services/google-calendar/settings";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
@@ -99,6 +100,10 @@ export async function stopRunningActivity(userId: string, endedAt: Date): Promis
   });
 
   await db.runningActivity.deleteMany({ where: { userId } });
+
+  // ウィジェットの今日の合計は、Googleから取った予定を短時間持ち回して求めている。
+  // いま作ったぶんが載るまで待たせると、画面では止まっているのに合計が増えない時間ができる。
+  clearTodayEventsCache(userId);
 
   return { status: "saved", range: { start: start.toISOString(), end: end.toISOString() } };
 }
