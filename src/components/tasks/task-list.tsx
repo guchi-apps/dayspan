@@ -252,7 +252,7 @@ export function TaskList({
         <Plus className="size-6" />
       </Button>
 
-      <BottomNav current="tasks" activityRunning={activityRunning} />
+      <BottomNav current="tasks" activityRunning={activityRunning} timeZone={timeZone} />
 
       {itemDialog && (
         <ItemDialog

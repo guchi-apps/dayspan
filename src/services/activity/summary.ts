@@ -2,8 +2,12 @@ import { isoToLocalInput, localInputToIso } from "@/components/calendar/datetime
 import { db } from "@/lib/db";
 import { getActivityCalendarId } from "@/services/activity/settings";
 import { getRunningActivity } from "@/services/activity/running";
+import {
+  readCachedTodayEvents,
+  writeCachedTodayEvents,
+} from "@/services/activity/today-cache";
 import { summarizeActivityMinutes } from "@/services/activity/totals";
-import { listEvents, type GoogleEvent } from "@/services/google-calendar/events";
+import { listEvents } from "@/services/google-calendar/events";
 import type {
   ActivityTodayTotals,
   ActivityTodayUnavailable,
@@ -75,17 +79,26 @@ async function loadTodayTotals(
   const dateKey = isoToLocalInput(now.toISOString(), timeZone).slice(0, 10);
   const dayStart = new Date(localInputToIso(`${dateKey}T00:00`, timeZone));
 
-  let events: GoogleEvent[];
-  try {
-    events = await listEvents(setting.googleAccount, calendarId, {
-      timeMin: dayStart.toISOString(),
-      timeMax: now.toISOString(),
-    });
-  } catch (error) {
-    // 握りつぶさずログへ全文を残す（CLAUDE.md「外部APIの扱い」）。画面には理由を伝え、
-    // 記録中の1件だけでもウィジェットに出す。
-    console.error("[dayspan] google widget summary failed:", error);
-    return { ok: false, reason: "google_unavailable" };
+  // 同じ人の同じ1日を、ホーム画面とロック画面の枠がそれぞれ取りにくる。iOSはまとめて更新するため、
+  // その回のぶんは1回の問い合わせで済ませる（today-cache.ts）。取り出した予定は now で切り詰めて
+  // 数えるので、持ち回した後に読んでも合計が先へ進むことはない。
+  const cacheKey = { userId, calendarId, dateKey };
+  let events = readCachedTodayEvents(cacheKey, now);
+
+  if (!events) {
+    try {
+      events = await listEvents(setting.googleAccount, calendarId, {
+        timeMin: dayStart.toISOString(),
+        timeMax: now.toISOString(),
+      });
+    } catch (error) {
+      // 握りつぶさずログへ全文を残す（CLAUDE.md「外部APIの扱い」）。画面には理由を伝え、
+      // 記録中の1件だけでもウィジェットに出す。
+      console.error("[dayspan] google widget summary failed:", error);
+      return { ok: false, reason: "google_unavailable" };
+    }
+
+    writeCachedTodayEvents(cacheKey, events, now);
   }
 
   const totals = summarizeActivityMinutes({ events, dayStart, now, running });

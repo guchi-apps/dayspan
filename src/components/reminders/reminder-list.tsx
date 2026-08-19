@@ -161,7 +161,7 @@ export function ReminderList({
         <Plus className="size-6" />
       </Button>
 
-      <BottomNav current="reminders" activityRunning={activityRunning} />
+      <BottomNav current="reminders" activityRunning={activityRunning} timeZone={timeZone} />
 
       {itemDialog && (
         <ItemDialog
