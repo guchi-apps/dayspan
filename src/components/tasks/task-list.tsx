@@ -102,8 +102,16 @@ export function TaskList({
     [tasks, todayKey, utils],
   );
 
+  // 分類の軸にタグを出してよいか。選択肢はNotionの取得に失敗しても空になり、その失敗は
+  // 画面には出ない（services/notion/tag-options.ts）。タグが1つも無いまま切り替えられると、
+  // 全件が「タグなし」の1区分に入り、壊れたように見える。タスク側にタグが付いていれば
+  // 見出しの色と並びが既定に落ちるだけで分類はできるため、両方が空のときだけ隠す。
+  const tagsAvailable =
+    tagOptions.length > 0 || tasks.some((task) => !task.done && task.tags.length > 0);
+  const effectiveGroupBy = tagsAvailable ? groupBy : "due";
+
   const sections = useMemo<TaskSection[]>(() => {
-    if (groupBy === "tag") {
+    if (effectiveGroupBy === "tag") {
       return groupTasksByTag(
         tasks,
         tagOptions.map((option) => option.name),
@@ -123,7 +131,7 @@ export function TaskList({
       tagName: null,
       tasks: sortTasks(buckets[key], sort),
     }));
-  }, [groupBy, sort, tasks, tagOptions, buckets]);
+  }, [effectiveGroupBy, sort, tasks, tagOptions, buckets]);
 
   const doneTasks = useMemo(() => sortDoneTasks(buckets.done), [buckets]);
 
@@ -206,15 +214,21 @@ export function TaskList({
 
         <span className="flex-1" />
 
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label={groupBy === "due" ? "タグで分類する" : "期限で分類する"}
-          onClick={() => setGroupBy(groupBy === "due" ? "tag" : "due")}
-        >
-          {groupBy === "due" ? <CalendarClock className="size-4" /> : <Tag className="size-4" />}
-          {groupBy === "due" ? "期限" : "タグ"}
-        </Button>
+        {tagsAvailable && (
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={effectiveGroupBy === "due" ? "タグで分類する" : "期限で分類する"}
+            onClick={() => setGroupBy(effectiveGroupBy === "due" ? "tag" : "due")}
+          >
+            {effectiveGroupBy === "due" ? (
+              <CalendarClock className="size-4" />
+            ) : (
+              <Tag className="size-4" />
+            )}
+            {effectiveGroupBy === "due" ? "期限" : "タグ"}
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"
