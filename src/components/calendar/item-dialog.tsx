@@ -3,7 +3,13 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
@@ -28,11 +34,33 @@ export type ItemDrafts = {
   travel?: TravelDraft;
 };
 
-const KIND_LABELS: { kind: ItemKind; label: string }[] = [
-  { kind: "event", label: "予定" },
-  { kind: "task", label: "タスク" },
-  { kind: "reminder", label: "リマインド" },
-  { kind: "travel", label: "移動" },
+/**
+ * 種類の名前と、その種類が何であるかの1行。
+ *
+ * 名前は仕様・カレンダー・一覧と同じ「日付リマインド」に揃える。ここだけ「リマインド」と
+ * 短くすると、後で思い出させてくれるもの（＝やることの置き場）と読めてしまう。
+ *
+ * 説明を添えるのは、選ぶ時点で**完了状態を持つかどうか**が画面のどこにも書かれていないため。
+ * タスクと日付リマインドの違いはこの一点で（docs/spec.md §9）、やって終わらせるものは
+ * タスク、日付を覚えておくだけなら日付リマインドになる。
+ */
+const KIND_LABELS: { kind: ItemKind; label: string; description: string }[] = [
+  { kind: "event", label: "予定", description: "完了は無い。その時間に何をするかを押さえる" },
+  {
+    kind: "task",
+    label: "タスク",
+    description: "完了してこなす。繰り返しは完了した時点で次回が作られる",
+  },
+  {
+    kind: "reminder",
+    label: "日付リマインド",
+    description: "完了は無い。誕生日・更新日など日付そのものを覚えておく",
+  },
+  {
+    kind: "travel",
+    label: "移動",
+    description: "予定に付く移動時間。出発地と目的地から所要時間を求める",
+  },
 ];
 
 /**
@@ -92,7 +120,8 @@ export function ItemDialog({
 
   const selectable = KIND_LABELS.filter((item) => drafts[item.kind] !== undefined);
   const editing = isEditing(kind, drafts);
-  const label = KIND_LABELS.find((item) => item.kind === kind)?.label ?? "";
+  const current = KIND_LABELS.find((item) => item.kind === kind);
+  const label = current?.label ?? "";
 
   const shared = {
     title,
@@ -119,7 +148,9 @@ export function ItemDialog({
                   variant={kind === item.kind ? "secondary" : "ghost"}
                   size="xs"
                   className={cn(
-                    "type-label-large h-9 rounded-none px-4",
+                    // 狭い画面では余白を詰める。4種類ぶんの名前が入り切らないと、
+                    // 枠が overflow-hidden のため末尾の「移動」が切れて読めなくなる。
+                    "type-label-large h-9 rounded-none px-3 sm:px-4",
                     kind === item.kind && "text-on-secondary-container",
                   )}
                   onClick={() => {
@@ -131,6 +162,14 @@ export function ItemDialog({
                 </Button>
               ))}
             </div>
+          )}
+
+          {/* 選んでいる種類が何であるかの1行。タスクと日付リマインドの違いは
+              「完了があるかどうか」の一点で、選ぶ時点ではそれが画面に出ていない。 */}
+          {selectable.length > 1 && current && (
+            <DialogDescription className="type-body-small text-on-surface-variant">
+              {current.description}
+            </DialogDescription>
           )}
         </DialogHeader>
 
