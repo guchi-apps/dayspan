@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { SUPABASE_USER_ID_HEADER } from "@/lib/auth-header";
+import { resolveInternalPath } from "@/lib/home-path";
 import { getRequestOrigin } from "@/lib/request-origin";
 
 const publicPaths = ["/login", "/auth/signin", "/auth/callback"];
@@ -90,13 +91,9 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ログイン済みユーザーが /login を開いた場合（ブラウザの「戻る」操作等）は
-  // ログイン画面を再表示せずカレンダーへ送る。
+  // ログイン画面を再表示せず、起動時と同じ画面（記録）へ送る。
   if (pathname === "/login" && user) {
-    const callbackUrl = request.nextUrl.searchParams.get("callbackUrl");
-    const target =
-      callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
-        ? callbackUrl
-        : "/calendar";
+    const target = resolveInternalPath(request.nextUrl.searchParams.get("callbackUrl"));
     return withRefreshedCookies(NextResponse.redirect(new URL(target, getRequestOrigin(request))));
   }
 

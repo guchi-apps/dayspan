@@ -82,7 +82,8 @@ export function buildWidgetOpenUrls(origin: string): { app: string | null; brows
 /**
  * 開く先のパス。記録の画面。
  *
- * `webapp://` ではiOSがパスを無視して最初の画面から開くが、ブラウザで開くときはこのパスが効く。
+ * `webapp://` ではiOSがパスを無視して最初の画面（`start_url`）から開くが、その最初の画面が
+ * 記録のため同じ所へ着く（issue #299）。ブラウザで開くときはこのパスが効く。
  * 同じ組み立てで両方をまかなうため、どちらにも付ける。
  */
 const WIDGET_OPEN_PATH = "/activity";
@@ -139,9 +140,10 @@ const IS_ACCESSORY = FAMILY.indexOf("accessory") === 0;
 // 押したときに開く先。ウィジェットの中では記録を start / stop できないため、
 // 「止めたい」と思った操作がそのまま画面へつながるようにする。
 //
-// iOSは webapp:// のパスを無視し、Webアプリの最初の画面から開きます（すでに開いていたときは
-// 前の画面のまま）。それでも /activity を付けているのは、ブラウザで開くときにはこのパスが効き、
-// 同じ組み立てで両方をまかなえるためです。
+// iOSは webapp:// のパスを無視し、Webアプリの最初の画面から開きます。その最初の画面が記録の
+// 画面なので、どちらの経路でも同じ所へ着きます（すでに開いていたときは前の画面のまま）。
+// それでも /activity を付けているのは、ブラウザで開くときにはこのパスが効き、同じ組み立てで
+// 両方をまかなえるためです。
 const OPEN_URL = (OPEN_IN === "app" && WEBAPP_URL ? WEBAPP_URL : APP_URL) + "/activity";
 
 if (config.runsInWidget) {
