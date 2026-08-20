@@ -313,6 +313,10 @@ export function reminderAnnualYearShortLabel(reminder: ReminderItem): string | n
   if (!reminder.annual) return null;
   const sourceYear = Number(reminder.sourceDate.slice(0, 4));
   const displayYear = Number(reminder.date.slice(0, 4));
+  // 登録した年そのものの回は「0年目」になり、枠の幅を取るだけで読める情報が増えない。
+  // 括弧付きの長い版（reminderAnnualYearLabel）と同じ条件で落とし、
+  // 枠とツールチップで出方が食い違わないようにする。
+  if (displayYear === sourceYear) return null;
   return `${displayYear - sourceYear}年目`;
 }
 
