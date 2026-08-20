@@ -49,8 +49,13 @@ export function normalizeDatePage(
   };
 }
 
-/** その年の同じ月日。2/29しか無い日付は、うるう年でない年を2/28へ寄せる。 */
-function sameDayOfYear(year: number, month: string, day: string): string {
+/**
+ * その年の同じ月日。2/29しか無い日付は、うるう年でない年を2/28へ寄せる。
+ *
+ * 専用一覧の並べ替え（services/notion/reminder-order.ts）からも呼ぶ。うるう日の寄せ方が
+ * カレンダーの展開と一覧の並びで食い違うと、同じ項目が別の日に見えるため1か所に置く。
+ */
+export function sameDayOfYear(year: number, month: string, day: string): string {
   const candidate = `${String(year).padStart(4, "0")}-${month}-${day}`;
   // UTCで組み立てて、月が繰り上がったら（＝その年に無い日付なら）月末へ丸める。
   const date = new Date(`${candidate}T12:00:00Z`);
