@@ -298,6 +298,9 @@ export function reminderAnnualYearLabel(reminder: ReminderItem): string | null {
   if (!reminder.annual) return null;
   const sourceYear = Number(reminder.sourceDate.slice(0, 4));
   const displayYear = Number(reminder.date.slice(0, 4));
+  // 登録した年そのものを見ているときは「(1988年で0年目)」になり、日付を繰り返すだけで
+  // 読める情報が増えない。専用一覧は展開前の項目を渡すため、必ずこの形になる。
+  if (displayYear === sourceYear) return null;
   return `(${displayYear}年で${displayYear - sourceYear}年目)`;
 }
 
@@ -327,4 +330,38 @@ const ELAPSED_DAYS_FORMAT = new Intl.NumberFormat("ja-JP");
 export function elapsedDaysLabel(dateKey: string, todayKey: string): string | null {
   if (dateKey >= todayKey) return null;
   return `${ELAPSED_DAYS_FORMAT.format(dateKeyDiffDays(dateKey, todayKey))}日経過`;
+}
+
+/** YYYY-MM-DD を「1960年8月24日」の形にする。 */
+export function formatDateKeyJa(dateKey: string): string {
+  return `${dateKey.slice(0, 4)}年${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`;
+}
+
+/**
+ * 専用一覧で毎年の項目に添える起点のラベル（「1960年8月24日から66年目」）。
+ *
+ * issue #288 の「年表示は発生した初回の年にする」を、何年目かの数え方とひとつの文にまとめている。
+ * 起点の日付と年数を別々の要素にすると、行が狭いときに前者だけが残って何年目か読めなくなる。
+ * 毎年の項目でない場合は null。
+ */
+export function reminderAnnualOriginLabel(
+  reminder: ReminderItem,
+  nextDateKey: string,
+  itemDateKey: (value: string) => string,
+): string | null {
+  if (!reminder.annual) return null;
+  const sourceKey = itemDateKey(reminder.sourceDate);
+  const years = Number(nextDateKey.slice(0, 4)) - Number(sourceKey.slice(0, 4));
+  return `${formatDateKeyJa(sourceKey)}から${years}年目`;
+}
+
+/**
+ * これから来る日付に添えるラベル（「あと5日」「今日」）。過ぎた日付では null。
+ *
+ * 過ぎた日付側の elapsedDaysLabel() と対になる。どちらも出ない日は無い。
+ */
+export function daysUntilLabel(dateKey: string, todayKey: string): string | null {
+  if (dateKey < todayKey) return null;
+  if (dateKey === todayKey) return "今日";
+  return `あと${ELAPSED_DAYS_FORMAT.format(dateKeyDiffDays(todayKey, dateKey))}日`;
 }

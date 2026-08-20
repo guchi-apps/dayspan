@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { CalendarClock, ExternalLink, Pencil, RotateCw, Tag, Trash2 } from "lucide-react";
@@ -20,13 +20,19 @@ import type { TagOption } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
-import { reminderAnnualYearLabel } from "./item-layout";
+import {
+  createCalendarDateUtils,
+  elapsedDaysLabel,
+  formatDateKeyJa,
+  reminderAnnualYearLabel,
+} from "./item-layout";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export function ReminderDetailDialog({
   reminder,
   categoryOptions,
   timeZone,
+  nextDateKey = null,
   readOnly = false,
   onClose,
   onEdit,
@@ -36,6 +42,11 @@ export function ReminderDetailDialog({
   /** 登録済みの種類。色を引くために渡す。取得できていないときは空でよい。 */
   categoryOptions: TagOption[];
   timeZone: string;
+  /**
+   * この項目が次に来る日（YYYY-MM-DD）。専用一覧からだけ渡す（issue #288）。
+   * カレンダーは展開した回そのものを開いており、日付がすでにその回を指しているため渡さない。
+   */
+  nextDateKey?: string | null;
   /** 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。 */
   readOnly?: boolean;
   onClose: () => void;
@@ -63,6 +74,20 @@ export function ReminderDetailDialog({
     setOpen(false);
     setTimeout(() => onDeleted(touched), 150);
   };
+
+  const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
+  // 経過日数の数え始めは登録した日（sourceDate）。毎年の項目でも、記念日から何日という
+  // 起点は登録した日のままであるため（issue #165）。専用一覧の行からは外したので、
+  // 正確な日数はここで読めるようにしておく（issue #288）。
+  const elapsed = elapsedDaysLabel(utils.itemDateKey(reminder.sourceDate), utils.todayKey());
+
+  // 次に来る日と、そのときが何年目か。一覧から開いたときだけ出す。
+  const nextLabel =
+    reminder.annual && nextDateKey
+      ? `次は${formatDateKeyJa(nextDateKey)}（${
+          Number(nextDateKey.slice(0, 4)) - Number(utils.itemDateKey(reminder.sourceDate).slice(0, 4))
+        }年目）`
+      : null;
 
   // ゴミの日はmyroomが正で、DaySpanからは読むだけ（docs/spec.md §9）。押せるまま残すと
   // サーバーが断るまで直せるように見えるため、編集・削除は入口ごと出さない。
@@ -112,11 +137,15 @@ export function ReminderDetailDialog({
         <div className="flex flex-col gap-3 text-sm">
           <DetailRow icon={<CalendarClock className="size-4" />}>
             {formatReminderDate(reminder, timeZone)}
+            {elapsed && <span className="ml-2 text-tertiary">{elapsed}</span>}
           </DetailRow>
 
           {reminder.annual && (
             <DetailRow icon={<RotateCw className="size-4" />}>
-              毎年同じ月日に表示されます
+              <span className="flex flex-col">
+                <span>毎年同じ月日に表示されます</span>
+                {nextLabel && <span className="text-on-surface-variant">{nextLabel}</span>}
+              </span>
             </DetailRow>
           )}
 
