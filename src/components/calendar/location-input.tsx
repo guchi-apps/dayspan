@@ -1,15 +1,18 @@
 "use client";
 
+import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { MapPin, Plus, Sparkles } from "lucide-react";
+import { MapPin, MapPlus, Plus, Sparkles } from "lucide-react";
 
+import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { PlaceSuggestion } from "@/lib/ai-place-suggest";
 import type { PlaceItem } from "@/services/notion/places";
 
+import { PlaceMapDialog } from "./place-map-dialog";
 import { readErrorMessage } from "./response-error";
 
 /** 一度に出す候補の数。多すぎると入力欄が候補で埋まって、打ち直しの邪魔になる。 */
@@ -22,6 +25,9 @@ const MAX_CANDIDATES = 6;
  * AIは呼ぶたびに枠を消費するため、候補が0件のときのボタン操作からだけ呼ぶ。
  * 候補は入力欄の下に押し出して出す。ダイアログの中で重ねると、
  * スクロール領域の端で隠れてどこまで候補があるのか分からなくなるため。
+ *
+ * 地図から登録する導線（欄の右のアイコン）もここに置く。予定の場所・移動の出発地と目的地は
+ * すべてこの部品を使っているため、1か所に足せば3つの欄すべてに入口ができる。
  */
 export function LocationInput({
   id = "event-location",
@@ -53,6 +59,10 @@ export function LocationInput({
   const [register, setRegister] = useState(true);
   // この画面で登録したぶん。閉じるまで取り直さないため、候補へ自分で足す。
   const [added, setAdded] = useState<PlaceItem[]>([]);
+  const [mapOpen, setMapOpen] = useState(false);
+
+  // 地図のタイルも住所の問い合わせも通信が要る（docs/spec.md §21）。
+  const offline = useOffline();
 
   const query = value.trim();
   const candidates = matchPlaces([...places, ...added], query);
@@ -149,22 +159,63 @@ export function LocationInput({
     </Button>
   ) : null;
 
+  /** 地図で選んで登録できたとき。場所欄へ入れ、この画面のあいだは候補としても出す。 */
+  const useRegistered = (place: PlaceItem) => {
+    setMapOpen(false);
+    setAdded((current) => [...current, place]);
+    onChange(toLocationText(place.name, place.address));
+    setOpen(false);
+    setNotice(`「${place.name}」を場所DBに登録しました。`);
+  };
+
   return (
     <div className="flex flex-col gap-2">
-      <Input
-        id={id}
-        label={label}
-        value={value}
-        onChange={(event) => change(event.target.value)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && open) {
-            event.stopPropagation();
-            setOpen(false);
-          }
-        }}
-      />
+      {mapOpen && (
+        <PlaceMapDialog
+          query={value}
+          places={[...places, ...added]}
+          onCancel={() => setMapOpen(false)}
+          onRegistered={useRegistered}
+        />
+      )}
+
+      <div className="flex items-center gap-2">
+        {/* Inputのラベル付きの形は外枠がw-fullのため、行の中で縮められるように包む。 */}
+        <div className="min-w-0 flex-1">
+          <Input
+            id={id}
+            label={label}
+            value={value}
+            onChange={(event) => change(event.target.value)}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setOpen(false)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && open) {
+                event.stopPropagation();
+                setOpen(false);
+              }
+            }}
+          />
+        </div>
+
+        {/* 登録先が無ければ地図で選んでも行き先が無い。場所DBを設定しているときだけ出す。 */}
+        {placeDatabaseReady && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="shrink-0"
+            aria-label="地図から場所を登録"
+            title={offline ? OFFLINE_WRITE_MESSAGE : "地図から場所を登録"}
+            disabled={offline}
+            // 押した時点で入力欄からフォーカスが外れると、候補ごと閉じてしまう。
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setMapOpen(true)}
+          >
+            <MapPlus className="size-5" />
+          </Button>
+        )}
+      </div>
 
       {open && candidates.length > 0 && (
         <ul className="flex flex-col gap-1">

@@ -1,5 +1,7 @@
 import type { NotionConnection } from "@prisma/client";
 
+import { formatCoordinates, parseCoordinates, type LatLng } from "@/lib/coordinates";
+
 import { createNotionClient } from "./client";
 import type { PlacePropertyMap } from "./place-database";
 
@@ -12,6 +14,8 @@ export type PlaceItem = {
   name: string;
   address: string | null;
   tags: string[];
+  /** 地図から登録したときの地点。地図を開き直すときの中心に使う。 */
+  coordinates: LatLng | null;
 };
 
 type PropertyValue = {
@@ -34,6 +38,7 @@ function normalize(page: Page, map: PlacePropertyMap): PlaceItem | null {
     name,
     address: text(get("address")?.rich_text) || null,
     tags: get("tags")?.multi_select?.map((option) => option.name ?? "").filter(Boolean) ?? [],
+    coordinates: parseCoordinates(text(get("coordinates")?.rich_text)),
   };
 }
 
@@ -83,30 +88,62 @@ export async function loadPlaceCatalog(connection: NotionConnection | null): Pro
   return { ready: true, places: await loadPlaces(connection) };
 }
 
-/** 場所を1件追加する。すでに同じ名前があれば作らず、その場所を返す。 */
+const richText = (content: string) => ({ rich_text: [{ type: "text", text: { content } }] });
+
+/**
+ * 場所を1件追加する。すでに同じ名前があれば作らず、その場所を返す。
+ *
+ * 同名の場所に住所・座標が入っていないときだけ、今回の値で埋める。
+ * 地図から選び直したときに「自宅」のような既存の場所へ地点を足せるようにするため。
+ * すでに入っている値は上書きしない。利用者がNotion側で直した内容を黙って戻さないため。
+ */
 export async function createPlace(
   connection: NotionConnection,
-  input: { name: string; address?: string | null },
+  input: { name: string; address?: string | null; coordinates?: LatLng | null },
 ): Promise<PlaceItem> {
   if (!connection.placeDataSourceId) throw new Error("Place data source is not configured");
   const map = (connection.placePropertyMap as PlacePropertyMap | null) ?? {};
   if (!map.name) throw new Error("Place name property is not configured");
 
+  const notion = createNotionClient(connection);
   const existing = (await loadPlaces(connection)).find((place) => place.name === input.name);
-  if (existing) return existing;
+
+  if (existing) {
+    const filled: Record<string, unknown> = {};
+    if (map.address && input.address && !existing.address) {
+      filled[map.address] = richText(input.address);
+    }
+    if (map.coordinates && input.coordinates && !existing.coordinates) {
+      filled[map.coordinates] = richText(formatCoordinates(input.coordinates));
+    }
+    if (Object.keys(filled).length === 0) return existing;
+
+    await notion.pages.update({ page_id: existing.id, properties: filled as never });
+    return {
+      ...existing,
+      address: existing.address ?? input.address ?? null,
+      coordinates: existing.coordinates ?? input.coordinates ?? null,
+    };
+  }
 
   const properties: Record<string, unknown> = {
     [map.name]: { title: [{ type: "text", text: { content: input.name } }] },
   };
-  if (map.address && input.address) {
-    properties[map.address] = { rich_text: [{ type: "text", text: { content: input.address } }] };
+  if (map.address && input.address) properties[map.address] = richText(input.address);
+  if (map.coordinates && input.coordinates) {
+    properties[map.coordinates] = richText(formatCoordinates(input.coordinates));
   }
 
-  const notion = createNotionClient(connection);
   const page = await notion.pages.create({
     parent: { type: "data_source_id", data_source_id: connection.placeDataSourceId },
     properties: properties as never,
   });
 
-  return { id: page.id, name: input.name, address: input.address ?? null, tags: [] };
+  return {
+    id: page.id,
+    name: input.name,
+    address: input.address ?? null,
+    tags: [],
+    coordinates: input.coordinates ?? null,
+  };
 }

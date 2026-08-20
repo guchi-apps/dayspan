@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
  * スコープ不足なのか入力不正なのかを切り分けられなくなる。
  */
 export function externalApiError(
-  source: "google" | "notion",
+  source: "google" | "notion" | "osm",
   operation: string,
   error: unknown,
 ): NextResponse {

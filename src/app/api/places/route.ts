@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
+import { parseCoordinates } from "@/lib/coordinates";
 import { getNotionPlaceConnection } from "@/services/calendar/write-context";
 import { createPlace } from "@/services/notion/places";
 
@@ -13,12 +14,21 @@ export async function POST(request: Request) {
   const connection = await getNotionPlaceConnection(userId);
   if (!connection) return NextResponse.json({ error: "not_connected" }, { status: 404 });
 
-  const body = (await request.json()) as { name?: string; address?: string | null };
+  const body = (await request.json()) as {
+    name?: string;
+    address?: string | null;
+    /** 地図から登録したときの地点。`"35.658034,139.701636"` の形で受ける。 */
+    coordinates?: string | null;
+  };
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
 
   try {
-    const place = await createPlace(connection, { name, address: body.address?.trim() || null });
+    const place = await createPlace(connection, {
+      name,
+      address: body.address?.trim() || null,
+      coordinates: parseCoordinates(body.coordinates),
+    });
     return NextResponse.json(place);
   } catch (error) {
     return externalApiError("notion", "場所の登録", error);
