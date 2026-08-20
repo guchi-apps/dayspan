@@ -176,13 +176,18 @@ export function TaskList({
     setItemDialog({ task: toTaskDraft(task, timeZone) });
   };
 
+  /**
+   * 右下の「＋」からの追加。この画面で作れるのはタスクだけで、日付リマインドは
+   * 専用一覧（/reminders）に寄せている（docs/spec.md §9・§15）。ひな型が1つのため
+   * ItemDialog に切り替えは出ず、タスクの入力画面がそのまま開く。
+   */
   const openAdd = () => {
-    const drafts: ItemDrafts = {};
-    drafts.task = {
-      dueMode: "datetime",
-      due: dateKeyPlusMinutes(todayKey, DEFAULT_TASK_DUE_MINUTES),
+    const drafts: ItemDrafts = {
+      task: {
+        dueMode: "datetime",
+        due: dateKeyPlusMinutes(todayKey, DEFAULT_TASK_DUE_MINUTES),
+      },
     };
-    drafts.reminder = { dateMode: "date", date: todayKey };
     setItemDialog(drafts);
   };
 
@@ -342,9 +347,7 @@ export function TaskList({
 
       {itemDialog && (
         <ItemDialog
-          initialKind={
-            itemDialog.event ? "event" : itemDialog.task ? "task" : "reminder"
-          }
+          initialKind="task"
           drafts={itemDialog}
           calendars={calendars}
           tagCatalog={tagCatalog}
