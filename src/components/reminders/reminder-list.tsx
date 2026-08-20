@@ -62,7 +62,8 @@ export function ReminderList({
   // 次に来る日も一緒に持つ。表示画面へ渡して「次は◯年◯月◯日（◯年目）」を出すため。
   const [viewing, setViewing] = useState<ReminderOccurrence | null>(null);
   // 過ぎた日付は既定で畳む。件数が増え続けるうえ、一覧を開く理由は次に来る日を見ることのため。
-  const [pastOpen, setPastOpen] = useState(false);
+  // まだ押されていない間は null にして、DBの構成から決めた既定に従う（下の pastExpanded）。
+  const [pastOpen, setPastOpen] = useState<boolean | null>(null);
 
   // オフライン中は書き込みを止める（docs/spec.md §21）。
   const offline = useOffline();
@@ -78,6 +79,15 @@ export function ReminderList({
     () => buildReminderSections(reminders, todayKey, utils.itemDateKey),
     [reminders, todayKey, utils],
   );
+
+  // 「毎年」は任意のプロパティで、未設定のDBでは全項目が annual === null になる。その場合は
+  // 誕生日・記念日まで単発として扱われ、過去の日付がまとめて折りたたみへ入るため、
+  // 開いた直後の一覧がほとんど空に見える。毎年かどうかが分かるDBでのみ既定で畳む。
+  const annualKnown = useMemo(
+    () => reminders.some((reminder) => reminder.annual !== null),
+    [reminders],
+  );
+  const pastExpanded = pastOpen ?? !annualKnown;
 
   // 年の区切りを出す位置。見出しは月だけにして、年が変わったときにだけ添える。
   // 最初の区分は今日の年と比べる（年内に来る項目が1件も無いと、先頭から翌年になるため）。
@@ -160,15 +170,15 @@ export function ReminderList({
               <button
                 type="button"
                 className="flex w-full items-center gap-1.5 px-4 py-1.5 text-left type-label-large text-on-surface-variant"
-                aria-expanded={pastOpen}
-                onClick={() => setPastOpen(!pastOpen)}
+                aria-expanded={pastExpanded}
+                onClick={() => setPastOpen(!pastExpanded)}
               >
-                {pastOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                {pastExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                 過ぎた日付
                 <span className="type-label-small opacity-70">{past.length}</span>
               </button>
             </h2>
-            {pastOpen && (
+            {pastExpanded && (
               <ul className="divide-y divide-rule">
                 {past.map((occurrence) => (
                   <ReminderRow
