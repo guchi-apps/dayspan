@@ -73,6 +73,16 @@ import {
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 import type { SlotRangeCommit } from "./use-slot-range";
 
+/**
+ * 右下の「＋」から作れる種類。日付リマインドは含めない。
+ *
+ * 誕生日・契約更新日は一度入れたら数年触らない一方、カレンダーの「＋」は予定を足す操作として
+ * 毎日使われる。そこに完了状態を持たない日付リマインドが並ぶと、やって終わらせるものの
+ * 置き場として選ばれ、完了を付ける場所が無いまま残る（issue #292）。作成は専用一覧
+ * （`/reminders`）に寄せ、カレンダー上での表示・編集・削除は従来どおり行える。
+ */
+type AddableKind = Exclude<ItemKind, "reminder">;
+
 // 日付だけが決まっている追加（右下の「＋」・月表示の長押し）で使う開始時刻。
 const DEFAULT_START_MINUTES = 9 * 60;
 
@@ -551,7 +561,7 @@ export function CalendarShell({
    * 右下の「＋」からの追加。作れる種類ぶんのひな型をまとめて渡し、
    * 画面上で切り替えられるようにする。日付はどれも同じ日から始める。
    */
-  const openAdd = (available: Record<ItemKind, boolean>) => {
+  const openAdd = (available: Record<AddableKind, boolean>) => {
     const drafts: ItemDrafts = {};
     if (available.event) drafts.event = newEventDraft(defaultDayKey, DEFAULT_START_MINUTES);
     if (available.task) {
@@ -560,7 +570,6 @@ export function CalendarShell({
         due: dateKeyPlusMinutes(defaultDayKey, DEFAULT_TASK_DUE_MINUTES),
       };
     }
-    if (available.reminder) drafts.reminder = { dateMode: "date", date: defaultDayKey };
     if (available.travel) {
       // 単独の移動は往復の起点になる予定が無いため、行きだけを作る。
       drafts.travel = {
@@ -573,13 +582,7 @@ export function CalendarShell({
     }
 
     // 「＋」は予定を足す操作として使われることが多い。作れるなら予定から開く。
-    const initialKind: ItemKind = available.event
-      ? "event"
-      : available.task
-        ? "task"
-        : available.reminder
-          ? "reminder"
-          : "travel";
+    const initialKind: ItemKind = available.event ? "event" : available.task ? "task" : "travel";
     setItemDialog({ initialKind, drafts });
   };
 
@@ -924,7 +927,7 @@ function CalendarBody({
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
   /** 右下の「＋」。作れる種類を渡し、ひな型は呼び出し側で作る。 */
-  onAdd: (available: Record<ItemKind, boolean>) => void;
+  onAdd: (available: Record<AddableKind, boolean>) => void;
   onCloseDialogs: () => void;
   onRefreshAll: () => void;
   onLoadingChange: (loading: boolean) => void;
@@ -1067,7 +1070,6 @@ function CalendarBody({
         available={{
           event: !offline && data.calendars.length > 0,
           task: !offline && data.notionReady,
-          reminder: !offline && data.reminderReady,
           // 移動の本体はDaySpanのDBにあるため、外部連携が済んでいなくても作れる。
           travel: !offline,
         }}
@@ -1160,18 +1162,17 @@ function shiftDateKey(dateKey: string, days: number): string {
 }
 
 /**
- * 画面右下の「＋」。押すと入力画面が開き、そこで予定・タスク・日付リマインドを
- * 切り替える（docs/spec.md §15）。何を作るかは開いてからでも選べるため、
- * ここでは種類を選ばせない。
+ * 画面右下の「＋」。押すと入力画面が開き、そこで予定・タスク・移動を切り替える
+ * （docs/spec.md §15）。何を作るかは開いてからでも選べるため、ここでは種類を選ばせない。
  */
 function AddButton({
   available,
   onAdd,
 }: {
-  available: Record<ItemKind, boolean>;
-  onAdd: (available: Record<ItemKind, boolean>) => void;
+  available: Record<AddableKind, boolean>;
+  onAdd: (available: Record<AddableKind, boolean>) => void;
 }) {
-  if (!available.event && !available.task && !available.reminder && !available.travel) return null;
+  if (!available.event && !available.task && !available.travel) return null;
 
   return (
     <div className="fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-30 md:bottom-6">

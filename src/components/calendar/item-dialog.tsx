@@ -148,9 +148,7 @@ export function ItemDialog({
                   variant={kind === item.kind ? "secondary" : "ghost"}
                   size="xs"
                   className={cn(
-                    // 狭い画面では余白を詰める。4種類ぶんの名前が入り切らないと、
-                    // 枠が overflow-hidden のため末尾の「移動」が切れて読めなくなる。
-                    "type-label-large h-9 rounded-none px-3 sm:px-4",
+                    "type-label-large h-9 rounded-none px-4",
                     kind === item.kind && "text-on-secondary-container",
                   )}
                   onClick={() => {
