@@ -108,6 +108,13 @@ export function ReminderList({
     setItemDialog({ reminder: toReminderDraft(reminder, timeZone) });
   };
 
+  /**
+   * 右下の「＋」からの追加。日付リマインドを新しく作れるのはこの画面だけ（docs/spec.md §9・§15）。
+   *
+   * ここからタスクも作れるのは残す。迷ったときはタスクのほうが安全で、完了を付ける場所があり、
+   * 繰り返しなら次回分も作られる（§13）。日付リマインドは完了を持てないため、
+   * 取り違えたときに失うものが大きい。
+   */
   const openAdd = () => {
     const defaultDayKey = utils.todayKey();
     const drafts: ItemDrafts = {};

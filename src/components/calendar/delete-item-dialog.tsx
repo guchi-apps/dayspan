@@ -21,7 +21,15 @@ import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 
 /** 削除の対象。編集画面からも表示画面からも同じ確認を通す。 */
 export type DeletableItem =
-  | { kind: "event"; event: CalendarEventItem }
+  | {
+      kind: "event";
+      event: CalendarEventItem;
+      /**
+       * この予定に紐づいているタスクの名前（docs/spec.md §31）。予定を消すと紐づけも外れる。
+       * 分かる画面からだけ渡す（カレンダーの取得範囲を持たない画面では引けない）。
+       */
+      linkedTasks?: string[];
+    }
   | { kind: "task"; task: TaskItem }
   | { kind: "reminder"; reminder: ReminderItem }
   | { kind: "travel"; travel: TravelItem };
@@ -129,6 +137,17 @@ export function DeleteItemDialog({
               </Button>
             ))}
           </div>
+        )}
+
+        {/*
+          予定を消すと紐づけの相手が無くなる。押す前に、どのタスクの紐づけが外れるのかを示す
+          （docs/spec.md §31）。予定日そのものはタスクに残るため、いつやるつもりだったかは失われない。
+        */}
+        {item.kind === "event" && item.linkedTasks && item.linkedTasks.length > 0 && (
+          <p className="type-body-small text-on-surface-variant">
+            {item.linkedTasks.map((title) => `「${title}」`).join("")}
+            の紐づけが外れます。予定日はタスクに残ります。
+          </p>
         )}
 
         {error && <p className="text-sm text-destructive">{error}</p>}

@@ -24,6 +24,8 @@ import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { TaskDetailDialog } from "@/components/calendar/task-detail-dialog";
 import { ItemDialog, type ItemDrafts } from "@/components/calendar/item-dialog";
 import { toTaskDraft } from "@/components/calendar/task-form";
+import { taskLinkFullLabel } from "@/components/calendar/task-link-label";
+import { TaskStageMark } from "@/components/calendar/task-stage-mark";
 import { TagChip, TagChipList } from "@/components/tags/tag-chip";
 import { tagColorOf } from "@/components/tags/tag-color";
 import { useTaskViewPrefs } from "@/components/tasks/use-task-view-prefs";
@@ -176,13 +178,18 @@ export function TaskList({
     setItemDialog({ task: toTaskDraft(task, timeZone) });
   };
 
+  /**
+   * 右下の「＋」からの追加。この画面で作れるのはタスクだけで、日付リマインドは
+   * 専用一覧（/reminders）に寄せている（docs/spec.md §9・§15）。ひな型が1つのため
+   * ItemDialog に切り替えは出ず、タスクの入力画面がそのまま開く。
+   */
   const openAdd = () => {
-    const drafts: ItemDrafts = {};
-    drafts.task = {
-      dueMode: "datetime",
-      due: dateKeyPlusMinutes(todayKey, DEFAULT_TASK_DUE_MINUTES),
+    const drafts: ItemDrafts = {
+      task: {
+        dueMode: "datetime",
+        due: dateKeyPlusMinutes(todayKey, DEFAULT_TASK_DUE_MINUTES),
+      },
     };
-    drafts.reminder = { dateMode: "date", date: todayKey };
     setItemDialog(drafts);
   };
 
@@ -342,9 +349,7 @@ export function TaskList({
 
       {itemDialog && (
         <ItemDialog
-          initialKind={
-            itemDialog.event ? "event" : itemDialog.task ? "task" : "reminder"
-          }
+          initialKind="task"
           drafts={itemDialog}
           calendars={calendars}
           tagCatalog={tagCatalog}
@@ -372,6 +377,9 @@ export function TaskList({
             startTransition(() => router.refresh());
           }}
           onToggleDone={toggleDoneFromDetail}
+          // 紐づけの操作は表示画面のまま効く（docs/spec.md §31）。この画面は取得範囲を
+          // 持たないため、変わった期間は見ずにページごと読み直す。
+          onChanged={() => startTransition(() => router.refresh())}
         />
       )}
     </div>
@@ -443,6 +451,16 @@ function TaskRow({
           {task.planned && (
             <span className="opacity-80">
               予定 {formatTaskDate(task.planned, task.plannedHasTime, utils, todayKey)}
+            </span>
+          )}
+          {/*
+            予定への紐づけ（docs/spec.md §31）。この画面には予定が出ていないため、段階だけでは
+            何の前後なのかが読めない。予定名まで添える。
+          */}
+          {task.link && (
+            <span className="inline-flex items-center gap-1 opacity-80">
+              <TaskStageMark stage={task.link.stage} className="h-2.5 w-3" />
+              {taskLinkFullLabel(task.link)}
             </span>
           )}
           {task.recurrence && task.recurrence !== "なし" && (

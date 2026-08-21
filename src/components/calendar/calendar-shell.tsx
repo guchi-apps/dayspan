@@ -44,6 +44,7 @@ import type {
   CalendarEventItem,
   CalendarLoadResult,
   ReminderItem,
+  TaskEventStage,
   TaskItem,
   TravelItem,
 } from "@/types/calendar";
@@ -53,13 +54,14 @@ import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { EventDetailDialog } from "./event-detail-dialog";
 import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
-import { ItemDialog, type ItemDrafts, type ItemKind } from "./item-dialog";
+import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./item-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { ContinuousMonthView } from "./continuous-month-view";
 import { QuickEventSheet, toQuickEventDraft, type QuickEventDraft } from "./quick-event-sheet";
 import { ReminderDetailDialog } from "./reminder-detail-dialog";
 import { toReminderDraft } from "./reminder-form";
 import { TaskDetailDialog } from "./task-detail-dialog";
+import { TaskLinkDialog } from "./task-link-dialog";
 import { toTaskDraft } from "./task-form";
 import { TimeGridView, weekdayLabel, weekdayTone } from "./time-grid-view";
 import { TravelDetailDialog } from "./travel-detail-dialog";
@@ -237,6 +239,8 @@ export function CalendarShell({
   const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
   const [viewingReminder, setViewingReminder] = useState<ReminderItem | null>(null);
   const [viewingTravel, setViewingTravel] = useState<TravelItem | null>(null);
+  // タスクを紐づける相手の予定（docs/spec.md §31）。予定の詳細から開く。
+  const [linkingEvent, setLinkingEvent] = useState<CalendarEventItem | null>(null);
 
   /**
    * 記録中の帯を押したとき。開始・停止は記録の画面で行う（docs/spec.md §27）。
@@ -253,6 +257,7 @@ export function CalendarShell({
     setViewingTask(null);
     setViewingReminder(null);
     setViewingTravel(null);
+    setLinkingEvent(null);
   };
 
   /** 月表示以外の取り直し。ページごと描き直すため、表示中の期間ぶんをすべて取り直す。 */
@@ -442,6 +447,36 @@ export function CalendarShell({
     });
   };
 
+  /** 予定の詳細から、この予定にタスクを紐づける（docs/spec.md §31）。 */
+  const linkTaskForEvent = (event: CalendarEventItem) => {
+    if (offline) return;
+    setViewingEvent(null);
+    setLinkingEvent(event);
+  };
+
+  /**
+   * 紐づけダイアログから「新しいタスクを作る」。入力画面を紐づけ先つきで開く。
+   * 予定日はタスクを作ったあとの紐づけで入るため、ここでは未設定のままにする。
+   */
+  const createTaskForEvent = (event: CalendarEventItem, stage: TaskEventStage) => {
+    setLinkingEvent(null);
+    setItemDialog({
+      initialKind: "task",
+      drafts: {
+        task: {
+          dueMode: "none",
+          due: "",
+          linkTo: {
+            calendarId: event.calendarId,
+            eventId: event.id,
+            eventTitle: event.title,
+            stage,
+          },
+        },
+      },
+    });
+  };
+
   /** 新規作成の初期値。指定の日時から1時間ぶんで開く。 */
   const newEventDraft = (dateKey: string, minutes: number): EventDraft => ({
     allDay: false,
@@ -551,7 +586,7 @@ export function CalendarShell({
    * 右下の「＋」からの追加。作れる種類ぶんのひな型をまとめて渡し、
    * 画面上で切り替えられるようにする。日付はどれも同じ日から始める。
    */
-  const openAdd = (available: Record<ItemKind, boolean>) => {
+  const openAdd = (available: Record<AddableKind, boolean>) => {
     const drafts: ItemDrafts = {};
     if (available.event) drafts.event = newEventDraft(defaultDayKey, DEFAULT_START_MINUTES);
     if (available.task) {
@@ -560,7 +595,6 @@ export function CalendarShell({
         due: dateKeyPlusMinutes(defaultDayKey, DEFAULT_TASK_DUE_MINUTES),
       };
     }
-    if (available.reminder) drafts.reminder = { dateMode: "date", date: defaultDayKey };
     if (available.travel) {
       // 単独の移動は往復の起点になる予定が無いため、行きだけを作る。
       drafts.travel = {
@@ -573,13 +607,7 @@ export function CalendarShell({
     }
 
     // 「＋」は予定を足す操作として使われることが多い。作れるなら予定から開く。
-    const initialKind: ItemKind = available.event
-      ? "event"
-      : available.task
-        ? "task"
-        : available.reminder
-          ? "reminder"
-          : "travel";
+    const initialKind: AddableKind = available.event ? "event" : available.task ? "task" : "travel";
     setItemDialog({ initialKind, drafts });
   };
 
@@ -769,6 +797,7 @@ export function CalendarShell({
           viewingTask={viewingTask}
           viewingReminder={viewingReminder}
           viewingTravel={viewingTravel}
+          linkingEvent={linkingEvent}
           virtual={virtual}
           onVisibleMonthChange={handleVisibleMonthChange}
           onVisibleWeekChange={handleVisibleWeekChange}
@@ -784,6 +813,8 @@ export function CalendarShell({
           onEditReminder={editReminder}
           onEditTravel={editTravel}
           onAddTravelForEvent={addTravelForEvent}
+          onLinkTaskForEvent={linkTaskForEvent}
+          onCreateTaskForEvent={createTaskForEvent}
           onSelectSlot={(dateKey, minutes) => {
             if (offline) return;
             setQuickDraft(toQuickEventDraft(dateKey, minutes));
@@ -851,6 +882,7 @@ function CalendarBody({
   viewingTask,
   viewingReminder,
   viewingTravel,
+  linkingEvent,
   virtual,
   onVisibleMonthChange,
   onVisibleWeekChange,
@@ -866,6 +898,8 @@ function CalendarBody({
   onEditReminder,
   onEditTravel,
   onAddTravelForEvent,
+  onLinkTaskForEvent,
+  onCreateTaskForEvent,
   onSelectSlot,
   onSelectRange,
   onQuickAddOnDay,
@@ -901,6 +935,8 @@ function CalendarBody({
   viewingTask: TaskItem | null;
   viewingReminder: ReminderItem | null;
   viewingTravel: TravelItem | null;
+  /** タスクを紐づける相手の予定（docs/spec.md §31）。 */
+  linkingEvent: CalendarEventItem | null;
   virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
   onVisibleWeekChange: (weekKey: string) => void;
@@ -917,6 +953,10 @@ function CalendarBody({
   onEditTravel: (travel: TravelItem) => void;
   /** 予定の詳細から移動を足す。目的地・到着時刻はその予定から埋める。 */
   onAddTravelForEvent: (event: CalendarEventItem) => void;
+  /** 予定の詳細からタスクを紐づける（docs/spec.md §31）。 */
+  onLinkTaskForEvent: (event: CalendarEventItem) => void;
+  /** 紐づけダイアログから、紐づけた状態のタスクを新しく作る。 */
+  onCreateTaskForEvent: (event: CalendarEventItem, stage: TaskEventStage) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onSelectRange: (commit: SlotRangeCommit) => void;
   onQuickAddOnDay: (dateKey: string) => void;
@@ -924,7 +964,7 @@ function CalendarBody({
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
   /** 右下の「＋」。作れる種類を渡し、ひな型は呼び出し側で作る。 */
-  onAdd: (available: Record<ItemKind, boolean>) => void;
+  onAdd: (available: Record<AddableKind, boolean>) => void;
   onCloseDialogs: () => void;
   onRefreshAll: () => void;
   onLoadingChange: (loading: boolean) => void;
@@ -972,6 +1012,19 @@ function CalendarBody({
   const handleSaved = (touched: TouchedRange[] | null) => {
     onCloseDialogs();
 
+    if (view !== "month") {
+      onRefreshAll();
+      return;
+    }
+
+    data.invalidate(touched === null ? null : monthsOfRanges(touched));
+  };
+
+  /**
+   * 表示画面を開いたままの変更（紐づけの操作）。閉じずに、変わった期間だけ取り直す。
+   * 続けて段階を選び直せるようにするため、押すたびにダイアログを閉じない。
+   */
+  const handleChanged = (touched: TouchedRange[] | null) => {
     if (view !== "month") {
       onRefreshAll();
       return;
@@ -1067,7 +1120,6 @@ function CalendarBody({
         available={{
           event: !offline && data.calendars.length > 0,
           task: !offline && data.notionReady,
-          reminder: !offline && data.reminderReady,
           // 移動の本体はDaySpanのDBにあるため、外部連携が済んでいなくても作れる。
           travel: !offline,
         }}
@@ -1109,6 +1161,11 @@ function CalendarBody({
           onEdit={() => onEditEvent(viewingEvent)}
           onDuplicate={() => onDuplicateEvent(viewingEvent)}
           onAddTravel={() => onAddTravelForEvent(viewingEvent)}
+          onLinkTask={() => onLinkTaskForEvent(viewingEvent)}
+          // 消すと紐づけが外れるタスク。確認の前に示す（docs/spec.md §31）。
+          linkedTasks={data.tasks
+            .filter((task) => task.link?.eventId === viewingEvent.id)
+            .map((task) => task.title)}
           onDeleted={handleSaved}
         />
       )}
@@ -1123,6 +1180,18 @@ function CalendarBody({
           onEdit={() => onEditTask(viewingTask)}
           onDeleted={handleSaved}
           onToggleDone={handleToggleTaskDone}
+          onChanged={handleChanged}
+        />
+      )}
+
+      {/* 予定にタスクを紐づける（docs/spec.md §31）。 */}
+      {linkingEvent && (
+        <TaskLinkDialog
+          event={linkingEvent}
+          timeZone={timeZone}
+          onCancel={onCloseDialogs}
+          onCreateTask={(stage) => onCreateTaskForEvent(linkingEvent, stage)}
+          onLinked={handleSaved}
         />
       )}
 
@@ -1160,18 +1229,18 @@ function shiftDateKey(dateKey: string, days: number): string {
 }
 
 /**
- * 画面右下の「＋」。押すと入力画面が開き、そこで予定・タスク・日付リマインドを
- * 切り替える（docs/spec.md §15）。何を作るかは開いてからでも選べるため、
- * ここでは種類を選ばせない。
+ * 画面右下の「＋」。押すと入力画面が開き、そこで予定・タスク・移動を切り替える
+ * （docs/spec.md §15）。何を作るかは開いてからでも選べるため、ここでは種類を選ばせない。
+ * 日付リマインドはこの一覧に出さない（AddableKind の理由を参照）。
  */
 function AddButton({
   available,
   onAdd,
 }: {
-  available: Record<ItemKind, boolean>;
-  onAdd: (available: Record<ItemKind, boolean>) => void;
+  available: Record<AddableKind, boolean>;
+  onAdd: (available: Record<AddableKind, boolean>) => void;
 }) {
-  if (!available.event && !available.task && !available.reminder && !available.travel) return null;
+  if (!available.event && !available.task && !available.travel) return null;
 
   return (
     <div className="fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-30 md:bottom-6">

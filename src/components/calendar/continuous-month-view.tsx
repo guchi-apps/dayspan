@@ -30,6 +30,8 @@ import {
   type TaskDateField,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
+import { taskLinkFullLabel } from "./task-link-label";
+import { TaskStageMark } from "./task-stage-mark";
 import { TravelMark } from "./travel-mark";
 import { useLongPress } from "./use-long-press";
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
@@ -806,6 +808,9 @@ function TaskChip({
   const planned = field === "planned";
   const date = planned ? task.planned : task.due;
   const hasTime = planned ? task.plannedHasTime : task.hasTime;
+  // 紐づけの印は予定日の枠にだけ出す。紐づけから決まるのは予定日で、期限は利用者が
+  // 自分で決めた締切のまま動かないため（docs/spec.md §31）。
+  const link = planned ? task.link : null;
 
   return (
     <button
@@ -816,15 +821,25 @@ function TaskChip({
         planned && "border-dashed",
         task.done && "text-on-surface-variant line-through",
       )}
-      title={planned ? `予定日: ${task.title}` : task.title}
+      title={
+        link
+          ? `${taskLinkFullLabel(link)}: ${task.title}`
+          : planned
+            ? `予定日: ${task.title}`
+            : task.title
+      }
     >
-      <span
-        aria-hidden
-        className={cn(
-          "h-2.5 w-0.5 shrink-0",
-          task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
-        )}
-      />
+      {link ? (
+        <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2 w-2.5" />
+      ) : (
+        <span
+          aria-hidden
+          className={cn(
+            "h-2.5 w-0.5 shrink-0",
+            task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
+          )}
+        />
+      )}
       {hasTime && date && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(date)}</span>
       )}
