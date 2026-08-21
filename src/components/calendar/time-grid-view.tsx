@@ -23,6 +23,8 @@ import {
   type TaskOccurrence,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
+import { taskLinkFullLabel, taskLinkStageLabel } from "./task-link-label";
+import { TaskStageMark } from "./task-stage-mark";
 import { TravelBlock } from "./travel-block";
 import { SWIPE_SNAP_EASING, SWIPE_SNAP_MS, useDaySwipe } from "./use-day-swipe";
 import {
@@ -812,6 +814,8 @@ function DayColumn({
 
         const planned = field === "planned";
         const minutes = utils.minutesFromMidnight(date);
+        // 紐づけの印は予定日の枠にだけ出す（docs/spec.md §31）。
+        const link = planned ? task.link : null;
 
         return (
           <button
@@ -830,16 +834,21 @@ function DayColumn({
             }}
             className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
             style={{ top: offsetOf(previewFor(key)?.startMinutes ?? minutes) }}
-            title={`${utils.formatTime(date)} ${planned ? "予定日: " : ""}${task.title}`}
+            title={`${utils.formatTime(date)} ${link ? `${taskLinkFullLabel(link)}: ` : planned ? "予定日: " : ""}${task.title}`}
           >
-            {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。 */}
-            <span
-              aria-hidden
-              className={cn(
-                "h-2.5 w-0.5 shrink-0",
-                task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
-              )}
-            />
+            {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。
+                紐づいたタスクは、目盛りの代わりに段階の印を立てる。 */}
+            {link ? (
+              <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2.5 w-3" />
+            ) : (
+              <span
+                aria-hidden
+                className={cn(
+                  "h-2.5 w-0.5 shrink-0",
+                  task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
+                )}
+              />
+            )}
             <span
               className={cn(
                 "flex-1",
@@ -860,7 +869,10 @@ function DayColumn({
                 task.done && "text-muted-foreground line-through",
               )}
             >
+              {/* 段階のラベルは項目名と同じ1つの文字列として流す。別の要素にすると、枠が狭いときに
+                  削られるのが項目名の側になり、「終了後」だけが残って何のタスクか読めなくなる。 */}
               {task.title}
+              {link && <span className="opacity-70"> · {taskLinkStageLabel(link)}</span>}
             </span>
           </button>
         );
@@ -1415,6 +1427,7 @@ function AllDayTaskChip({
   onOpen: () => void;
 }) {
   const planned = field === "planned";
+  const link = planned ? task.link : null;
 
   return (
     <button
@@ -1427,16 +1440,23 @@ function AllDayTaskChip({
         task.done && "text-muted-foreground line-through",
         dragging && "ring-2 ring-foreground/50",
       )}
-      title={planned ? `予定日: ${task.title}` : task.title}
+      title={link ? `${taskLinkFullLabel(link)}: ${task.title}` : planned ? `予定日: ${task.title}` : task.title}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "h-2.5 w-0.5 shrink-0",
-          task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
-        )}
-      />
-      <span className="clip-nowrap">{task.title}</span>
+      {link ? (
+        <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2.5 w-3" />
+      ) : (
+        <span
+          aria-hidden
+          className={cn(
+            "h-2.5 w-0.5 shrink-0",
+            task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
+          )}
+        />
+      )}
+      <span className="clip-nowrap">
+        {task.title}
+        {link && <span className="opacity-70"> · {taskLinkStageLabel(link)}</span>}
+      </span>
     </button>
   );
 }

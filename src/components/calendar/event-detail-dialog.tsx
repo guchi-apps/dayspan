@@ -17,6 +17,7 @@ import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import type { CalendarEventItem } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { TaskStageMark } from "./task-stage-mark";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export function EventDetailDialog({
@@ -27,6 +28,8 @@ export function EventDetailDialog({
   onEdit,
   onDuplicate,
   onAddTravel,
+  onLinkTask,
+  linkedTasks,
   onDeleted,
 }: {
   event: CalendarEventItem;
@@ -38,6 +41,10 @@ export function EventDetailDialog({
   onDuplicate: () => void;
   /** この予定への移動を作る（docs/spec.md §29）。終日予定では出さない。 */
   onAddTravel: () => void;
+  /** この予定にタスクを紐づける（docs/spec.md §31）。 */
+  onLinkTask: () => void;
+  /** この予定に紐づいているタスクの名前。削除の確認で、外れる紐づけを示すために使う。 */
+  linkedTasks?: string[];
   /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onDeleted: (touched: TouchedRange[] | null) => void;
 }) {
@@ -71,6 +78,11 @@ export function EventDetailDialog({
     setTimeout(onAddTravel, 150);
   };
 
+  const linkTask = () => {
+    setOpen(false);
+    setTimeout(onLinkTask, 150);
+  };
+
   /*
    * 移動を足せるのは時刻のある予定だけ。終日予定には「何時までに着けばよいか」が無く、
    * 出発時刻を逆算する起点が決まらない。
@@ -87,7 +99,7 @@ export function EventDetailDialog({
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         {confirmingDelete && (
           <DeleteItemDialog
-            item={{ kind: "event", event }}
+            item={{ kind: "event", event, linkedTasks }}
             onCancel={() => setConfirmingDelete(false)}
             onDeleted={deleted}
           />
@@ -175,21 +187,39 @@ export function EventDetailDialog({
           {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
 
           {/*
-            移動を足す導線はここに置く。アイコンだけの操作にすると、矢印が何を指すのか
-            押してみるまで分からない。目的地・到着時刻をこの予定から埋めることも添える。
+            この予定から作れるものへの導線。アイコンだけの操作にすると、矢印が何を指すのか
+            押してみるまで分からないため、名前を添えたボタンとして並べる。
           */}
-          {canAddTravel && (
+          <div className="flex flex-wrap gap-2">
+            {canAddTravel && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-travel-container text-on-travel-container"
+                disabled={readOnly}
+                onClick={addTravel}
+              >
+                <ArrowRight className="size-4" />
+                移動を足す
+              </Button>
+            )}
+
+            {/*
+              タスクを紐づける入口（docs/spec.md §31）。終日予定でも出す。移動と違い、
+              出発時刻を逆算する起点が要らず、その日のうちにやる、で置き場所が決まるため。
+              使用がオフのカレンダーでも出す。紐づけはGoogleへ書き込まないため。
+            */}
             <Button
               variant="outline"
               size="sm"
-              className="w-fit bg-travel-container text-on-travel-container"
+              className="bg-secondary-container text-on-secondary-container"
               disabled={readOnly}
-              onClick={addTravel}
+              onClick={linkTask}
             >
-              <ArrowRight className="size-4" />
-              移動を足す
+              <TaskStageMark stage="AFTER_END" className="h-4 w-5 text-on-secondary-container" />
+              タスクを紐づける
             </Button>
-          )}
+          </div>
         </div>
 
         <DialogFooter>

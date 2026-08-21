@@ -47,7 +47,54 @@ export type TaskItem = {
   tags: string[];
   memo: string | null;
   recurrence: string | null;
+  /**
+   * 予定への紐づけ（docs/spec.md §31）。紐づいているタスクの予定日は、この予定の段階から決まる。
+   * Notionから読んだ時点では分からないため、読み込み側（services/task-links）で埋める。
+   */
+  link: TaskEventLinkItem | null;
   url: string | null;
+};
+
+/** タスクを予定のどの段階に置くか。Prismaの TaskEventStage と同じ並びにする。 */
+export const TASK_EVENT_STAGES = ["BEFORE_START", "DURING", "BEFORE_END", "AFTER_END"] as const;
+
+export type TaskEventStage = (typeof TASK_EVENT_STAGES)[number];
+
+export const TASK_EVENT_STAGE_LABELS: Record<TaskEventStage, string> = {
+  BEFORE_START: "開始まで",
+  DURING: "実施中",
+  BEFORE_END: "終了まで",
+  AFTER_END: "終了後",
+};
+
+export function isTaskEventStage(value: unknown): value is TaskEventStage {
+  return typeof value === "string" && (TASK_EVENT_STAGES as readonly string[]).includes(value);
+}
+
+/**
+ * タスクと予定の紐づけ（docs/spec.md §31）。
+ *
+ * 本体はDaySpanのDBにある。Google Calendarの予定にもNotionのタスクにも「相手を指す欄」は無く、
+ * 足せば利用者のDBの構成を変えることになるため、結ぶ線だけをDaySpanが持つ。
+ */
+export type TaskEventLinkItem = {
+  id: string;
+  taskId: string;
+  calendarId: string;
+  eventId: string;
+  stage: TaskEventStage;
+  /** 予定名。一次情報源はGoogleで、予定が手元にあるときは最新の値へ差し替えて渡す。 */
+  eventTitle: string;
+  /** 最後に予定日へ入れた日時。時刻なしは YYYY-MM-DD、時刻ありは ISO 8601。 */
+  resolvedAt: string;
+  resolvedAllDay: boolean;
+  /**
+   * 紐づけ先の予定が動き、タスクの予定日と食い違っているか。
+   * 予定が取得範囲に無いときは判定できないため false（ずれていないとは限らない）。
+   */
+  drifted: boolean;
+  /** ずれているときの、いまの予定から決まる日時。「予定に合わせる」で入る値。 */
+  expectedAt: string | null;
 };
 
 export type ReminderItem = {

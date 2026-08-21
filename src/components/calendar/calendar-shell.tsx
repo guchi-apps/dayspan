@@ -44,6 +44,7 @@ import type {
   CalendarEventItem,
   CalendarLoadResult,
   ReminderItem,
+  TaskEventStage,
   TaskItem,
   TravelItem,
 } from "@/types/calendar";
@@ -60,6 +61,7 @@ import { QuickEventSheet, toQuickEventDraft, type QuickEventDraft } from "./quic
 import { ReminderDetailDialog } from "./reminder-detail-dialog";
 import { toReminderDraft } from "./reminder-form";
 import { TaskDetailDialog } from "./task-detail-dialog";
+import { TaskLinkDialog } from "./task-link-dialog";
 import { toTaskDraft } from "./task-form";
 import { TimeGridView, weekdayLabel, weekdayTone } from "./time-grid-view";
 import { TravelDetailDialog } from "./travel-detail-dialog";
@@ -237,6 +239,8 @@ export function CalendarShell({
   const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
   const [viewingReminder, setViewingReminder] = useState<ReminderItem | null>(null);
   const [viewingTravel, setViewingTravel] = useState<TravelItem | null>(null);
+  // タスクを紐づける相手の予定（docs/spec.md §31）。予定の詳細から開く。
+  const [linkingEvent, setLinkingEvent] = useState<CalendarEventItem | null>(null);
 
   /**
    * 記録中の帯を押したとき。開始・停止は記録の画面で行う（docs/spec.md §27）。
@@ -253,6 +257,7 @@ export function CalendarShell({
     setViewingTask(null);
     setViewingReminder(null);
     setViewingTravel(null);
+    setLinkingEvent(null);
   };
 
   /** 月表示以外の取り直し。ページごと描き直すため、表示中の期間ぶんをすべて取り直す。 */
@@ -437,6 +442,36 @@ export function CalendarShell({
           arriveAt: isoToLocalInput(event.start, timeZone),
           linkedEvent: { id: event.id, calendarId: event.calendarId, endAt: event.end },
           roundTrip: travelSettings.roundTrip,
+        },
+      },
+    });
+  };
+
+  /** 予定の詳細から、この予定にタスクを紐づける（docs/spec.md §31）。 */
+  const linkTaskForEvent = (event: CalendarEventItem) => {
+    if (offline) return;
+    setViewingEvent(null);
+    setLinkingEvent(event);
+  };
+
+  /**
+   * 紐づけダイアログから「新しいタスクを作る」。入力画面を紐づけ先つきで開く。
+   * 予定日はタスクを作ったあとの紐づけで入るため、ここでは未設定のままにする。
+   */
+  const createTaskForEvent = (event: CalendarEventItem, stage: TaskEventStage) => {
+    setLinkingEvent(null);
+    setItemDialog({
+      initialKind: "task",
+      drafts: {
+        task: {
+          dueMode: "none",
+          due: "",
+          linkTo: {
+            calendarId: event.calendarId,
+            eventId: event.id,
+            eventTitle: event.title,
+            stage,
+          },
         },
       },
     });
@@ -762,6 +797,7 @@ export function CalendarShell({
           viewingTask={viewingTask}
           viewingReminder={viewingReminder}
           viewingTravel={viewingTravel}
+          linkingEvent={linkingEvent}
           virtual={virtual}
           onVisibleMonthChange={handleVisibleMonthChange}
           onVisibleWeekChange={handleVisibleWeekChange}
@@ -777,6 +813,8 @@ export function CalendarShell({
           onEditReminder={editReminder}
           onEditTravel={editTravel}
           onAddTravelForEvent={addTravelForEvent}
+          onLinkTaskForEvent={linkTaskForEvent}
+          onCreateTaskForEvent={createTaskForEvent}
           onSelectSlot={(dateKey, minutes) => {
             if (offline) return;
             setQuickDraft(toQuickEventDraft(dateKey, minutes));
@@ -844,6 +882,7 @@ function CalendarBody({
   viewingTask,
   viewingReminder,
   viewingTravel,
+  linkingEvent,
   virtual,
   onVisibleMonthChange,
   onVisibleWeekChange,
@@ -859,6 +898,8 @@ function CalendarBody({
   onEditReminder,
   onEditTravel,
   onAddTravelForEvent,
+  onLinkTaskForEvent,
+  onCreateTaskForEvent,
   onSelectSlot,
   onSelectRange,
   onQuickAddOnDay,
@@ -894,6 +935,8 @@ function CalendarBody({
   viewingTask: TaskItem | null;
   viewingReminder: ReminderItem | null;
   viewingTravel: TravelItem | null;
+  /** タスクを紐づける相手の予定（docs/spec.md §31）。 */
+  linkingEvent: CalendarEventItem | null;
   virtual: { firstWeekKey: string; weekCount: number };
   onVisibleMonthChange: (monthKey: string) => void;
   onVisibleWeekChange: (weekKey: string) => void;
@@ -910,6 +953,10 @@ function CalendarBody({
   onEditTravel: (travel: TravelItem) => void;
   /** 予定の詳細から移動を足す。目的地・到着時刻はその予定から埋める。 */
   onAddTravelForEvent: (event: CalendarEventItem) => void;
+  /** 予定の詳細からタスクを紐づける（docs/spec.md §31）。 */
+  onLinkTaskForEvent: (event: CalendarEventItem) => void;
+  /** 紐づけダイアログから、紐づけた状態のタスクを新しく作る。 */
+  onCreateTaskForEvent: (event: CalendarEventItem, stage: TaskEventStage) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onSelectRange: (commit: SlotRangeCommit) => void;
   onQuickAddOnDay: (dateKey: string) => void;
@@ -965,6 +1012,19 @@ function CalendarBody({
   const handleSaved = (touched: TouchedRange[] | null) => {
     onCloseDialogs();
 
+    if (view !== "month") {
+      onRefreshAll();
+      return;
+    }
+
+    data.invalidate(touched === null ? null : monthsOfRanges(touched));
+  };
+
+  /**
+   * 表示画面を開いたままの変更（紐づけの操作）。閉じずに、変わった期間だけ取り直す。
+   * 続けて段階を選び直せるようにするため、押すたびにダイアログを閉じない。
+   */
+  const handleChanged = (touched: TouchedRange[] | null) => {
     if (view !== "month") {
       onRefreshAll();
       return;
@@ -1101,6 +1161,11 @@ function CalendarBody({
           onEdit={() => onEditEvent(viewingEvent)}
           onDuplicate={() => onDuplicateEvent(viewingEvent)}
           onAddTravel={() => onAddTravelForEvent(viewingEvent)}
+          onLinkTask={() => onLinkTaskForEvent(viewingEvent)}
+          // 消すと紐づけが外れるタスク。確認の前に示す（docs/spec.md §31）。
+          linkedTasks={data.tasks
+            .filter((task) => task.link?.eventId === viewingEvent.id)
+            .map((task) => task.title)}
           onDeleted={handleSaved}
         />
       )}
@@ -1115,6 +1180,18 @@ function CalendarBody({
           onEdit={() => onEditTask(viewingTask)}
           onDeleted={handleSaved}
           onToggleDone={handleToggleTaskDone}
+          onChanged={handleChanged}
+        />
+      )}
+
+      {/* 予定にタスクを紐づける（docs/spec.md §31）。 */}
+      {linkingEvent && (
+        <TaskLinkDialog
+          event={linkingEvent}
+          timeZone={timeZone}
+          onCancel={onCloseDialogs}
+          onCreateTask={(stage) => onCreateTaskForEvent(linkingEvent, stage)}
+          onLinked={handleSaved}
         />
       )}
 
