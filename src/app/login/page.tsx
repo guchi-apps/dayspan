@@ -3,6 +3,7 @@ import { CalendarDays } from "lucide-react";
 import { ClearOfflineCache } from "@/components/offline/clear-offline-cache";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { resolveInternalPath } from "@/lib/home-path";
 
 export default async function LoginPage({
   searchParams,
@@ -11,10 +12,7 @@ export default async function LoginPage({
 }) {
   const { error, callbackUrl } = await searchParams;
 
-  const next =
-    callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
-      ? callbackUrl
-      : "/calendar";
+  const next = resolveInternalPath(callbackUrl);
 
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-8 bg-surface-container-low p-4">
