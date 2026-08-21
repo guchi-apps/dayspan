@@ -201,6 +201,30 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
     }
   };
 
+  /**
+   * 使用中の場所DBへ「座標」プロパティを足す。
+   * 地図からの登録より前に作ったDBには置き場所が無く、Notion側で何という名前・どの型で
+   * 足せばよいかは画面のどこにも出ていないため、ここから実行できるようにする。
+   */
+  const addPlaceCoordinates = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/place-database/coordinates", { method: "POST" });
+      if (!response.ok) {
+        setMessage({
+          text: await errorText(response, "座標プロパティを追加できませんでした。"),
+          tone: "error",
+        });
+        return;
+      }
+      setMessage({ text: "場所DBに「座標」プロパティを追加しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const selectGarbageDataSource = async (dataSourceId: string) => {
     setBusy(true);
     setMissing(null);
@@ -424,7 +448,8 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium">場所DBを選択</span>
               <p className="text-xs text-muted-foreground">
-                よく行く場所を管理します。予定の「場所」欄に入力候補として出ます。名前が必要で、住所とタグは任意です。
+                よく行く場所を管理します。予定・移動の「場所」欄に入力候補として出ます。
+                名前が必要で、住所・タグ・座標は任意です。座標は地図から登録したときの地点が入ります。
               </p>
               {state.placeDataSourceId && (
                 <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
@@ -440,6 +465,18 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                       </div>
                     ))}
                   </dl>
+                  {!state.placePropertyMap?.coordinates && (
+                    <div className="flex flex-col items-start gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        座標のプロパティがありません。足すと、地図から登録した場所を次に開くとき
+                        その地点から始められます。無いままでも登録はできます。
+                      </p>
+                      <Button variant="outline" size="sm" disabled={disabled} onClick={addPlaceCoordinates}>
+                        <Plus className="size-4" />
+                        座標プロパティを追加
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
               <ul className="flex flex-wrap gap-2">

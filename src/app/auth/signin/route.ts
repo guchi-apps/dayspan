@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { resolveInternalPath } from "@/lib/home-path";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,9 +13,7 @@ import { createClient } from "@/lib/supabase/server";
  */
 export async function GET(request: NextRequest) {
   const origin = getRequestOrigin(request);
-  const nextParam = request.nextUrl.searchParams.get("next");
-  const next =
-    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/calendar";
+  const next = resolveInternalPath(request.nextUrl.searchParams.get("next"));
 
   const supabase = await createClient();
 

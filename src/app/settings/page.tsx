@@ -39,7 +39,7 @@ export default async function SettingsPage() {
     ]);
 
   return (
-    <SettingsShell title="設定" backHref="/calendar" backLabel="カレンダー">
+    <SettingsShell title="設定" backHref="/activity" backLabel="記録">
       <Card className="gap-0 py-0">
         <MenuItem
           href="/settings/google"
