@@ -992,7 +992,7 @@ function ReminderMarker({
       <span aria-hidden className="h-2.5 w-0.5 shrink-0 bg-tertiary" />
       <span className="h-px flex-1 bg-tertiary/45" />
       <span className="type-label-small clip-nowrap flex max-w-[78%] items-center gap-1 rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1">
-        <ReminderMark className="size-1.5" />
+        <ReminderMark source={reminder.source} />
         <span className="clip-nowrap">
           {reminder.title}
           {yearLabel && <span className="opacity-70"> {yearLabel}</span>}
@@ -1485,7 +1485,7 @@ function AllDayReminderChip({
       className="type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1.5 py-0.5 text-left"
       title={fullYearLabel ? `${reminder.title} ${fullYearLabel}` : reminder.title}
     >
-      <ReminderMark className="size-2" />
+      <ReminderMark source={reminder.source} size="md" />
       <span className="clip-nowrap">
         {reminder.title}
         {yearLabel && <span className="opacity-70"> {yearLabel}</span>}
