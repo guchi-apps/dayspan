@@ -726,7 +726,7 @@ function ReminderChip({
       className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
       title={fullYearLabel ? `${reminder.title} ${fullYearLabel}` : reminder.title}
     >
-      <ReminderMark className="size-1.5" />
+      <ReminderMark source={reminder.source} />
       {reminder.hasTime && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(reminder.date)}</span>
       )}
