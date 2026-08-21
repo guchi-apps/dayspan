@@ -12,6 +12,7 @@ import { loadTagCatalog } from "@/services/notion/tag-options";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { listAllTasks } from "@/services/notion/tasks";
 import { loadWritableCalendars } from "@/services/calendar/load";
+import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
 import type { TaskItem } from "@/types/calendar";
 
 export default async function TasksPage() {
@@ -35,11 +36,15 @@ export default async function TasksPage() {
   const tagCatalogPromise = loadTagCatalog(connection);
   const placeCatalogPromise = loadPlaceCatalog(connection);
   const calendarsPromise = loadWritableCalendars(user.id);
+  // 紐づけ（docs/spec.md §31）は行に「定例会議 の終了後」を添えるために読む。DaySpanのDBなので
+  // 外部APIの往復は増えない。ここには予定が無いため、ずれの判定はカレンダー画面側だけで行う。
+  const linksPromise = listTaskLinks(user.id);
   try {
     tasks = await listAllTasks(createNotionClient(connection), connection);
   } catch {
     loadError = "Notionのタスクを取得できませんでした。";
   }
+  tasks = attachTaskLinks(tasks, await linksPromise);
 
   return (
     <TaskList

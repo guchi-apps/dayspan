@@ -12,6 +12,7 @@ import {
   type EventWriteInput,
 } from "@/services/google-calendar/events";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
+import { dropLinksForEvent, syncLinksForEvent } from "@/services/task-links/links";
 
 type Body = Partial<EventWriteInput> & { calendarId?: string; previousCalendarId?: string };
 
@@ -76,7 +77,18 @@ export async function PATCH(
       attendees: body.attendees ?? [],
       timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
     });
-    return NextResponse.json({ ok: true });
+
+    // 紐づいたタスクの予定日を、動かした先へ合わせる（docs/spec.md §31）。編集画面からの保存も
+    // 時間グリッドのドラッグも、どちらもこの経路を通るため1か所で両方に効く。
+    // 予定の更新そのものは成功しているため、追随に失敗しても応答は失敗にしない。
+    const links = await syncLinksForEvent(userId, eventId, {
+      allDay: Boolean(body.allDay),
+      start: body.start,
+      end: body.end,
+      title: body.title.trim(),
+    });
+
+    return NextResponse.json({ ok: true, taskLinks: links });
   } catch (error) {
     return externalApiError("google", moving ? "予定のカレンダー移動" : "予定の更新", error);
   }
@@ -112,7 +124,11 @@ export async function DELETE(
 
   try {
     await deleteEventWithScope(target.account, calendarId, eventId, scope);
-    return NextResponse.json({ ok: true });
+
+    // 紐づけの相手が消えたので外す。予定日はタスクに残す（消すと「いつやるつもりか」まで失われる）。
+    const unlinked = await dropLinksForEvent(userId, eventId, scope);
+
+    return NextResponse.json({ ok: true, unlinkedTasks: unlinked });
   } catch (error) {
     return externalApiError("google", "予定の削除", error);
   }

@@ -76,6 +76,9 @@ export function normalizeTask(page: NotionPage, propertyMap: PropertyMap): TaskI
     tags: (get("tags")?.multi_select ?? []).map((tag) => tag.name ?? "").filter(Boolean),
     memo: plainText(get("memo")?.rich_text) || null,
     recurrence: readChoice(get("recurrence")),
+    // 予定への紐づけはDaySpanのDBにある（docs/spec.md §31）。Notionの応答からは分からないため、
+    // ここでは空にしておき、読み込み側（services/task-links/links.ts）で埋める。
+    link: null,
     url: page.url ?? null,
   };
 }
