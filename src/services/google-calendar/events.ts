@@ -299,7 +299,13 @@ export async function deleteEventWithScope(
   await endSeriesBefore(account, calendarId, masterId, instance);
 }
 
-async function getEvent(
+/**
+ * 予定を1件取得する。繰り返しの1回分のID（`<親のID>_<日時>`）でも引ける。
+ *
+ * 紐づけたタスクの日時を決め直すとき（services/task-links）にも使う。取得した予定は
+ * toCalendarItems() へ通せば、終日の終了日の扱いまで一覧と同じ形に揃う。
+ */
+export async function getEvent(
   account: GoogleAccount,
   calendarId: string,
   eventId: string,

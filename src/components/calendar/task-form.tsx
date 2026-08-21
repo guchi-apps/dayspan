@@ -22,12 +22,14 @@ import { TagPicker } from "@/components/tags/tag-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { RECURRENCE_PRESETS } from "@/services/notion/recurrence";
 import type { TagOption } from "@/services/notion/tag-options";
-import type { TaskItem } from "@/types/calendar";
+import { TASK_EVENT_STAGE_LABELS, type TaskEventStage, type TaskItem } from "@/types/calendar";
 
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { readErrorMessage } from "./response-error";
+import { formatLinkedDate, taskLinkFullLabel } from "./task-link-label";
+import { TaskStageMark } from "./task-stage-mark";
 import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 
 const PRIORITY_OPTIONS = ["高", "中", "低"];
@@ -55,6 +57,11 @@ export type TaskDraft = {
   /** 予定日の指定方法。追加のときは省略してよい（未設定から始める）。 */
   plannedMode?: DueMode;
   planned?: string;
+  /**
+   * 紐づけた状態で作る（docs/spec.md §31）。予定の詳細の「タスクを紐づける」から来る。
+   * 保存してタスクのIDが決まってからでないと紐づけられないため、ここでは相手だけを持ち回る。
+   */
+  linkTo?: { calendarId: string; eventId: string; eventTitle: string; stage: TaskEventStage };
 };
 
 /**
@@ -95,6 +102,11 @@ export function TaskForm({
   const [memo, setMemo] = useState(editing?.memo ?? "");
   const [tags, setTags] = useState<string[]>(editing?.tags ?? []);
   const [recurrence, setRecurrence] = useState(editing?.recurrence ?? "なし");
+  // 予定への紐づけ（docs/spec.md §31）。解除は保存を待たずにその場で効かせる。
+  // 予定日を直せるようにするための操作で、押した直後に欄が開かないと解除できたのか分からない。
+  const [link, setLink] = useState(editing?.link ?? null);
+  // 紐づけて作る途中で、タスクだけ作れて紐づけが失敗したときの作成済みID。
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 削除は押した直後には実行せず、確認を挟む。
@@ -114,10 +126,69 @@ export function TaskForm({
   const dueError = missingDateError("期限", dueMode, due);
   const plannedError = missingDateError("予定日", plannedMode, planned);
 
+  // 紐づけ中の予定日は予定から決まる。編集中のタスクの紐づけと、これから紐づけて作る相手の
+  // どちらでも、予定日の欄は出さずに紐づけ先を示す。
+  const linkedTo = link
+    ? { label: taskLinkFullLabel(link), stage: link.stage }
+    : draft.linkTo
+      ? {
+          label: `${draft.linkTo.eventTitle} の${TASK_EVENT_STAGE_LABELS[draft.linkTo.stage]}`,
+          stage: draft.linkTo.stage,
+        }
+      : null;
+
+  const unlink = async () => {
+    if (!link) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/task-links/${encodeURIComponent(link.id)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        setError(await readErrorMessage(response, "紐づけを解除できませんでした。"));
+        return;
+      }
+      setLink(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "紐づけを解除できませんでした。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const buildDate = (mode: DueMode, value: string): string | null => {
     if (mode === "none") return null;
     if (mode === "date") return value.slice(0, 10);
     return localInputToIso(value, timeZone);
+  };
+
+  /** 作ったばかりのタスクを予定へ紐づける。入った予定日を返す。 */
+  const linkCreatedTask = async (
+    taskId: string,
+    target: NonNullable<TaskDraft["linkTo"]>,
+  ): Promise<string | null> => {
+    const response = await fetch("/api/task-links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        taskId,
+        calendarId: target.calendarId,
+        eventId: target.eventId,
+        stage: target.stage,
+      }),
+    });
+
+    // タスクは作れているため、紐づけだけが失敗した場合も保存は成立させる。
+    // 黙って閉じると紐づいたつもりのタスクが残るため、理由は画面に出す。
+    if (!response.ok) {
+      setError(await readErrorMessage(response, "タスクは作れましたが、紐づけできませんでした。"));
+      return null;
+    }
+
+    const result = (await response.json()) as { planned?: string };
+    return result.planned ?? null;
   };
 
   const save = async () => {
@@ -130,16 +201,31 @@ export function TaskForm({
     setBusy(true);
     setError(null);
     try {
+      const nextDue = buildDate(dueMode, due);
+      // 紐づけ中の予定日は送らない。画面から直せない値をそのまま送り返すと、Notion側で
+      // ずれている場合に「手で書き換えられた」と読まれ、紐づけが黙って外れる
+      // （api/tasks/[taskId] の dropLinkIfPlannedOverridden）。
+      const nextPlanned = linkedTo ? undefined : buildDate(plannedMode, planned);
+
       const payload = {
         title,
-        due: buildDate(dueMode, due),
-        planned: buildDate(plannedMode, planned),
+        due: nextDue,
+        ...(nextPlanned === undefined ? {} : { planned: nextPlanned }),
         done,
         priority: priority === NO_VALUE ? null : priority,
         memo: memo.trim() || null,
         tags,
         recurrence,
       };
+
+      // 前回の保存でタスクは作れて紐づけだけ失敗している場合は、紐づけからやり直す。
+      if (createdId && draft.linkTo) {
+        const planned = await linkCreatedTask(createdId, draft.linkTo);
+        if (planned === null) return;
+
+        onSaved(taskRanges({ due: nextDue, planned }));
+        return;
+      }
 
       const response = await fetch(
         editing ? `/api/tasks/${encodeURIComponent(editing.id)}` : "/api/tasks",
@@ -155,10 +241,30 @@ export function TaskForm({
         return;
       }
 
+      // 新しく作ったタスクを予定へ紐づける。予定日はこの呼び出しが入れるため、
+      // 作成の時点では送っていない（同じ値をNotionへ2回書かないため）。
+      let plannedFromLink: string | null = null;
+      if (!editing && draft.linkTo) {
+        const created = (await response.json()) as { id?: string };
+        if (!created.id) {
+          setError("タスクは作れましたが、紐づけできませんでした。");
+          return;
+        }
+
+        // 紐づけだけが失敗した場合、もう一度押せばここからやり直せるようにする。
+        // 作り直すと同じタスクが2つ並ぶため、作れたIDは覚えておく。
+        setCreatedId(created.id);
+        plannedFromLink = await linkCreatedTask(created.id, draft.linkTo);
+        if (plannedFromLink === null) return;
+      }
+
       // 期限・予定日を動かした場合は移動元も変わる。どちらも未設定の状態は
       // カレンダーに出ないため、対象から外れる。
       const touched: TouchedRange[] = [
-        ...taskRanges(payload),
+        ...taskRanges({
+          due: nextDue,
+          planned: plannedFromLink ?? (nextPlanned ?? editing?.planned ?? null),
+        }),
         ...(editing ? taskRanges(editing) : []),
       ];
 
@@ -203,19 +309,53 @@ export function TaskForm({
           }}
         />
 
-        {/* 予定日は期限までのどの辺りで片付けるかの見込み。締切とは別に持つ（docs/spec.md §9）。 */}
-        <DateModeField
-          id="task-planned"
-          label="予定日"
-          mode={plannedMode}
-          value={planned}
-          timeZone={timeZone}
-          defaultTime={DEFAULT_PLANNED_TIME}
-          onChange={(next) => {
-            setPlannedMode(next.mode);
-            setPlanned(next.value);
-          }}
-        />
+        {/*
+          予定日は期限までのどの辺りで片付けるかの見込み。締切とは別に持つ（docs/spec.md §9）。
+          予定に紐づいている間は予定から決まるため、欄ではなく紐づけ先を出す（§31）。
+          直したいときは解除してもらう。ここで直せるようにすると、次に予定が動いた時点で
+          入れた値が黙って書き戻される。
+        */}
+        {linkedTo ? (
+          <div className="flex flex-col gap-1.5">
+            <Label>予定日</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-secondary-container px-2.5 py-1 text-sm text-on-secondary-container">
+                <TaskStageMark
+                  stage={linkedTo.stage}
+                  className="h-3.5 w-4.5 text-on-secondary-container"
+                />
+                {linkedTo.label}
+              </span>
+              {link && (
+                <Button variant="ghost" size="sm" disabled={busy} onClick={unlink}>
+                  紐づけを解除
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-on-surface-variant">
+              {link
+                ? // 出すのはDaySpanが最後に書いた値ではなく、いまタスクに入っている予定日。
+                  // 外で予定が動いていると両者は食い違い、画面に出ているほうが実際の値になる。
+                  editing?.planned
+                  ? `予定に合わせて ${formatLinkedDate(editing.planned, timeZone)} が入っています。直すには紐づけを解除してください。`
+                  : "予定日が入っていません。表示画面の「予定に合わせる」で入れ直せます。"
+                : "保存すると、選んだ段階から決まる日時が予定日に入ります。"}
+            </p>
+          </div>
+        ) : (
+          <DateModeField
+            id="task-planned"
+            label="予定日"
+            mode={plannedMode}
+            value={planned}
+            timeZone={timeZone}
+            defaultTime={DEFAULT_PLANNED_TIME}
+            onChange={(next) => {
+              setPlannedMode(next.mode);
+              setPlanned(next.value);
+            }}
+          />
+        )}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
           <Select value={priority} onValueChange={setPriority}>
@@ -280,7 +420,7 @@ export function TaskForm({
         )}
 
         {dueError && <p className="text-sm text-destructive">{dueError}</p>}
-        {plannedError && <p className="text-sm text-destructive">{plannedError}</p>}
+        {!linkedTo && plannedError && <p className="text-sm text-destructive">{plannedError}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
@@ -304,7 +444,11 @@ export function TaskForm({
           </Button>
           <Button
             disabled={
-              busy || offline || !title.trim() || dueError !== null || plannedError !== null
+              busy ||
+              offline ||
+              !title.trim() ||
+              dueError !== null ||
+              (!linkedTo && plannedError !== null)
             }
             onClick={save}
           >
