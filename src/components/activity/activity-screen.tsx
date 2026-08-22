@@ -13,6 +13,7 @@ import { readErrorMessage } from "@/components/calendar/response-error";
 import { useNowIso } from "@/components/calendar/use-clock";
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
+import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,6 +43,10 @@ export function ActivityScreen({
   // オフライン中は書き込みを止める（docs/spec.md §21）。記録の開始・停止はすべて書き込み。
   const offline = useOffline();
   useReconnectRefresh();
+
+  // オフラインでこの画面を開けるよう、表示中にHTMLを保存しておく（issue #321）。
+  // ナビからの移動はソフトナビゲーションで、Service Worker が保存できないため。
+  useWarmOfflinePage("/activity");
 
   const [running, setRunning] = useState(initialRunning);
   const [busy, setBusy] = useState(false);

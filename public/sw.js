@@ -6,6 +6,10 @@
  * オフライン中に保留して再接続後に送り直してくれるが、ページの再読み込み（コールドスタート）は
  * ブラウザがHTMLを取りにいくため、Service Worker が無いと必ず失敗する。そこを埋める。
  *
+ * ただし「開いた画面」は、起動と再読み込みのときしかブラウザがHTMLを取りにいかない。
+ * ナビからの移動はソフトナビゲーションで、そこでは何も保存されない。そのため画面側から
+ * dayspan:warm を送ってもらい、開いている画面のHTMLをこちらで取って保存する（issue #321）。
+ *
  * next-pwa / Serwist のようなビルド統合は使わず手書きしている。キャッシュしてよいものを
  * こちらで列挙できるほうが、認証付きのページや書き込みAPIを取り違えて保存する事故を防ぎやすい。
  *
@@ -15,7 +19,7 @@
 
 // キャッシュの世代。このファイルの保存方針を変えたときに上げる。
 // 上げると activate で古い世代がまとめて消える。
-const VERSION = "v1";
+const VERSION = "v2";
 
 const ASSET_CACHE = `dayspan-assets-${VERSION}`;
 const PAGE_CACHE = `dayspan-pages-${VERSION}`;
@@ -25,6 +29,15 @@ const CACHES = [ASSET_CACHE, PAGE_CACHE, DATA_CACHE];
 // 保存する件数の上限。ページは表示形式×日付ぶん増えるため、際限なく貯めない。
 const PAGE_LIMIT = 40;
 const DATA_LIMIT = 40;
+
+/**
+ * ウォームアップ（dayspan:warm）で取り直さずに済ませる保存済みの新しさ。
+ *
+ * /calendar の描画はGoogle・Notionを叩く。画面を開くたびに温め直すと、外部APIへの往復が
+ * 画面ぶんとウォームアップぶんで倍になる（docs/spec.md §20）。ハードナビゲーションで
+ * 開いた直後は保存済みがこの範囲に入るため、何もせず終わる。
+ */
+const WARM_MAX_AGE_MS = 10 * 60 * 1000;
 
 /**
  * 内容が変わってもURLが変わらないもの。取得できたら差し替える（stale-while-revalidate）。
@@ -78,6 +91,12 @@ self.addEventListener("message", (event) => {
         );
       })(),
     );
+    return;
+  }
+
+  // 開いている画面から呼ぶ（issue #321）。その画面のHTMLを先に保存しておく。
+  if (event.data?.type === "dayspan:warm") {
+    event.waitUntil(warmPages(event.data.paths));
   }
 });
 
@@ -107,12 +126,12 @@ self.addEventListener("fetch", (event) => {
   // 応答の中身が Next-Router-State-Tree や先読みかどうかで変わり、
   // 別の状況で再生すると描画が壊れるため、保存したものを使い回せない。
   if (request.mode === "navigate" && !request.headers.has("RSC")) {
-    event.respondWith(networkFirst(request, PAGE_CACHE, PAGE_LIMIT));
+    event.respondWith(networkFirst(request, PAGE_CACHE, PAGE_LIMIT, true));
     return;
   }
 
   if (CACHED_DATA_PATHS.has(url.pathname)) {
-    event.respondWith(networkFirst(request, DATA_CACHE, DATA_LIMIT));
+    event.respondWith(networkFirst(request, DATA_CACHE, DATA_LIMIT, false));
   }
 });
 
@@ -155,7 +174,7 @@ async function staleWhileRevalidate(request, cacheName) {
  * ページとAPIはどちらもユーザーの最新の状態を映すものなので、キャッシュ優先にはしない。
  * 「オフラインだから前の内容が出ている」以外の理由で古い内容が出ることは避ける。
  */
-async function networkFirst(request, cacheName, limit) {
+async function networkFirst(request, cacheName, limit, allowOtherQuery) {
   const cache = await caches.open(cacheName);
 
   try {
@@ -165,7 +184,7 @@ async function networkFirst(request, cacheName, limit) {
     // 確認できなかったときにこれを返す。保存済みがあるならそちらを出す。エラー画面を出すと、
     // 通信が不安定なだけの利用者に「ログアウトされた」と受け取られる。
     if (response.status >= 500) {
-      const cached = await matchCached(cache, request);
+      const cached = await matchCached(cache, request, allowOtherQuery);
       if (cached) return cached;
       return response;
     }
@@ -176,19 +195,28 @@ async function networkFirst(request, cacheName, limit) {
     }
     return response;
   } catch (cause) {
-    const cached = await matchCached(cache, request);
+    const cached = await matchCached(cache, request, allowOtherQuery);
     if (cached) return cached;
 
     throw cause;
   }
 }
 
-/** 保存済みの応答を探す。同じURLが無ければ、同じ画面の別の日付を出す。 */
-async function matchCached(cache, request) {
+/**
+ * 保存済みの応答を探す。
+ *
+ * ページは、同じURLが無ければ同じ画面の別の日付を出す（allowOtherQuery）。表示形式・日付が
+ * 違っていても、まったく何も出ないよりは手掛かりになる。
+ *
+ * APIには同じことをしない。/api/calendar?months=… の応答を別の月の要求へ返すと、
+ * use-calendar-chunks.ts の splitByMonth() が要求した月に該当しない項目をすべて捨てるため、
+ * その月が「取得できて、予定が1件も無かった」ように見える。取れなかったことにするほうが正しい。
+ */
+async function matchCached(cache, request, allowOtherQuery) {
   const cached = await cache.match(request, { ignoreVary: true });
   if (cached) return cached;
+  if (!allowOtherQuery) return undefined;
 
-  // まったく何も出ないよりは手掛かりになる。
   return cache.match(request, { ignoreVary: true, ignoreSearch: true });
 }
 
@@ -198,4 +226,55 @@ async function trim(cache, limit) {
   if (keys.length <= limit) return;
 
   await Promise.all(keys.slice(0, keys.length - limit).map((key) => cache.delete(key)));
+}
+
+/**
+ * 指定したページを取りにいって PAGE_CACHE へ入れる（issue #321）。
+ *
+ * ナビの移動はソフトナビゲーション（RSC）で、ここでは保存できない。そのままだと、
+ * 起動と再読み込み以外で開いた画面はいつまでもキャッシュに入らず、オフラインで開けない。
+ * ページ側から自分のパスを渡してもらい、ブラウザのナビゲーションと同じURLで保存しておく。
+ *
+ * ここで作る Request にRSCヘッダは付かないため、返るのはHTMLの文書そのもの。
+ * Service Worker 自身の fetch は fetch イベントを再入しないので、素通りの心配もない。
+ */
+async function warmPages(paths) {
+  if (!Array.isArray(paths)) return;
+
+  const cache = await caches.open(PAGE_CACHE);
+
+  for (const path of paths) {
+    if (typeof path !== "string" || !path.startsWith("/")) continue;
+
+    const url = new URL(path, self.location.origin);
+    if (url.origin !== self.location.origin) continue;
+    if (NEVER_CACHE_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))) continue;
+
+    if (await isFresh(cache, url.href)) continue;
+
+    try {
+      // 認証はCookieで成立している。Service Worker 内の Request は既定でも同一オリジンへ
+      // Cookie を送るが、ここは取り違えると未ログインの応答（/login へのリダイレクト）を
+      // 取り続けることになるため明示する。
+      const response = await fetch(new Request(url.href, { credentials: "same-origin" }));
+      if (!isCacheable(response)) continue;
+
+      await cache.put(url.href, response);
+      await trim(cache, PAGE_LIMIT);
+    } catch {
+      // オフラインなら取れなくて当然。保存済みがあればそれが使われる。
+    }
+  }
+}
+
+/** 保存済みが WARM_MAX_AGE_MS 以内に取れたものか。取得時刻は応答の date ヘッダーで見る。 */
+async function isFresh(cache, url) {
+  const cached = await cache.match(url, { ignoreVary: true });
+  if (!cached) return false;
+
+  const date = Date.parse(cached.headers.get("date") ?? "");
+  // date が無い応答は新しさを判断できない。取り直して確実なものに入れ替える。
+  if (Number.isNaN(date)) return false;
+
+  return Date.now() - date < WARM_MAX_AGE_MS;
 }
