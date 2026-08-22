@@ -3,7 +3,17 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { ArrowRight, CalendarClock, Copy, MapPin, Pencil, RotateCw, Trash2, Users } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarClock,
+  ChevronRight,
+  Copy,
+  MapPin,
+  Pencil,
+  RotateCw,
+  Trash2,
+  Users,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,11 +24,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
-import type { CalendarEventItem } from "@/types/calendar";
+import { TRAVEL_MODE_LABELS, type CalendarEventItem, type TravelItem } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { TaskStageMark } from "./task-stage-mark";
+import { TravelMark } from "./travel-mark";
 import type { TouchedRange } from "./use-calendar-chunks";
+
+/** 移動に添える「車 80分」。所要時間は出発・到着から求める（保存しているのは時刻のため）。 */
+function travelSummary(travel: TravelItem): string {
+  const minutes = Math.max(
+    1,
+    Math.round((new Date(travel.end).getTime() - new Date(travel.start).getTime()) / 60_000),
+  );
+  return `${TRAVEL_MODE_LABELS[travel.mode]} ${minutes}分${travel.estimated ? "（目安）" : ""}`;
+}
 
 export function EventDetailDialog({
   event,
@@ -28,6 +48,8 @@ export function EventDetailDialog({
   onEdit,
   onDuplicate,
   onAddTravel,
+  linkedTravels,
+  onOpenTravel,
   onLinkTask,
   linkedTasks,
   onDeleted,
@@ -41,6 +63,14 @@ export function EventDetailDialog({
   onDuplicate: () => void;
   /** この予定への移動を作る（docs/spec.md §29）。終日予定では出さない。 */
   onAddTravel: () => void;
+  /**
+   * この予定に紐づいている移動（issue #327）。
+   *
+   * 移動は時間グリッドでは予定の背面に置くため、時間が丸ごと重なると押せない。
+   * 重なりの有無に依らず直せる道として、予定の側からも開けるようにする。
+   */
+  linkedTravels?: TravelItem[];
+  onOpenTravel: (travel: TravelItem) => void;
   /** この予定にタスクを紐づける（docs/spec.md §31）。 */
   onLinkTask: () => void;
   /** この予定に紐づいているタスクの名前。削除の確認で、外れる紐づけを示すために使う。 */
@@ -76,6 +106,11 @@ export function EventDetailDialog({
   const addTravel = () => {
     setOpen(false);
     setTimeout(onAddTravel, 150);
+  };
+
+  const openTravel = (travel: TravelItem) => {
+    setOpen(false);
+    setTimeout(() => onOpenTravel(travel), 150);
   };
 
   const linkTask = () => {
@@ -185,6 +220,30 @@ export function EventDetailDialog({
           )}
 
           {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
+
+          {/*
+            この予定に紐づいている移動（issue #327）。時間グリッドでは予定の背面に置くため、
+            予定と時間が丸ごと重なると押せない。ここからなら重なりに関係なく開ける。
+          */}
+          {linkedTravels && linkedTravels.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {linkedTravels.map((travel) => (
+                <button
+                  key={travel.id}
+                  type="button"
+                  onClick={() => openTravel(travel)}
+                  className="flex items-center gap-2 rounded-md border border-l-[3px] border-travel/40 border-l-travel bg-travel-container/60 px-2.5 py-1.5 text-left text-xs text-on-travel-container"
+                >
+                  <TravelMark className="size-3 shrink-0 text-travel" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {travel.title}
+                    <span className="opacity-75">（{travelSummary(travel)}）</span>
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 opacity-70" />
+                </button>
+              ))}
+            </div>
+          )}
 
           {/*
             この予定から作れるものへの導線。アイコンだけの操作にすると、矢印が何を指すのか
