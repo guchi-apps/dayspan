@@ -363,6 +363,13 @@ Windows側からは `scripts/start-issue.ps1` を使う。
 プロンプトが動く）。コピー方式（`release-develop-to-main.yml` のみ）は移植元コミットをファイル冒頭のコメントに
 記録しており、issue-deck側の改善を取り込む際はそこを更新する。
 
+**ただし `on:`（トリガーと `workflow_dispatch` の入力）はcallerが自分で持つコピーで、タグの対象外。**
+issue-deck側が新しい入力を渡すようになっても、caller側に同じ入力を定義しなければGitHubが
+422（`Unexpected inputs provided`）で起動を拒む。再利用ワークフロー内の `inputs` は
+workflow_call のものを指すため、受け取った `workflow_dispatch` 入力は `with:` で明示的に渡す
+（`claude-ci-fix.yml` / `claude-conflict-resolve.yml` の `issue-number`）。issue-deckの
+`.github/templates/callers/` が正となる形を持つので、そこと見比べる（issue #325）。
+
 無人実行のたびに `.shared-context/`（共有知識）と `.shared-prompts/`（issue-deck側の
 実装プロンプト）がワークツリーへcheckoutされる。**どちらもこのリポジトリの管理対象ではない。**
 `.gitignore` 済みなので、**編集・`git add`・コミットを一切行わないこと。**

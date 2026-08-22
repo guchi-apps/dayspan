@@ -31,7 +31,8 @@ name: Claude Conflict Resolve
 #   既にdevelopとコンフリクトしているケースを即座に拾うため。
 # - schedule(15分おき): 上2つの直後はGitHubのmergeable判定が終わっておらずUNKNOWNの
 #   ままの場合があるため、取りこぼしを拾い直す安全網。
-# - workflow_dispatch: 手動実行用。
+# - workflow_dispatch: 手動実行と、issue-deckの画面の「コンフリクトを自動解消」ボタン。
+#   issue_numberを渡すとそのIssueのdevelop向けPR1件だけを対象にする。
 
 on:
   workflow_run:
@@ -49,7 +50,12 @@ on:
       - develop
   schedule:
     - cron: "*/15 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "対象のIssue番号（未指定ならdevelop向けの全OPEN PRを走査する）"
+        required: false
+        type: string
 
 jobs:
   conflict-resolve:
@@ -58,6 +64,9 @@ jobs:
       runtime-setup: node-db
       package-manager: pnpm
       node-version: "24"
+      # 再利用ワークフロー内のinputsコンテキストはworkflow_callのinputsを指すため、
+      # 本ワークフローのworkflow_dispatch入力はここで明示的に渡す。
+      issue-number: ${{ inputs.issue_number }}
       # プロンプトの「- 解消後、」に続けてそのまま埋め込まれるため、文末まで含めて1行で書く。
       verify-commands: "`pnpm test`（lint・typecheckを実行）と `pnpm build:ci` を実行し、問題がないことを確認する（DBサーバーは実際には起動していないが、環境変数はこのステップに既に設定済みのため`.github/workflows/ci.yml`のbuildステップと同様に成功するはず）"
       build-env: |
