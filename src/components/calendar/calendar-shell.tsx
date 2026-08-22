@@ -17,6 +17,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } fr
 
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
+import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { Button } from "@/components/ui/button";
 import { LinearProgress } from "@/components/ui/linear-progress";
@@ -144,6 +145,10 @@ export function CalendarShell({
   // 追加ボタン・ドラッグ・編集への入口すべてへ配って、送る前に断つ。
   const offline = useOffline();
   useReconnectRefresh();
+
+  // オフラインでこの画面を開けるよう、表示中にHTMLを保存しておく（issue #321）。
+  // ナビからの移動はソフトナビゲーションで、Service Worker が保存できないため。
+  useWarmOfflinePage("/calendar");
 
   // 月のデータを取りにいっているか。取得はSuspense境界の内側で起きるが、
   // 進行の表示はヘッダー直下（境界の外）にあるため、ここまで上げてもらう。

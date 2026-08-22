@@ -1,10 +1,13 @@
 "use client";
 
+import { useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useOffline } from "next/offline";
 import { BellRing, CalendarDays, ListChecks, Settings, Timer } from "lucide-react";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
+import { hasOfflinePage } from "@/components/offline/offline-page-cache";
 import { cn } from "@/lib/utils";
 
 // 活動記録を先頭に置く（docs/spec.md §27）。押した時点から記録が始まる画面で、
@@ -18,6 +21,51 @@ const ITEMS = [
 ] as const;
 
 export type NavKey = (typeof ITEMS)[number]["key"];
+
+/**
+ * 新しいタブで開こうとしていない、素のクリックか。
+ *
+ * オフライン中の差し替えは同じタブでの移動なので、Ctrl・Command・中クリックのように
+ * 別のタブ・ウィンドウを開く操作までここで奪うと、押した結果が変わってしまう。
+ */
+function isPlainClick(event: React.MouseEvent): boolean {
+  return (
+    event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+  );
+}
+
+/**
+ * オフライン中の画面移動（issue #321）。
+ *
+ * ナビの移動はソフトナビゲーション（RSC要求）で、Service Worker は保存していない。
+ * 応答の中身が Next-Router-State-Tree や先読みかどうかで変わり、別の状況で再生すると
+ * 描画が壊れるためである（public/sw.js）。そのままだとオフラインでは
+ * experimental.useOffline が要求を再接続まで保留し、骨組みが出たまま止まる。
+ *
+ * 保存済みのページがあるときは、ハードナビゲーションへ切り替えて Service Worker に
+ * 返させる。起動・再読み込みでオフラインでも開けている経路をそのまま使う。
+ * 保存が無ければ従来どおり保留する（オフラインエラー画面へ落とさない）。
+ *
+ * 返るのは「移動を引き受けたか」。真ならリンクの既定動作を止める。
+ */
+function useOfflineNavigate() {
+  const router = useRouter();
+  const offline = useOffline();
+
+  return useCallback(
+    (href: string) => {
+      if (!offline) return false;
+
+      void hasOfflinePage(href).then((cached) => {
+        if (cached) window.location.assign(href);
+        else router.push(href);
+      });
+
+      return true;
+    },
+    [offline, router],
+  );
+}
 
 /**
  * 記録中であることを示す印。
@@ -62,6 +110,7 @@ export function BottomNav({
   timeZone?: string;
 }) {
   const router = useRouter();
+  const navigateOffline = useOfflineNavigate();
 
   /**
    * カレンダーの項目は「今日へ移動」も兼ねる（issue #175）。
@@ -75,6 +124,11 @@ export function BottomNav({
       onCalendarClick();
       return;
     }
+
+    // オフライン中は日付を付けずに移動する（issue #321）。Service Worker が保存しているのは
+    // 直前に開いた期間で、今日を指定してもその日のぶんは取りにいけない。日付を書かなければ
+    // Cookieの記憶（src/lib/calendar-view-memory.ts）が直前の表示形式・日付を埋める。
+    if (navigateOffline("/calendar")) return;
 
     const today = new Date();
     const todayKey = timeZone
@@ -130,6 +184,9 @@ export function BottomNav({
           <Link
             key={item.href}
             href={item.href}
+            onClick={(event) => {
+              if (isPlainClick(event) && navigateOffline(item.href)) event.preventDefault();
+            }}
             aria-current={active ? "page" : undefined}
             className="flex w-full max-w-[112px] min-w-0 flex-col items-center gap-1"
           >
@@ -168,6 +225,8 @@ export function HeaderNav({
   current: NavKey;
   activityRunning?: boolean;
 }) {
+  const navigateOffline = useOfflineNavigate();
+
   return (
     <div className="hidden items-center gap-1 md:flex">
       {ITEMS.filter((item) => item.key !== "settings").map((item) => {
@@ -178,6 +237,9 @@ export function HeaderNav({
           <Link
             key={item.href}
             href={item.href}
+            onClick={(event) => {
+              if (isPlainClick(event) && navigateOffline(item.href)) event.preventDefault();
+            }}
             aria-current={active ? "page" : undefined}
             className={cn(
               "type-label-large flex items-center gap-2 rounded-full px-3 py-1.5 transition-colors",
