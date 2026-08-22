@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.8.1",
+    date: "2026-08-23",
+    changes: [
+      "月表示のカレンダーで、期限日と予定日が同じ日にあるタスクが、時刻の違いによって同じ内容の行が2つ重複して表示されることがある不具合を修正しました。",
+    ],
+  },
+  {
     version: "1.8.0",
     date: "2026-08-22",
     changes: [
