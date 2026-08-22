@@ -19,6 +19,7 @@ import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { TagChip } from "@/components/tags/tag-chip";
 import { tagColorOf } from "@/components/tags/tag-color";
 import { OfflineNotice } from "@/components/offline/offline-notice";
+import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,10 @@ export function ReminderList({
   // オフライン中は書き込みを止める（docs/spec.md §21）。
   const offline = useOffline();
   useReconnectRefresh();
+
+  // オフラインでこの画面を開けるよう、表示中にHTMLを保存しておく（issue #321）。
+  // ナビからの移動はソフトナビゲーションで、Service Worker が保存できないため。
+  useWarmOfflinePage("/reminders");
 
   // 追加の初期値は今日から。実行環境のローカル時刻ではなく設定タイムゾーンで求める。
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);

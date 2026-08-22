@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useOffline } from "next/offline";
 
+import { isOfflineNow } from "@/components/offline/offline-state";
 import { shiftMonthKey } from "@/lib/calendar-range";
 
 import type {
@@ -204,6 +206,13 @@ export function useCalendarChunks({
     onLoadingChangeRef.current = onLoadingChange;
   }, [onLoadingChange]);
 
+  // 取得に失敗した理由がオフラインかどうか（issue #321）。同じ ref の作りで最新を参照する。
+  const offline = useOffline();
+  const offlineRef = useRef(offline);
+  useEffect(() => {
+    offlineRef.current = offline;
+  }, [offline]);
+
   // 取得が終わった時点でどこを見ているかは、要求を出した時点とは限らない。
   // 破棄の判断は「今の窓」で行う必要があるため、最新の窓を参照できるようにしておく。
   const windowRef = useRef(windowMonths);
@@ -272,7 +281,15 @@ export function useCalendarChunks({
 
         return pruneToWindow(next, windowRef.current);
       });
-      setLoadError("表示範囲の予定とタスクを取得できませんでした。");
+
+      // オフラインなら失敗として出さない（issue #321）。取りにいけないのは分かっている状態で、
+      // 画面の上には既に OfflineNotice の帯が出ている。ここに赤い「取得できませんでした」を
+      // 重ねると、通信が戻れば解消する状態を失敗として伝えることになる（docs/spec.md §21）。
+      setLoadError(
+        isOfflineNow(offlineRef.current)
+          ? null
+          : "表示範囲の予定とタスクを取得できませんでした。",
+      );
     } finally {
       months.forEach((month) => inFlight.current.delete(month));
       onLoadingChangeRef.current(inFlight.current.size > 0);
