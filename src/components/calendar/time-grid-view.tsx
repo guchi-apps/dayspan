@@ -741,7 +741,7 @@ function DayColumn({
               className={cn(
                 // ボタンは中身を上下中央へ寄せるため、flexにして上揃えへ戻す。
                 // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
-                "flex size-full flex-col overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[10px] leading-tight",
+                "flex size-full flex-col overflow-hidden rounded-item border px-1.5 py-0.5 text-left text-[10px] leading-tight",
                 // 塗りが薄いぶん、文字色は背景の明るさから選ばずテーマの文字色に任せる。
                 subdued && "border-l-[3px] text-on-surface",
                 eventPreview && "ring-2 ring-foreground/50",
@@ -864,7 +864,7 @@ function DayColumn({
             />
             <span
               className={cn(
-                "type-label-small clip-nowrap max-w-[78%] rounded-xs border border-outline bg-surface-container-lowest px-1",
+                "type-label-small clip-nowrap max-w-[78%] rounded-item border border-outline bg-surface-container-lowest px-1",
                 planned && "border-dashed",
                 task.done && "text-muted-foreground line-through",
               )}
@@ -935,7 +935,7 @@ function SlotRangeBlock({
       style={{ top, height }}
       aria-hidden
     >
-      <div className="animate-in fade-in relative size-full overflow-hidden rounded-md border-2 border-dashed border-primary bg-primary/10 duration-150">
+      <div className="animate-in fade-in relative size-full overflow-hidden rounded-item border-2 border-dashed border-primary bg-primary/10 duration-150">
         <span className="slot-range-stripes absolute inset-0" />
         <div className="relative flex h-full flex-col justify-center px-1.5 text-primary">
           <span className="clip-nowrap text-[10px] leading-tight font-semibold">
@@ -991,7 +991,7 @@ function ReminderMarker({
     >
       <span aria-hidden className="h-2.5 w-0.5 shrink-0 bg-tertiary" />
       <span className="h-px flex-1 bg-tertiary/45" />
-      <span className="type-label-small clip-nowrap flex max-w-[78%] items-center gap-1 rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1">
+      <span className="type-label-small clip-nowrap flex max-w-[78%] items-center gap-1 rounded-item border border-tertiary/60 bg-surface-container-lowest px-1">
         <ReminderMark source={reminder.source} />
         <span className="clip-nowrap">
           {reminder.title}
@@ -1381,7 +1381,7 @@ function AllDayEventChip({
       onPointerDown={onStartDrag}
       onClick={onOpen}
       className={cn(
-        "clip-nowrap flex w-full items-center gap-1 rounded-sm border px-1.5 text-left text-[10px] leading-5 font-medium",
+        "clip-nowrap flex w-full items-center gap-1 rounded-item border px-1.5 text-left text-[10px] leading-5 font-medium",
         quiet && "border-l-[3px] text-on-surface",
         // 期間の境界で切れた続きの側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
         continuesBefore && "rounded-l-none border-l-0",
@@ -1435,7 +1435,7 @@ function AllDayTaskChip({
       onPointerDown={onStartDrag}
       onClick={onOpen}
       className={cn(
-        "type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-outline bg-surface-container-lowest px-1.5 py-0.5 text-left",
+        "type-label-small clip-nowrap flex w-full items-center gap-1 rounded-item border border-outline bg-surface-container-lowest px-1.5 py-0.5 text-left",
         planned && "border-dashed",
         task.done && "text-muted-foreground line-through",
         dragging && "ring-2 ring-foreground/50",
@@ -1482,7 +1482,7 @@ function AllDayReminderChip({
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small clip-nowrap flex w-full items-center gap-1 rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1.5 py-0.5 text-left"
+      className="type-label-small clip-nowrap flex w-full items-center gap-1 rounded-item border border-tertiary/60 bg-surface-container-lowest px-1.5 py-0.5 text-left"
       title={fullYearLabel ? `${reminder.title} ${fullYearLabel}` : reminder.title}
     >
       <ReminderMark source={reminder.source} size="md" />
