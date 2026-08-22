@@ -171,18 +171,49 @@ export type EventWriteInput = {
   timeZone: string;
 };
 
-function toRequestBody(input: EventWriteInput) {
+type EventTimeBody = {
+  date?: string | null;
+  dateTime?: string | null;
+  timeZone?: string;
+};
+
+/**
+ * 開始・終了の1つ分を組み立てる。
+ *
+ * `date`（終日）と `dateTime`（時刻あり）は排他で、片方を使うならもう片方は無い状態でなければ
+ * Googleが `Invalid start time.` を返す。PATCHは `start` の中身まで既存の値へ重ねるため、
+ * 終日と時刻ありを切り替えたときは前の形式のフィールドが残る。使わない側を `null` で明示的に
+ * 消す（`clearOther`）。作成（POST）には重なる既存の値が無いので送らない。
+ */
+function toEventTime(
+  value: string,
+  allDay: boolean,
+  timeZone: string,
+  clearOther: boolean,
+): EventTimeBody {
+  if (allDay) {
+    // 終日では timeZone は date と併存できる（繰り返しの解釈に使う）ため、消す必要はない。
+    return clearOther ? { date: value, dateTime: null } : { date: value };
+  }
+
+  return clearOther
+    ? { dateTime: value, timeZone, date: null }
+    : { dateTime: value, timeZone };
+}
+
+function toRequestBody(input: EventWriteInput, { clearOther = false } = {}) {
   if (!input.start || !input.end) {
     throw new Error("開始日時と終了日時を入力してください。");
   }
 
-  const start = input.allDay
-    ? { date: input.start }
-    : { dateTime: input.start, timeZone: input.timeZone };
+  const start = toEventTime(input.start, input.allDay, input.timeZone, clearOther);
 
-  const end = input.allDay
-    ? { date: exclusiveEndDate(input.end) }
-    : { dateTime: input.end, timeZone: input.timeZone };
+  const end = toEventTime(
+    input.allDay ? exclusiveEndDate(input.end) : input.end,
+    input.allDay,
+    input.timeZone,
+    clearOther,
+  );
 
   return {
     summary: input.title,
@@ -229,7 +260,8 @@ export async function updateEvent(
   eventId: string,
   input: EventWriteInput,
 ): Promise<void> {
-  const body = toRequestBody(input);
+  // 終日と時刻ありの切り替えでは、前の形式のフィールドを消さないとGoogleに拒まれる。
+  const body = toRequestBody(input, { clearOther: true });
   // 繰り返し規則の変更はシリーズ全体に及ぶため、更新では送らない。
   delete (body as { recurrence?: unknown }).recurrence;
 
