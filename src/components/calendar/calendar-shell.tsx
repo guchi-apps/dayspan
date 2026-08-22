@@ -416,6 +416,17 @@ export function CalendarShell({
   const openReminder = (reminder: ReminderItem) => setViewingReminder(reminder);
   const openTravel = (travel: TravelItem) => setViewingTravel(travel);
 
+  /**
+   * 予定の表示画面から、その予定に紐づく移動へ移る（issue #327）。
+   *
+   * 移動は時間グリッドでは予定の背面に置くため、時間が丸ごと重なると押せない。
+   * 予定の側からたどれば、画面のどこに何が乗っているかに関係なく開ける。
+   */
+  const openTravelFromEvent = (travel: TravelItem) => {
+    setViewingEvent(null);
+    setViewingTravel(travel);
+  };
+
   const editTravel = (travel: TravelItem) => {
     if (offline) return;
     setViewingTravel(null);
@@ -812,6 +823,7 @@ export function CalendarShell({
           onOpenTask={openTask}
           onOpenReminder={openReminder}
           onOpenTravel={openTravel}
+          onOpenTravelForEvent={openTravelFromEvent}
           onEditEvent={editEvent}
           onDuplicateEvent={duplicateEvent}
           onEditTask={editTask}
@@ -897,6 +909,7 @@ function CalendarBody({
   onOpenTask,
   onOpenReminder,
   onOpenTravel,
+  onOpenTravelForEvent,
   onEditEvent,
   onDuplicateEvent,
   onEditTask,
@@ -951,6 +964,8 @@ function CalendarBody({
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
   onOpenTravel: (travel: TravelItem) => void;
+  /** 予定の表示画面から、その予定に紐づく移動を開く（issue #327）。 */
+  onOpenTravelForEvent: (travel: TravelItem) => void;
   onEditEvent: (event: CalendarEventItem) => void;
   onDuplicateEvent: (event: CalendarEventItem) => void;
   onEditTask: (task: TaskItem) => void;
@@ -1166,6 +1181,11 @@ function CalendarBody({
           onEdit={() => onEditEvent(viewingEvent)}
           onDuplicate={() => onDuplicateEvent(viewingEvent)}
           onAddTravel={() => onAddTravelForEvent(viewingEvent)}
+          // この予定のために作った移動。往路・復路の2件が同じ予定を指す。
+          linkedTravels={data.travels.filter(
+            (travel) => travel.linkedEventId === viewingEvent.id,
+          )}
+          onOpenTravel={onOpenTravelForEvent}
           onLinkTask={() => onLinkTaskForEvent(viewingEvent)}
           // 消すと紐づけが外れるタスク。確認の前に示す（docs/spec.md §31）。
           linkedTasks={data.tasks

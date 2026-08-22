@@ -7,10 +7,13 @@ import { eventColors, subduedEventColors } from "./calendar-color";
 import type { RunningActivityItem } from "@/types/activity";
 import type { CalendarEventItem, ReminderItem, TaskItem, TravelItem } from "@/types/calendar";
 
+import { ActivityLaneBlock } from "./activity-lane-block";
 import { ActivityMark } from "./activity-mark";
 import { RunningActivityBlock } from "./running-activity-block";
 import { useMinuteBucket } from "./use-clock";
 import {
+  ACTIVITY_LANE_GAP,
+  ACTIVITY_LANE_WIDTH,
   eventTextLines,
   MIN_EVENT_HEIGHT,
   MINUTES_PER_DAY,
@@ -310,6 +313,7 @@ export function TimeGridView({
             {(paneDays, isCenter) => (
               <DayColumnsPane
                 days={paneDays}
+                todayKey={todayKey}
                 hourHeight={hourHeight}
                 events={events}
                 tasks={tasks}
@@ -422,6 +426,7 @@ const DayHeaderPane = memo(function DayHeaderPane({
  */
 const DayColumnsPane = memo(function DayColumnsPane({
   days,
+  todayKey,
   hourHeight,
   events,
   tasks,
@@ -443,6 +448,8 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onStartSelect,
 }: {
   days: string[];
+  /** 設定タイムゾーンでの今日。記録中の帯がその列にかかりうるかの判定に使う。 */
+  todayKey: string;
   /** 1時間あたりの高さ（px）。ピンチで変わる（use-time-zoom.ts）。 */
   hourHeight: number;
   events: CalendarEventItem[];
@@ -477,6 +484,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
         <DayColumn
           key={dateKey}
           dateKey={dateKey}
+          todayKey={todayKey}
           dayIndex={dayIndex}
           hourHeight={hourHeight}
           preview={preview}
@@ -516,6 +524,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
 
 function DayColumn({
   dateKey,
+  todayKey,
   dayIndex,
   hourHeight,
   events,
@@ -538,6 +547,7 @@ function DayColumn({
   onStartSelect,
 }: {
   dateKey: string;
+  todayKey: string;
   dayIndex: number;
   hourHeight: number;
   events: CalendarEventItem[];
@@ -565,7 +575,27 @@ function DayColumn({
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onStartSelect: (event: React.PointerEvent, dayIndex: number) => void;
 }) {
-  const positioned = utils.layoutOverlaps(events, dateKey);
+  // 活動記録は予定の重なり計算に混ぜず、左端のレーンへ置く（issue #327）。記録は後から
+  // 見返す事実で、これから動くために見る予定とは読む理由が違う（docs/spec.md §27）。
+  const activityEvents = events.filter((event) => activityCalendarIds.has(event.calendarId));
+  const plainEvents = events.filter((event) => !activityCalendarIds.has(event.calendarId));
+
+  // 記録中の帯は開始日から今日までの列にかかる。終わり（現在時刻）はクライアントでしか
+  // 決まらないため、レーンを空けるかどうかは日付の範囲だけで判定する。サーバーとブラウザで
+  // 同じ答えにならないと、最初の描画で予定の位置がずれる。
+  const runningCoversDay =
+    runningActivity !== null &&
+    utils.itemDateKey(runningActivity.startedAt) <= dateKey &&
+    dateKey <= todayKey;
+
+  // レーンは記録のある日にだけ出す。毎日空けると、記録を1件も付けていない日まで幅が減る。
+  const laneWidth = activityEvents.length > 0 || runningCoversDay ? ACTIVITY_LANE_WIDTH : 0;
+  /** 予定・移動・タスクの印を置ける範囲の左端（px）。レーンが無い日は 0。 */
+  const contentLeft = laneWidth === 0 ? 0 : laneWidth + ACTIVITY_LANE_GAP;
+
+  const positioned = utils.layoutOverlaps(plainEvents, dateKey);
+  // 記録どうしが重なる日（Googleの画面で直接足した場合）は、レーンの中をさらに分ける。
+  const laneItems = utils.layoutOverlaps(activityEvents, dateKey);
   const gridHeight = hourHeight * 24;
 
   /** 0:00からの分数を、この列の中での位置（px）に直す。 */
@@ -624,16 +654,38 @@ function DayColumn({
       })}
 
       {/*
-        記録中の活動。予定より先に置いて、予定・タスクがその上に描かれるようにする。
-        記録中は終わりが決まっておらず、時間が経つほど帯が伸びる。同じ時間帯の予定を
-        覆い隠すと、いま何の予定が入っているかが読めなくなるため、背面の帯として置く。
+        左端のレーンに置く活動記録。占めていた時間は帯の高さで残し、幅だけを予定へ譲る。
+        重なり計算から外してあるため、記録が何時間続いても予定・移動の幅は変わらない。
       */}
-      {runningActivity && (
+      {laneItems.map(({ event, column, columns }) => {
+        const range = utils.eventRange(event, dateKey);
+
+        return (
+          <ActivityLaneBlock
+            key={event.id}
+            event={event}
+            top={offsetOf(range.startMinutes)}
+            height={Math.max(offsetOf(range.endMinutes - range.startMinutes), MIN_EVENT_HEIGHT)}
+            left={(laneWidth / columns) * column}
+            width={laneWidth / columns}
+            timeText={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)}`}
+            onOpen={() => {
+              if (onConsumeDragClick()) return;
+              onOpenEvent(event);
+            }}
+          />
+        );
+      })}
+
+      {/* 記録中の活動。終わりが決まっておらず時間が経つほど伸びるため、なおさら幅を取らせない。 */}
+      {runningActivity && runningCoversDay && (
         <RunningActivityBlock
           running={runningActivity}
           dateKey={dateKey}
           utils={utils}
           gridHeight={gridHeight}
+          left={0}
+          width={laneWidth}
           onOpen={() => {
             if (onConsumeDragClick()) return;
             onOpenActivity();
@@ -656,6 +708,7 @@ function DayColumn({
           <TravelBlock
             key={travel.id}
             travel={travel}
+            left={contentLeft}
             top={offsetOf(startMinutes)}
             height={Math.max(offsetOf(endMinutes - startMinutes), MIN_EVENT_HEIGHT)}
             timeText={`${utils.formatTime(travel.start)}–${utils.formatTime(travel.end)}`}
@@ -686,10 +739,7 @@ function DayColumn({
           (utils.itemDateKey(event.start) === utils.itemDateKey(event.end) ||
             utils.itemDateKey(event.start) === dateKey);
 
-        // 活動記録のカレンダーの予定は塗りを落とし、色は左の縦帯として残す（issue #241）。
-        const subdued = activityCalendarIds.has(event.calendarId)
-          ? subduedEventColors(event.color)
-          : null;
+        // 活動記録は左端のレーンへ分けてあるため、ここへ来るのは普通の予定だけ（issue #327）。
         const colors = eventColors(event.color);
 
         // 高さに収まる行数ぶんだけ、タイトルの下へ順に添える（issue #73）。
@@ -724,8 +774,9 @@ function DayColumn({
             style={{
               top,
               height,
-              left: `${(column / columns) * 100}%`,
-              width: `${(1 / columns) * 100}%`,
+              // 列の幅からレーンのぶんを引いた残りを、重なりの列数で割る。
+              left: `calc(${contentLeft}px + (100% - ${contentLeft}px) * ${column} / ${columns})`,
+              width: `calc((100% - ${contentLeft}px) / ${columns})`,
             }}
           >
             <button
@@ -742,27 +793,16 @@ function DayColumn({
                 // ボタンは中身を上下中央へ寄せるため、flexにして上揃えへ戻す。
                 // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
                 "flex size-full flex-col overflow-hidden rounded-item border px-1.5 py-0.5 text-left text-[10px] leading-tight",
-                // 塗りが薄いぶん、文字色は背景の明るさから選ばずテーマの文字色に任せる。
-                subdued && "border-l-[3px] text-on-surface",
                 eventPreview && "ring-2 ring-foreground/50",
               )}
-              style={
-                subdued
-                  ? {
-                      backgroundColor: subdued.background,
-                      borderColor: subdued.border,
-                      borderLeftColor: subdued.accent,
-                    }
-                  : {
-                      backgroundColor: colors.background,
-                      color: colors.foreground,
-                      borderColor: colors.border,
-                    }
-              }
+              style={{
+                backgroundColor: colors.background,
+                color: colors.foreground,
+                borderColor: colors.border,
+              }}
               title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
             >
               <div className="clip-nowrap flex shrink-0 items-center gap-1 font-semibold">
-                {subdued && <ActivityMark className="size-1.5" />}
                 <span className="clip-nowrap">{event.title}</span>
               </div>
               {/* 短い予定に詰め込むと文字が潰れるため、高さに収まるぶんだけ出す。 */}
@@ -832,8 +872,8 @@ function DayColumn({
               if (onConsumeDragClick()) return;
               onOpenTask(task);
             }}
-            className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
-            style={{ top: offsetOf(previewFor(key)?.startMinutes ?? minutes) }}
+            className="absolute right-0 flex -translate-y-1/2 items-center gap-1 pr-1"
+            style={{ left: contentLeft, top: offsetOf(previewFor(key)?.startMinutes ?? minutes) }}
             title={`${utils.formatTime(date)} ${link ? `${taskLinkFullLabel(link)}: ` : planned ? "予定日: " : ""}${task.title}`}
           >
             {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。
@@ -883,6 +923,7 @@ function DayColumn({
         <ReminderMarker
           key={reminder.id}
           reminder={reminder}
+          left={contentLeft}
           top={offsetOf(utils.minutesFromMidnight(reminder.date))}
           time={utils.formatTime(reminder.date)}
           onOpen={() => onOpenReminder(reminder)}
@@ -893,6 +934,7 @@ function DayColumn({
           押さえようとしているのかが重なりに紛れないようにする。 */}
       {rangePreview && (
         <SlotRangeBlock
+          left={contentLeft}
           top={offsetOf(rangePreview.startMinutes)}
           height={Math.max(
             offsetOf(rangePreview.endMinutes - rangePreview.startMinutes),
@@ -914,11 +956,14 @@ function DayColumn({
  * 「いまこの時間を押さえているところ」という進行中の状態を、静止した枠より伝えやすい。
  */
 function SlotRangeBlock({
+  left,
   top,
   height,
   startMinutes,
   endMinutes,
 }: {
+  /** 左端のレーンのぶん右へ寄せる（issue #327）。 */
+  left: number;
   top: number;
   height: number;
   startMinutes: number;
@@ -931,8 +976,8 @@ function SlotRangeBlock({
     <div
       // ポインタは下の背景ボタンが受け取り続ける必要がある。枠が指の下に入った時点で
       // 受け取り先が変わると、そこから先の動きが範囲に反映されなくなる。
-      className="pointer-events-none absolute inset-x-0 z-30 px-px"
-      style={{ top, height }}
+      className="pointer-events-none absolute right-0 z-30 px-px"
+      style={{ left, top, height }}
       aria-hidden
     >
       <div className="animate-in fade-in relative size-full overflow-hidden rounded-item border-2 border-dashed border-primary bg-primary/10 duration-150">
@@ -966,11 +1011,14 @@ function durationLabel(minutes: number): string {
  */
 function ReminderMarker({
   reminder,
+  left,
   top,
   time,
   onOpen,
 }: {
   reminder: ReminderItem;
+  /** 左端のレーンのぶん右へ寄せる（issue #327）。 */
+  left: number;
   top: number;
   time: string;
   onOpen: () => void;
@@ -981,8 +1029,8 @@ function ReminderMarker({
     <button
       type="button"
       onClick={onOpen}
-      className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
-      style={{ top }}
+      className="absolute right-0 flex -translate-y-1/2 items-center gap-1 pr-1"
+      style={{ left, top }}
       title={
         fullYearLabel
           ? `${time} ${reminder.title} ${fullYearLabel}`
