@@ -172,18 +172,38 @@ export function taskOccurrences(
   toDateKey?: (date: string) => string,
 ): TaskOccurrence[] {
   const occurrences: TaskOccurrence[] = [];
-  const samePlace = (date: string, due: string) =>
-    toDateKey ? toDateKey(date) === toDateKey(due) : date === due;
 
   for (const field of ["due", "planned"] as const) {
     const { date, hasTime } = taskDateOf(task, field);
     if (!date) continue;
-    if (field === "planned" && task.due && samePlace(date, task.due)) continue;
+    if (field === "planned" && plannedMergesIntoDue(task, toDateKey)) continue;
 
     occurrences.push({ task, field, date, hasTime, key: taskOccurrenceKey(task.id, field) });
   }
 
   return occurrences;
+}
+
+/** 予定日の枠が期限の枠へまとまるか。まとめる単位は画面ごとに違う（月表示は日まで）。 */
+function plannedMergesIntoDue(task: TaskItem, toDateKey?: (date: string) => string): boolean {
+  if (!task.due || !task.planned) return false;
+  return toDateKey ? toDateKey(task.planned) === toDateKey(task.due) : task.planned === task.due;
+}
+
+/**
+ * その枠が表している日付（docs/spec.md §5）。
+ *
+ * 同じ場所に落ちる期限と予定日は期限の1枠にまとめるため、期限の枠が予定日も表していることが
+ * ある。まとめたことで片方の紐づけの印・ずれが画面のどこにも出なくなるのを防ぐため、
+ * 枠を描く側がここで確かめる（docs/spec.md §31）。
+ */
+export function taskFieldsInFrame(
+  task: TaskItem,
+  field: TaskDateField,
+  toDateKey?: (date: string) => string,
+): TaskDateField[] {
+  if (field !== "due") return [field];
+  return plannedMergesIntoDue(task, toDateKey) ? ["due", "planned"] : ["due"];
 }
 
 type ZonedParts = { dateKey: string; hour: number; minute: number };

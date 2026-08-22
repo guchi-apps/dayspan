@@ -78,7 +78,7 @@ export function normalizeTask(page: NotionPage, propertyMap: PropertyMap): TaskI
     recurrence: readChoice(get("recurrence")),
     // 予定への紐づけはDaySpanのDBにある（docs/spec.md §31）。Notionの応答からは分からないため、
     // ここでは空にしておき、読み込み側（services/task-links/links.ts）で埋める。
-    link: null,
+    links: [],
     url: page.url ?? null,
   };
 }

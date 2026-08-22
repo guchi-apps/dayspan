@@ -78,7 +78,7 @@ export async function PATCH(
       timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
     });
 
-    // 紐づいたタスクの予定日を、動かした先へ合わせる（docs/spec.md §31）。編集画面からの保存も
+    // 紐づいたタスクの日付（期限・予定日）を、動かした先へ合わせる（docs/spec.md §31）。編集画面からの保存も
     // 時間グリッドのドラッグも、どちらもこの経路を通るため1か所で両方に効く。
     // 予定の更新そのものは成功しているため、追随に失敗しても応答は失敗にしない。
     const links = await syncLinksForEvent(userId, eventId, {
@@ -125,7 +125,7 @@ export async function DELETE(
   try {
     await deleteEventWithScope(target.account, calendarId, eventId, scope);
 
-    // 紐づけの相手が消えたので外す。予定日はタスクに残す（消すと「いつやるつもりか」まで失われる）。
+    // 紐づけの相手が消えたので外す。日付はタスクに残す（消すと「いつやるつもりか」まで失われる）。
     const unlinked = await dropLinksForEvent(userId, eventId, scope);
 
     return NextResponse.json({ ok: true, unlinkedTasks: unlinked });

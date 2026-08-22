@@ -17,9 +17,12 @@
  * このファイルは書き込み（GET以外）にはいっさい介入しない。
  */
 
-// キャッシュの世代。このファイルの保存方針を変えたときに上げる。
-// 上げると activate で古い世代がまとめて消える。
-const VERSION = "v2";
+// キャッシュの世代。このファイルの保存方針を変えたときと、保存している応答の形が変わったときに
+// 上げる。上げると activate で古い世代がまとめて消える。
+//
+// v3: タスクの紐づけが1件（link）から行き先ごとの配列（links）へ変わった（docs/spec.md §31）。
+// 古い形の `/api/tasks` `/api/calendar` の応答を新しいJSへ渡すと、紐づけを読む場所で落ちる。
+const VERSION = "v3";
 
 const ASSET_CACHE = `dayspan-assets-${VERSION}`;
 const PAGE_CACHE = `dayspan-pages-${VERSION}`;

@@ -11,8 +11,9 @@ import {
   updateTask,
   type TaskWriteInput,
 } from "@/services/notion/tasks";
-import { getTaskLinkByTaskId, unlinkTaskByTaskId } from "@/services/task-links/links";
+import { getTaskLinkByTaskId, unlinkTask, unlinkTaskByTaskId } from "@/services/task-links/links";
 import { isSameTaskDate } from "@/services/task-links/stage";
+import { TASK_LINK_TARGETS, type TaskLinkTarget } from "@/types/calendar";
 
 type Body = TaskWriteInput & { completeAction?: boolean };
 
@@ -43,7 +44,7 @@ export async function PATCH(
     }
 
     await updateTask(notion, connection, taskId, body);
-    await dropLinkIfPlannedOverridden(userId, taskId, body);
+    await dropLinksIfDateOverridden(userId, taskId, body);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return externalApiError("notion", "タスクの更新", error);
@@ -69,7 +70,7 @@ export async function DELETE(
   try {
     await deleteTask(createNotionClient(connection), taskId);
     // 消したタスクの紐づけは残しても指す先が無い。予定を動かすたびに、消えたページへ
-    // 予定日を書きにいくことにもなる。
+    // 日付を書きにいくことにもなる。
     await unlinkTaskByTaskId(userId, taskId);
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -78,32 +79,46 @@ export async function DELETE(
 }
 
 /**
- * 予定日を紐づけとは違う日時に書き換えられたときは、紐づけを外す。
+ * 期限・予定日を紐づけとは違う日時に書き換えられたときは、その行き先の紐づけを外す。
  *
- * 入力画面では紐づけ中の予定日を直接は直せないようにしているが、隠すだけだとDaySpanのAPIや
+ * 入力画面では紐づけ中の日付を直接は直せないようにしているが、隠すだけだとDaySpanのAPIや
  * 将来のMCPから直接呼ばれた要求が素通りする（docs/spec.md §22）。紐づけを残したままにすると、
  * 手で入れた日付が次に予定が動いた時点で黙って書き戻される。
+ *
+ * 外すのは書き換えられた行き先の紐づけだけにする。期限を直したからといって、予定日の紐づけまで
+ * 外す理由は無い。
  */
-async function dropLinkIfPlannedOverridden(
+async function dropLinksIfDateOverridden(
   userId: string,
   taskId: string,
   body: Body,
 ): Promise<void> {
-  if (body.planned === undefined) return;
+  for (const target of TASK_LINK_TARGETS) {
+    const date = target === "DUE" ? body.due : body.planned;
+    await dropLinkIfDateOverridden(userId, taskId, target, date);
+  }
+}
 
-  const link = await getTaskLinkByTaskId(userId, taskId);
+async function dropLinkIfDateOverridden(
+  userId: string,
+  taskId: string,
+  target: TaskLinkTarget,
+  date: string | null | undefined,
+): Promise<void> {
+  if (date === undefined) return;
+
+  const link = await getTaskLinkByTaskId(userId, taskId, target);
   if (!link) return;
 
-  // 予定日を空にされた場合も紐づけは外す（date が null なら一致しない）。
-  const planned = body.planned;
+  // 日付を空にされた場合も紐づけは外す（date が null なら一致しない）。
   const resolved = link.resolvedAt.toISOString();
   const same = isSameTaskDate(
-    { date: planned, allDay: planned ? !planned.includes("T") : false },
+    { date, allDay: date ? !date.includes("T") : false },
     {
       date: link.resolvedAllDay ? resolved.slice(0, 10) : resolved,
       allDay: link.resolvedAllDay,
     },
   );
 
-  if (!same) await unlinkTaskByTaskId(userId, taskId);
+  if (!same) await unlinkTask(userId, link.id);
 }

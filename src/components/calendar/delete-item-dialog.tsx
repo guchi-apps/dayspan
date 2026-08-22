@@ -141,12 +141,13 @@ export function DeleteItemDialog({
 
         {/*
           予定を消すと紐づけの相手が無くなる。押す前に、どのタスクの紐づけが外れるのかを示す
-          （docs/spec.md §31）。予定日そのものはタスクに残るため、いつやるつもりだったかは失われない。
+          （docs/spec.md §31）。入っている日付そのものはタスクに残るため、いつやるつもりだったかは
+          失われない。
         */}
         {item.kind === "event" && item.linkedTasks && item.linkedTasks.length > 0 && (
           <p className="type-body-small text-on-surface-variant">
             {item.linkedTasks.map((title) => `「${title}」`).join("")}
-            の紐づけが外れます。予定日はタスクに残ります。
+            の紐づけが外れます。期限・予定日はタスクに残ります。
           </p>
         )}
 
