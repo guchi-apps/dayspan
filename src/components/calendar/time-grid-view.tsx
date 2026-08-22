@@ -29,7 +29,7 @@ import { ReminderMark } from "./reminder-mark";
 import { taskLinkFullLabel, taskLinkStageLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelBlock } from "./travel-block";
-import { SWIPE_SNAP_EASING, SWIPE_SNAP_MS, useDaySwipe } from "./use-day-swipe";
+import { useDaySwipe } from "./use-day-swipe";
 import {
   useAllDayDrag,
   useGridDrag,
@@ -215,10 +215,9 @@ export function TimeGridView({
 
   // 予定を掴んでいる間の横移動は、日付ではなくその予定を動かす操作。
   const {
-    offset: swipeOffset,
-    snapping: swipeSnapping,
     rootRef: swipeRootRef,
     trackRef: swipeTrackRef,
+    registerTrack: registerSwipeTrack,
     handlers: swipeHandlers,
   } = useDaySwipe({
     daysKey: days[0],
@@ -247,15 +246,14 @@ export function TimeGridView({
         style={{ paddingRight: scrollbarGutter }}
       >
         <div className="w-12 shrink-0" />
-        <SwipeTrack offset={swipeOffset} snapping={swipeSnapping} panes={panes}>
+        <SwipeTrack registerTrack={registerSwipeTrack} panes={panes}>
           {(paneDays) => <DayHeaderPane days={paneDays} todayKey={todayKey} />}
         </SwipeTrack>
       </div>
 
       <AllDayArea
         panes={panes}
-        swipeOffset={swipeOffset}
-        swipeSnapping={swipeSnapping}
+        registerSwipeTrack={registerSwipeTrack}
         endGutter={scrollbarGutter}
         events={events}
         tasks={tasks}
@@ -305,8 +303,7 @@ export function TimeGridView({
           <NowLine days={days} utils={utils} gridHeight={gridHeight} />
 
           <SwipeTrack
-            offset={swipeOffset}
-            snapping={swipeSnapping}
+            registerTrack={registerSwipeTrack}
             panes={panes}
             trackRef={swipeTrackRef}
           >
@@ -350,14 +347,16 @@ export function TimeGridView({
  * 隣の期間に終日予定が多いだけで終日エリアが伸び、触っていないのに画面が変わってしまう。
  */
 function SwipeTrack({
-  offset,
-  snapping,
+  registerTrack,
   panes,
   trackRef,
   children,
 }: {
-  offset: number;
-  snapping: boolean;
+  /**
+   * 横位置を受け持つフックへ、動かす要素を渡す。位置はそこから直接書き込まれる
+   * （指の動きでReactの描き直しを起こさないため。use-day-swipe.ts）。
+   */
+  registerTrack: React.RefCallback<HTMLDivElement>;
   panes: PaneDays;
   /** 1期間ぶんの幅を測る先。指の移動量を「何日ぶんか」に直すために使う。 */
   trackRef?: React.Ref<HTMLDivElement>;
@@ -365,13 +364,7 @@ function SwipeTrack({
 }) {
   return (
     <div ref={trackRef} className="relative min-w-0 flex-1 overflow-hidden">
-      <div
-        className="relative flex"
-        style={{
-          transform: `translateX(${offset * 100}%)`,
-          transition: snapping ? `transform ${SWIPE_SNAP_MS}ms ${SWIPE_SNAP_EASING}` : undefined,
-        }}
-      >
+      <div ref={registerTrack} className="relative flex">
         {/* 画面の外にある期間は読み上げ・フォーカスの対象から外す。 */}
         <div className="absolute inset-y-0 right-full w-full" inert>
           {children(panes[0], false)}
@@ -1052,8 +1045,7 @@ function ReminderMarker({
 
 function AllDayArea({
   panes,
-  swipeOffset,
-  swipeSnapping,
+  registerSwipeTrack,
   endGutter,
   events,
   tasks,
@@ -1071,8 +1063,7 @@ function AllDayArea({
   onOpenReminder,
 }: {
   panes: PaneDays;
-  swipeOffset: number;
-  swipeSnapping: boolean;
+  registerSwipeTrack: React.RefCallback<HTMLDivElement>;
   /** 下の時間グリッドがスクロールバーに取られている幅。右へ同じだけ空けて列を揃える。 */
   endGutter: number;
   events: CalendarEventItem[];
@@ -1105,7 +1096,7 @@ function AllDayArea({
         終日
       </div>
 
-      <SwipeTrack offset={swipeOffset} snapping={swipeSnapping} panes={panes}>
+      <SwipeTrack registerTrack={registerSwipeTrack} panes={panes}>
         {(paneDays, isCenter) => (
           <AllDayPane
             days={paneDays}
