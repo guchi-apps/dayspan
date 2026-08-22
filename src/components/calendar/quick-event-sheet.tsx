@@ -166,10 +166,11 @@ export function QuickEventSheet({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
+      {/* 右上の ✕ を出す。下端のボタンは保存と詳細だけで「やめる」を持たないため、
+          押せる出口がここに要る（docs/spec.md §15）。 */}
       <DialogContent
         ref={contentRef}
         position="bottom"
-        showCloseButton={false}
         className="max-h-[80dvh] gap-3 overflow-y-auto"
         // 開いた時点で入力欄へフォーカスを移さない。スマートフォンではその場でキーボードが
         // 立ち上がり、シートの下半分を覆ってしまう。時刻もカレンダーも押した位置から
