@@ -15,6 +15,7 @@ import {
 } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
+import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
@@ -416,6 +417,17 @@ export function CalendarShell({
   const openReminder = (reminder: ReminderItem) => setViewingReminder(reminder);
   const openTravel = (travel: TravelItem) => setViewingTravel(travel);
 
+  /**
+   * 予定の表示画面から、その予定に紐づく移動へ移る（issue #327）。
+   *
+   * 移動は時間グリッドでは予定の背面に置くため、時間が丸ごと重なると押せない。
+   * 予定の側からたどれば、画面のどこに何が乗っているかに関係なく開ける。
+   */
+  const openTravelFromEvent = (travel: TravelItem) => {
+    setViewingEvent(null);
+    setViewingTravel(travel);
+  };
+
   const editTravel = (travel: TravelItem) => {
     if (offline) return;
     setViewingTravel(null);
@@ -634,16 +646,19 @@ export function CalendarShell({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
+        {/* 狭い画面では左上をメニューにする（issue #328）。どの画面でも先頭の位置が揃う。 */}
+        <AppMenuButton />
+
         {/*
-          アイコンは狭い画面でも出す。他の画面（タスク・日付リマインド）は左上にアイコンがあり、
+          アイコンはPCだけに出す。他の画面（タスク・日付リマインド）も同じ位置にアイコンがあり、
           カレンダーだけ日付から始まると、同じアプリの中で先頭の位置が揃わないため。
-          アプリ名は幅の広いときだけ。狭い画面では年月の表示幅を優先する。
-          カレンダーアイコンをクリックすると今日の日付に飛ぶ。
+          アプリ名は幅の広いときだけ。カレンダーアイコンをクリックすると今日の日付に飛ぶ。
+          狭い画面で今日へ戻る操作は、下部ナビの「カレンダー」が同じことをする（issue #175）。
         */}
         <Button
           variant="ghost"
           onClick={goToday}
-          className="shrink-0 gap-1 font-semibold px-2 py-1.5"
+          className="hidden shrink-0 gap-1 px-2 py-1.5 font-semibold md:flex"
           aria-label="今日に飛ぶ"
         >
           <CalendarDays className="size-5" />
@@ -812,6 +827,7 @@ export function CalendarShell({
           onOpenTask={openTask}
           onOpenReminder={openReminder}
           onOpenTravel={openTravel}
+          onOpenTravelForEvent={openTravelFromEvent}
           onEditEvent={editEvent}
           onDuplicateEvent={duplicateEvent}
           onEditTask={editTask}
@@ -897,6 +913,7 @@ function CalendarBody({
   onOpenTask,
   onOpenReminder,
   onOpenTravel,
+  onOpenTravelForEvent,
   onEditEvent,
   onDuplicateEvent,
   onEditTask,
@@ -951,6 +968,8 @@ function CalendarBody({
   onOpenTask: (task: TaskItem) => void;
   onOpenReminder: (reminder: ReminderItem) => void;
   onOpenTravel: (travel: TravelItem) => void;
+  /** 予定の表示画面から、その予定に紐づく移動を開く（issue #327）。 */
+  onOpenTravelForEvent: (travel: TravelItem) => void;
   onEditEvent: (event: CalendarEventItem) => void;
   onDuplicateEvent: (event: CalendarEventItem) => void;
   onEditTask: (task: TaskItem) => void;
@@ -1166,6 +1185,11 @@ function CalendarBody({
           onEdit={() => onEditEvent(viewingEvent)}
           onDuplicate={() => onDuplicateEvent(viewingEvent)}
           onAddTravel={() => onAddTravelForEvent(viewingEvent)}
+          // この予定のために作った移動。往路・復路の2件が同じ予定を指す。
+          linkedTravels={data.travels.filter(
+            (travel) => travel.linkedEventId === viewingEvent.id,
+          )}
+          onOpenTravel={onOpenTravelForEvent}
           onLinkTask={() => onLinkTaskForEvent(viewingEvent)}
           // 消すと紐づけが外れるタスク。確認の前に示す（docs/spec.md §31）。
           linkedTasks={data.tasks

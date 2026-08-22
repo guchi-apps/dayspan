@@ -57,6 +57,10 @@ const DIALOG_POSITIONS = {
   // 下端の余白はホームバーの領域を避けて確保する。
   bottom:
     "bottom-0 left-1/2 max-w-full -translate-x-1/2 rounded-t-2xl pb-[calc(1.5rem_+_env(safe-area-inset-bottom))] sm:max-w-lg data-open:slide-in-from-bottom-8 data-closed:slide-out-to-bottom-8",
+  // 画面の左端から出すドロワー（ナビゲーションドロワー）。高さは画面いっぱいで、
+  // 右側だけ角を丸める。行を上から下へ並べるため、格子ではなく縦積みにする。
+  left:
+    "top-0 bottom-0 left-0 flex max-w-[20rem] flex-col rounded-r-2xl p-0 data-open:slide-in-from-left-8 data-closed:slide-out-to-left-8",
 } as const
 
 function DialogContent({

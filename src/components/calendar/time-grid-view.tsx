@@ -7,15 +7,21 @@ import { eventColors, subduedEventColors } from "./calendar-color";
 import type { RunningActivityItem } from "@/types/activity";
 import type { CalendarEventItem, ReminderItem, TaskItem, TravelItem } from "@/types/calendar";
 
+import { ActivityLaneBlock } from "./activity-lane-block";
 import { ActivityMark } from "./activity-mark";
 import { RunningActivityBlock } from "./running-activity-block";
 import { useMinuteBucket } from "./use-clock";
 import {
+  ACTIVITY_LANE_GAP,
+  ACTIVITY_LANE_WIDTH,
   eventTextLines,
+  MARK_ELBOW_WIDTH,
+  MARK_ROW_HEIGHT,
   MIN_EVENT_HEIGHT,
   MINUTES_PER_DAY,
   reminderAnnualYearLabel,
   reminderAnnualYearShortLabel,
+  stackMarkTops,
   taskOccurrenceKey,
   taskOccurrences,
   type CalendarDateUtils,
@@ -26,7 +32,7 @@ import { ReminderMark } from "./reminder-mark";
 import { taskLinkFullLabel, taskLinkStageLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelBlock } from "./travel-block";
-import { SWIPE_SNAP_EASING, SWIPE_SNAP_MS, useDaySwipe } from "./use-day-swipe";
+import { useDaySwipe } from "./use-day-swipe";
 import {
   useAllDayDrag,
   useGridDrag,
@@ -212,10 +218,9 @@ export function TimeGridView({
 
   // 予定を掴んでいる間の横移動は、日付ではなくその予定を動かす操作。
   const {
-    offset: swipeOffset,
-    snapping: swipeSnapping,
     rootRef: swipeRootRef,
     trackRef: swipeTrackRef,
+    registerTrack: registerSwipeTrack,
     handlers: swipeHandlers,
   } = useDaySwipe({
     daysKey: days[0],
@@ -244,15 +249,14 @@ export function TimeGridView({
         style={{ paddingRight: scrollbarGutter }}
       >
         <div className="w-12 shrink-0" />
-        <SwipeTrack offset={swipeOffset} snapping={swipeSnapping} panes={panes}>
+        <SwipeTrack registerTrack={registerSwipeTrack} panes={panes}>
           {(paneDays) => <DayHeaderPane days={paneDays} todayKey={todayKey} />}
         </SwipeTrack>
       </div>
 
       <AllDayArea
         panes={panes}
-        swipeOffset={swipeOffset}
-        swipeSnapping={swipeSnapping}
+        registerSwipeTrack={registerSwipeTrack}
         endGutter={scrollbarGutter}
         events={events}
         tasks={tasks}
@@ -302,14 +306,14 @@ export function TimeGridView({
           <NowLine days={days} utils={utils} gridHeight={gridHeight} />
 
           <SwipeTrack
-            offset={swipeOffset}
-            snapping={swipeSnapping}
+            registerTrack={registerSwipeTrack}
             panes={panes}
             trackRef={swipeTrackRef}
           >
             {(paneDays, isCenter) => (
               <DayColumnsPane
                 days={paneDays}
+                todayKey={todayKey}
                 hourHeight={hourHeight}
                 events={events}
                 tasks={tasks}
@@ -346,14 +350,16 @@ export function TimeGridView({
  * 隣の期間に終日予定が多いだけで終日エリアが伸び、触っていないのに画面が変わってしまう。
  */
 function SwipeTrack({
-  offset,
-  snapping,
+  registerTrack,
   panes,
   trackRef,
   children,
 }: {
-  offset: number;
-  snapping: boolean;
+  /**
+   * 横位置を受け持つフックへ、動かす要素を渡す。位置はそこから直接書き込まれる
+   * （指の動きでReactの描き直しを起こさないため。use-day-swipe.ts）。
+   */
+  registerTrack: React.RefCallback<HTMLDivElement>;
   panes: PaneDays;
   /** 1期間ぶんの幅を測る先。指の移動量を「何日ぶんか」に直すために使う。 */
   trackRef?: React.Ref<HTMLDivElement>;
@@ -361,13 +367,7 @@ function SwipeTrack({
 }) {
   return (
     <div ref={trackRef} className="relative min-w-0 flex-1 overflow-hidden">
-      <div
-        className="relative flex"
-        style={{
-          transform: `translateX(${offset * 100}%)`,
-          transition: snapping ? `transform ${SWIPE_SNAP_MS}ms ${SWIPE_SNAP_EASING}` : undefined,
-        }}
-      >
+      <div ref={registerTrack} className="relative flex">
         {/* 画面の外にある期間は読み上げ・フォーカスの対象から外す。 */}
         <div className="absolute inset-y-0 right-full w-full" inert>
           {children(panes[0], false)}
@@ -422,6 +422,7 @@ const DayHeaderPane = memo(function DayHeaderPane({
  */
 const DayColumnsPane = memo(function DayColumnsPane({
   days,
+  todayKey,
   hourHeight,
   events,
   tasks,
@@ -443,6 +444,8 @@ const DayColumnsPane = memo(function DayColumnsPane({
   onStartSelect,
 }: {
   days: string[];
+  /** 設定タイムゾーンでの今日。記録中の帯がその列にかかりうるかの判定に使う。 */
+  todayKey: string;
   /** 1時間あたりの高さ（px）。ピンチで変わる（use-time-zoom.ts）。 */
   hourHeight: number;
   events: CalendarEventItem[];
@@ -477,6 +480,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
         <DayColumn
           key={dateKey}
           dateKey={dateKey}
+          todayKey={todayKey}
           dayIndex={dayIndex}
           hourHeight={hourHeight}
           preview={preview}
@@ -516,6 +520,7 @@ const DayColumnsPane = memo(function DayColumnsPane({
 
 function DayColumn({
   dateKey,
+  todayKey,
   dayIndex,
   hourHeight,
   events,
@@ -538,6 +543,7 @@ function DayColumn({
   onStartSelect,
 }: {
   dateKey: string;
+  todayKey: string;
   dayIndex: number;
   hourHeight: number;
   events: CalendarEventItem[];
@@ -565,7 +571,27 @@ function DayColumn({
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onStartSelect: (event: React.PointerEvent, dayIndex: number) => void;
 }) {
-  const positioned = utils.layoutOverlaps(events, dateKey);
+  // 活動記録は予定の重なり計算に混ぜず、左端のレーンへ置く（issue #327）。記録は後から
+  // 見返す事実で、これから動くために見る予定とは読む理由が違う（docs/spec.md §27）。
+  const activityEvents = events.filter((event) => activityCalendarIds.has(event.calendarId));
+  const plainEvents = events.filter((event) => !activityCalendarIds.has(event.calendarId));
+
+  // 記録中の帯は開始日から今日までの列にかかる。終わり（現在時刻）はクライアントでしか
+  // 決まらないため、レーンを空けるかどうかは日付の範囲だけで判定する。サーバーとブラウザで
+  // 同じ答えにならないと、最初の描画で予定の位置がずれる。
+  const runningCoversDay =
+    runningActivity !== null &&
+    utils.itemDateKey(runningActivity.startedAt) <= dateKey &&
+    dateKey <= todayKey;
+
+  // レーンは記録のある日にだけ出す。毎日空けると、記録を1件も付けていない日まで幅が減る。
+  const laneWidth = activityEvents.length > 0 || runningCoversDay ? ACTIVITY_LANE_WIDTH : 0;
+  /** 予定・移動・タスクの印を置ける範囲の左端（px）。レーンが無い日は 0。 */
+  const contentLeft = laneWidth === 0 ? 0 : laneWidth + ACTIVITY_LANE_GAP;
+
+  const positioned = utils.layoutOverlaps(plainEvents, dateKey);
+  // 記録どうしが重なる日（Googleの画面で直接足した場合）は、レーンの中をさらに分ける。
+  const laneItems = utils.layoutOverlaps(activityEvents, dateKey);
   const gridHeight = hourHeight * 24;
 
   /** 0:00からの分数を、この列の中での位置（px）に直す。 */
@@ -578,6 +604,34 @@ function DayColumn({
   };
 
   const isDraggedAway = (id: string) => preview?.id === id && preview.dayIndex !== dayIndex;
+
+  /**
+   * 印（タスクの期限・予定日、日付リマインド）のラベルを置く高さ（issue #331）。
+   *
+   * 印は高さを持たないため、近い時刻のものは同じ位置に重なって上の1件しか読めない。
+   * ラベルだけを下へ送って縦に積み、引き出し線を折って本来の時刻へ戻す。
+   * タスクと日付リマインドは同じ場所に置かれて互いに重なるため、1つの並びとして扱う。
+   */
+  const markTops = stackMarkTops(
+    [
+      // 掴んでいる印は並びから外し、指の位置へ素直に付ける。混ぜたままだと、動かしている
+      // 本人の指とラベルがずれる。残りの印は、その行が空いたものとして詰め直す。
+      // 別の列へ運ばれた印（この列では描かない）も、行を空けたままにするため外す。
+      ...taskMarks
+        .filter((occurrence) => preview?.id !== occurrence.key)
+        .map((occurrence) => ({
+          key: occurrence.key,
+          top: offsetOf(utils.minutesFromMidnight(occurrence.date)),
+        })),
+      ...reminders.map((reminder) => ({
+        key: reminder.id,
+        top: offsetOf(utils.minutesFromMidnight(reminder.date)),
+      })),
+    ],
+    // ラベルの下半分まで一日ぶんの高さに収める。時間グリッドの外は切り落とされるため、
+    // 深夜の印を下へ送り続けると、重なりの代わりにラベルそのものが消える。
+    gridHeight - MARK_ROW_HEIGHT / 2,
+  );
 
   const handleBackgroundClick = (clientY: number, element: HTMLElement) => {
     // ピンチや予定のドラッグの後始末で来たclickでは、空き時間を選んだことにしない。
@@ -624,16 +678,38 @@ function DayColumn({
       })}
 
       {/*
-        記録中の活動。予定より先に置いて、予定・タスクがその上に描かれるようにする。
-        記録中は終わりが決まっておらず、時間が経つほど帯が伸びる。同じ時間帯の予定を
-        覆い隠すと、いま何の予定が入っているかが読めなくなるため、背面の帯として置く。
+        左端のレーンに置く活動記録。占めていた時間は帯の高さで残し、幅だけを予定へ譲る。
+        重なり計算から外してあるため、記録が何時間続いても予定・移動の幅は変わらない。
       */}
-      {runningActivity && (
+      {laneItems.map(({ event, column, columns }) => {
+        const range = utils.eventRange(event, dateKey);
+
+        return (
+          <ActivityLaneBlock
+            key={event.id}
+            event={event}
+            top={offsetOf(range.startMinutes)}
+            height={Math.max(offsetOf(range.endMinutes - range.startMinutes), MIN_EVENT_HEIGHT)}
+            left={(laneWidth / columns) * column}
+            width={laneWidth / columns}
+            timeText={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)}`}
+            onOpen={() => {
+              if (onConsumeDragClick()) return;
+              onOpenEvent(event);
+            }}
+          />
+        );
+      })}
+
+      {/* 記録中の活動。終わりが決まっておらず時間が経つほど伸びるため、なおさら幅を取らせない。 */}
+      {runningActivity && runningCoversDay && (
         <RunningActivityBlock
           running={runningActivity}
           dateKey={dateKey}
           utils={utils}
           gridHeight={gridHeight}
+          left={0}
+          width={laneWidth}
           onOpen={() => {
             if (onConsumeDragClick()) return;
             onOpenActivity();
@@ -656,6 +732,7 @@ function DayColumn({
           <TravelBlock
             key={travel.id}
             travel={travel}
+            left={contentLeft}
             top={offsetOf(startMinutes)}
             height={Math.max(offsetOf(endMinutes - startMinutes), MIN_EVENT_HEIGHT)}
             timeText={`${utils.formatTime(travel.start)}–${utils.formatTime(travel.end)}`}
@@ -686,10 +763,7 @@ function DayColumn({
           (utils.itemDateKey(event.start) === utils.itemDateKey(event.end) ||
             utils.itemDateKey(event.start) === dateKey);
 
-        // 活動記録のカレンダーの予定は塗りを落とし、色は左の縦帯として残す（issue #241）。
-        const subdued = activityCalendarIds.has(event.calendarId)
-          ? subduedEventColors(event.color)
-          : null;
+        // 活動記録は左端のレーンへ分けてあるため、ここへ来るのは普通の予定だけ（issue #327）。
         const colors = eventColors(event.color);
 
         // 高さに収まる行数ぶんだけ、タイトルの下へ順に添える（issue #73）。
@@ -724,8 +798,9 @@ function DayColumn({
             style={{
               top,
               height,
-              left: `${(column / columns) * 100}%`,
-              width: `${(1 / columns) * 100}%`,
+              // 列の幅からレーンのぶんを引いた残りを、重なりの列数で割る。
+              left: `calc(${contentLeft}px + (100% - ${contentLeft}px) * ${column} / ${columns})`,
+              width: `calc((100% - ${contentLeft}px) / ${columns})`,
             }}
           >
             <button
@@ -742,27 +817,16 @@ function DayColumn({
                 // ボタンは中身を上下中央へ寄せるため、flexにして上揃えへ戻す。
                 // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
                 "flex size-full flex-col overflow-hidden rounded-item border px-1.5 py-0.5 text-left text-[10px] leading-tight",
-                // 塗りが薄いぶん、文字色は背景の明るさから選ばずテーマの文字色に任せる。
-                subdued && "border-l-[3px] text-on-surface",
                 eventPreview && "ring-2 ring-foreground/50",
               )}
-              style={
-                subdued
-                  ? {
-                      backgroundColor: subdued.background,
-                      borderColor: subdued.border,
-                      borderLeftColor: subdued.accent,
-                    }
-                  : {
-                      backgroundColor: colors.background,
-                      color: colors.foreground,
-                      borderColor: colors.border,
-                    }
-              }
+              style={{
+                backgroundColor: colors.background,
+                color: colors.foreground,
+                borderColor: colors.border,
+              }}
               title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
             >
               <div className="clip-nowrap flex shrink-0 items-center gap-1 font-semibold">
-                {subdued && <ActivityMark className="size-1.5" />}
                 <span className="clip-nowrap">{event.title}</span>
               </div>
               {/* 短い予定に詰め込むと文字が潰れるため、高さに収まるぶんだけ出す。 */}
@@ -817,6 +881,12 @@ function DayColumn({
         // 紐づけの印は予定日の枠にだけ出す（docs/spec.md §31）。
         const link = planned ? task.link : null;
 
+        // 縦棒は時刻そのものを指すため動かさない。動かすのはラベルだけで、
+        // その差だけ縦棒と引き出し線を本来の時刻へ戻す（issue #331）。
+        const trueTop = offsetOf(previewFor(key)?.startMinutes ?? minutes);
+        const labelTop = markTops.get(key) ?? trueTop;
+        const shift = trueTop - labelTop;
+
         return (
           <button
             key={key}
@@ -832,35 +902,36 @@ function DayColumn({
               if (onConsumeDragClick()) return;
               onOpenTask(task);
             }}
-            className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
-            style={{ top: offsetOf(previewFor(key)?.startMinutes ?? minutes) }}
+            className="absolute right-0 flex -translate-y-1/2 items-center gap-1 pr-1"
+            style={{ left: contentLeft, top: labelTop }}
             title={`${utils.formatTime(date)} ${link ? `${taskLinkFullLabel(link)}: ` : planned ? "予定日: " : ""}${task.title}`}
           >
             {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。
                 紐づいたタスクは、目盛りの代わりに段階の印を立てる。 */}
-            {link ? (
-              <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2.5 w-3" />
-            ) : (
-              <span
-                aria-hidden
-                className={cn(
-                  "h-2.5 w-0.5 shrink-0",
-                  task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
-                )}
-              />
-            )}
             <span
-              className={cn(
-                "flex-1",
-                planned ? "h-0 border-t border-dashed" : "h-px",
-                task.done
-                  ? planned
-                    ? "border-on-surface-variant/30"
-                    : "bg-on-surface-variant/30"
-                  : planned
-                    ? "border-primary/45"
-                    : "bg-primary/45",
+              className="flex shrink-0 items-center"
+              style={{ transform: `translateY(${shift}px)` }}
+            >
+              {link ? (
+                <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2.5 w-3" />
+              ) : (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-2.5 w-0.5",
+                    task.done
+                      ? "bg-on-surface-variant/60"
+                      : planned
+                        ? "bg-primary/40"
+                        : "bg-primary",
+                  )}
+                />
               )}
+            </span>
+            <MarkLeader
+              shift={shift}
+              dashed={planned}
+              className={task.done ? "border-on-surface-variant/30" : "border-primary/45"}
             />
             <span
               className={cn(
@@ -879,20 +950,27 @@ function DayColumn({
       })}
 
       {/* 日付リマインドは時刻の幅を持たないため、掴めない印（時刻の点）として置く。 */}
-      {reminders.map((reminder) => (
-        <ReminderMarker
-          key={reminder.id}
-          reminder={reminder}
-          top={offsetOf(utils.minutesFromMidnight(reminder.date))}
-          time={utils.formatTime(reminder.date)}
-          onOpen={() => onOpenReminder(reminder)}
-        />
-      ))}
+      {reminders.map((reminder) => {
+        const trueTop = offsetOf(utils.minutesFromMidnight(reminder.date));
+
+        return (
+          <ReminderMarker
+            key={reminder.id}
+            reminder={reminder}
+            left={contentLeft}
+            trueTop={trueTop}
+            labelTop={markTops.get(reminder.id) ?? trueTop}
+            time={utils.formatTime(reminder.date)}
+            onOpen={() => onOpenReminder(reminder)}
+          />
+        );
+      })}
 
       {/* 引いている最中の時間帯。既存の予定より前に出して、いま何時から何時を
           押さえようとしているのかが重なりに紛れないようにする。 */}
       {rangePreview && (
         <SlotRangeBlock
+          left={contentLeft}
           top={offsetOf(rangePreview.startMinutes)}
           height={Math.max(
             offsetOf(rangePreview.endMinutes - rangePreview.startMinutes),
@@ -914,11 +992,14 @@ function DayColumn({
  * 「いまこの時間を押さえているところ」という進行中の状態を、静止した枠より伝えやすい。
  */
 function SlotRangeBlock({
+  left,
   top,
   height,
   startMinutes,
   endMinutes,
 }: {
+  /** 左端のレーンのぶん右へ寄せる（issue #327）。 */
+  left: number;
   top: number;
   height: number;
   startMinutes: number;
@@ -931,8 +1012,8 @@ function SlotRangeBlock({
     <div
       // ポインタは下の背景ボタンが受け取り続ける必要がある。枠が指の下に入った時点で
       // 受け取り先が変わると、そこから先の動きが範囲に反映されなくなる。
-      className="pointer-events-none absolute inset-x-0 z-30 px-px"
-      style={{ top, height }}
+      className="pointer-events-none absolute right-0 z-30 px-px"
+      style={{ left, top, height }}
       aria-hidden
     >
       <div className="animate-in fade-in relative size-full overflow-hidden rounded-item border-2 border-dashed border-primary bg-primary/10 duration-150">
@@ -961,36 +1042,96 @@ function durationLabel(minutes: number): string {
 }
 
 /**
+ * 印（タスク・日付リマインド）の縦棒とラベルを結ぶ引き出し線（issue #331）。
+ *
+ * ラベルを下へ送ったぶん（shift）だけ、縦棒のすぐ右で折れて本来の時刻の高さから引き直す。
+ * 送っていない印では縦の線が高さを持たず、今までどおり1本の直線に見える。
+ *
+ * 3本を絶対配置で組むのは、線の太さ（1px）と色をタスク・日付リマインドで揃えたまま、
+ * 折れ曲がりの位置だけを描画のたびに変えるため。SVGにすると、破線の間隔や色の指定を
+ * 枠線のユーティリティと別に持つことになる。
+ */
+function MarkLeader({
+  shift,
+  dashed = false,
+  className,
+}: {
+  /** 縦棒の高さ − ラベルの高さ（px）。ラベルを下へ送っていれば負、上へ返していれば正。 */
+  shift: number;
+  /** 予定日の枠は破線で描き分ける（docs/spec.md §6）。 */
+  dashed?: boolean;
+  className?: string;
+}) {
+  const style = dashed ? "border-dashed" : "border-solid";
+
+  return (
+    <span aria-hidden className="relative h-px flex-1">
+      {/* 縦棒から折れ曲がりまで（本来の時刻の高さ） */}
+      <span
+        className={cn("absolute left-0 border-t", style, className)}
+        style={{ top: shift, width: MARK_ELBOW_WIDTH }}
+      />
+      {/* 折れ曲がり。ラベルを送っていなければ高さ0で、線としては現れない */}
+      <span
+        className={cn("absolute border-l", style, className)}
+        style={{
+          top: Math.min(shift, 0),
+          left: MARK_ELBOW_WIDTH,
+          height: Math.abs(shift),
+        }}
+      />
+      {/* 折れ曲がりからラベルまで（ラベルの高さ） */}
+      <span
+        className={cn("absolute top-0 right-0 border-t", style, className)}
+        style={{ left: MARK_ELBOW_WIDTH }}
+      />
+    </span>
+  );
+}
+
+/**
  * 時刻付きの日付リマインド。日付そのものを覚えておくための項目で時間の幅を持たないため、
  * 予定・タスクと違い時間グリッド上では動かせない。押すと内容の画面を開く。
  */
 function ReminderMarker({
   reminder,
-  top,
+  left,
+  trueTop,
+  labelTop,
   time,
   onOpen,
 }: {
   reminder: ReminderItem;
-  top: number;
+  /** 左端のレーンのぶん右へ寄せる（issue #327）。 */
+  left: number;
+  /** 時刻そのものの高さ。縦棒はここに残す。 */
+  trueTop: number;
+  /** ラベルを置く高さ。重なりを避けて下へ送られている場合がある（issue #331）。 */
+  labelTop: number;
   time: string;
   onOpen: () => void;
 }) {
   const yearLabel = reminderAnnualYearShortLabel(reminder);
   const fullYearLabel = reminderAnnualYearLabel(reminder);
+  const shift = trueTop - labelTop;
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-1 pr-1"
-      style={{ top }}
+      className="absolute right-0 flex -translate-y-1/2 items-center gap-1 pr-1"
+      style={{ left, top: labelTop }}
       title={
         fullYearLabel
           ? `${time} ${reminder.title} ${fullYearLabel}`
           : `${time} ${reminder.title}`
       }
     >
-      <span aria-hidden className="h-2.5 w-0.5 shrink-0 bg-tertiary" />
-      <span className="h-px flex-1 bg-tertiary/45" />
+      <span
+        aria-hidden
+        className="h-2.5 w-0.5 shrink-0 bg-tertiary"
+        style={{ transform: `translateY(${shift}px)` }}
+      />
+      <MarkLeader shift={shift} className="border-tertiary/45" />
       <span className="type-label-small clip-nowrap flex max-w-[78%] items-center gap-1 rounded-item border border-tertiary/60 bg-surface-container-lowest px-1">
         <ReminderMark source={reminder.source} />
         <span className="clip-nowrap">
@@ -1004,8 +1145,7 @@ function ReminderMarker({
 
 function AllDayArea({
   panes,
-  swipeOffset,
-  swipeSnapping,
+  registerSwipeTrack,
   endGutter,
   events,
   tasks,
@@ -1023,8 +1163,7 @@ function AllDayArea({
   onOpenReminder,
 }: {
   panes: PaneDays;
-  swipeOffset: number;
-  swipeSnapping: boolean;
+  registerSwipeTrack: React.RefCallback<HTMLDivElement>;
   /** 下の時間グリッドがスクロールバーに取られている幅。右へ同じだけ空けて列を揃える。 */
   endGutter: number;
   events: CalendarEventItem[];
@@ -1057,7 +1196,7 @@ function AllDayArea({
         終日
       </div>
 
-      <SwipeTrack offset={swipeOffset} snapping={swipeSnapping} panes={panes}>
+      <SwipeTrack registerTrack={registerSwipeTrack} panes={panes}>
         {(paneDays, isCenter) => (
           <AllDayPane
             days={paneDays}

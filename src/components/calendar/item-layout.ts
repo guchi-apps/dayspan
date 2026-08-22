@@ -16,6 +16,21 @@ export const MAX_HOUR_HEIGHT = 192;
 /** 予定ブロックの最小の高さ（px）。極端に短い予定でもタイトルが読めるようにする。 */
 export const MIN_EVENT_HEIGHT = 16;
 
+/**
+ * 活動記録を置く、日ごとの列の左端のレーンの幅（px）。
+ *
+ * 記録は後から見返す事実で、これから動くために見る予定とは読む理由が違う（docs/spec.md §27）。
+ * 予定と同じ幅を取ると、睡眠のような長い記録が入った日は時間グリッドがほぼ記録の面になり、
+ * 同じ時間帯の予定・移動がその半分へ押し込まれる（issue #327）。
+ *
+ * 幅は縦書きにした項目名（9px）が通るところまで。左の縦帯（3px）と枠線（1px）を除いた
+ * 12pxが文字の通り道になる。これより細くすると帯だけになり、何の記録かが押すまで分からない。
+ */
+export const ACTIVITY_LANE_WIDTH = 16;
+
+/** レーンと、その右に置く予定・移動との間隔（px）。枠線どうしが接して1本の線に見えるのを防ぐ。 */
+export const ACTIVITY_LANE_GAP = 2;
+
 /** 予定ブロックの本文1行の高さ（px）。text-[11px] / leading-tight の組み合わせに合わせる。 */
 const EVENT_LINE_HEIGHT = 14;
 
@@ -31,6 +46,66 @@ const EVENT_BLOCK_PADDING_Y = 4;
  */
 export function eventTextLines(height: number): number {
   return Math.max(1, Math.floor((height - EVENT_BLOCK_PADDING_Y) / EVENT_LINE_HEIGHT));
+}
+
+/**
+ * 印（タスクの期限・予定日、日付リマインド）を縦に積むときの1行の高さ（px）。
+ *
+ * 印はラベル（項目名）だけの高さしか持たず、そのままでは近い時刻の印が同じ位置に重なって
+ * 上の1件しか読めない（issue #331）。予定のように幅を分け合わせないのは、印の中身が
+ * 項目名そのもので削るところが無いため（2件で「資料提…」、3件で「資」まで縮む）。
+ *
+ * 値はラベルの高さ（type-label-small の行送り16px＋上下の枠線1px）に、
+ * 枠線どうしが1本に見えないだけの隙間2pxを足したもの。
+ */
+export const MARK_ROW_HEIGHT = 20;
+
+/** 引き出し線が縦棒のすぐ右で折れるまでの距離（px）。 */
+export const MARK_ELBOW_WIDTH = 6;
+
+/**
+ * 重なる印のラベルを縦に積む。時刻の早い順に置き、前の行と重なるぶんだけ下へ送る。
+ *
+ * 受けるのは分ではなく px。ずらす量は表示中の高さ（ピンチの倍率）で決まり、拡大して
+ * 十分に離れた印はそのまま本来の位置へ戻る。予定の列分割（layoutOverlaps）を既定の倍率で
+ * 固定しているのとは逆の判断で、あちらは倍率を変えるたびに左右の並び順が入れ替わると
+ * 読み直しになるのに対し、印は縦の押し出しが解けるだけで並び順は変わらないため。
+ *
+ * 基本は下へ送る（先に読んだ位置から印が上がると、時刻の順に読んでいる目とすれ違う）。
+ * ただし 24:00 の側へはみ出すぶんは上へ返す。時間グリッドの外は切り落とされるため、
+ * 深夜の印を下へ送り続けると、重なりの代わりにラベルが画面から消える。
+ *
+ * @param bottom ラベルを置ける下限（px）。省略すると下へ送りっぱなしにする。
+ */
+export function stackMarkTops(
+  marks: { key: string; top: number }[],
+  bottom?: number,
+): Map<string, number> {
+  // 同じ時刻の印はキーで並びを決める。順序が入力の順に依存すると、サーバーとブラウザで
+  // 並びが食い違ってハイドレーションが一致しなくなる。
+  const sorted = [...marks].sort((a, b) => a.top - b.top || a.key.localeCompare(b.key));
+
+  const placed: number[] = [];
+  let last = Number.NEGATIVE_INFINITY;
+
+  for (const mark of sorted) {
+    last = Math.max(mark.top, last + MARK_ROW_HEIGHT);
+    placed.push(last);
+  }
+
+  if (bottom !== undefined) {
+    // 下端から順に押し返す。1件が下限に当たると、その上の行も間隔ぶんずつ引き上げられる。
+    let limit = bottom;
+
+    for (let index = placed.length - 1; index >= 0; index -= 1) {
+      // 一日ぶんの高さに収まりきらないときは、上端で重なりが残る。画面の外へ出して
+      // 消してしまうより、読めない1行が残るほうが、何件あるかだけでも分かる。
+      placed[index] = Math.max(Math.min(placed[index], limit), MARK_ROW_HEIGHT / 2);
+      limit = placed[index] - MARK_ROW_HEIGHT;
+    }
+  }
+
+  return new Map(sorted.map((mark, index) => [mark.key, placed[index]]));
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   Tag,
 } from "lucide-react";
 
+import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
@@ -217,7 +218,9 @@ export function TaskList({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
-        <div className="flex shrink-0 items-center gap-1 font-semibold">
+        {/* 狭い画面では左上をメニューにする（issue #328）。アプリのアイコンはPCだけ。 */}
+        <AppMenuButton />
+        <div className="hidden shrink-0 items-center gap-1 font-semibold md:flex">
           <ListChecks className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
         </div>
