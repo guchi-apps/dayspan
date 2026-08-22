@@ -137,7 +137,6 @@ export function ItemDialog({
     title,
     autoFocusTitle: !switched,
     onTitleChange: setTitle,
-    onCancel: close,
     onSaved: finish,
     timeZone,
   };
@@ -209,7 +208,6 @@ export function ItemDialog({
             draft={drafts.travel}
             placeCatalog={placeCatalog}
             timeZone={timeZone}
-            onCancel={close}
             onSaved={finish}
           />
         )}
