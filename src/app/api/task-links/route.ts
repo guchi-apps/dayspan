@@ -3,13 +3,15 @@ import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth-user";
 import { linkTaskToEvent } from "@/services/task-links/links";
 import { taskLinkErrorResponse } from "@/services/task-links/response";
-import { isTaskEventStage } from "@/types/calendar";
+import { DEFAULT_TASK_LINK_TARGET, isTaskEventStage, isTaskLinkTarget } from "@/types/calendar";
 
 type Body = {
   taskId?: string;
   calendarId?: string;
   eventId?: string;
   stage?: string;
+  /** 決まった日時の行き先。省略時は予定日（行き先を足す前と同じ結果になる）。 */
+  target?: string;
 };
 
 /** タスクを予定へ紐づける（docs/spec.md §31）。 */
@@ -37,15 +39,31 @@ export async function POST(request: Request) {
     );
   }
 
+  // 行き先も画面で選ばせているが、同じ理由でここでも判定する。
+  if (body.target !== undefined && !isTaskLinkTarget(body.target)) {
+    return NextResponse.json(
+      { error: "invalid_request", message: "紐づけ先の日付を選んでください。" },
+      { status: 400 },
+    );
+  }
+
+  const target = body.target ?? DEFAULT_TASK_LINK_TARGET;
+
   try {
     const result = await linkTaskToEvent(userId, {
       taskId: body.taskId,
       calendarId: body.calendarId,
       eventId: body.eventId,
       stage: body.stage,
+      target,
     });
 
-    return NextResponse.json({ ok: true, planned: result.planned, linkId: result.link.id });
+    return NextResponse.json({
+      ok: true,
+      date: result.date,
+      target,
+      linkId: result.link.id,
+    });
   } catch (error) {
     return taskLinkErrorResponse(error, "タスクの紐づけ");
   }

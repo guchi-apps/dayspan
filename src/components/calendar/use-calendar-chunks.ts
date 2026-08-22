@@ -59,6 +59,18 @@ function monthKeysBetween(start: string, end: string): string[] {
 export type TouchedRange = { start: string; end: string };
 
 /**
+ * 保存済みの応答を、いまの形へ揃える（docs/spec.md §21）。
+ *
+ * Service Workerは `/api/calendar` `/api/tasks` の応答を保存しており、紐づけが1件（`link`）
+ * だった頃の応答が新しいJSへ渡ることがある。世代（`public/sw.js` の `VERSION`）を上げても、
+ * 古い世代が制御している間は前の応答が返るため、読む側でも受けられるようにしておく。
+ * `links` を持たないまま読むと、紐づけを読む場所（印・一覧・表示画面）で落ちる。
+ */
+export function withTaskLinks(tasks: TaskItem[]): TaskItem[] {
+  return tasks.map((task) => (task.links ? task : { ...task, links: [] }));
+}
+
+/**
  * タスクがカレンダーで場所を取っている日付。期限と予定日で別の日に現れるため、
  * 取り直しの対象も両方になる（どちらも未設定ならカレンダーに出ていない）。
  */
@@ -246,7 +258,11 @@ export function useCalendarChunks({
       if (!response.ok) throw new Error(`status ${response.status}`);
 
       const data = (await response.json()) as CalendarLoadResult;
-      const fresh = splitByMonth(data, months, Date.now());
+      const fresh = splitByMonth(
+        { ...data, tasks: withTaskLinks(data.tasks) },
+        months,
+        Date.now(),
+      );
 
       setChunks((prev) => {
         const next = new Map(prev);
