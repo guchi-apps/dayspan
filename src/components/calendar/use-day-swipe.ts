@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 // 日表示の左右スワイプ。前後の期間を左右に並べておき、指が動いたぶんだけ横へずらす。
 // 送ると決まったら残りをアニメーションで詰め、期間そのものの切り替えは呼び出し側に任せる。
@@ -11,9 +11,19 @@ import { useEffect, useRef, useState } from "react";
 //
 // 縦スクロール・予定のドラッグと同じ面の上で起きる操作なので、どちらに動かしたのかが
 // はっきりするまでは何もしない。取り違えると、スクロールのつもりで日付が変わってしまう。
+//
+// 指に追従させる位置はReactのstateではなく、登録された要素へ直接書き込む（registerTrack）。
+// 動かしている帯は3期間ぶんの幅と24時間ぶんの高さを持つため、指の動きごとに描き直すと
+// そのぶんの再描画が毎フレーム挟まり、指に対して遅れて動く。
 
-/** 横に振ったと判断する最小移動量。これ未満は縦スクロールやタップの揺れと区別できない。 */
-const AXIS_LOCK_PX = 12;
+/**
+ * 横に振ったと判断する最小移動量。これ未満は縦スクロールやタップの揺れと区別できない。
+ *
+ * ブラウザは `touch-action: pan-y` のもと、8px前後動いた時点で縦へ流すかどうかを自分で決める。
+ * それより後にこちらが判定すると、「ブラウザは横だと決めた（＝縦に流さない）のに、こちらは
+ * 縦だと決めて何もしない」指ができ、縦にも横にも動かないまま終わる。先に決めるため小さくする。
+ */
+const AXIS_LOCK_PX = 6;
 
 /**
  * 次の日へ送るのに必要な移動量（日付列1つぶんの幅に対する割合）。
@@ -40,15 +50,21 @@ export const SWIPE_SNAP_MS = 220;
 /** 収まるときの緩急。M3のemphasized decelerateに相当し、指を離したあとが自然に減速する。 */
 export const SWIPE_SNAP_EASING = "cubic-bezier(0.05, 0.7, 0.1, 1)";
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** 位置の書き方。指に追従している間・吸着している間・止まっている間で扱いが違う。 */
+type PaintMode = "drag" | "snap" | "idle";
+
 export type DaySwipe = {
-  /** 表示の横位置。1期間ぶんを1とした割合で、1日ぶんは 1/step にあたる。 */
-  offset: number;
-  /** 指を離したあとの吸着中か。trueのあいだだけCSSのトランジションを効かせる。 */
-  snapping: boolean;
   /** 指の操作を受け取る要素。表示中の期間の全体を覆う。 */
   rootRef: React.RefObject<HTMLDivElement | null>;
   /** 1期間ぶんの幅を測る要素。移動量を「何期間ぶんか」に直すために使う。 */
   trackRef: React.RefObject<HTMLDivElement | null>;
+  /**
+   * 左右へずらす帯を登録する。ヘッダー・終日・時間グリッドの3つが同じ位置で動く。
+   * 位置はここへ直接書き込むため、指の動きでReactの描き直しは起きない。
+   */
+  registerTrack: React.RefCallback<HTMLDivElement>;
   handlers: {
     onPointerDown: (event: React.PointerEvent) => void;
     onPointerMove: (event: React.PointerEvent) => void;
@@ -103,6 +119,24 @@ type Sample = {
   time: number;
 };
 
+/** 日付キー（YYYY-MM-DD）の差を日数で返す。読めない値なら 0。 */
+function dayDiff(fromKey: string, toKey: string): number {
+  const from = Date.parse(`${fromKey}T00:00:00Z`);
+  const to = Date.parse(`${toKey}T00:00:00Z`);
+  if (Number.isNaN(from) || Number.isNaN(to)) return 0;
+
+  return Math.round((to - from) / MS_PER_DAY);
+}
+
+/** 帯を横へずらす。位置は1期間ぶんを1とした割合。 */
+function paintTrack(node: HTMLElement, offset: number, mode: PaintMode): void {
+  node.style.transition = mode === "snap" ? `transform ${SWIPE_SNAP_MS}ms ${SWIPE_SNAP_EASING}` : "";
+  node.style.transform = `translateX(${offset * 100}%)`;
+  // 動いている間だけ合成レイヤーへ載せる。常に立てると、3期間ぶんの幅と24時間ぶんの高さを持つ
+  // 面を触っていない間も抱え続けることになる。
+  node.style.willChange = mode === "idle" ? "" : "transform";
+}
+
 export function useDaySwipe({
   daysKey,
   step,
@@ -124,22 +158,106 @@ export function useDaySwipe({
   const axisRef = useRef<"undecided" | "horizontal">("undecided");
   const samplesRef = useRef<Sample[]>([]);
   const snapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const frameRef = useRef<number | null>(null);
 
-  const [offset, setOffset] = useState(0);
-  const [snapping, setSnapping] = useState(false);
-  const [shownKey, setShownKey] = useState(daysKey);
+  const tracksRef = useRef<Set<HTMLElement>>(new Set());
 
-  // 送り先の期間が画面に反映されてから、寄せていた位置を戻す。先に戻すと、隣の期間が
-  // 出るまでの一瞬だけ元の期間へ跳ね返って見える。
-  if (shownKey !== daysKey) {
-    setShownKey(daysKey);
-    setOffset(0);
-    setSnapping(false);
-  }
+  /** いま画面に出ている位置と、その書き方。あとから登録された帯を同じ位置へ合わせるのに使う。 */
+  const offsetRef = useRef(0);
+  const modeRef = useRef<PaintMode>("idle");
+
+  /** 指が触れているぶんのずれ（1期間ぶんを1とした割合）。 */
+  const dragRef = useRef(0);
+
+  /**
+   * 送ると決めたが、まだ画面に反映されていない日数。
+   *
+   * 送り先の期間が出るまで表示をその位置へ寄せておく。先に戻すと、隣の期間が出るまでの
+   * 一瞬だけ元の期間へ跳ね返って見える。吸着中に次の指が来たときは、寄せたまま続きを受ける。
+   */
+  const pendingDaysRef = useRef(0);
+
+  /** 吸着し終えたときに呼ぶ送り日数。途中で指が置かれたら、その場で確定させる。 */
+  const snapDeltaRef = useRef(0);
+
+  /** 直前に画面へ出ていた期間の先頭日と日数。何日ぶん進んだかを測るために持つ。 */
+  const shownKeyRef = useRef(daysKey);
+  const shownStepRef = useRef(step);
+
+  const paint = useCallback(
+    (mode: PaintMode) => {
+      const offset = Math.min(Math.max(-pendingDaysRef.current / step + dragRef.current, -1), 1);
+
+      offsetRef.current = offset;
+      modeRef.current = mode;
+      for (const node of tracksRef.current) paintTrack(node, offset, mode);
+    },
+    [step],
+  );
+
+  const registerTrack = useCallback<React.RefCallback<HTMLDivElement>>((node) => {
+    // 外れるときは後片付けの関数のほうが呼ばれるため、ここへ null は来ない。
+    if (node === null) return;
+
+    const tracks = tracksRef.current;
+    tracks.add(node);
+    // 途中で現れた帯（表示形式の切り替えなど）も、いまの位置へ合わせてから並べる。
+    paintTrack(node, offsetRef.current, modeRef.current);
+
+    return () => {
+      tracks.delete(node);
+    };
+  }, []);
+
+  const cancelFrame = () => {
+    if (frameRef.current === null) return;
+
+    cancelAnimationFrame(frameRef.current);
+    frameRef.current = null;
+  };
+
+  /** 指の動きは1フレームに1回だけ反映する。指は1フレームの間に何度も動く。 */
+  const scheduleDrag = () => {
+    if (frameRef.current !== null) return;
+
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      paint("drag");
+    });
+  };
+
+  // 送り先の期間が画面に出た。進んだぶんだけ寄せを戻す。中身が同じだけずれるので、
+  // 画面上の位置は動かない。前へ・次へ・今日のように、こちらが送ったのではない変化では
+  // 寄せを消費しない（送った向きと量に一致するぶんだけ戻す）。
+  useLayoutEffect(() => {
+    const previous = shownKeyRef.current;
+    const previousStep = shownStepRef.current;
+    if (previous === daysKey && previousStep === step) return;
+
+    shownKeyRef.current = daysKey;
+    shownStepRef.current = step;
+
+    if (previousStep !== step) {
+      // 表示形式そのものが変わった。1日ぶんの幅も列の並びも変わるため、寄せは持ち越さない。
+      pendingDaysRef.current = 0;
+    } else {
+      const moved = dayDiff(previous, daysKey);
+      const pending = pendingDaysRef.current;
+      const consumed =
+        Math.sign(moved) === Math.sign(pending)
+          ? Math.sign(pending) * Math.min(Math.abs(moved), Math.abs(pending))
+          : 0;
+
+      pendingDaysRef.current = pending - consumed;
+    }
+
+    paint(modeRef.current === "drag" ? "drag" : "idle");
+  }, [daysKey, step, paint]);
 
   useEffect(
     () => () => {
       if (snapTimerRef.current !== null) clearTimeout(snapTimerRef.current);
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     },
     [],
   );
@@ -166,11 +284,29 @@ export function useDaySwipe({
     return elapsed > 0 ? (x - base.x) / elapsed : 0;
   };
 
+  /**
+   * 吸着の途中で次の操作が来たとき。行き先はもう決まっているので、その場で終点へ置いて確定させる。
+   * 待たせると、送り続けたいときに1回おきにスワイプが空振りする。
+   */
+  const flushSnap = () => {
+    if (snapTimerRef.current === null) return;
+
+    clearTimeout(snapTimerRef.current);
+    snapTimerRef.current = null;
+
+    const deltaDays = snapDeltaRef.current;
+    snapDeltaRef.current = 0;
+
+    // 寄せる先（pendingDaysRef）は吸着を始めた時点で入れてある。トランジションだけ切る。
+    paint("idle");
+    if (deltaDays !== 0) onSwipe(deltaDays);
+  };
+
   const onPointerDown = (event: React.PointerEvent) => {
     // 指以外は対象外。マウスの横移動は予定のドラッグで使っており、日付の移動は前へ・次へで行う。
     if (event.pointerType !== "touch") return;
-    // 吸着中に触られると、どの期間を動かしているのか決まらない。落ち着くまで受け付けない。
-    if (snapTimerRef.current !== null) return;
+
+    flushSnap();
 
     originRef.current = {
       x: event.clientX,
@@ -188,7 +324,9 @@ export function useDaySwipe({
     if (!enabled) {
       // 予定のドラッグが成立した。この指の動きは予定のものなので日付は動かさない。
       cancelGesture();
-      setOffset(0);
+      cancelFrame();
+      dragRef.current = 0;
+      paint("idle");
       return;
     }
 
@@ -198,13 +336,13 @@ export function useDaySwipe({
     const dy = event.clientY - origin.y;
 
     if (axisRef.current === "undecided") {
-      if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
-
       // 縦のほうが大きければスクロール。以降この指では日付を送らない。
-      if (Math.abs(dx) <= Math.abs(dy)) {
+      if (Math.abs(dy) >= AXIS_LOCK_PX && Math.abs(dy) >= Math.abs(dx)) {
         cancelGesture();
         return;
       }
+
+      if (Math.abs(dx) < AXIS_LOCK_PX || Math.abs(dx) <= Math.abs(dy)) return;
 
       axisRef.current = "horizontal";
       // 判定に使ったぶんを起点から差し引く。そのままだと表示が指より先に飛ぶ。
@@ -212,28 +350,25 @@ export function useDaySwipe({
       event.currentTarget.setPointerCapture(event.pointerId);
     }
 
-    const ratio = (event.clientX - origin.x) / origin.width;
-    setOffset(Math.min(Math.max(ratio, -1), 1));
+    dragRef.current = (event.clientX - origin.x) / origin.width;
+    scheduleDrag();
   };
 
   /** 日付列の切れ目まで吸着させる。deltaDays が 0 なら元の位置へ戻す。 */
   const settle = (deltaDays: number) => {
-    setSnapping(true);
-
-    if (deltaDays === 0) {
-      setOffset(0);
-      snapTimerRef.current = setTimeout(() => {
-        snapTimerRef.current = null;
-        setSnapping(false);
-      }, SWIPE_SNAP_MS);
-      return;
-    }
+    cancelFrame();
+    dragRef.current = 0;
 
     // 送り先の日付が定位置に来るまで動かしきってから、表示中の期間そのものを切り替える。
-    setOffset(-deltaDays / step);
+    pendingDaysRef.current += deltaDays;
+    snapDeltaRef.current = deltaDays;
+    paint("snap");
+
     snapTimerRef.current = setTimeout(() => {
       snapTimerRef.current = null;
-      onSwipe(deltaDays);
+      snapDeltaRef.current = 0;
+      paint("idle");
+      if (deltaDays !== 0) onSwipe(deltaDays);
     }, SWIPE_SNAP_MS);
   };
 
@@ -264,10 +399,9 @@ export function useDaySwipe({
   };
 
   return {
-    offset,
-    snapping,
     rootRef,
     trackRef,
+    registerTrack,
     handlers: {
       onPointerDown,
       onPointerMove,
