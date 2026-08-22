@@ -97,6 +97,11 @@
   --radius-3xl: 28px;
   --radius-4xl: 28px;
 
+  /* カレンダーの面に置く項目（予定・タスク・日付リマインド・移動・記録）の角丸。
+     種類ごとに値を書くと、同じ面に複数の丸みが並び、項目の種類の違いなのか意味の違いなのかが
+     読めなくなる（issue #316 では 12px・8px・4px が混在していた）。1か所で持って全部を揃える。 */
+  --radius-item: 4px;
+
   /* --- 書体 --- */
   --font-sans: var(--font-sans-stack);
   --font-mono: var(--font-mono-stack);

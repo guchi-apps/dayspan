@@ -44,7 +44,7 @@ export function TravelBlock({
       type="button"
       onClick={onOpen}
       className={cn(
-        "absolute inset-x-0 flex flex-col overflow-hidden rounded-md border border-l-[3px] border-travel/40 border-l-travel",
+        "absolute inset-x-0 flex flex-col overflow-hidden rounded-item border border-l-[3px] border-travel/40 border-l-travel",
         "bg-travel-container/70 px-1.5 py-0.5 text-left text-[10px] leading-tight text-on-travel-container",
       )}
       style={{
