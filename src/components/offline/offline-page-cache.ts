@@ -52,14 +52,16 @@ export function useWarmOfflinePage(path: string): void {
  * アプリごと失う。保存されていなければソフトナビゲーションのままにして、
  * useOffline（next/offline）に再接続まで保留させる。
  *
- * CacheStorage は window からも読める。クエリ違い（?view=&date=）は Service Worker 側の
- * 照合でも同じ画面として扱うため、ここでも ignoreSearch で見る。
+ * CacheStorage は window からも読める。照合の条件は Service Worker 側の読み出しへ揃える
+ * （public/sw.js は3か所すべて ignoreVary、クエリ違いの代用は ignoreSearch）。
+ * ここだけ Vary の一致を求めると、Service Worker なら返せるページに false を返し、
+ * 直したかったソフトナビゲーションへ静かに落ちる。
  */
 export async function hasOfflinePage(path: string): Promise<boolean> {
   if (typeof caches === "undefined") return false;
 
   try {
-    return Boolean(await caches.match(path, { ignoreSearch: true }));
+    return Boolean(await caches.match(path, { ignoreSearch: true, ignoreVary: true }));
   } catch {
     return false;
   }

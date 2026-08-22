@@ -8,6 +8,7 @@ import { BellRing, CalendarDays, ListChecks, Settings, Timer } from "lucide-reac
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { hasOfflinePage } from "@/components/offline/offline-page-cache";
+import { isOfflineNow } from "@/components/offline/offline-state";
 import { cn } from "@/lib/utils";
 
 // 活動記録を先頭に置く（docs/spec.md §27）。押した時点から記録が始まる画面で、
@@ -46,6 +47,10 @@ function isPlainClick(event: React.MouseEvent): boolean {
  * 返させる。起動・再読み込みでオフラインでも開けている経路をそのまま使う。
  * 保存が無ければ従来どおり保留する（オフラインエラー画面へ落とさない）。
  *
+ * 判定に isOfflineNow() を使うのは、オフラインのままPWAを起動した直後だと
+ * useOffline() がまだ false のためである。ページもJSも Service Worker が返すので
+ * 要求が1つも失敗せず、まさにこのIssueの場面で切り替えが効かない。
+ *
  * 返るのは「移動を引き受けたか」。真ならリンクの既定動作を止める。
  */
 function useOfflineNavigate() {
@@ -54,7 +59,7 @@ function useOfflineNavigate() {
 
   return useCallback(
     (href: string) => {
-      if (!offline) return false;
+      if (!isOfflineNow(offline)) return false;
 
       void hasOfflinePage(href).then((cached) => {
         if (cached) window.location.assign(href);
