@@ -32,7 +32,7 @@ import {
 import { formatLinkedDate, taskLinkTargetLabel, taskLinkTargetedLabel } from "./task-link-label";
 import { TaskStagePicker } from "./task-stage-picker";
 import { readErrorMessage } from "./response-error";
-import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
+import { taskRanges, withTaskLinks, type TouchedRange } from "./use-calendar-chunks";
 
 /**
  * 予定にタスクを紐づける（docs/spec.md §31）。
@@ -82,7 +82,8 @@ export function TaskLinkDialog({
         return (await response.json()) as { tasks: TaskItem[] };
       })
       .then((data) => {
-        if (!cancelled) setTasks(data.tasks);
+        // 保存済みの応答（Service Worker）は紐づけが1件だった頃の形のことがある。
+        if (!cancelled) setTasks(withTaskLinks(data.tasks));
       })
       .catch((cause: unknown) => {
         if (cancelled) return;

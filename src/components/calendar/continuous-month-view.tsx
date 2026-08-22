@@ -16,6 +16,7 @@ import type {
   CalendarEventItem,
   CalendarItem,
   ReminderItem,
+  TaskEventLinkItem,
   TaskItem,
   TravelItem,
 } from "@/types/calendar";
@@ -25,12 +26,13 @@ import {
   isAllDayItem,
   reminderAnnualYearLabel,
   reminderAnnualYearShortLabel,
+  taskFieldsInFrame,
   taskOccurrences,
   type CalendarDateUtils,
   type TaskDateField,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
-import { taskLinkForField, taskLinkFullLabel } from "./task-link-label";
+import { taskLinkForField, taskLinkTargetedLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelMark } from "./travel-mark";
 import { useLongPress } from "./use-long-press";
@@ -809,9 +811,13 @@ function TaskChip({
   const planned = field === "planned";
   const date = planned ? task.planned : task.due;
   const hasTime = planned ? task.plannedHasTime : task.hasTime;
-  // 紐づけの印は、その枠を決めている紐づけだけを出す。期限と予定日は別々の予定へ
-  // 紐づけられるため、枠と行き先を突き合わせる（docs/spec.md §31）。
-  const link = taskLinkForField(task, field);
+  // 紐づけの印は枠と行き先を突き合わせて出す。期限と予定日は別々の予定へ紐づけられる
+  // （docs/spec.md §31）。月表示のマスは日までしか分かれず、同じ日の期限と予定日は期限の
+  // 1枠にまとまる（issue #338）。まとまった枠は両方の日付を表しているため、印も両方出す。
+  // 片方を落とすと、その紐づけの段階もずれも月表示のどこにも出なくなる。
+  const links = taskFieldsInFrame(task, field, utils.itemDateKey)
+    .map((each) => taskLinkForField(task, each))
+    .filter((item): item is TaskEventLinkItem => item !== null);
 
   return (
     <button
@@ -823,15 +829,22 @@ function TaskChip({
         task.done && "text-on-surface-variant line-through",
       )}
       title={
-        link
-          ? `${taskLinkFullLabel(link)}: ${task.title}`
+        links.length > 0
+          ? `${links.map(taskLinkTargetedLabel).join(" / ")}: ${task.title}`
           : planned
             ? `予定日: ${task.title}`
             : task.title
       }
     >
-      {link ? (
-        <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2 w-2.5" />
+      {links.length > 0 ? (
+        links.map((link) => (
+          <TaskStageMark
+            key={link.id}
+            stage={link.stage}
+            drifted={link.drifted}
+            className="h-2 w-2.5"
+          />
+        ))
       ) : (
         <span
           aria-hidden

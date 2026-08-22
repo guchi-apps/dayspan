@@ -5,7 +5,13 @@ import { memo, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { eventColors, subduedEventColors } from "./calendar-color";
 import type { RunningActivityItem } from "@/types/activity";
-import type { CalendarEventItem, ReminderItem, TaskItem, TravelItem } from "@/types/calendar";
+import type {
+  CalendarEventItem,
+  ReminderItem,
+  TaskEventLinkItem,
+  TaskItem,
+  TravelItem,
+} from "@/types/calendar";
 
 import { ActivityLaneBlock } from "./activity-lane-block";
 import { ActivityMark } from "./activity-mark";
@@ -23,13 +29,26 @@ import {
   reminderAnnualYearShortLabel,
   stackMarkTops,
   taskOccurrenceKey,
+  taskFieldsInFrame,
   taskOccurrences,
   type CalendarDateUtils,
   type TaskDateField,
   type TaskOccurrence,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
-import { taskLinkForField, taskLinkFullLabel, taskLinkStageLabel } from "./task-link-label";
+import { taskLinkForField, taskLinkStageLabel, taskLinkTargetedLabel } from "./task-link-label";
+
+/**
+ * その枠に出す紐づけ（docs/spec.md §31）。枠と行き先を突き合わせる。
+ *
+ * 期限と予定日が同じ日時に落ちる場合は期限の1枠にまとまるため、その枠では両方の紐づけを返す。
+ * 片方を落とすと、その紐づけの段階もずれも画面のどこにも出なくなる。
+ */
+function linksInFrame(task: TaskItem, field: TaskDateField): TaskEventLinkItem[] {
+  return taskFieldsInFrame(task, field)
+    .map((each) => taskLinkForField(task, each))
+    .filter((link): link is TaskEventLinkItem => link !== null);
+}
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelBlock } from "./travel-block";
 import { useDaySwipe } from "./use-day-swipe";
@@ -878,8 +897,9 @@ function DayColumn({
 
         const planned = field === "planned";
         const minutes = utils.minutesFromMidnight(date);
-        // 紐づけの印は、その枠を決めている紐づけだけを出す（docs/spec.md §31）。
-        const link = taskLinkForField(task, field);
+        // 紐づけの印は枠と行き先を突き合わせて出す（docs/spec.md §31）。期限と予定日が同じ
+        // 時刻に落ちる枠は1つにまとまるため、まとまった枠では両方の紐づけを出す。
+        const links = linksInFrame(task, field);
 
         // 縦棒は時刻そのものを指すため動かさない。動かすのはラベルだけで、
         // その差だけ縦棒と引き出し線を本来の時刻へ戻す（issue #331）。
@@ -904,7 +924,13 @@ function DayColumn({
             }}
             className="absolute right-0 flex -translate-y-1/2 items-center gap-1 pr-1"
             style={{ left: contentLeft, top: labelTop }}
-            title={`${utils.formatTime(date)} ${link ? `${taskLinkFullLabel(link)}: ` : planned ? "予定日: " : ""}${task.title}`}
+            title={`${utils.formatTime(date)} ${
+              links.length > 0
+                ? `${links.map(taskLinkTargetedLabel).join(" / ")}: `
+                : planned
+                  ? "予定日: "
+                  : ""
+            }${task.title}`}
           >
             {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。
                 紐づいたタスクは、目盛りの代わりに段階の印を立てる。 */}
@@ -912,8 +938,15 @@ function DayColumn({
               className="flex shrink-0 items-center"
               style={{ transform: `translateY(${shift}px)` }}
             >
-              {link ? (
-                <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2.5 w-3" />
+              {links.length > 0 ? (
+                links.map((link) => (
+                  <TaskStageMark
+                    key={link.id}
+                    stage={link.stage}
+                    drifted={link.drifted}
+                    className="h-2.5 w-3"
+                  />
+                ))
               ) : (
                 <span
                   aria-hidden
@@ -943,7 +976,12 @@ function DayColumn({
               {/* 段階のラベルは項目名と同じ1つの文字列として流す。別の要素にすると、枠が狭いときに
                   削られるのが項目名の側になり、「終了後」だけが残って何のタスクか読めなくなる。 */}
               {task.title}
-              {link && <span className="opacity-70"> · {taskLinkStageLabel(link)}</span>}
+              {links.length > 0 && (
+                <span className="opacity-70">
+                  {" "}
+                  · {links.map(taskLinkStageLabel).join(" / ")}
+                </span>
+              )}
             </span>
           </button>
         );
@@ -1566,7 +1604,7 @@ function AllDayTaskChip({
   onOpen: () => void;
 }) {
   const planned = field === "planned";
-  const link = taskLinkForField(task, field);
+  const links = linksInFrame(task, field);
 
   return (
     <button
@@ -1579,10 +1617,23 @@ function AllDayTaskChip({
         task.done && "text-muted-foreground line-through",
         dragging && "ring-2 ring-foreground/50",
       )}
-      title={link ? `${taskLinkFullLabel(link)}: ${task.title}` : planned ? `予定日: ${task.title}` : task.title}
+      title={
+        links.length > 0
+          ? `${links.map(taskLinkTargetedLabel).join(" / ")}: ${task.title}`
+          : planned
+            ? `予定日: ${task.title}`
+            : task.title
+      }
     >
-      {link ? (
-        <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2.5 w-3" />
+      {links.length > 0 ? (
+        links.map((link) => (
+          <TaskStageMark
+            key={link.id}
+            stage={link.stage}
+            drifted={link.drifted}
+            className="h-2.5 w-3"
+          />
+        ))
       ) : (
         <span
           aria-hidden
@@ -1594,7 +1645,9 @@ function AllDayTaskChip({
       )}
       <span className="clip-nowrap">
         {task.title}
-        {link && <span className="opacity-70"> · {taskLinkStageLabel(link)}</span>}
+        {links.length > 0 && (
+          <span className="opacity-70"> · {links.map(taskLinkStageLabel).join(" / ")}</span>
+        )}
       </span>
     </button>
   );
