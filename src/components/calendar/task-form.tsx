@@ -3,12 +3,11 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { ExternalLink, Trash2 } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -33,6 +32,7 @@ import {
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { ItemFormActions } from "./item-form-actions";
 import { readErrorMessage } from "./response-error";
 import { formatLinkedDate, taskLinkFullLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
@@ -88,7 +88,6 @@ export function TaskForm({
   title,
   autoFocusTitle,
   onTitleChange,
-  onCancel,
   onSaved,
 }: {
   draft: TaskDraft;
@@ -99,7 +98,6 @@ export function TaskForm({
   title: string;
   autoFocusTitle: boolean;
   onTitleChange: (value: string) => void;
-  onCancel: () => void;
   /** 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onSaved: (touched: TouchedRange[] | null) => void;
 }) {
@@ -467,38 +465,14 @@ export function TaskForm({
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
-      <DialogFooter className="sm:justify-between">
-        {editing ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy || offline}
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <Trash2 className="size-4" />
-            削除
-          </Button>
-        ) : (
-          <span />
-        )}
-        <div className="flex gap-2">
-          <Button variant="ghost" disabled={busy} onClick={onCancel}>
-            やめる
-          </Button>
-          <Button
-            disabled={
-              busy ||
-              offline ||
-              !title.trim() ||
-              dueError !== null ||
-              plannedError !== null
-            }
-            onClick={save}
-          >
-            保存
-          </Button>
-        </div>
-      </DialogFooter>
+      <ItemFormActions
+        saveDisabled={
+          busy || offline || !title.trim() || dueError !== null || plannedError !== null
+        }
+        onSave={save}
+        onDelete={editing ? () => setConfirmingDelete(true) : undefined}
+        deleteDisabled={busy || offline}
+      />
     </>
   );
 }

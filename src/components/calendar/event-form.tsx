@@ -3,12 +3,9 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { Trash2 } from "lucide-react";
-
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { dateKeyDiffDays } from "@/lib/calendar-range";
@@ -19,6 +16,7 @@ import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
 import { RecurrenceFields } from "./recurrence-fields";
 import {
@@ -57,7 +55,6 @@ export function EventForm({
   title,
   autoFocusTitle,
   onTitleChange,
-  onCancel,
   onSaved,
 }: {
   draft: EventDraft;
@@ -71,7 +68,6 @@ export function EventForm({
   title: string;
   autoFocusTitle: boolean;
   onTitleChange: (value: string) => void;
-  onCancel: () => void;
   /**
    * 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。
    * どこが変わるか事前に決まらない場合（繰り返しの新規作成）は null を渡す。
@@ -303,32 +299,12 @@ export function EventForm({
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
-      <DialogFooter className="sm:justify-between">
-        {editing ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy || offline}
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <Trash2 className="size-4" />
-            削除
-          </Button>
-        ) : (
-          <span />
-        )}
-        <div className="flex gap-2">
-          <Button variant="ghost" disabled={busy} onClick={onCancel}>
-            やめる
-          </Button>
-          <Button
-            disabled={busy || offline || !title.trim() || !calendarId || inputError !== null}
-            onClick={save}
-          >
-            保存
-          </Button>
-        </div>
-      </DialogFooter>
+      <ItemFormActions
+        saveDisabled={busy || offline || !title.trim() || !calendarId || inputError !== null}
+        onSave={save}
+        onDelete={editing ? () => setConfirmingDelete(true) : undefined}
+        deleteDisabled={busy || offline}
+      />
     </>
   );
 }

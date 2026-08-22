@@ -3,12 +3,11 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { Route, Trash2 } from "lucide-react";
+import { Route } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { TravelEstimate } from "@/lib/ai-travel-estimate";
@@ -18,6 +17,7 @@ import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelItem, type TravelMode } fr
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
 import { readErrorMessage } from "./response-error";
 import type { TouchedRange } from "./use-calendar-chunks";
@@ -50,14 +50,12 @@ export function TravelForm({
   draft,
   placeCatalog,
   timeZone,
-  onCancel,
   onSaved,
 }: {
   draft: TravelDraft;
   /** 出発地・目的地の入力候補。Notionの場所DBに登録済みのもの。 */
   placeCatalog: PlaceCatalog;
   timeZone: string;
-  onCancel: () => void;
   onSaved: (touched: TouchedRange[] | null) => void;
 }) {
   const editing = draft.travel;
@@ -349,35 +347,17 @@ export function TravelForm({
         {exportNotice && <p className="text-sm text-on-surface-variant">{exportNotice.message}</p>}
       </div>
 
-      <DialogFooter className="sm:justify-between">
-        {editing && !exportNotice ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy || offline}
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <Trash2 className="size-4" />
-            削除
-          </Button>
-        ) : (
-          <span />
-        )}
-        <div className="flex gap-2">
-          {exportNotice ? (
-            <Button onClick={() => onSaved(exportNotice.touched)}>閉じる</Button>
-          ) : (
-            <>
-              <Button variant="ghost" disabled={busy} onClick={onCancel}>
-                やめる
-              </Button>
-              <Button disabled={busy || offline || inputError !== null} onClick={save}>
-                保存
-              </Button>
-            </>
-          )}
-        </div>
-      </DialogFooter>
+      {/* 書き出しの報せを出している間は、閉じる以外にすることが無い（移動そのものは保存済み）。 */}
+      {exportNotice ? (
+        <ItemFormActions saveLabel="閉じる" onSave={() => onSaved(exportNotice.touched)} />
+      ) : (
+        <ItemFormActions
+          saveDisabled={busy || offline || inputError !== null}
+          onSave={save}
+          onDelete={editing ? () => setConfirmingDelete(true) : undefined}
+          deleteDisabled={busy || offline}
+        />
+      )}
     </>
   );
 }

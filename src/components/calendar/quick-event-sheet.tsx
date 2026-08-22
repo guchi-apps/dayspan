@@ -10,6 +10,7 @@ import type { WritableCalendar } from "@/types/calendar";
 import { CalendarChipSelect } from "./calendar-chip-select";
 import { localInputToIso } from "./datetime-fields";
 import type { EventDraft } from "./event-form";
+import { ItemFormActions } from "./item-form-actions";
 import { MINUTES_PER_DAY } from "./item-layout";
 import type { TouchedRange } from "./use-calendar-chunks";
 
@@ -165,10 +166,11 @@ export function QuickEventSheet({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
+      {/* 右上の ✕ を出す。下端のボタンは保存と詳細だけで「やめる」を持たないため、
+          押せる出口がここに要る（docs/spec.md §15）。 */}
       <DialogContent
         ref={contentRef}
         position="bottom"
-        showCloseButton={false}
         className="max-h-[80dvh] gap-3 overflow-y-auto"
         // 開いた時点で入力欄へフォーカスを移さない。スマートフォンではその場でキーボードが
         // 立ち上がり、シートの下半分を覆ってしまう。時刻もカレンダーも押した位置から
@@ -231,22 +233,16 @@ export function QuickEventSheet({
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <div className="flex items-center justify-between gap-2">
-          <Button variant="ghost" size="sm" disabled={busy} onClick={openDetail}>
+        {/* 「詳細」は削除の位置（下段）に置く。ここにしか全項目の入力画面へ移る道が無いため、
+            入力ダイアログと同じ形に揃えたうえで残す（docs/spec.md §15）。 */}
+        <ItemFormActions
+          saveDisabled={busy || !title.trim() || !calendarId || rangeError !== null}
+          onSave={save}
+        >
+          <Button variant="ghost" className="w-full" disabled={busy} onClick={openDetail}>
             詳細
           </Button>
-          <div className="flex gap-2">
-            <Button variant="ghost" disabled={busy} onClick={close}>
-              やめる
-            </Button>
-            <Button
-              disabled={busy || !title.trim() || !calendarId || rangeError !== null}
-              onClick={save}
-            >
-              保存
-            </Button>
-          </div>
-        </div>
+        </ItemFormActions>
       </DialogContent>
     </Dialog>
   );
