@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BellRing } from "lucide-react";
 
+import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
 import { ReminderList } from "@/components/reminders/reminder-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,16 +38,19 @@ export default async function RemindersPage() {
     loadError = "Notionの日付リマインドを取得できませんでした。";
   }
   return (
-    <ReminderList
-      reminders={reminders}
-      tagCatalog={await tagCatalogPromise}
-      placeCatalog={await placeCatalogPromise}
-      calendars={await calendarsPromise}
-      weekStartsOn={uiSetting?.weekStartsOn ?? 0}
-      timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
-      loadError={loadError}
-      activityRunning={runningActivity !== null}
-    />
+    <>
+      <AppBadgeSync />
+      <ReminderList
+        reminders={reminders}
+        tagCatalog={await tagCatalogPromise}
+        placeCatalog={await placeCatalogPromise}
+        calendars={await calendarsPromise}
+        weekStartsOn={uiSetting?.weekStartsOn ?? 0}
+        timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
+        loadError={loadError}
+        activityRunning={runningActivity !== null}
+      />
+    </>
   );
 }
 

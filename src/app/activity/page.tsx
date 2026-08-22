@@ -4,6 +4,7 @@ import { Timer } from "lucide-react";
 
 import { ActivityScreen } from "@/components/activity/activity-screen";
 import { BottomNav } from "@/components/nav/main-nav";
+import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth-user";
@@ -30,11 +31,16 @@ export default async function ActivityPage() {
   if (calendarCount === 0 && !running) return <ConnectPrompt />;
 
   return (
-    <ActivityScreen
-      presets={presets}
-      initialRunning={running}
-      timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
-    />
+    <>
+      {/* アプリの起点になる画面（docs/spec.md §26）。ここでバッジを合わせておかないと、
+          記録だけを開いて閉じる使い方では件数がいつまでも古いままになる。 */}
+      <AppBadgeSync />
+      <ActivityScreen
+        presets={presets}
+        initialRunning={running}
+        timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
+      />
+    </>
   );
 }
 

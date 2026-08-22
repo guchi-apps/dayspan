@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 
 import { externalApiError } from "@/lib/api-error";
+import { notifyActivityStarted } from "@/services/notifications/activity";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { ACTIVITY_NAME_MAX_LENGTH } from "@/services/activity/presets";
@@ -54,6 +55,20 @@ export async function POST(request: Request) {
 
   try {
     const result = await startActivity(userId, { title });
+
+    // 記録中であることを通知として残す（docs/spec.md §32）。応答を待たせないのは、
+    // 送信先のプッシュサーバーへの往復が、押してから画面が変わるまでの時間になるため。
+    after(async () => {
+      try {
+        await notifyActivityStarted(userId, {
+          title: result.running.title,
+          startedAt: new Date(result.running.startedAt),
+        });
+      } catch (error) {
+        console.error("[dayspan] activity notification failed:", error);
+      }
+    });
+
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof ActivityCalendarNotFoundError) {
