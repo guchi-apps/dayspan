@@ -103,6 +103,109 @@ self.addEventListener("message", (event) => {
   }
 });
 
+/**
+ * 通知の受け取り（docs/spec.md §32）。
+ *
+ * iOS 18.4以降のSafariは、`web_push: 8030` を持つJSONをここを通さずにそのまま表示する
+ * （Declarative Web Push）。それより前のiOSと他のブラウザはこのイベントを受け取るため、
+ * 同じJSONの `notification` を読んで同じ通知を出す。送信側は端末を見分けない。
+ *
+ * 受け取ったら必ず通知を出す。出さない（サイレントな）プッシュが続くと、iOSは購読そのものを
+ * 取り消す。届いたのに何も出さない経路を作らないため、中身が読めなくても既定の文面で出す。
+ */
+self.addEventListener("push", (event) => {
+  const fallback = { title: "DaySpan", body: "" };
+
+  let notification = fallback;
+  if (event.data) {
+    try {
+      const payload = event.data.json();
+      notification = payload?.notification ?? fallback;
+    } catch {
+      notification = { title: "DaySpan", body: event.data.text() };
+    }
+  }
+
+  event.waitUntil(
+    (async () => {
+      if (typeof notification.app_badge === "number" && "setAppBadge" in self.registration) {
+        // 0 は「今日までのタスクが無い」。clearAppBadge と同じで、印が消える。
+        await self.registration.setAppBadge(notification.app_badge).catch(() => {});
+      }
+
+      await self.registration.showNotification(notification.title || "DaySpan", {
+        body: notification.body || "",
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
+        lang: notification.lang || "ja",
+        // 同じ印の通知は新しいものが古いものを置き換える（記録中の1件など）。
+        tag: notification.tag || undefined,
+        data: { url: notification.navigate || "/" },
+      });
+    })(),
+  );
+});
+
+/**
+ * 通知を押したとき。
+ *
+ * すでに開いている画面があればそれを使う。新しく開くと、PWAでは同じアプリの窓が
+ * 増えたように見えるうえ、記録中かどうかを見ていた画面から離れることになる。
+ */
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const target = new URL(event.notification.data?.url || "/", self.location.origin);
+
+  event.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+
+      for (const client of clients) {
+        if (new URL(client.url).origin !== target.origin) continue;
+        if ("focus" in client) {
+          await client.focus();
+          if ("navigate" in client) await client.navigate(target.href).catch(() => {});
+          return;
+        }
+      }
+
+      await self.clients.openWindow(target.href);
+    })(),
+  );
+});
+
+/**
+ * 送信先がブラウザ側で作り直されたとき。
+ *
+ * 新しい送信先を伝えないと、以後の通知はどこにも届かない。利用者が設定画面を開き直すまで
+ * 気付けないため、ここで登録し直す。
+ */
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      const applicationServerKey = event.oldSubscription?.options?.applicationServerKey;
+      if (!applicationServerKey) return;
+
+      try {
+        const subscription = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+
+        await fetch("/api/notifications/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(subscription.toJSON()),
+        });
+      } catch {
+        // 失敗しても画面からやり直せる。ここで出せる通知は無い。
+      }
+    })(),
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 

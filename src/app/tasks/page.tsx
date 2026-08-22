@@ -2,11 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ListChecks } from "lucide-react";
 
+import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
 import { TaskList } from "@/components/tasks/task-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
+import { countDueTasks } from "@/services/notifications/badge";
 import { createNotionClient } from "@/services/notion/client";
 import { loadTagCatalog } from "@/services/notion/tag-options";
 import { loadPlaceCatalog } from "@/services/notion/places";
@@ -46,17 +48,24 @@ export default async function TasksPage() {
   }
   tasks = attachTaskLinks(tasks, await linksPromise);
 
+  const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
+
   return (
-    <TaskList
-      tasks={tasks}
-      tagCatalog={await tagCatalogPromise}
-      placeCatalog={await placeCatalogPromise}
-      calendars={await calendarsPromise}
-      weekStartsOn={uiSetting?.weekStartsOn ?? 0}
-      timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
-      loadError={loadError}
-      activityRunning={runningActivity !== null}
-    />
+    <>
+      {/* アイコンのバッジは、この画面がすでに持っている件数から合わせる（docs/spec.md §32）。
+          ここで取り直すとNotionへの往復が1回増える。 */}
+      <AppBadgeSync count={loadError ? null : countDueTasks(tasks, timeZone)} />
+      <TaskList
+        tasks={tasks}
+        tagCatalog={await tagCatalogPromise}
+        placeCatalog={await placeCatalogPromise}
+        calendars={await calendarsPromise}
+        weekStartsOn={uiSetting?.weekStartsOn ?? 0}
+        timeZone={timeZone}
+        loadError={loadError}
+        activityRunning={runningActivity !== null}
+      />
+    </>
   );
 }
 

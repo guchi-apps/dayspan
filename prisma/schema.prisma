@@ -33,6 +33,10 @@ model User {
   widgetToken      WidgetToken?
   travelPlans      TravelPlan[]
   taskEventLinks   TaskEventLink[]
+
+  pushSubscriptions   PushSubscription[]
+  notificationSetting NotificationSetting?
+  notificationJobs    NotificationJob[]
 }
 
 // --- Google Calendar連携 ---
@@ -353,4 +357,123 @@ model TaskEventLink {
   @@unique([userId, taskId, target])
   // 予定を動かした・消したときに、その予定に紐づくタスクを引くため。
   @@index([userId, eventId])
+}
+
+// --- 通知 ---
+// 予定の前とタスクの期限に知らせる（docs/spec.md §32）。
+//
+// iOSのホーム画面Webアプリには、端末側で「この時刻に鳴らす」と予約する手段が無い。
+// 時刻が来たことに気付けるのはサーバーだけなので、通知はすべてDaySpanから送る。
+// 送る瞬間に外部APIを叩かずに済むよう、通知の文面は先に作って NotificationJob へ置く。
+
+/// 通知の出どころ。押したときに開く画面もここで決まる。
+enum NotificationKind {
+  EVENT
+  TASK
+  TASK_DIGEST
+  ACTIVITY
+  TEST
+}
+
+/// 通知の送信先（端末ごと）。
+///
+/// 許可はブラウザが持つもので、iPhoneとPCでは別々になる。「何分前に知らせるか」のような
+/// 内容の設定はアカウントにつき1つ（NotificationSetting）で、こちらは端末の数だけ増える。
+model PushSubscription {
+  id     String @id @default(cuid())
+  userId String
+
+  // ブラウザが発行する送信先。長さに上限が決まっておらずMySQLのインデックス長に収まらないため、
+  // 引くのはハッシュ側で行う（ウィジェットのトークンと同じ作り）。
+  endpoint     String @db.Text
+  endpointHash String @unique @db.VarChar(64) // SHA-256（hex）
+
+  // ペイロードの暗号化に使う端末側の公開鍵と認証シークレット（RFC 8291）。
+  // どちらもブラウザがその端末のために発行した値で、DaySpanの資格情報ではない。
+  p256dh String @db.VarChar(255)
+  auth   String @db.VarChar(255)
+
+  /// 購読したときに開いていたアドレス（`https://dayspan.gucchii.com` など）。
+  /// 通知を押したときの行き先は絶対URLで渡す必要があり、送信はリクエストの外（タイマー）から
+  /// 走るためヘッダーからは作れない。環境変数を1つ増やすより、購読した端末が使っている
+  /// アドレスをそのまま持つほうが、本番とローカルの両方で正しい行き先になる。
+  origin String @db.VarChar(255)
+
+  /// 設定画面で端末を見分けるための表示名。User-Agentから作る。
+  label String?
+
+  lastSuccessAt DateTime?
+  lastFailureAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// 何を知らせるか（アカウントにつき1つ）。
+model NotificationSetting {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // 予定は開始の何分前に知らせるか。0なら開始時刻ちょうど。
+  eventEnabled     Boolean @default(true)
+  eventLeadMinutes Int     @default(10)
+
+  // タスクは期限の時刻に知らせる。時刻の無い期限はその日ぶんをまとめて1通にし、
+  // 送る時刻をここで決める（UiSetting.timeZone での HH:MM）。1件ずつ送ると、
+  // 同じ時刻に同じ見た目の通知が期限の数だけ並ぶため。
+  taskEnabled    Boolean @default(true)
+  taskDigestTime String  @default("08:00") @db.VarChar(5)
+
+  /// 記録を始めたときに「記録中」を通知として残すか（docs/spec.md §27）。
+  activityEnabled Boolean @default(true)
+
+  /// 下書きを作り直した最後の時刻。取得の間隔を空けるために持つ。
+  plannedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// 送る前の通知1件。
+///
+/// 予定・タスクの取得は30分に1回にまとめ、その時点で文面まで作っておく。送る直前に
+/// 取りにいく作りだと、通知1件ごとにGoogle・Notionへの往復が増える（docs/spec.md §20）。
+model NotificationJob {
+  id     String @id @default(cuid())
+  userId String
+
+  kind NotificationKind
+
+  /// 同じ通知を二重に作らないための鍵。予定が動けば別の値になるよう、日時まで含める。
+  dedupeKey String @db.VarChar(191)
+
+  scheduledAt DateTime
+  title       String   @db.VarChar(255)
+  body        String   @db.Text
+
+  /// 押したときに開くパス。
+  url String @db.VarChar(255)
+
+  /// 一緒に更新するアイコンのバッジの件数。送信時に数え直すとNotionへの往復が増えるため、
+  /// 下書きを作った時点の件数を持つ。
+  badgeCount Int?
+
+  /// 送った時刻。null なら未送信。
+  sentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  // 時刻が来た未送信の下書きを引く。
+  @@index([sentAt, scheduledAt])
+  @@index([userId, scheduledAt])
 }

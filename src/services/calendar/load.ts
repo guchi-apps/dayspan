@@ -115,7 +115,13 @@ type EventsFetchResult =
   | { ok: true; events: GoogleEvent[] }
   | { ok: false };
 
-async function loadGoogleEvents(
+/**
+ * 表示オンのカレンダーの予定だけを取る。
+ *
+ * 通知の下書き（services/notifications/plan.ts）からも呼ぶ。あちらはタスクを別に取るため
+ * loadCalendarData を通すと、日付リマインド・移動・紐づけまで一緒に読むことになる。
+ */
+export async function loadGoogleEvents(
   userId: string,
   range: { timeMin: string; timeMax: string },
 ): Promise<{
