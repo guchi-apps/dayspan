@@ -157,16 +157,28 @@ export function taskOccurrenceKey(taskId: string, field: TaskDateField): string 
 /**
  * タスクをカレンダーに置く枠。期限と予定日の両方があれば2枠になる。
  *
- * 同じ日時を指しているときは期限の1枠にまとめる。同じ場所へ2つ並べても情報が増えず、
- * 同じタイトルが2行に見えるだけのため。日が同じで時刻が違う場合は位置が別になるので分ける。
+ * 同じ場所へ2つ並べても読める情報は増えず、同じタイトルが2行に見えるだけのため、
+ * 行き先が重なる枠は期限の1つにまとめる。ただし「同じ場所」の意味は画面で違う。
+ *
+ * - 時間グリッド: 日と時刻で位置が決まる。日時が同じときだけまとめる（既定）
+ * - 月表示: 位置は日までしか分かれない。`toDateKey` を渡すと、時刻が違っても同じ日ならまとめる
+ *
+ * 月表示で日時まで見て分けると、時刻を持たない期限と時刻のある予定日が同じマスに並ぶ。
+ * 狭い画面では時刻そのものを出していないため、まったく同じ行が2つ重なって見える（issue #338）。
  */
-export function taskOccurrences(task: TaskItem): TaskOccurrence[] {
+export function taskOccurrences(
+  task: TaskItem,
+  /** 同じ日なら1枠にまとめる画面（月表示）が渡す、日付キーへの変換。 */
+  toDateKey?: (date: string) => string,
+): TaskOccurrence[] {
   const occurrences: TaskOccurrence[] = [];
+  const samePlace = (date: string, due: string) =>
+    toDateKey ? toDateKey(date) === toDateKey(due) : date === due;
 
   for (const field of ["due", "planned"] as const) {
     const { date, hasTime } = taskDateOf(task, field);
     if (!date) continue;
-    if (field === "planned" && date === task.due) continue;
+    if (field === "planned" && task.due && samePlace(date, task.due)) continue;
 
     occurrences.push({ task, field, date, hasTime, key: taskOccurrenceKey(task.id, field) });
   }
