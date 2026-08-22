@@ -29,7 +29,7 @@ import {
   type TaskOccurrence,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
-import { taskLinkFullLabel, taskLinkStageLabel } from "./task-link-label";
+import { taskLinkForField, taskLinkFullLabel, taskLinkStageLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelBlock } from "./travel-block";
 import { useDaySwipe } from "./use-day-swipe";
@@ -878,8 +878,8 @@ function DayColumn({
 
         const planned = field === "planned";
         const minutes = utils.minutesFromMidnight(date);
-        // 紐づけの印は予定日の枠にだけ出す（docs/spec.md §31）。
-        const link = planned ? task.link : null;
+        // 紐づけの印は、その枠を決めている紐づけだけを出す（docs/spec.md §31）。
+        const link = taskLinkForField(task, field);
 
         // 縦棒は時刻そのものを指すため動かさない。動かすのはラベルだけで、
         // その差だけ縦棒と引き出し線を本来の時刻へ戻す（issue #331）。
@@ -1566,7 +1566,7 @@ function AllDayTaskChip({
   onOpen: () => void;
 }) {
   const planned = field === "planned";
-  const link = planned ? task.link : null;
+  const link = taskLinkForField(task, field);
 
   return (
     <button

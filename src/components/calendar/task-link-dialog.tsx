@@ -19,9 +19,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { resolveStageDate } from "@/services/task-links/stage";
-import type { CalendarEventItem, TaskEventStage, TaskItem } from "@/types/calendar";
+import {
+  DEFAULT_TASK_LINK_TARGET,
+  TASK_LINK_TARGETS,
+  TASK_LINK_TARGET_LABELS,
+  type CalendarEventItem,
+  type TaskEventStage,
+  type TaskItem,
+  type TaskLinkTarget,
+} from "@/types/calendar";
 
-import { formatLinkedDate } from "./task-link-label";
+import { formatLinkedDate, taskLinkTargetLabel, taskLinkTargetedLabel } from "./task-link-label";
 import { TaskStagePicker } from "./task-stage-picker";
 import { readErrorMessage } from "./response-error";
 import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
@@ -44,7 +52,7 @@ export function TaskLinkDialog({
   timeZone: string;
   onCancel: () => void;
   /** 紐づけた状態で新しいタスクを作る。入力画面へ渡す。 */
-  onCreateTask: (stage: TaskEventStage) => void;
+  onCreateTask: (stage: TaskEventStage, target: TaskLinkTarget) => void;
   /** 紐づけ後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onLinked: (touched: TouchedRange[] | null) => void;
 }) {
@@ -52,6 +60,9 @@ export function TaskLinkDialog({
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
   const [stage, setStage] = useState<TaskEventStage>("BEFORE_START");
+  // 行き先の初期値は予定日。行き先を選べるようになる前と同じ操作で同じ結果になるようにする
+  // （docs/spec.md §31）。
+  const [target, setTarget] = useState<TaskLinkTarget>(DEFAULT_TASK_LINK_TARGET);
   const [query, setQuery] = useState("");
   const [tasks, setTasks] = useState<TaskItem[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -90,6 +101,7 @@ export function TaskLinkDialog({
   };
 
   const resolved = resolveStageDate(event, stage);
+  const targetLabel = TASK_LINK_TARGET_LABELS[target];
 
   const filtered = useMemo(() => {
     if (!tasks) return [];
@@ -99,6 +111,10 @@ export function TaskLinkDialog({
   }, [tasks, query]);
 
   const selected = tasks?.find((task) => task.id === selectedId) ?? null;
+  // 置き換わるのは同じ行き先の紐づけだけ。もう一方はそのまま残る（行き先ごとに1件）。
+  const replacedLink = selected?.links.find((item) => item.target === target) ?? null;
+  const keptLink = selected?.links.find((item) => item.target !== target) ?? null;
+  const existingDate = selected ? (target === "DUE" ? selected.due : selected.planned) : null;
 
   const link = async () => {
     if (!selected) return;
@@ -119,6 +135,7 @@ export function TaskLinkDialog({
           calendarId: event.calendarId,
           eventId: event.id,
           stage,
+          target,
         }),
       });
 
@@ -127,12 +144,18 @@ export function TaskLinkDialog({
         return;
       }
 
-      const result = (await response.json()) as { planned?: string };
+      const result = (await response.json()) as { date?: string };
+      const date = result.date ?? resolved.date;
 
-      // 予定日が動くため、移動元と移動先の両方を取り直す。
+      // 行き先の日付が動くため、移動元と移動先の両方を取り直す。動かないほうの日付は
+      // そのまま渡し、同じタスクのもう一方の枠を消してしまわないようにする。
       const touched: TouchedRange[] = [
         ...taskRanges(selected),
-        ...taskRanges({ due: selected.due, planned: result.planned ?? resolved.date }),
+        ...taskRanges(
+          target === "DUE"
+            ? { due: date, planned: selected.planned }
+            : { due: selected.due, planned: date },
+        ),
       ];
 
       setOpen(false);
@@ -146,7 +169,7 @@ export function TaskLinkDialog({
 
   const createTask = () => {
     setOpen(false);
-    setTimeout(() => onCreateTask(stage), 150);
+    setTimeout(() => onCreateTask(stage, target), 150);
   };
 
   return (
@@ -155,11 +178,38 @@ export function TaskLinkDialog({
         <DialogHeader>
           <DialogTitle>「{event.title}」に紐づける</DialogTitle>
           <DialogDescription className="type-body-small text-on-surface-variant">
-            選んだ段階から決まる日時が、タスクの予定日に入ります。予定を動かすと予定日も動きます。
+            選んだ段階から決まる日時が、タスクの{targetLabel}に入ります。予定を動かすと{targetLabel}
+            も動きます。
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-4">
+          {/*
+            行き先（docs/spec.md §31）。締切そのものが予定で決まる場合（会議で提出する）と、
+            いつ手を付けるかが決まる場合があり、選べないとどちらかを手で書き写すことになる。
+          */}
+          <div className="flex flex-col gap-1.5">
+            <Label>紐づける日付</Label>
+            <div className="flex flex-wrap gap-1">
+              {TASK_LINK_TARGETS.map((value) => {
+                const selectedTarget = value === target;
+
+                return (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant={selectedTarget ? "secondary" : "outline"}
+                    size="sm"
+                    className={cn(selectedTarget && "text-on-secondary-container")}
+                    onClick={() => setTarget(value)}
+                  >
+                    {TASK_LINK_TARGET_LABELS[value]}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+
           <TaskStagePicker value={stage} onChange={setStage} />
 
           <div className="flex flex-col gap-1.5">
@@ -196,12 +246,15 @@ export function TaskLinkDialog({
                 >
                   <span className="clip-nowrap">{task.title}</span>
                   {/*
-                    すでに別の予定へ紐づいているタスクは、選ぶとその紐づけが置き換わる
-                    （紐づけはタスクにつき1件）。選ぶ前に分かるようにする。
+                    すでに同じ行き先へ紐づいているタスクは、選ぶとその紐づけが置き換わる
+                    （紐づけは行き先ごとに1件）。どちらの日付の紐づけなのかまで添え、
+                    押した結果どれが置き換わるのかを押す前に読めるようにする。
                   */}
                   <span className="shrink-0 text-xs opacity-70">
-                    {task.link
-                      ? `${task.link.eventTitle} に紐づけ済み`
+                    {task.links.length > 0
+                      ? task.links
+                          .map((item) => `${taskLinkTargetLabel(item)}: ${item.eventTitle}`)
+                          .join(" / ")
                       : task.due
                         ? formatLinkedDate(task.due, timeZone)
                         : "期限なし"}
@@ -212,12 +265,17 @@ export function TaskLinkDialog({
           </div>
 
           <p className="text-sm text-on-surface-variant">
-            予定日は <b>{formatLinkedDate(resolved.date, timeZone)}</b> になります。
-            {selected?.link
-              ? `「${selected.link.eventTitle}」への紐づけは外れます。`
-              : selected?.planned
-                ? "すでに入っている予定日は上書きされます。"
+            {targetLabel}は <b>{formatLinkedDate(resolved.date, timeZone)}</b> になります。
+            {/*
+              同じ行き先の紐づけだけが置き換わる。もう一方の行き先の紐づけは残るため、
+              どちらが外れてどちらが残るのかをここで示す。
+            */}
+            {replacedLink
+              ? `「${replacedLink.eventTitle}」への${targetLabel}の紐づけは外れます。`
+              : existingDate
+                ? `すでに入っている${targetLabel}は上書きされます。`
                 : null}
+            {keptLink ? `${taskLinkTargetedLabel(keptLink)}への紐づけはそのまま残ります。` : null}
           </p>
 
           {offline && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}

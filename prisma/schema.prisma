@@ -301,8 +301,8 @@ model WidgetToken {
 //
 // Google Calendarの予定にもNotionのタスクにも「相手を指す欄」は無く、足せば利用者のDBの
 // 構成を変えることになる。予定とタスクを結ぶ線だけをDaySpanが持つ（移動と同じ考え方）。
-// 段階から決まる日時はNotionの「予定日」へ書き込むため、カレンダーの描画・取得は
-// 既存の予定日の経路をそのまま通る。
+// 段階から決まる日時はNotionのタスクの「期限」か「予定日」へ書き込むため、カレンダーの
+// 描画・取得は既存の日付の経路をそのまま通る。
 
 /// タスクを予定のどの段階に置くか。実施中は開始時刻、終了までは終了時刻に置く。
 enum TaskEventStage {
@@ -310,6 +310,14 @@ enum TaskEventStage {
   DURING
   BEFORE_END
   AFTER_END
+}
+
+/// 段階から決まる日時をタスクのどちらの日付へ入れるか（docs/spec.md §31）。
+/// 締切そのものが予定で決まる（会議で提出する）場合と、いつ手を付けるかが予定で決まる
+/// 場合があり、行き先を選べないとどちらかを手で書き写すことになる。
+enum TaskLinkTarget {
+  DUE
+  PLANNED
 }
 
 model TaskEventLink {
@@ -322,7 +330,11 @@ model TaskEventLink {
 
   stage TaskEventStage
 
-  // 最後に予定日へ入れた日時。予定が動いてタスクの予定日とずれていないかの判定に使う。
+  // 決まった日時の行き先。既定を予定日にするのは、行き先を足す前の紐づけがすべて予定日へ
+  // 書いていたため。既定値のままで既存の行の意味が変わらない。
+  target TaskLinkTarget @default(PLANNED)
+
+  // 最後に行き先へ入れた日時。予定が動いてタスクの日付とずれていないかの判定に使う。
   resolvedAt     DateTime
   // 解決した日時が終日（日付のみ）だったか。日付のみと00:00の時刻ありを区別するために持つ。
   resolvedAllDay Boolean  @default(false)
@@ -336,8 +348,9 @@ model TaskEventLink {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // 紐づけはタスクにつき1件。行き先の予定日が1つしか無いため、2件目を持てても置けない。
-  @@unique([userId, taskId])
+  // 紐づけは行き先ごとに1件。期限と予定日で別の予定へ紐づけられる一方、同じ行き先の2件目は
+  // 入る先が1つしか無いため持てても置けない。
+  @@unique([userId, taskId, target])
   // 予定を動かした・消したときに、その予定に紐づくタスクを引くため。
   @@index([userId, eventId])
 }

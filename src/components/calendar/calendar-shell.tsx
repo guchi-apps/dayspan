@@ -48,6 +48,7 @@ import type {
   ReminderItem,
   TaskEventStage,
   TaskItem,
+  TaskLinkTarget,
   TravelItem,
 } from "@/types/calendar";
 import type { TravelSettings } from "@/services/travel/settings";
@@ -473,9 +474,13 @@ export function CalendarShell({
 
   /**
    * 紐づけダイアログから「新しいタスクを作る」。入力画面を紐づけ先つきで開く。
-   * 予定日はタスクを作ったあとの紐づけで入るため、ここでは未設定のままにする。
+   * 行き先の日付はタスクを作ったあとの紐づけで入るため、ここでは未設定のままにする。
    */
-  const createTaskForEvent = (event: CalendarEventItem, stage: TaskEventStage) => {
+  const createTaskForEvent = (
+    event: CalendarEventItem,
+    stage: TaskEventStage,
+    target: TaskLinkTarget,
+  ) => {
     setLinkingEvent(null);
     setItemDialog({
       initialKind: "task",
@@ -488,6 +493,7 @@ export function CalendarShell({
             eventId: event.id,
             eventTitle: event.title,
             stage,
+            target,
           },
         },
       },
@@ -980,7 +986,11 @@ function CalendarBody({
   /** 予定の詳細からタスクを紐づける（docs/spec.md §31）。 */
   onLinkTaskForEvent: (event: CalendarEventItem) => void;
   /** 紐づけダイアログから、紐づけた状態のタスクを新しく作る。 */
-  onCreateTaskForEvent: (event: CalendarEventItem, stage: TaskEventStage) => void;
+  onCreateTaskForEvent: (
+    event: CalendarEventItem,
+    stage: TaskEventStage,
+    target: TaskLinkTarget,
+  ) => void;
   onSelectSlot: (dateKey: string, minutes: number) => void;
   onSelectRange: (commit: SlotRangeCommit) => void;
   onQuickAddOnDay: (dateKey: string) => void;
@@ -1193,7 +1203,7 @@ function CalendarBody({
           onLinkTask={() => onLinkTaskForEvent(viewingEvent)}
           // 消すと紐づけが外れるタスク。確認の前に示す（docs/spec.md §31）。
           linkedTasks={data.tasks
-            .filter((task) => task.link?.eventId === viewingEvent.id)
+            .filter((task) => task.links.some((link) => link.eventId === viewingEvent.id))
             .map((task) => task.title)}
           onDeleted={handleSaved}
         />
@@ -1219,7 +1229,7 @@ function CalendarBody({
           event={linkingEvent}
           timeZone={timeZone}
           onCancel={onCloseDialogs}
-          onCreateTask={(stage) => onCreateTaskForEvent(linkingEvent, stage)}
+          onCreateTask={(stage, target) => onCreateTaskForEvent(linkingEvent, stage, target)}
           onLinked={handleSaved}
         />
       )}

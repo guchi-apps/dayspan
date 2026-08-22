@@ -30,7 +30,7 @@ import {
   type TaskDateField,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
-import { taskLinkFullLabel } from "./task-link-label";
+import { taskLinkForField, taskLinkFullLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelMark } from "./travel-mark";
 import { useLongPress } from "./use-long-press";
@@ -809,9 +809,9 @@ function TaskChip({
   const planned = field === "planned";
   const date = planned ? task.planned : task.due;
   const hasTime = planned ? task.plannedHasTime : task.hasTime;
-  // 紐づけの印は予定日の枠にだけ出す。紐づけから決まるのは予定日で、期限は利用者が
-  // 自分で決めた締切のまま動かないため（docs/spec.md §31）。
-  const link = planned ? task.link : null;
+  // 紐づけの印は、その枠を決めている紐づけだけを出す。期限と予定日は別々の予定へ
+  // 紐づけられるため、枠と行き先を突き合わせる（docs/spec.md §31）。
+  const link = taskLinkForField(task, field);
 
   return (
     <button

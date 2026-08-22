@@ -48,10 +48,11 @@ export type TaskItem = {
   memo: string | null;
   recurrence: string | null;
   /**
-   * 予定への紐づけ（docs/spec.md §31）。紐づいているタスクの予定日は、この予定の段階から決まる。
+   * 予定への紐づけ（docs/spec.md §31）。紐づいている日付（期限・予定日）は、その予定の段階から決まる。
    * Notionから読んだ時点では分からないため、読み込み側（services/task-links）で埋める。
+   * 行き先ごとに1件のため、多くても期限と予定日の2件になる。
    */
-  link: TaskEventLinkItem | null;
+  links: TaskEventLinkItem[];
   url: string | null;
 };
 
@@ -72,6 +73,26 @@ export function isTaskEventStage(value: unknown): value is TaskEventStage {
 }
 
 /**
+ * 段階から決まる日時をタスクのどちらの日付へ入れるか（docs/spec.md §31）。
+ * Prismaの TaskLinkTarget と同じ並びにする。
+ */
+export const TASK_LINK_TARGETS = ["DUE", "PLANNED"] as const;
+
+export type TaskLinkTarget = (typeof TASK_LINK_TARGETS)[number];
+
+export const TASK_LINK_TARGET_LABELS: Record<TaskLinkTarget, string> = {
+  DUE: "期限",
+  PLANNED: "予定日",
+};
+
+/** 行き先を選ばずに紐づけたときの既定。行き先を足す前の紐づけはすべて予定日へ書いていた。 */
+export const DEFAULT_TASK_LINK_TARGET: TaskLinkTarget = "PLANNED";
+
+export function isTaskLinkTarget(value: unknown): value is TaskLinkTarget {
+  return typeof value === "string" && (TASK_LINK_TARGETS as readonly string[]).includes(value);
+}
+
+/**
  * タスクと予定の紐づけ（docs/spec.md §31）。
  *
  * 本体はDaySpanのDBにある。Google Calendarの予定にもNotionのタスクにも「相手を指す欄」は無く、
@@ -83,13 +104,15 @@ export type TaskEventLinkItem = {
   calendarId: string;
   eventId: string;
   stage: TaskEventStage;
+  /** 決まった日時の行き先。期限と予定日で別の予定へ紐づけられる。 */
+  target: TaskLinkTarget;
   /** 予定名。一次情報源はGoogleで、予定が手元にあるときは最新の値へ差し替えて渡す。 */
   eventTitle: string;
-  /** 最後に予定日へ入れた日時。時刻なしは YYYY-MM-DD、時刻ありは ISO 8601。 */
+  /** 最後に行き先へ入れた日時。時刻なしは YYYY-MM-DD、時刻ありは ISO 8601。 */
   resolvedAt: string;
   resolvedAllDay: boolean;
   /**
-   * 紐づけ先の予定が動き、タスクの予定日と食い違っているか。
+   * 紐づけ先の予定が動き、タスクの日付（行き先）と食い違っているか。
    * 予定が取得範囲に無いときは判定できないため false（ずれていないとは限らない）。
    */
   drifted: boolean;

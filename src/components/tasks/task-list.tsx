@@ -26,7 +26,7 @@ import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { TaskDetailDialog } from "@/components/calendar/task-detail-dialog";
 import { ItemDialog, type ItemDrafts } from "@/components/calendar/item-dialog";
 import { toTaskDraft } from "@/components/calendar/task-form";
-import { taskLinkFullLabel } from "@/components/calendar/task-link-label";
+import { taskLinkTargetedLabel } from "@/components/calendar/task-link-label";
 import { TaskStageMark } from "@/components/calendar/task-stage-mark";
 import { TagChip, TagChipList } from "@/components/tags/tag-chip";
 import { tagColorOf } from "@/components/tags/tag-color";
@@ -463,14 +463,15 @@ function TaskRow({
           )}
           {/*
             予定への紐づけ（docs/spec.md §31）。この画面には予定が出ていないため、段階だけでは
-            何の前後なのかが読めない。予定名まで添える。
+            何の前後なのかが読めない。予定名まで添える。期限と予定日で別の予定へ紐づけられる
+            ため、どちらの日付の紐づけなのかも添える（この行に日付は2つ並んでいる）。
           */}
-          {task.link && (
-            <span className="inline-flex items-center gap-1 opacity-80">
-              <TaskStageMark stage={task.link.stage} className="h-2.5 w-3" />
-              {taskLinkFullLabel(task.link)}
+          {task.links.map((link) => (
+            <span key={link.id} className="inline-flex items-center gap-1 opacity-80">
+              <TaskStageMark stage={link.stage} className="h-2.5 w-3" />
+              {taskLinkTargetedLabel(link)}
             </span>
-          )}
+          ))}
           {task.recurrence && task.recurrence !== "なし" && (
             <span className="opacity-80">{task.recurrence}</span>
           )}

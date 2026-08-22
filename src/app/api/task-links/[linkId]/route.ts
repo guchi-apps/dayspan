@@ -11,7 +11,8 @@ type Body = { stage?: string };
  * 紐づけを解決し直す（docs/spec.md §31）。
  *
  * 段階を変えたときは stage を送り、「予定に合わせる」を押したときは送らない。
- * どちらも「いまの予定から日時を決め直して予定日へ入れる」という同じ操作のため、経路は分けない。
+ * どちらも「いまの予定から日時を決め直して行き先へ入れる」という同じ操作のため、経路は分けない。
+ * 行き先そのものは変えられない（別の日付へ移すのは、解除してから紐づけ直す操作にする）。
  */
 export async function PATCH(
   request: Request,
@@ -34,13 +35,13 @@ export async function PATCH(
 
   try {
     const result = await resyncTaskLink(userId, linkId, body.stage);
-    return NextResponse.json({ ok: true, planned: result.planned });
+    return NextResponse.json({ ok: true, date: result.date });
   } catch (error) {
     return taskLinkErrorResponse(error, "紐づけの更新");
   }
 }
 
-/** 紐づけを外す。予定日はそのまま残す（消すと「いつやるつもりか」まで失われる）。 */
+/** 紐づけを外す。入っている日付はそのまま残す（消すと「いつやるつもりか」まで失われる）。 */
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ linkId: string }> },
