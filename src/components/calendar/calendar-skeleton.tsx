@@ -48,7 +48,7 @@ export function CalendarGridSkeleton() {
                 <SkeletonBlock className="size-5 rounded-full" />
                 {/* 予定の量は日によって違う。同じ本数を並べると、かえって作り物に見える。 */}
                 {Array.from({ length: (week * 7 + day) % 3 }, (_, item) => (
-                  <SkeletonBlock key={item} className="h-4 w-full rounded-xs" />
+                  <SkeletonBlock key={item} className="h-4 w-full rounded-item" />
                 ))}
               </div>
             ))}
