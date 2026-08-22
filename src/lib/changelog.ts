@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.7.2",
+    date: "2026-08-22",
+    changes: [
+      "オフライン中にメインナビからカレンダーなど他の画面へ移動できない不具合と、通信が回復すれば直る一時的な取得失敗が赤いエラーとして表示されてしまう不具合を修正しました。",
+    ],
+  },
+  {
     version: "1.7.1",
     date: "2026-08-22",
     changes: [
