@@ -606,31 +606,44 @@ function DayColumn({
   const isDraggedAway = (id: string) => preview?.id === id && preview.dayIndex !== dayIndex;
 
   /**
-   * 印（タスクの期限・予定日、日付リマインド）のラベルを置く高さ（issue #331）。
+   * 印（タスクの期限・予定日、日付リマインド）を、その時刻の位置へ置いたときの高さ。
    *
    * 印は高さを持たないため、近い時刻のものは同じ位置に重なって上の1件しか読めない。
-   * ラベルだけを下へ送って縦に積み、引き出し線を折って本来の時刻へ戻す。
+   * ラベルだけを下へ送って縦に積み、引き出し線を折って本来の時刻へ戻す（issue #331）。
    * タスクと日付リマインドは同じ場所に置かれて互いに重なるため、1つの並びとして扱う。
    */
+  const markSeats = [
+    ...taskMarks.map((occurrence) => ({
+      key: occurrence.key,
+      top: offsetOf(utils.minutesFromMidnight(occurrence.date)),
+    })),
+    ...reminders.map((reminder) => ({
+      key: reminder.id,
+      top: offsetOf(utils.minutesFromMidnight(reminder.date)),
+    })),
+  ];
+
+  /**
+   * ラベルを置ける下限（px）。ラベルの下半分まで一日ぶんの高さに収める。
+   * 時間グリッドの外は切り落とされるため、深夜の印を下へ送り続けると、
+   * 重なりの代わりにラベルそのものが消える。
+   */
+  const markBottom = gridHeight - MARK_ROW_HEIGHT / 2;
+
+  /**
+   * 掴む前の並び。掴んだ時点でラベルがどれだけ送られていたかを、ここから求める。
+   * 動かしている間もそのずれを保たないと、押した瞬間にラベルが本来の時刻へ跳んで
+   * 指の下から外れる（ドラッグの位置は掴んだ位置ではなく本来の時刻を起点に決まるため）。
+   */
+  const seatedMarkTops = stackMarkTops(markSeats, markBottom);
+
+  /**
+   * いまの並び。掴んでいる印は外し、残りをその行が空いたものとして詰め直す。
+   * 別の列へ運ばれている印（この列では描かない）も、`preview.id` で同じように外れる。
+   */
   const markTops = stackMarkTops(
-    [
-      // 掴んでいる印は並びから外し、指の位置へ素直に付ける。混ぜたままだと、動かしている
-      // 本人の指とラベルがずれる。残りの印は、その行が空いたものとして詰め直す。
-      // 別の列へ運ばれた印（この列では描かない）も、行を空けたままにするため外す。
-      ...taskMarks
-        .filter((occurrence) => preview?.id !== occurrence.key)
-        .map((occurrence) => ({
-          key: occurrence.key,
-          top: offsetOf(utils.minutesFromMidnight(occurrence.date)),
-        })),
-      ...reminders.map((reminder) => ({
-        key: reminder.id,
-        top: offsetOf(utils.minutesFromMidnight(reminder.date)),
-      })),
-    ],
-    // ラベルの下半分まで一日ぶんの高さに収める。時間グリッドの外は切り落とされるため、
-    // 深夜の印を下へ送り続けると、重なりの代わりにラベルそのものが消える。
-    gridHeight - MARK_ROW_HEIGHT / 2,
+    markSeats.filter((seat) => seat.key !== preview?.id),
+    markBottom,
   );
 
   const handleBackgroundClick = (clientY: number, element: HTMLElement) => {
@@ -884,7 +897,10 @@ function DayColumn({
         // 縦棒は時刻そのものを指すため動かさない。動かすのはラベルだけで、
         // その差だけ縦棒と引き出し線を本来の時刻へ戻す（issue #331）。
         const trueTop = offsetOf(previewFor(key)?.startMinutes ?? minutes);
-        const labelTop = markTops.get(key) ?? trueTop;
+        // 掴んでいる印は並びから外れている。掴んだ時点のずれをそのまま持ち回り、
+        // ラベルが指の下から動かないようにする。
+        const grabShift = (seatedMarkTops.get(key) ?? offsetOf(minutes)) - offsetOf(minutes);
+        const labelTop = markTops.get(key) ?? trueTop + grabShift;
         const shift = trueTop - labelTop;
 
         return (
