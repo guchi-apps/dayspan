@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "1.7.1",
+    date: "2026-08-22",
+    changes: [
+      "カレンダーに表示される予定・タスク・日付リマインドなどの角の丸みをそろえ、見た目をより整えました。",
+    ],
+  },
+  {
     version: "1.7.0",
     date: "2026-08-22",
     changes: [

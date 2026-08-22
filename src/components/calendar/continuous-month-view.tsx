@@ -602,7 +602,7 @@ export function ContinuousMonthView({
                         ? PENDING_BARS.map((bar, index) => (
                             <div
                               key={index}
-                              className="mx-0.5 h-4 animate-pulse rounded-xs bg-on-surface/8 sm:mx-1"
+                              className="mx-0.5 h-4 animate-pulse rounded-item bg-on-surface/8 sm:mx-1"
                               style={{ gridColumn: `${bar.column} / span ${bar.span}`, gridRow: bar.lane }}
                             />
                           ))
@@ -725,7 +725,7 @@ function ReminderChip({
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-tertiary/60 bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border border-tertiary/60 bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
       title={fullYearLabel ? `${reminder.title} ${fullYearLabel}` : reminder.title}
     >
       <ReminderMark source={reminder.source} />
@@ -761,7 +761,7 @@ function EventChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4",
+        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4",
         // 週をまたぐ側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
         continuesBefore && "rounded-l-none border-l-0",
         continuesAfter && "rounded-r-none border-r-0",
@@ -817,7 +817,7 @@ function TaskChip({
       type="button"
       onClick={onOpen}
       className={cn(
-        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-outline bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4",
+        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border border-outline bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4",
         planned && "border-dashed",
         task.done && "text-on-surface-variant line-through",
       )}
@@ -870,7 +870,7 @@ function TravelChip({
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-xs border border-travel/50 bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border border-travel/50 bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
       title={`${travel.title}（${utils.formatTime(travel.start)}発）`}
     >
       <TravelMark className="size-2 text-travel" />

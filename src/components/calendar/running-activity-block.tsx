@@ -56,7 +56,7 @@ export function RunningActivityBlock({
       type="button"
       onClick={onOpen}
       className={cn(
-        "absolute inset-x-0 flex flex-col overflow-hidden rounded-md border border-dashed border-primary",
+        "absolute inset-x-0 flex flex-col overflow-hidden rounded-item border border-dashed border-primary",
         // 塗りを薄くして、重なった予定が透けて読めるようにする。
         "bg-primary-container/45 px-1.5 py-0.5 text-left text-[10px] leading-tight text-on-primary-container",
       )}
