@@ -15,10 +15,13 @@ import {
   ACTIVITY_LANE_GAP,
   ACTIVITY_LANE_WIDTH,
   eventTextLines,
+  MARK_ELBOW_WIDTH,
+  MARK_ROW_HEIGHT,
   MIN_EVENT_HEIGHT,
   MINUTES_PER_DAY,
   reminderAnnualYearLabel,
   reminderAnnualYearShortLabel,
+  stackMarkTops,
   taskOccurrenceKey,
   taskOccurrences,
   type CalendarDateUtils,
@@ -602,6 +605,34 @@ function DayColumn({
 
   const isDraggedAway = (id: string) => preview?.id === id && preview.dayIndex !== dayIndex;
 
+  /**
+   * 印（タスクの期限・予定日、日付リマインド）のラベルを置く高さ（issue #331）。
+   *
+   * 印は高さを持たないため、近い時刻のものは同じ位置に重なって上の1件しか読めない。
+   * ラベルだけを下へ送って縦に積み、引き出し線を折って本来の時刻へ戻す。
+   * タスクと日付リマインドは同じ場所に置かれて互いに重なるため、1つの並びとして扱う。
+   */
+  const markTops = stackMarkTops(
+    [
+      // 掴んでいる印は並びから外し、指の位置へ素直に付ける。混ぜたままだと、動かしている
+      // 本人の指とラベルがずれる。残りの印は、その行が空いたものとして詰め直す。
+      // 別の列へ運ばれた印（この列では描かない）も、行を空けたままにするため外す。
+      ...taskMarks
+        .filter((occurrence) => preview?.id !== occurrence.key)
+        .map((occurrence) => ({
+          key: occurrence.key,
+          top: offsetOf(utils.minutesFromMidnight(occurrence.date)),
+        })),
+      ...reminders.map((reminder) => ({
+        key: reminder.id,
+        top: offsetOf(utils.minutesFromMidnight(reminder.date)),
+      })),
+    ],
+    // ラベルの下半分まで一日ぶんの高さに収める。時間グリッドの外は切り落とされるため、
+    // 深夜の印を下へ送り続けると、重なりの代わりにラベルそのものが消える。
+    gridHeight - MARK_ROW_HEIGHT / 2,
+  );
+
   const handleBackgroundClick = (clientY: number, element: HTMLElement) => {
     // ピンチや予定のドラッグの後始末で来たclickでは、空き時間を選んだことにしない。
     if (onConsumeDragClick()) return;
@@ -850,6 +881,12 @@ function DayColumn({
         // 紐づけの印は予定日の枠にだけ出す（docs/spec.md §31）。
         const link = planned ? task.link : null;
 
+        // 縦棒は時刻そのものを指すため動かさない。動かすのはラベルだけで、
+        // その差だけ縦棒と引き出し線を本来の時刻へ戻す（issue #331）。
+        const trueTop = offsetOf(previewFor(key)?.startMinutes ?? minutes);
+        const labelTop = markTops.get(key) ?? trueTop;
+        const shift = trueTop - labelTop;
+
         return (
           <button
             key={key}
@@ -866,34 +903,35 @@ function DayColumn({
               onOpenTask(task);
             }}
             className="absolute right-0 flex -translate-y-1/2 items-center gap-1 pr-1"
-            style={{ left: contentLeft, top: offsetOf(previewFor(key)?.startMinutes ?? minutes) }}
+            style={{ left: contentLeft, top: labelTop }}
             title={`${utils.formatTime(date)} ${link ? `${taskLinkFullLabel(link)}: ` : planned ? "予定日: " : ""}${task.title}`}
           >
             {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。
                 紐づいたタスクは、目盛りの代わりに段階の印を立てる。 */}
-            {link ? (
-              <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2.5 w-3" />
-            ) : (
-              <span
-                aria-hidden
-                className={cn(
-                  "h-2.5 w-0.5 shrink-0",
-                  task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
-                )}
-              />
-            )}
             <span
-              className={cn(
-                "flex-1",
-                planned ? "h-0 border-t border-dashed" : "h-px",
-                task.done
-                  ? planned
-                    ? "border-on-surface-variant/30"
-                    : "bg-on-surface-variant/30"
-                  : planned
-                    ? "border-primary/45"
-                    : "bg-primary/45",
+              className="flex shrink-0 items-center"
+              style={{ transform: `translateY(${shift}px)` }}
+            >
+              {link ? (
+                <TaskStageMark stage={link.stage} drifted={link.drifted} className="h-2.5 w-3" />
+              ) : (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-2.5 w-0.5",
+                    task.done
+                      ? "bg-on-surface-variant/60"
+                      : planned
+                        ? "bg-primary/40"
+                        : "bg-primary",
+                  )}
+                />
               )}
+            </span>
+            <MarkLeader
+              shift={shift}
+              dashed={planned}
+              className={task.done ? "border-on-surface-variant/30" : "border-primary/45"}
             />
             <span
               className={cn(
@@ -912,16 +950,21 @@ function DayColumn({
       })}
 
       {/* 日付リマインドは時刻の幅を持たないため、掴めない印（時刻の点）として置く。 */}
-      {reminders.map((reminder) => (
-        <ReminderMarker
-          key={reminder.id}
-          reminder={reminder}
-          left={contentLeft}
-          top={offsetOf(utils.minutesFromMidnight(reminder.date))}
-          time={utils.formatTime(reminder.date)}
-          onOpen={() => onOpenReminder(reminder)}
-        />
-      ))}
+      {reminders.map((reminder) => {
+        const trueTop = offsetOf(utils.minutesFromMidnight(reminder.date));
+
+        return (
+          <ReminderMarker
+            key={reminder.id}
+            reminder={reminder}
+            left={contentLeft}
+            trueTop={trueTop}
+            labelTop={markTops.get(reminder.id) ?? trueTop}
+            time={utils.formatTime(reminder.date)}
+            onOpen={() => onOpenReminder(reminder)}
+          />
+        );
+      })}
 
       {/* 引いている最中の時間帯。既存の予定より前に出して、いま何時から何時を
           押さえようとしているのかが重なりに紛れないようにする。 */}
@@ -999,39 +1042,96 @@ function durationLabel(minutes: number): string {
 }
 
 /**
+ * 印（タスク・日付リマインド）の縦棒とラベルを結ぶ引き出し線（issue #331）。
+ *
+ * ラベルを下へ送ったぶん（shift）だけ、縦棒のすぐ右で折れて本来の時刻の高さから引き直す。
+ * 送っていない印では縦の線が高さを持たず、今までどおり1本の直線に見える。
+ *
+ * 3本を絶対配置で組むのは、線の太さ（1px）と色をタスク・日付リマインドで揃えたまま、
+ * 折れ曲がりの位置だけを描画のたびに変えるため。SVGにすると、破線の間隔や色の指定を
+ * 枠線のユーティリティと別に持つことになる。
+ */
+function MarkLeader({
+  shift,
+  dashed = false,
+  className,
+}: {
+  /** 縦棒の高さ − ラベルの高さ（px）。ラベルを下へ送っていれば負、上へ返していれば正。 */
+  shift: number;
+  /** 予定日の枠は破線で描き分ける（docs/spec.md §6）。 */
+  dashed?: boolean;
+  className?: string;
+}) {
+  const style = dashed ? "border-dashed" : "border-solid";
+
+  return (
+    <span aria-hidden className="relative h-px flex-1">
+      {/* 縦棒から折れ曲がりまで（本来の時刻の高さ） */}
+      <span
+        className={cn("absolute left-0 border-t", style, className)}
+        style={{ top: shift, width: MARK_ELBOW_WIDTH }}
+      />
+      {/* 折れ曲がり。ラベルを送っていなければ高さ0で、線としては現れない */}
+      <span
+        className={cn("absolute border-l", style, className)}
+        style={{
+          top: Math.min(shift, 0),
+          left: MARK_ELBOW_WIDTH,
+          height: Math.abs(shift),
+        }}
+      />
+      {/* 折れ曲がりからラベルまで（ラベルの高さ） */}
+      <span
+        className={cn("absolute top-0 right-0 border-t", style, className)}
+        style={{ left: MARK_ELBOW_WIDTH }}
+      />
+    </span>
+  );
+}
+
+/**
  * 時刻付きの日付リマインド。日付そのものを覚えておくための項目で時間の幅を持たないため、
  * 予定・タスクと違い時間グリッド上では動かせない。押すと内容の画面を開く。
  */
 function ReminderMarker({
   reminder,
   left,
-  top,
+  trueTop,
+  labelTop,
   time,
   onOpen,
 }: {
   reminder: ReminderItem;
   /** 左端のレーンのぶん右へ寄せる（issue #327）。 */
   left: number;
-  top: number;
+  /** 時刻そのものの高さ。縦棒はここに残す。 */
+  trueTop: number;
+  /** ラベルを置く高さ。重なりを避けて下へ送られている場合がある（issue #331）。 */
+  labelTop: number;
   time: string;
   onOpen: () => void;
 }) {
   const yearLabel = reminderAnnualYearShortLabel(reminder);
   const fullYearLabel = reminderAnnualYearLabel(reminder);
+  const shift = trueTop - labelTop;
   return (
     <button
       type="button"
       onClick={onOpen}
       className="absolute right-0 flex -translate-y-1/2 items-center gap-1 pr-1"
-      style={{ left, top }}
+      style={{ left, top: labelTop }}
       title={
         fullYearLabel
           ? `${time} ${reminder.title} ${fullYearLabel}`
           : `${time} ${reminder.title}`
       }
     >
-      <span aria-hidden className="h-2.5 w-0.5 shrink-0 bg-tertiary" />
-      <span className="h-px flex-1 bg-tertiary/45" />
+      <span
+        aria-hidden
+        className="h-2.5 w-0.5 shrink-0 bg-tertiary"
+        style={{ transform: `translateY(${shift}px)` }}
+      />
+      <MarkLeader shift={shift} className="border-tertiary/45" />
       <span className="type-label-small clip-nowrap flex max-w-[78%] items-center gap-1 rounded-item border border-tertiary/60 bg-surface-container-lowest px-1">
         <ReminderMark source={reminder.source} />
         <span className="clip-nowrap">
