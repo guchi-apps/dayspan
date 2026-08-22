@@ -329,9 +329,10 @@ export function ContinuousMonthView({
     }
 
     // 期限と予定日はそれぞれ別の枠として置く。同じタスクでも意味が違うため、
-    // 片方に寄せず、それぞれの日で描き分ける（docs/spec.md §5）。
+    // 片方に寄せず、それぞれの日で描き分ける（docs/spec.md §5）。ただし月表示のマスは
+    // 日までしか分かれない。同じ日に落ちる枠は、時刻が違っても期限の1つにまとめる。
     for (const task of tasks) {
-      for (const occurrence of taskOccurrences(task)) {
+      for (const occurrence of taskOccurrences(task, utils.itemDateKey)) {
         const dateKey = utils.itemDateKey(occurrence.date);
         push(dateKey, dateKey, task, occurrence.field);
       }
