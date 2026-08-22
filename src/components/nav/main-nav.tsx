@@ -1,76 +1,38 @@
 "use client";
 
-import { useCallback } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useOffline } from "next/offline";
-import { BellRing, CalendarDays, ListChecks, Settings, Timer } from "lucide-react";
+import { BellRing, CalendarDays, ListChecks, ShoppingCart, Timer } from "lucide-react";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
-import { hasOfflinePage } from "@/components/offline/offline-page-cache";
-import { isOfflineNow } from "@/components/offline/offline-state";
+import { useLongPress } from "@/components/calendar/use-long-press";
+import { ActivityQuickSheet } from "@/components/nav/activity-quick-sheet";
+import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
 import { cn } from "@/lib/utils";
 
-// 活動記録を先頭に置く（docs/spec.md §27）。押した時点から記録が始まる画面で、
-// 開くのは「いま何かを始める・終える」その瞬間に限られる。探してから押すのでは間に合わない。
+// 並びは左から カレンダー・タスク・記録・日付・（買い物リスト）（issue #328）。
+// 記録を中央に置くのは、押す回数がいちばん多く、他と同じ形で端に並べると
+// 「いま始める・止める」たびに探して押すことになるため（docs/spec.md §27）。
 const ITEMS = [
-  { href: "/activity", key: "activity", label: "記録", icon: Timer },
   { href: "/calendar", key: "calendar", label: "カレンダー", icon: CalendarDays },
   { href: "/tasks", key: "tasks", label: "タスク", icon: ListChecks },
+  { href: "/activity", key: "activity", label: "記録", icon: Timer },
   { href: "/reminders", key: "reminders", label: "日付", icon: BellRing },
-  { href: "/settings", key: "settings", label: "設定", icon: Settings },
 ] as const;
 
 export type NavKey = (typeof ITEMS)[number]["key"];
 
-/**
- * 新しいタブで開こうとしていない、素のクリックか。
- *
- * オフライン中の差し替えは同じタブでの移動なので、Ctrl・Command・中クリックのように
- * 別のタブ・ウィンドウを開く操作までここで奪うと、押した結果が変わってしまう。
- */
-function isPlainClick(event: React.MouseEvent): boolean {
-  return (
-    event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
-  );
-}
+/** 下部ナビの1項目の枠。5枠目（買い物リスト）まで含めて等分するため、格子の1マスに合わせる。 */
+const ITEM_CLASS = "flex w-full min-w-0 flex-col items-center gap-1";
 
-/**
- * オフライン中の画面移動（issue #321）。
- *
- * ナビの移動はソフトナビゲーション（RSC要求）で、Service Worker は保存していない。
- * 応答の中身が Next-Router-State-Tree や先読みかどうかで変わり、別の状況で再生すると
- * 描画が壊れるためである（public/sw.js）。そのままだとオフラインでは
- * experimental.useOffline が要求を再接続まで保留し、骨組みが出たまま止まる。
- *
- * 保存済みのページがあるときは、ハードナビゲーションへ切り替えて Service Worker に
- * 返させる。起動・再読み込みでオフラインでも開けている経路をそのまま使う。
- * 保存が無ければ従来どおり保留する（オフラインエラー画面へ落とさない）。
- *
- * 判定に isOfflineNow() を使うのは、オフラインのままPWAを起動した直後だと
- * useOffline() がまだ false のためである。ページもJSも Service Worker が返すので
- * 要求が1つも失敗せず、まさにこのIssueの場面で切り替えが効かない。
- *
- * 返るのは「移動を引き受けたか」。真ならリンクの既定動作を止める。
- */
-function useOfflineNavigate() {
-  const router = useRouter();
-  const offline = useOffline();
+/** アイコンを置く枠。中央の記録の円もこの高さの枠から上へはみ出させ、ラベルの高さを揃える。 */
+const ICON_SLOT_CLASS = "flex h-8 w-16 items-center justify-center rounded-full transition-colors";
 
-  return useCallback(
-    (href: string) => {
-      if (!isOfflineNow(offline)) return false;
-
-      void hasOfflinePage(href).then((cached) => {
-        if (cached) window.location.assign(href);
-        else router.push(href);
-      });
-
-      return true;
-    },
-    [offline, router],
-  );
-}
+const LABEL_CLASS =
+  // 狭い画面では「カレンダー」の幅が1項目分を超える。min-w-0 と truncate が無いと、
+  // 縮まずにナビごと横へはみ出す。
+  "type-label-medium w-full truncate text-center tracking-tight";
 
 /**
  * 記録中であることを示す印。
@@ -78,11 +40,14 @@ function useOfflineNavigate() {
  * 記録中かどうかは、記録の画面を開かなくても分かる必要がある。止め忘れたまま
  * 別の画面で作業していると、その間ずっと同じ項目を記録し続けてしまうため。
  */
-function RunningDot() {
+function RunningDot({ className }: { className?: string }) {
   return (
     <span
       aria-hidden
-      className="absolute -top-0.5 -right-0.5 size-2 animate-pulse rounded-full bg-primary"
+      className={cn(
+        "absolute -top-0.5 -right-0.5 size-2 animate-pulse rounded-full bg-primary",
+        className,
+      )}
     />
   );
 }
@@ -117,6 +82,9 @@ export function BottomNav({
   const router = useRouter();
   const navigateOffline = useOfflineNavigate();
 
+  // 記録の長押しで出すシート（issue #328）。開くまで中身は取りにいかない。
+  const [quickOpen, setQuickOpen] = useState(false);
+
   /**
    * カレンダーの項目は「今日へ移動」も兼ねる（issue #175）。
    *
@@ -145,15 +113,67 @@ export function BottomNav({
     router.push(`/calendar?date=${todayKey}`);
   };
 
+  /**
+   * 記録は押せば画面へ移り、長押しならその場で始める・止められる（issue #328）。
+   * 長押しを受けるのは指・ペンだけ（use-long-press.ts）。
+   */
+  const activityHandlers = useLongPress<null>({
+    onPress: () => {
+      if (navigateOffline("/activity")) return;
+      router.push("/activity");
+    },
+    onLongPress: () => setQuickOpen(true),
+  });
+
   return (
     // viewport-fit=cover でページがブラウザのツールバーやホームインジケーターの下まで
     // 広がるため、その分を内側へ確保しないとタップがブラウザ側に取られる。
-    <nav
-      className="flex shrink-0 items-start justify-around bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
-    >
+    //
+    // 等分の格子にするのは、記録を必ず中央に置くため。買い物リスト（後日）の枠を
+    // 空けたままにしないと、4項目では記録が中央からずれる。
+    <nav className="relative grid shrink-0 grid-cols-5 items-start bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
       {ITEMS.map((item) => {
         const active = item.key === current;
         const Icon = item.icon;
+
+        if (item.key === "activity") {
+          return (
+            <button
+              key={item.href}
+              {...activityHandlers(null)}
+              aria-current={active ? "page" : undefined}
+              aria-label="記録（長押しでその場から始める）"
+              className={cn(ITEM_CLASS, "touch-none select-none")}
+            >
+              {/* 円は他の項目と同じ高さの枠に収め、上へだけはみ出させる。
+                  円ごと持ち上げるとラベルの高さが1項目だけずれる。 */}
+              <span className={cn(ICON_SLOT_CLASS, "relative")}>
+                <span
+                  className={cn(
+                    "absolute bottom-0 flex size-14 items-center justify-center rounded-full border-4 border-surface-container elevation-1 transition-colors",
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-primary-container text-on-primary-container",
+                  )}
+                >
+                  <Icon className="size-7" />
+                  {activityRunning && (
+                    // 印は円の縁に置く。記録中でも選択中でも埋もれないよう、円の色と入れ替える。
+                    <RunningDot
+                      className={cn(
+                        "size-3 ring-2 ring-surface-container",
+                        active ? "bg-primary-container" : "bg-primary",
+                      )}
+                    />
+                  )}
+                </span>
+              </span>
+              <span className={cn(LABEL_CLASS, active ? "text-on-surface" : "text-on-surface-variant")}>
+                {item.label}
+              </span>
+            </button>
+          );
+        }
 
         if (item.key === "calendar") {
           return (
@@ -161,24 +181,17 @@ export function BottomNav({
               key={item.href}
               onClick={handleCalendarClick}
               aria-current={active ? "page" : undefined}
-              className="flex w-full max-w-[112px] min-w-0 flex-col items-center gap-1"
+              className={ITEM_CLASS}
             >
               <span
                 className={cn(
-                  "flex h-8 w-16 items-center justify-center rounded-full transition-colors",
+                  ICON_SLOT_CLASS,
                   active ? "bg-secondary-container text-on-secondary-container" : "text-on-surface-variant",
                 )}
               >
                 <Icon className="size-6" />
               </span>
-              <span
-                className={cn(
-                  // 項目が5つ並ぶため、狭い画面では「カレンダー」の幅が1項目分を超える。
-                  // min-w-0 と truncate が無いと、縮まずにナビごと横へはみ出す。
-                  "type-label-medium w-full truncate text-center tracking-tight",
-                  active ? "text-on-surface" : "text-on-surface-variant",
-                )}
-              >
+              <span className={cn(LABEL_CLASS, active ? "text-on-surface" : "text-on-surface-variant")}>
                 {item.label}
               </span>
             </button>
@@ -193,31 +206,35 @@ export function BottomNav({
               if (isPlainClick(event) && navigateOffline(item.href)) event.preventDefault();
             }}
             aria-current={active ? "page" : undefined}
-            className="flex w-full max-w-[112px] min-w-0 flex-col items-center gap-1"
+            className={ITEM_CLASS}
           >
             <span
               className={cn(
-                "flex h-8 w-16 items-center justify-center rounded-full transition-colors",
+                ICON_SLOT_CLASS,
                 active ? "bg-secondary-container text-on-secondary-container" : "text-on-surface-variant",
               )}
             >
-              {/* 印はアイコンの角に添える。丸みの端に置くと、アイコンから離れて別の飾りに見える。 */}
-              <span className="relative flex items-center">
-                <Icon className="size-6" />
-                {item.key === "activity" && activityRunning && <RunningDot />}
-              </span>
+              <Icon className="size-6" />
             </span>
-            <span
-              className={cn(
-                "type-label-medium w-full truncate text-center tracking-tight",
-                active ? "text-on-surface" : "text-on-surface-variant",
-              )}
-            >
+            <span className={cn(LABEL_CLASS, active ? "text-on-surface" : "text-on-surface-variant")}>
               {item.label}
             </span>
           </Link>
         );
       })}
+
+      {/*
+        買い物リストの枠（後日実装）。押しても何も起きないため、読み上げからは外す。
+        枠を空けたままにするのは、4項目にすると記録が中央に来ないため。
+      */}
+      <span aria-hidden className={cn(ITEM_CLASS, "opacity-40")}>
+        <span className={ICON_SLOT_CLASS}>
+          <ShoppingCart className="size-6 text-on-surface-variant" />
+        </span>
+        <span className={cn(LABEL_CLASS, "text-on-surface-variant")}>買い物</span>
+      </span>
+
+      <ActivityQuickSheet open={quickOpen} onOpenChange={setQuickOpen} />
     </nav>
   );
 }
@@ -234,7 +251,7 @@ export function HeaderNav({
 
   return (
     <div className="hidden items-center gap-1 md:flex">
-      {ITEMS.filter((item) => item.key !== "settings").map((item) => {
+      {ITEMS.map((item) => {
         const active = item.key === current;
         const Icon = item.icon;
 

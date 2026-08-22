@@ -15,6 +15,7 @@ import {
 } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
 
+import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
@@ -645,16 +646,19 @@ export function CalendarShell({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
+        {/* 狭い画面では左上をメニューにする（issue #328）。どの画面でも先頭の位置が揃う。 */}
+        <AppMenuButton />
+
         {/*
-          アイコンは狭い画面でも出す。他の画面（タスク・日付リマインド）は左上にアイコンがあり、
+          アイコンはPCだけに出す。他の画面（タスク・日付リマインド）も同じ位置にアイコンがあり、
           カレンダーだけ日付から始まると、同じアプリの中で先頭の位置が揃わないため。
-          アプリ名は幅の広いときだけ。狭い画面では年月の表示幅を優先する。
-          カレンダーアイコンをクリックすると今日の日付に飛ぶ。
+          アプリ名は幅の広いときだけ。カレンダーアイコンをクリックすると今日の日付に飛ぶ。
+          狭い画面で今日へ戻る操作は、下部ナビの「カレンダー」が同じことをする（issue #175）。
         */}
         <Button
           variant="ghost"
           onClick={goToday}
-          className="shrink-0 gap-1 font-semibold px-2 py-1.5"
+          className="hidden shrink-0 gap-1 px-2 py-1.5 font-semibold md:flex"
           aria-label="今日に飛ぶ"
         >
           <CalendarDays className="size-5" />

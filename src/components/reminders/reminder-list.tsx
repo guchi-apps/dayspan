@@ -15,6 +15,7 @@ import {
 } from "@/components/calendar/item-layout";
 import { toReminderDraft } from "@/components/calendar/reminder-form";
 import { ReminderDetailDialog } from "@/components/calendar/reminder-detail-dialog";
+import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
 import { TagChip } from "@/components/tags/tag-chip";
 import { tagColorOf } from "@/components/tags/tag-color";
@@ -134,7 +135,9 @@ export function ReminderList({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <div className="flex shrink-0 items-center gap-1 font-semibold">
+        {/* 狭い画面では左上をメニューにする（issue #328）。アプリのアイコンはPCだけ。 */}
+        <AppMenuButton />
+        <div className="hidden shrink-0 items-center gap-1 font-semibold md:flex">
           <BellRing className="size-5" />
           <span className="hidden lg:inline">DaySpan</span>
         </div>
