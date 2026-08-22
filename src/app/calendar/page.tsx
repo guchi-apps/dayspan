@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { CalendarDays } from "lucide-react";
 
 import { CalendarShell } from "@/components/calendar/calendar-shell";
+import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -102,21 +103,26 @@ export default async function CalendarPage({
   ]);
 
   return (
-    <CalendarShell
-      view={view}
-      anchorKey={toDateKey(anchor)}
-      days={days}
-      weeks={weeks}
-      dataPromise={dataPromise}
-      tagCatalogPromise={tagCatalogPromise}
-      placeCatalogPromise={placeCatalogPromise}
-      initialRunningActivity={runningActivity}
-      activityCalendarIds={activityCalendarIds}
-      travelSettings={travelSettings}
-      weekStartsOn={weekStartsOn}
-      timeZone={timeZone}
-      autoRefreshSeconds={uiSetting?.autoRefreshSeconds ?? 300}
-    />
+    <>
+      {/* バッジの件数は期限が今日以前のタスク（docs/spec.md §32）。カレンダーが取っているのは
+          表示中の期間ぶんだけで、期限切れがその外にあると数が合わない。この画面では取り直す。 */}
+      <AppBadgeSync />
+      <CalendarShell
+        view={view}
+        anchorKey={toDateKey(anchor)}
+        days={days}
+        weeks={weeks}
+        dataPromise={dataPromise}
+        tagCatalogPromise={tagCatalogPromise}
+        placeCatalogPromise={placeCatalogPromise}
+        initialRunningActivity={runningActivity}
+        activityCalendarIds={activityCalendarIds}
+        travelSettings={travelSettings}
+        weekStartsOn={weekStartsOn}
+        timeZone={timeZone}
+        autoRefreshSeconds={uiSetting?.autoRefreshSeconds ?? 300}
+      />
+    </>
   );
 }
 

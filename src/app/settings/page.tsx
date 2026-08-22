@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowRight,
+  Bell,
   CalendarDays,
   ChevronRight,
   History,
@@ -19,6 +20,7 @@ import { Card } from "@/components/ui/card";
 import { APP_VERSION } from "@/lib/app-version";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
+import { getNotificationSettings } from "@/services/notifications/settings";
 import { weekStartLabel } from "@/lib/week-start";
 import { TRAVEL_MODE_LABELS } from "@/types/calendar";
 
@@ -28,15 +30,24 @@ export default async function SettingsPage() {
 
   // 一覧では外部APIを叩かない。カレンダー一覧やタスクDB一覧の取得はそれぞれの画面へ入って
   // からで足り、ここで待たせるとGoogle / Notionが遅い日は設定を開くこと自体ができなくなる。
-  const [googleAccounts, notionConnection, uiSetting, activityPresetCount, widgetToken] =
-    await Promise.all([
-      db.googleAccount.findMany({ where: { userId: user.id }, select: { email: true } }),
-      db.notionConnection.findUnique({ where: { userId: user.id } }),
-      db.uiSetting.findUnique({ where: { userId: user.id } }),
-      db.activityPreset.count({ where: { userId: user.id } }),
-      // 発行の有無だけを見る。復号は開いてからで足りる。
-      db.widgetToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
-    ]);
+  const [
+    googleAccounts,
+    notionConnection,
+    uiSetting,
+    activityPresetCount,
+    widgetToken,
+    pushDeviceCount,
+    notificationSettings,
+  ] = await Promise.all([
+    db.googleAccount.findMany({ where: { userId: user.id }, select: { email: true } }),
+    db.notionConnection.findUnique({ where: { userId: user.id } }),
+    db.uiSetting.findUnique({ where: { userId: user.id } }),
+    db.activityPreset.count({ where: { userId: user.id } }),
+    // 発行の有無だけを見る。復号は開いてからで足りる。
+    db.widgetToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
+    db.pushSubscription.count({ where: { userId: user.id } }),
+    getNotificationSettings(user.id),
+  ]);
 
   return (
     <SettingsShell title="設定" backHref="/activity" backLabel="記録">
@@ -105,6 +116,18 @@ export default async function SettingsPage() {
           label="iPhoneウィジェット"
           value={widgetToken ? "発行済み" : "未設定"}
         />
+        {/* 通知はGoogle・Notionが未接続でも開ける。許可そのものは端末ごとに持つため、
+            この行には「この端末で受け取っているか」ではなく登録済みの端末の数を出す。 */}
+        <MenuItem
+          href="/settings/notifications"
+          icon={Bell}
+          label="通知"
+          value={
+            pushDeviceCount === 0
+              ? "未設定"
+              : notificationSummary(notificationSettings, pushDeviceCount)
+          }
+        />
         <MenuItem
           href="/settings/display"
           icon={LayoutGrid}
@@ -126,6 +149,20 @@ export default async function SettingsPage() {
       </Card>
     </SettingsShell>
   );
+}
+
+/** 通知の行に出す現在の値。何を知らせているのかが、開かなくても分かるようにする。 */
+function notificationSummary(
+  settings: { eventEnabled: boolean; taskEnabled: boolean },
+  deviceCount: number,
+): string {
+  const targets = [
+    settings.eventEnabled ? "予定" : null,
+    settings.taskEnabled ? "タスク" : null,
+  ].filter(Boolean);
+
+  const devices = `${deviceCount}台`;
+  return targets.length === 0 ? `${devices} / 知らせない` : `${devices} / ${targets.join("・")}`;
 }
 
 /**
