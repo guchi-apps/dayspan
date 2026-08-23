@@ -21,6 +21,8 @@ export function CalendarSkeleton() {
       </div>
 
       <CalendarGridSkeleton />
+
+      <BottomNavSkeleton />
     </div>
   );
 }
@@ -61,4 +63,33 @@ export function CalendarGridSkeleton() {
 
 export function SkeletonBlock({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded-sm bg-on-surface/8", className)} />;
+}
+
+/**
+ * 下部ナビと同じ寸法の帯（issue #352）。
+ *
+ * ナビは画面をまたいで残り続ける枠で、骨組みから落とすと、押したナビそのものが
+ * 一瞬消えて戻る。中央の記録だけが上へはみ出した円になるのも実物と同じ
+ * （src/components/nav/main-nav.tsx）。
+ */
+export function BottomNavSkeleton() {
+  return (
+    <nav
+      aria-hidden
+      className="relative grid shrink-0 grid-cols-5 items-start bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
+    >
+      {Array.from({ length: 5 }, (_, i) => (
+        <span key={i} className="flex w-full min-w-0 flex-col items-center gap-1">
+          <span className="relative flex h-8 w-16 items-center justify-center">
+            {i === 2 ? (
+              <SkeletonBlock className="absolute bottom-0 size-14 rounded-full border-4 border-surface-container" />
+            ) : (
+              <SkeletonBlock className="size-6 rounded-sm" />
+            )}
+          </span>
+          <SkeletonBlock className="h-3 w-10" />
+        </span>
+      ))}
+    </nav>
+  );
 }

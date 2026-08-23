@@ -1,4 +1,4 @@
-import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
+import { BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
 
 /**
  * 活動記録の骨組み（issue #352）。
@@ -7,8 +7,7 @@ import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
  * 下部ナビから記録の画面へ移ったとき。押した直後に「受け付けた」ことが見えるように、
  * 実際の配置と同じ形を先に描いてから内容を差し替える。
  *
- * 下部ナビの帯まで描くのは、そこが画面をまたいで残り続ける枠のため。落とすと、押した
- * ナビそのものが一瞬消えて戻る。
+ * 下部ナビの帯まで描くのは、そこが画面をまたいで残り続ける枠のため。
  */
 export default function Loading() {
   return (
@@ -42,24 +41,7 @@ export default function Loading() {
         </div>
       </div>
 
-      {/* BottomNav と同じ寸法の帯。中央の記録だけが上へはみ出した円になる。 */}
-      <nav
-        aria-hidden
-        className="relative grid shrink-0 grid-cols-5 items-start bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
-      >
-        {Array.from({ length: 5 }, (_, i) => (
-          <span key={i} className="flex w-full min-w-0 flex-col items-center gap-1">
-            <span className="relative flex h-8 w-16 items-center justify-center">
-              {i === 2 ? (
-                <SkeletonBlock className="absolute bottom-0 size-14 rounded-full border-4 border-surface-container" />
-              ) : (
-                <SkeletonBlock className="size-6 rounded-sm" />
-              )}
-            </span>
-            <SkeletonBlock className="h-3 w-10" />
-          </span>
-        ))}
-      </nav>
+      <BottomNavSkeleton />
     </div>
   );
 }
