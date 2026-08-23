@@ -370,3 +370,37 @@
     transform: translateX(260%);
   }
 }
+
+/* 起動画面（issue #352・docs/spec.md §33）。
+   src/components/launch/app-launch-screen.tsx が描き、app-ready.tsx が <html> へ
+   data-app-ready を立てて消す。消し方をCSSに置いているのは、JSが動かなかったときにも
+   必ず消えるようにするため（下の app-launch-timeout）。 */
+#app-launch {
+  /* visibility は遅らせて切り替える。同時に切ると、透明になる前に消えてフェードが見えない。 */
+  transition:
+    opacity 200ms ease,
+    visibility 0s linear 200ms;
+
+  /* JSが動かなかったときの保険。サーバーが描いた中身はすでに下にあるため、
+     時間切れで消してしまってよい。data-app-ready が立てば下の指定で打ち消される。 */
+  animation: app-launch-timeout 200ms ease 8s forwards;
+}
+
+html[data-app-ready] #app-launch {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  animation: none;
+}
+
+/* 消したあとも中のプログレスは回り続ける。見えないところで毎フレーム描かせない。 */
+html[data-app-ready] #app-launch * {
+  animation: none;
+}
+
+@keyframes app-launch-timeout {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}

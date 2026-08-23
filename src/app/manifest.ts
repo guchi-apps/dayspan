@@ -10,7 +10,11 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Google CalendarとNotionタスクを統合表示するカレンダー",
     start_url: DEFAULT_HOME_PATH,
     display: "standalone",
-    background_color: "#ffffff",
+    // OSが出す起動画面の地の色。iOSは apple-touch-startup-image が無いとき、この色と
+    // アイコンから起動画面を作る。アイコンの背景と同じ紫にすると角丸の器が背景に溶け、
+    // 白い図柄だけが残ってアプリ側の起動画面（docs/spec.md §33）と同じ絵になる。
+    // 1色しか持てないため、ライト・ダークで変わらないこの色にする。
+    background_color: APP_ICON_BACKGROUND,
     theme_color: APP_ICON_BACKGROUND,
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
