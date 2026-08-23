@@ -55,3 +55,51 @@ export function rememberCalendarView(view: CalendarView, dateKey: string): void 
     `${CALENDAR_VIEW_COOKIE}=${formatCalendarMemory(view, dateKey)}` +
     `; path=/; max-age=${CALENDAR_VIEW_MAX_AGE_SECONDS}; samesite=lax${secure}`;
 }
+
+/**
+ * 記憶を捨てる。
+ *
+ * 属性は rememberCalendarView と揃える。path が違うとブラウザは別のCookieとみなし、
+ * 消したつもりのものが残る。
+ */
+export function forgetCalendarView(): void {
+  if (typeof document === "undefined") return;
+
+  const secure = window.location.protocol === "https:" ? "; secure" : "";
+
+  document.cookie = `${CALENDAR_VIEW_COOKIE}=; path=/; max-age=0; samesite=lax${secure}`;
+}
+
+/** この起動でカレンダーの記憶を捨てたかどうかの印。 */
+const LAUNCH_MARK_KEY = "dayspan_calendar_launch";
+
+/**
+ * アプリを起動し直したときは記憶を捨てる（issue #353）。
+ *
+ * 記憶（issue #279）は「少し前に見ていた続き」を戻すためのもので、閉じて開き直したときまで
+ * 効くと、起動後にカレンダーを開くたびに先月・来月や1日表示のまま出る。起動時は今日の月表示から
+ * 始めたい。一方、同じ起動中の画面移動（カレンダー↔記録↔設定）では見ていた期間へ戻したい。
+ *
+ * 「起動」は sessionStorage に印が無いこと＝ブラウジングコンテキストが新しく作られたこととして
+ * 判定する。再読み込みとハードナビゲーション（オフライン中のナビ移動・issue #321）では同じ
+ * コンテキストが続くため印が残り、起動と誤判定しない。
+ *
+ * 読み書きできない環境（プライベートモード等）では何もしない。毎回の読み込みが起動扱いになり、
+ * 記憶が事実上死ぬため。
+ *
+ * 起動直後の画面は記録（src/lib/home-path.ts）で、ここを通るのはカレンダーを開くより前になる。
+ * `view` / `date` の付かない /calendar を起動直後に直接開いた場合（ブックマーク等）だけは、
+ * サーバーが描いたあとに捨てることになり、その1回は前回の期間が出る。次に開けば今日の月表示になる。
+ */
+export function resetCalendarMemoryOnLaunch(): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    if (window.sessionStorage.getItem(LAUNCH_MARK_KEY)) return;
+    window.sessionStorage.setItem(LAUNCH_MARK_KEY, "1");
+  } catch {
+    return;
+  }
+
+  forgetCalendarView();
+}

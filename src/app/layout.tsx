@@ -6,6 +6,7 @@ import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/noto-sans-jp";
 import "./globals.css";
 
+import { CalendarLaunchReset } from "@/components/calendar/calendar-launch-reset";
 import { ServiceWorkerRegistration } from "@/components/offline/service-worker";
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ export default function RootLayout({
     <html lang="ja" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         {children}
+        <CalendarLaunchReset />
         <ServiceWorkerRegistration />
       </body>
     </html>
