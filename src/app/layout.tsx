@@ -6,6 +6,9 @@ import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/noto-sans-jp";
 import "./globals.css";
 
+import { CalendarLaunchReset } from "@/components/calendar/calendar-launch-reset";
+import { AppLaunchScreen } from "@/components/launch/app-launch-screen";
+import { AppReady } from "@/components/launch/app-ready";
 import { ServiceWorkerRegistration } from "@/components/offline/service-worker";
 
 export const metadata: Metadata = {
@@ -36,7 +39,12 @@ export default function RootLayout({
   return (
     <html lang="ja" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
+        {/* 起動画面は本文より先に置く。ページの描画を待つあいだにシェルだけが先に流れるため、
+            ここに置いておくと最初のチャンクで描かれる（docs/spec.md §33）。 */}
+        <AppLaunchScreen />
         {children}
+        <CalendarLaunchReset />
+        <AppReady />
         <ServiceWorkerRegistration />
       </body>
     </html>
