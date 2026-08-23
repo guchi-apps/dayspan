@@ -1,6 +1,6 @@
 # サーバー間参照用API（`/api/internal/*`）
 
-同一VPS上で動く他アプリ（現状は [guchi-apps/aide](https://github.com/guchi-apps/aide)）が、その日の予定・タスク・日付リマインド・移動を参照するためのGET API。ブラウザからの利用は想定しておらず、Supabaseのセッションではなく**共有シークレット1本**で守る。
+同一VPS上で動く他アプリ（現状は [guchi-apps/aide](https://github.com/guchi-apps/aide)）が、その日の予定・タスク・日付リマインド・移動を参照するためのAPI（通知の送信を走らせる入口もここに置く）。ブラウザからの利用は想定しておらず、Supabaseのセッションではなく**共有シークレット1本**で守る。
 
 - 経緯: guchi-apps/dayspan#236、guchi-apps/question#7
 - 到達経路: DaySpanはVPS上で `127.0.0.1:3113`（`deploy/ecosystem.config.js` の `PORT`）で待ち受ける。呼び出し元も同じVPS上にいるため、**呼び出しにインターネットを経由する必要はない**
@@ -169,6 +169,23 @@ Google未接続・NotionのDB未設定は「失敗」ではないため `errors`
 ```
 
 DaySpan自身のDBを引けなかったときだけは、取れたぶんという概念が無いため `503`（`internal_api_failed`）を返す。
+
+## `POST /api/internal/notifications/dispatch`
+
+通知の送信を1回ぶん走らせる（docs/spec.md §32・docs/notifications.md）。時刻が来た下書きを送り、
+必要なら次の下書きを作り直す。
+
+通常はアプリ内のタイマー（`src/instrumentation.ts`）が毎分呼ぶため、**外から叩く必要は無い。**
+この入口を別に置いているのは、手で確かめられるようにするためと、将来VPSのcronから叩く形へ
+移せるようにするため。二重に走っても、送信済みの印を送る前に立てているため同じ通知は2回送られない。
+
+応答は `{ "ok": true }`。送った件数は返さない（呼び出し元がそれで分岐する場面が無く、
+返すと「何件送られるはず」を呼び出し元が持つことになる）。
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $INTERNAL_API_KEY" \
+  "http://127.0.0.1:3113/api/internal/notifications/dispatch"
+```
 
 ## 動作確認
 
