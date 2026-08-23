@@ -6,6 +6,7 @@ import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/noto-sans-jp";
 import "./globals.css";
 
+import { CalendarLaunchReset } from "@/components/calendar/calendar-launch-reset";
 import { AppLaunchScreen } from "@/components/launch/app-launch-screen";
 import { AppReady } from "@/components/launch/app-ready";
 import { ServiceWorkerRegistration } from "@/components/offline/service-worker";
@@ -42,6 +43,7 @@ export default function RootLayout({
             ここに置いておくと最初のチャンクで描かれる（docs/spec.md §33）。 */}
         <AppLaunchScreen />
         {children}
+        <CalendarLaunchReset />
         <AppReady />
         <ServiceWorkerRegistration />
       </body>
