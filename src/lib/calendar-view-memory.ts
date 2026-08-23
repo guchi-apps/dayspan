@@ -43,9 +43,20 @@ export function parseCalendarMemory(
  *
  * 呼ぶのはURLを書き換えるのと同じ場所にそろえる。「URLに出ている状態＝次に開いたときの状態」で
  * 一つの規則になり、覚える条件を別に考えずに済む。
+ *
+ * ただしアプリを起動して最初の1回は、覚えずに捨てる（issue #353）。CalendarShell はマウント時に
+ * 「サーバーが描いた状態」をそのまま書き戻すため、/calendar から起動した場合はこの書き込みと
+ * CalendarLaunchReset の破棄のどちらが先に走るか決まらない（/calendar は loading.tsx の
+ * Suspense境界の内側にあり、水和の順序は保証されない）。書き込みが後になると、捨てた直後に
+ * 前回の状態が同じ値で書き直され、1時間の期限まで延びて記憶が終わらなくなる。
  */
 export function rememberCalendarView(view: CalendarView, dateKey: string): void {
   if (typeof document === "undefined") return;
+
+  if (claimLaunch()) {
+    forgetCalendarView();
+    return;
+  }
 
   // 他サイトからの遷移では送られなくてよいため lax。https のときだけ secure を付ける
   // （開発サーバーは http で、付けるとブラウザがCookieごと捨てる）。
@@ -74,32 +85,42 @@ export function forgetCalendarView(): void {
 const LAUNCH_MARK_KEY = "dayspan_calendar_launch";
 
 /**
+ * この起動で最初の呼び出しなら true を返し、以後は false を返す（印を立てる）。
+ *
+ * 「起動」は sessionStorage に印が無いこと＝ブラウジングコンテキストが新しく作られたこととして
+ * 判定する。再読み込みとハードナビゲーション（オフライン中のナビ移動・issue #321）では同じ
+ * コンテキストが続くため印が残り、起動と誤判定しない。
+ *
+ * 読み書きできない環境（プライベートモード等）では false を返す。毎回の読み込みが起動扱いになり、
+ * 記憶が事実上死ぬため。
+ */
+function claimLaunch(): boolean {
+  if (typeof window === "undefined") return false;
+
+  try {
+    if (window.sessionStorage.getItem(LAUNCH_MARK_KEY)) return false;
+    window.sessionStorage.setItem(LAUNCH_MARK_KEY, "1");
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * アプリを起動し直したときは記憶を捨てる（issue #353）。
  *
  * 記憶（issue #279）は「少し前に見ていた続き」を戻すためのもので、閉じて開き直したときまで
  * 効くと、起動後にカレンダーを開くたびに先月・来月や1日表示のまま出る。起動時は今日の月表示から
  * 始めたい。一方、同じ起動中の画面移動（カレンダー↔記録↔設定）では見ていた期間へ戻したい。
  *
- * 「起動」は sessionStorage に印が無いこと＝ブラウジングコンテキストが新しく作られたこととして
- * 判定する。再読み込みとハードナビゲーション（オフライン中のナビ移動・issue #321）では同じ
- * コンテキストが続くため印が残り、起動と誤判定しない。
- *
- * 読み書きできない環境（プライベートモード等）では何もしない。毎回の読み込みが起動扱いになり、
- * 記憶が事実上死ぬため。
- *
- * 起動直後の画面は記録（src/lib/home-path.ts）で、ここを通るのはカレンダーを開くより前になる。
- * `view` / `date` の付かない /calendar を起動直後に直接開いた場合（ブックマーク等）だけは、
- * サーバーが描いたあとに捨てることになり、その1回は前回の期間が出る。次に開けば今日の月表示になる。
+ * 起動直後の画面は記録（src/lib/home-path.ts）で、そこから呼ばれる場合はカレンダーを開くより前に
+ * 済む。`view` / `date` の付かない /calendar を起動直後に直接開いた場合（ブックマーク等）は、
+ * サーバーが描いたあとに捨てることになり、その1回は前回の期間が出る。印は rememberCalendarView
+ * と共通のため、どちらが先に走っても記憶は捨てられ、次に開けば今日の月表示になる。
  */
 export function resetCalendarMemoryOnLaunch(): void {
-  if (typeof window === "undefined") return;
-
-  try {
-    if (window.sessionStorage.getItem(LAUNCH_MARK_KEY)) return;
-    window.sessionStorage.setItem(LAUNCH_MARK_KEY, "1");
-  } catch {
-    return;
-  }
+  if (!claimLaunch()) return;
 
   forgetCalendarView();
 }
