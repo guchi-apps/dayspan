@@ -33,14 +33,24 @@ node scripts/gen-vapid-keys.mjs mailto:自分のメールアドレス
 
 ### 本番へ配る
 
-1Passwordが正で、GitHub Secretsへは `scripts/sync-github-secrets.sh` で同期する
-（`.github/secrets-manifest.tsv` に対応表がある）。
+1Passwordが正で、GitHub Secretsへは `.github/secrets-manifest.tsv` の対応表に沿って同期する。
 
 ```bash
+# GitHub Actions から起こす（1Passwordの読み取りだけなのでサービスアカウントで足りる）
+gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
+
+# 手元から直接叩く場合。個人アカウントのセッションが要る
+# （OP_SERVICE_ACCOUNT_TOKEN があると op の書き込みだけが全部失敗する）
+unset OP_SERVICE_ACCOUNT_TOKEN && eval "$(op signin)"
 scripts/sync-github-secrets.sh --only VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
 ```
 
 同期したあとデプロイすると、`.github/workflows/deploy.yml` の `update_env` が本番の `.env` へ書く。
+
+**同期を忘れると、デプロイは空文字をそのまま `.env` へ書く。** 起動には要らない値のため何も落ちず、
+設定画面に「鍵が設定されていません」と出るだけになる（#359 はこの状態が続いていた）。
+デプロイのたびに `secrets-check` ジョブ（`.github/scripts/check-repo-secrets.sh`）が
+マニフェストの `repo` 項目と突き合わせ、空のものがあればSignalyへ1通出す（値そのものは出さない）。
 
 ### 公開鍵と秘密鍵の食い違い
 
@@ -76,6 +86,7 @@ RFC 8291 §5 に載っている「鍵・salt・平文・出来上がりのボデ
 
 | 症状 | 見るところ |
 | --- | --- |
+| 設定画面に「鍵が設定されていません」と出る | `gh secret list` に `VAPID_*` が3つあるか → 1Passwordの `apps/dayspan` に `vapid-*` があるか → 本番の `.env` の3行（#359） |
 | スイッチが押せない | ホーム画面のアイコンから開いているか。画面上部に理由が出る |
 | 許可したのに届かない | `scripts/check-web-push.mjs`、次に本番の `.env` の3つの値 |
 | 一度は届いたが止まった | 購読が失効している可能性。スイッチを入れ直す（失効した登録はサーバー側で自動的に消える） |
