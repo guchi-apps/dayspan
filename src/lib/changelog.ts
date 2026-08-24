@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.2.1",
+    date: "2026-08-24",
+    changes: [
+      "サーバー再起動のタイミングによってアプリが一時的に開けなくなる（503エラー）不具合を修正しました。",
+    ],
+  },
+  {
     version: "2.2.0",
     date: "2026-08-23",
     changes: [
