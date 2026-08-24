@@ -17,8 +17,15 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `google-calendar-client-secret` | 同シークレット |
 | `internal-api-key` | サーバー間参照用APIの共有シークレット（`openssl rand -hex 32` で生成。呼び出し元のAIDE側にも同じ値を設定する。docs/internal-api.md） |
 | `ci-webhook-url` | Signaly の DaySpan 用チャンネルWebhook URL |
+| `vapid-public-key` | 通知（Web Push）の公開鍵。`node scripts/gen-vapid-keys.mjs mailto:自分のアドレス` の出力（docs/notifications.md） |
+| `vapid-private-key` | 同・秘密鍵。上のコマンドが公開鍵と対で出す |
+| `vapid-subject` | 同・連絡先。`mailto:` か `https://` で始める |
 
 共通アイテム（`DB` / `Server` / `githubaction-sshkey` / `Supabase`）は既存のものをそのまま参照する（`.github/deploy.env.tpl` 参照）。
+
+1Passwordへ入れたあとは `scripts/sync-github-secrets.sh` でGitHub Secretsへ同期する。**同期しないと
+デプロイは空の値をそのまま本番の `.env` へ書き、その機能だけが黙って使えないまま残る**（`vapid-*` の
+3つが登録されておらず、設定画面に「鍵が設定されていません」と出続けていた。#359）。
 
 ## 2. Supabase（他アプリと共有のプロジェクト）
 

@@ -303,6 +303,25 @@ jobs:
             update_env VAPID_PRIVATE_KEY "$VAPID_PRIVATE_KEY"
             update_env VAPID_SUBJECT "$VAPID_SUBJECT"
 
+            # GitHub Secretsに無い値は空文字として渡り、update_env はそれをそのまま .env へ書く。
+            # 起動に要る値なら健全性チェックで落ちるが、無くても他が動く値（VAPID等）は
+            # 何も起きないまま「その機能だけ使えない」状態が残る。実際に vapid-* の3つが
+            # 1PasswordにもGitHub Secretsにも無いまま気付かれずにいた（#359）。
+            # 値そのものは出さず、空だった名前だけをログへ残す。
+            empty=""
+            for name in DATABASE_URL DB_USER DB_PASSWORD DB_HOST DB_PORT DB_NAME \
+                        NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY \
+                        ALLOWED_GOOGLE_EMAILS TOKEN_ENCRYPTION_KEY \
+                        GOOGLE_CALENDAR_CLIENT_ID GOOGLE_CALENDAR_CLIENT_SECRET \
+                        INTERNAL_API_KEY VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY VAPID_SUBJECT; do
+              if [ -z "${!name:-}" ]; then
+                empty="$empty $name"
+              fi
+            done
+            if [ -n "$empty" ]; then
+              echo "::warning::GitHub Secretsが空のため .env へ空の値を書きました:$empty（scripts/sync-github-secrets.sh で同期してください）"
+            fi
+
             echo "Installing production dependencies..."
             corepack enable pnpm >/dev/null 2>&1 || true
             pnpm install --prod --frozen-lockfile
