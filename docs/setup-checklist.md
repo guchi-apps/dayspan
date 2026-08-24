@@ -17,8 +17,26 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `google-calendar-client-secret` | 同シークレット |
 | `internal-api-key` | サーバー間参照用APIの共有シークレット（`openssl rand -hex 32` で生成。呼び出し元のAIDE側にも同じ値を設定する。docs/internal-api.md） |
 | `ci-webhook-url` | Signaly の DaySpan 用チャンネルWebhook URL |
+| `vapid-public-key` | 通知（Web Push）の公開鍵。`node scripts/gen-vapid-keys.mjs mailto:自分のアドレス` の出力（docs/notifications.md） |
+| `vapid-private-key` | 同・秘密鍵。上のコマンドが公開鍵と対で出す |
+| `vapid-subject` | 同・連絡先。`mailto:` か `https://` で始める |
 
 共通アイテム（`DB` / `Server` / `githubaction-sshkey` / `Supabase`）は既存のものをそのまま参照する（`.github/deploy.env.tpl` 参照）。
+
+機械可読の正は `.github/secrets-manifest.tsv` で、この表はその人手作業ぶんを日本語で並べたもの。
+1Passwordへ入れたあとは、GitHub Secretsへの同期まで行って初めて本番へ届く。
+
+```bash
+gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
+```
+
+（手元から `scripts/sync-github-secrets.sh` を叩く場合は個人アカウントのセッションが要る。
+サービスアカウントのトークンが環境変数にあると `op` の書き込みだけが全部失敗する。）
+
+**同期しないとデプロイは空の値をそのまま本番の `.env` へ書き、その機能だけが黙って使えないまま残る。**
+実際に `vapid-*` の3つが登録されないまま、設定画面に「鍵が設定されていません」と出続けていた（#359）。
+これを見つけるために、デプロイのたびに `secrets-check` ジョブがマニフェストの `repo` 項目と
+突き合わせ、空のものがあればSignalyへ知らせる。
 
 ## 2. Supabase（他アプリと共有のプロジェクト）
 

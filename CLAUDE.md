@@ -236,6 +236,14 @@ pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 
 `deploy.yml` は成果物を `tar` で固める際に `public` を含める。静的ファイルを置いていなくても
 ディレクトリ自体が存在しないと `tar` が失敗するため、`public/.gitkeep` を追跡対象に残している。
 
+本番へ渡す値を足すときは、コードと `deploy.yml` だけでなく `.github/secrets-manifest.tsv` と
+`docs/setup-checklist.md` にも足し、1Password（正）へ入れてGitHub Secretsへ同期するところまで行う。
+GitHub Secretsに無い値は空文字としてワークフローへ渡り、`update_env` はそれをそのまま本番の
+`.env` へ書く。起動に要らない値では何も落ちないため、「機能は入っているのに使えない」状態が
+気付かれずに残る（通知のVAPID鍵がこれで、v2.1.0のリリース後も未配布のままだった。issue #359）。
+デプロイのたびに `secrets-check` ジョブがマニフェストの `repo` 項目と突き合わせ、空のものが
+あればSignalyへ知らせる。
+
 ## 外部APIの扱い
 
 - Google Calendar / Notion への呼び出しは `src/services/` を経由し、UIコンポーネントから直接叩かない（`docs/spec.md` §22）。
