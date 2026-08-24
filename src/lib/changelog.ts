@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.2.3",
+    date: "2026-08-25",
+    changes: [
+      "今回のリリースは、開発・運用の裏側にあるCI通知の仕組みを改善したものです。アプリの画面や操作方法に変わりはありません。",
+    ],
+  },
+  {
     version: "2.2.1",
     date: "2026-08-24",
     changes: [
