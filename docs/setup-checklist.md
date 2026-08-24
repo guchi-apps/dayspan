@@ -23,9 +23,20 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 
 共通アイテム（`DB` / `Server` / `githubaction-sshkey` / `Supabase`）は既存のものをそのまま参照する（`.github/deploy.env.tpl` 参照）。
 
-1Passwordへ入れたあとは `scripts/sync-github-secrets.sh` でGitHub Secretsへ同期する。**同期しないと
-デプロイは空の値をそのまま本番の `.env` へ書き、その機能だけが黙って使えないまま残る**（`vapid-*` の
-3つが登録されておらず、設定画面に「鍵が設定されていません」と出続けていた。#359）。
+機械可読の正は `.github/secrets-manifest.tsv` で、この表はその人手作業ぶんを日本語で並べたもの。
+1Passwordへ入れたあとは、GitHub Secretsへの同期まで行って初めて本番へ届く。
+
+```bash
+gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
+```
+
+（手元から `scripts/sync-github-secrets.sh` を叩く場合は個人アカウントのセッションが要る。
+サービスアカウントのトークンが環境変数にあると `op` の書き込みだけが全部失敗する。）
+
+**同期しないとデプロイは空の値をそのまま本番の `.env` へ書き、その機能だけが黙って使えないまま残る。**
+実際に `vapid-*` の3つが登録されないまま、設定画面に「鍵が設定されていません」と出続けていた（#359）。
+これを見つけるために、デプロイのたびに `secrets-check` ジョブがマニフェストの `repo` 項目と
+突き合わせ、空のものがあればSignalyへ知らせる。
 
 ## 2. Supabase（他アプリと共有のプロジェクト）
 

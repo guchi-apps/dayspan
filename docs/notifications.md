@@ -33,10 +33,15 @@ node scripts/gen-vapid-keys.mjs mailto:自分のメールアドレス
 
 ### 本番へ配る
 
-1Passwordが正で、GitHub Secretsへは `scripts/sync-github-secrets.sh` で同期する
-（`.github/secrets-manifest.tsv` に対応表がある）。
+1Passwordが正で、GitHub Secretsへは `.github/secrets-manifest.tsv` の対応表に沿って同期する。
 
 ```bash
+# GitHub Actions から起こす（1Passwordの読み取りだけなのでサービスアカウントで足りる）
+gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
+
+# 手元から直接叩く場合。個人アカウントのセッションが要る
+# （OP_SERVICE_ACCOUNT_TOKEN があると op の書き込みだけが全部失敗する）
+unset OP_SERVICE_ACCOUNT_TOKEN && eval "$(op signin)"
 scripts/sync-github-secrets.sh --only VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
 ```
 
@@ -44,7 +49,8 @@ scripts/sync-github-secrets.sh --only VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_S
 
 **同期を忘れると、デプロイは空文字をそのまま `.env` へ書く。** 起動には要らない値のため何も落ちず、
 設定画面に「鍵が設定されていません」と出るだけになる（#359 はこの状態が続いていた）。
-deploy.yml は空の値があったときにデプロイのログへ警告を出す（値そのものは出さない）。
+デプロイのたびに `secrets-check` ジョブ（`.github/scripts/check-repo-secrets.sh`）が
+マニフェストの `repo` 項目と突き合わせ、空のものがあればSignalyへ1通出す（値そのものは出さない）。
 
 ### 公開鍵と秘密鍵の食い違い
 

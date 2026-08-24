@@ -227,7 +227,6 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | 下部ナビから開く画面の骨組みには、ナビの帯まで描く | ナビは画面をまたいで残り続ける枠で、骨組みから落とすと押したナビそのものが一瞬消えて戻る。`BottomNavSkeleton` を4画面で共有する |
 | 起動画面はオフライン中のナビの移動でも出る | オフラインではナビの移動がハードナビゲーションに切り替わり（issue #321）、ドキュメントごと作り直されるため。`data-app-ready` はドキュメントに紐づく |
 | `background_color` の変更はすぐには端末へ届かない | `/manifest.webmanifest` は Service Worker が stale-while-revalidate で扱い、追加済みのWebアプリで新しい値が使われる時期はiOS側の都合で決まる（`start_url` と同じ）。OSの起動画面が紫になるのは追加し直したあとで、それまで白いのは不具合ではない |
-| 環境変数を足したら `docs/setup-checklist.md` にも足す | 新しい値はコードとdeploy.ymlを直すだけでは本番へ届かない。1Password（正）へ人が入れ、`scripts/sync-github-secrets.sh` でGitHub Secretsへ同期して初めて配られる。チェックリストへ載せ忘れると人手作業そのものが発生せず、デプロイは空文字を `.env` へ書いて成功する。起動に要らない値では何も落ちないため、「機能は入っているのに使えない」状態が気付かれずに残る（通知のVAPID鍵がv2.1.0のリリース後も未配布のままだった。issue #359） |
 
 ## デプロイ
 
@@ -236,6 +235,14 @@ pnpm は 11 系ではなく **10 系** に固定する。VPS の Node.js が 20 
 
 `deploy.yml` は成果物を `tar` で固める際に `public` を含める。静的ファイルを置いていなくても
 ディレクトリ自体が存在しないと `tar` が失敗するため、`public/.gitkeep` を追跡対象に残している。
+
+本番へ渡す値を足すときは、コードと `deploy.yml` だけでなく `.github/secrets-manifest.tsv` と
+`docs/setup-checklist.md` にも足し、1Password（正）へ入れてGitHub Secretsへ同期するところまで行う。
+GitHub Secretsに無い値は空文字としてワークフローへ渡り、`update_env` はそれをそのまま本番の
+`.env` へ書く。起動に要らない値では何も落ちないため、「機能は入っているのに使えない」状態が
+気付かれずに残る（通知のVAPID鍵がこれで、v2.1.0のリリース後も未配布のままだった。issue #359）。
+デプロイのたびに `secrets-check` ジョブがマニフェストの `repo` 項目と突き合わせ、空のものが
+あればSignalyへ知らせる。
 
 ## 外部APIの扱い
 
