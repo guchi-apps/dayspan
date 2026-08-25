@@ -1,6 +1,8 @@
 // カレンダー画面が扱う表示用の型。Google Calendar / Notion のレスポンス形をそのままUIへ
 // 持ち込まず、ここで1つの形に正規化する（docs/spec.md §22）。
 
+import type { WorkRecordItem } from "./work";
+
 /** 終日・日付のみの項目は plain（YYYY-MM-DD）、時刻ありは ISO 8601 文字列で持つ。 */
 export type CalendarEventItem = {
   kind: "event";
@@ -222,6 +224,11 @@ export type CalendarLoadResult = {
   tasks: TaskItem[];
   reminders: ReminderItem[];
   travels: TravelItem[];
+  /**
+   * その日の勤務場所（docs/spec.md §34）。予定・タスクと違い、時刻も長さも持たない「日の属性」で、
+   * カレンダーでは項目の並ぶ面ではなく日付の見出しに出す。CalendarItem には含めない。
+   */
+  workRecords: WorkRecordItem[];
   calendars: WritableCalendar[];
   notionReady: boolean;
   /** 日付リマインドDBが設定済みかどうか。追加画面にリマインドを出してよいかの判断に使う。 */
