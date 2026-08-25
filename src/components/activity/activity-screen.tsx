@@ -65,6 +65,14 @@ export function ActivityScreen({
   const [editingEnd, setEditingEnd] = useState(false);
   const [endInput, setEndInput] = useState("");
 
+  /*
+    欄の初期値（「いま」）は端末の時計で作る一方、未来かどうかを決めるのはサーバーの時計。
+    端末が1〜2分進んでいると、何も直さずに押しただけで「未来の時刻」として断られる。
+    直していないなら時刻を添えずに送り、従来どおりサーバーの時計で決めさせる。
+  */
+  const [startAtTouched, setStartAtTouched] = useState(false);
+  const [endTouched, setEndTouched] = useState(false);
+
   // 開始時刻を指定して始めるときの欄。開いている間だけ、押した項目がこの時刻から始まる。
   // 常に出しておかないのは、記録を始める操作が押す回数のいちばん多い操作で、
   // 毎回時刻を確かめさせると、そのぶん記録そのものが遅れるため（docs/spec.md §27）。
@@ -114,10 +122,13 @@ export function ActivityScreen({
    * 予定ができた場合はカレンダー側も古くなるため、サーバーから取り直させる。
    */
   const start = async (body: { presetId?: string; title?: string }) => {
-    // 時刻の欄を開いているときだけ、その時刻を添える。閉じているあいだはサーバーの時計で
-    // 決める（端末の時計のずれを、記録した時間帯そのもののずれにしないため）。
+    // 時刻の欄を開いて、実際に直したときだけその時刻を添える。閉じているあいだと
+    // 初期値のままのときはサーバーの時計で決める（端末の時計のずれを、記録した
+    // 時間帯そのもののずれにしないため）。
     const startedAt =
-      startAtOpen && startAtInput ? localInputToIso(startAtInput, timeZone) : undefined;
+      startAtOpen && startAtTouched && startAtInput
+        ? localInputToIso(startAtInput, timeZone)
+        : undefined;
 
     const result = await send(
       "/api/activities/start",
@@ -208,6 +219,7 @@ export function ActivityScreen({
   const beginEditEnd = () => {
     if (!running) return;
     setEndInput(isoToLocalInput(nowIso ?? new Date().toISOString(), timeZone));
+    setEndTouched(false);
     setEditingStart(false);
     setEditingEnd(true);
   };
@@ -218,6 +230,7 @@ export function ActivityScreen({
       return;
     }
     setStartAtInput(isoToLocalInput(nowIso ?? new Date().toISOString(), timeZone));
+    setStartAtTouched(false);
     setStartAtOpen(true);
   };
 
@@ -279,8 +292,12 @@ export function ActivityScreen({
               onSaveStart={saveStart}
               editingEnd={editingEnd}
               endInput={endInput}
+              endTouched={endTouched}
               nowInput={nowInput}
-              onEndInputChange={setEndInput}
+              onEndInputChange={(value) => {
+                setEndInput(value);
+                setEndTouched(true);
+              }}
               onBeginEditEnd={beginEditEnd}
               onCancelEditEnd={() => setEditingEnd(false)}
               onStop={stop}
@@ -323,7 +340,10 @@ export function ActivityScreen({
                   dateLabel="開始日"
                   timeLabel="開始時刻"
                   value={startAtInput}
-                  onChange={setStartAtInput}
+                  onChange={(value) => {
+                    setStartAtInput(value);
+                    setStartAtTouched(true);
+                  }}
                 />
                 {startAtInvalid ? (
                   <p className="type-body-small text-destructive">{startAtInvalid}</p>
@@ -422,6 +442,7 @@ function RunningCard({
   onSaveStart,
   editingEnd,
   endInput,
+  endTouched,
   nowInput,
   onEndInputChange,
   onBeginEditEnd,
@@ -442,6 +463,11 @@ function RunningCard({
   onSaveStart: () => void;
   editingEnd: boolean;
   endInput: string;
+  /**
+   * 終了時刻の欄を実際に直したか。直していないなら時刻を渡さず、サーバーの時計で止める
+   * （端末の時計が進んでいるだけで「未来の時刻」として断られるのを避けるため）。
+   */
+  endTouched: boolean;
   /** 現在時刻を入力欄と同じ分単位にしたもの。未来を指定していないか比べるために使う。 */
   nowInput: string | null;
   onEndInputChange: (value: string) => void;
@@ -520,7 +546,7 @@ function RunningCard({
               <Button
                 size="sm"
                 disabled={disabled || endInvalid !== null}
-                onClick={() => onStop(localInputToIso(endInput, timeZone))}
+                onClick={() => onStop(endTouched ? localInputToIso(endInput, timeZone) : undefined)}
               >
                 この時刻で停止
               </Button>
