@@ -5,11 +5,11 @@ import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { getNotionWorkConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
-import { listOpenBusinessTrips } from "@/services/notion/work-logs";
+import { listPendingWorkRecords } from "@/services/notion/work-logs";
 import { workTodos } from "@/types/work";
 
 /**
- * 手続きが残っている出張の件数（docs/spec.md §34）。
+ * 手続きが残っている出張・年休の件数（docs/spec.md §34）。
  *
  * メニュー（ドロワー）を開いたときにだけ読む。各画面のサーバー側で数えると、勤務記録を
  * 開かない日もNotionへの往復が画面の数だけ増える（記録の長押しシートと同じ扱い）。
@@ -31,11 +31,11 @@ export async function GET() {
   const todayKey = createCalendarDateUtils(setting?.timeZone ?? "Asia/Tokyo").todayKey();
 
   try {
-    const trips = await listOpenBusinessTrips(createNotionClient(connection), connection);
-    const count = trips.reduce((total, trip) => total + workTodos(trip, todayKey).length, 0);
+    const pending = await listPendingWorkRecords(createNotionClient(connection), connection);
+    const count = pending.reduce((total, record) => total + workTodos(record, todayKey).length, 0);
     return NextResponse.json({ count });
   } catch (error) {
-    console.error("[dayspan] notion 未対応の出張の取得 failed:", error);
+    console.error("[dayspan] notion 未対応の勤務記録の取得 failed:", error);
     return NextResponse.json({ count: 0 });
   }
 }

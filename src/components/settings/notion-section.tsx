@@ -289,22 +289,22 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
   };
 
   /**
-   * 使用中の勤務記録DBへ、出張・事前申請・事後登録・メモのプロパティを足す。
-   * この3つは名前が当たったときだけ対応付けるため、既存のDBを選ぶと揃わないことがある。
+   * 使用中の勤務記録DBへ、年休・出張・事前申請・事後登録・メモのプロパティを足す。
+   * この4つは名前が当たったときだけ対応付けるため、既存のDBを選ぶと揃わないことがある。
    */
-  const addWorkTripProperties = async () => {
+  const addWorkOptionalProperties = async () => {
     setBusy(true);
     setMessage(null);
     try {
       const response = await fetch("/api/notion/work-database", { method: "PATCH" });
       if (!response.ok) {
         setMessage({
-          text: await errorText(response, "出張のプロパティを追加できませんでした。"),
+          text: await errorText(response, "勤務記録DBのプロパティを追加できませんでした。"),
           tone: "error",
         });
         return;
       }
-      setMessage({ text: "勤務記録DBに出張のプロパティを追加しました。", tone: "ok" });
+      setMessage({ text: "勤務記録DBに出張・年休のプロパティを追加しました。", tone: "ok" });
       startTransition(() => router.refresh());
     } finally {
       setBusy(false);
@@ -608,9 +608,9 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium">勤務記録DBを選択</span>
               <p className="text-xs text-muted-foreground">
-                その日どこで働いたかと、出張の事前申請・事後登録を記録します。
-                タイトル・日付・勤務場所が必要です。出張・事前申請・事後登録（チェックボックス）は
-                名前が一致したときだけ対応付けます。
+                その日どこで働いたかと、出張・年休の申請の済み未済を記録します。
+                タイトル・日付・勤務場所が必要です。年休（セレクト）と出張・事前申請・事後登録
+                （チェックボックス）は名前が一致したときだけ対応付けます。
               </p>
               {state.workDataSourceId && (
                 <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
@@ -628,22 +628,24 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                   </dl>
                   {!(
                     state.workPropertyMap?.businessTrip &&
+                    state.workPropertyMap?.annualLeave &&
                     state.workPropertyMap?.preApplied &&
                     state.workPropertyMap?.postRegistered
                   ) && (
                     <div className="flex flex-col items-start gap-2">
                       <p className="text-xs text-muted-foreground">
-                        出張のプロパティが揃っていません。足すと、出張の事前申請・事後登録の
-                        済み・未済を勤務の画面で追えるようになります。無いままでも勤務場所は登録できます。
+                        出張・年休のプロパティが揃っていません。足すと、出張の事前申請・事後登録と
+                        年休の事前申請の済み・未済を勤務の画面で追えるようになります。
+                        無いままでも勤務場所は登録できます。
                       </p>
                       <Button
                         variant="outline"
                         size="sm"
                         disabled={disabled}
-                        onClick={addWorkTripProperties}
+                        onClick={addWorkOptionalProperties}
                       >
                         <Plus className="size-4" />
-                        出張のプロパティを追加
+                        出張・年休のプロパティを追加
                       </Button>
                     </div>
                   )}

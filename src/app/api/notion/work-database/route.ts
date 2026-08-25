@@ -4,12 +4,12 @@ import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
-import { addWorkTripProperties, validateWorkDataSource } from "@/services/notion/work-database";
+import { addWorkOptionalProperties, validateWorkDataSource } from "@/services/notion/work-database";
 
 /**
  * 勤務記録DB（docs/spec.md §34）を選ぶ。
  *
- * 必須はタイトル・日付・勤務場所の3つ。出張・事前申請・事後登録は名前が当たったときだけ
+ * 必須はタイトル・日付・勤務場所の3つ。年休・出張・事前申請・事後登録は名前が当たったときだけ
  * 対応付けるため、既存のDBを選ぶと揃わないことがある。揃っていないぶんは missingOptional で
  * 返し、設定画面から PATCH で足せるようにする。
  */
@@ -49,9 +49,9 @@ export async function POST(request: Request) {
 }
 
 /**
- * 使用中の勤務記録DBへ、足りない任意プロパティ（出張・事前申請・事後登録・メモ）を足す。
+ * 使用中の勤務記録DBへ、足りない任意プロパティ（年休・出張・事前申請・事後登録・メモ）を足す。
  *
- * この3つは名前が当たったときだけ対応付けるため、既存のDBを選ぶと揃わない。Notion側で
+ * この4つは名前が当たったときだけ対応付けるため、既存のDBを選ぶと揃わない。Notion側で
  * どの型・どの名前で足せばよいかは画面のどこにも出ていないので、ここから実行できるようにする
  * （場所DBの「座標」と同じ経路）。
  */
@@ -66,12 +66,12 @@ export async function PATCH() {
 
   let validation;
   try {
-    validation = await addWorkTripProperties(
+    validation = await addWorkOptionalProperties(
       createNotionClient(connection),
       connection.workDataSourceId,
     );
   } catch (error) {
-    return externalApiError("notion", "出張プロパティの追加", error);
+    return externalApiError("notion", "勤務記録DBのプロパティ追加", error);
   }
 
   await db.notionConnection.update({

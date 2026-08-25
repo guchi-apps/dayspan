@@ -17,22 +17,42 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { ANNUAL_LEAVE_OPTIONS } from "@/services/notion/work-database";
 import type { TagOption } from "@/services/notion/tag-options";
-import { WORK_TODO_LABELS, type WorkCapabilities, type WorkRecordItem } from "@/types/work";
+import {
+  annualLeaveDays,
+  WORK_TODO_LABELS,
+  type WorkCapabilities,
+  type WorkRecordItem,
+} from "@/types/work";
+
+/** 記録の種類。同時には立てられないため、スイッチではなく3択で持つ。 */
+export type WorkKind = "work" | "trip" | "leave";
+
+const KIND_LABELS: Record<WorkKind, string> = {
+  work: "勤務",
+  trip: "出張",
+  leave: "年休",
+};
 
 /** 開くときに渡す下書き。新規はその日から、編集は既存の記録から始める。 */
 export type WorkDraft =
-  | { mode: "create"; startDate: string; businessTrip: boolean }
+  | { mode: "create"; startDate: string; kind: WorkKind }
   | { mode: "edit"; record: WorkRecordItem };
 
+function kindOf(record: WorkRecordItem): WorkKind {
+  if (record.annualLeave) return "leave";
+  return record.businessTrip ? "trip" : "work";
+}
+
 /**
- * 勤務場所・出張の入力（docs/spec.md §34）。
+ * 勤務場所・出張・年休の入力（docs/spec.md §34）。
  *
- * 通常の勤務と出張を1つのダイアログの中で切り替える。押す前に種類を決めさせると、
- * 入力の途中で違うと気付いたときに閉じて選び直すことになるため（追加UIと同じ考え方）。
+ * 3つを1つのダイアログの中で切り替える。押す前に種類を決めさせると、入力の途中で違うと
+ * 気付いたときに閉じて選び直すことになるため（追加UIと同じ考え方）。スイッチを種類の数だけ
+ * 並べないのは、同時に立てられない3つが並ぶと、どれを消せばよいのかが画面から読めないため。
  */
 export function WorkRecordDialog({
   draft,
@@ -55,8 +75,11 @@ export function WorkRecordDialog({
   const [confirming, setConfirming] = useState(false);
 
   const [place, setPlace] = useState(existing?.place ?? placeOptions[0]?.name ?? "");
-  const [businessTrip, setBusinessTrip] = useState(
-    draft.mode === "edit" ? draft.record.businessTrip : draft.businessTrip,
+  const [kind, setKind] = useState<WorkKind>(
+    draft.mode === "edit" ? kindOf(draft.record) : draft.kind,
+  );
+  const [annualLeave, setAnnualLeave] = useState<string>(
+    existing?.annualLeave ?? ANNUAL_LEAVE_OPTIONS[0].name,
   );
   const [destination, setDestination] = useState(existing?.businessTrip ? existing.title : "");
   const [startDate, setStartDate] = useState(
@@ -68,6 +91,19 @@ export function WorkRecordDialog({
   const [postRegistered, setPostRegistered] = useState(existing?.postRegistered ?? false);
 
   const offline = useOffline();
+
+  const businessTrip = kind === "trip";
+  const isLeave = kind === "leave";
+  // 半休の日は残り半日どこで働いたかも要る（勤怠の提出で使う）。全休の日は入る値が無い。
+  const halfDay = isLeave && annualLeaveDays(annualLeave) < 1;
+  // 期間を持てるのは出張と全休の年休だけ。半休は単日に限る（半日ずつ2日ぶんという形が無い）。
+  const spanned = businessTrip || (isLeave && !halfDay);
+  // 使える種類だけを出す。揃っていないプロパティの種類を出すと、押しても保存されない道が残る。
+  const kinds: WorkKind[] = [
+    "work",
+    ...(capabilities.businessTrip ? (["trip"] as const) : []),
+    ...(capabilities.annualLeave ? (["leave"] as const) : []),
+  ];
 
   const close = () => {
     setOpen(false);
@@ -110,20 +146,28 @@ export function WorkRecordDialog({
       setError("行き先を入力してください。");
       return;
     }
-    if (!businessTrip && !place) {
+    if (halfDay && !place) {
+      setError("残り半日の勤務場所を選んでください。");
+      return;
+    }
+    if (!businessTrip && !isLeave && !place) {
       setError("勤務場所を選んでください。");
       return;
     }
 
     // 通常の勤務は勤務場所の名前をそのままタイトルにする。Notionの一覧で開かずに読めるようにし、
-    // 入力の欄も1つ減らす。出張は行き先がタイトルになる。
+    // 入力の欄も1つ減らす。出張は行き先が、年休は区分がタイトルになる。
+    const title = isLeave ? `年休（${annualLeave}）` : businessTrip ? destination.trim() : place;
     const body = {
-      title: businessTrip ? destination.trim() : place,
+      title,
       startDate,
-      endDate: businessTrip && endDate ? endDate : startDate,
-      place: businessTrip ? place || null : place,
+      endDate: spanned && endDate ? endDate : startDate,
+      // 全休の日に勤務場所は入らない。半休の日は残り半日の勤務場所を持つ。
+      place: isLeave ? (halfDay ? place || null : null) : businessTrip ? place || null : place,
       ...(capabilities.businessTrip ? { businessTrip } : {}),
+      ...(capabilities.annualLeave ? { annualLeave: isLeave ? annualLeave : null } : {}),
       ...(capabilities.approval && businessTrip ? { preApplied, postRegistered } : {}),
+      ...(capabilities.annualLeave && isLeave ? { preApplied } : {}),
       ...(capabilities.memo ? { memo: memo.trim() || null } : {}),
     };
 
@@ -155,9 +199,9 @@ export function WorkRecordDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
-        <DialogTitle>{businessTrip ? "出張" : "勤務場所"}</DialogTitle>
+        <DialogTitle>{kind === "work" ? "勤務場所" : KIND_LABELS[kind]}</DialogTitle>
         <DialogDescription className="sr-only">
-          勤務場所と出張の登録。出張では事前申請と事後登録の状況も持てます。
+          勤務場所・出張・年休の登録。出張では事前申請と事後登録、年休では事前申請の状況も持てます。
         </DialogDescription>
 
         {error && (
@@ -166,9 +210,67 @@ export function WorkRecordDialog({
           </p>
         )}
 
-        {placeOptions.length > 0 && (
+        {/* 種類。同時に立てられない3つなので、スイッチを並べず1つの並びから選ばせる。 */}
+        {kinds.length > 1 && (
+          <div
+            role="radiogroup"
+            aria-label="記録の種類"
+            className={cn(
+              "grid overflow-hidden rounded-full border border-outline",
+              // 使える種類の数で列を決める。3列に固定すると、年休だけを足したDBで空の枠が並ぶ。
+              kinds.length === 3 ? "grid-cols-3" : "grid-cols-2",
+            )}
+          >
+            {kinds.map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={kind === option}
+                onClick={() => setKind(option)}
+                className={cn(
+                  "type-label-large py-2 text-center transition-colors",
+                  kind === option
+                    ? "bg-secondary-container font-bold text-on-secondary-container"
+                    : "text-on-surface-variant hover:bg-on-surface/8",
+                )}
+              >
+                {KIND_LABELS[option]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isLeave && (
           <div className="flex flex-col gap-2">
-            <span className="type-label-medium text-on-surface-variant">勤務場所</span>
+            <span className="type-label-medium text-on-surface-variant">区分</span>
+            <div className="flex flex-wrap gap-2">
+              {ANNUAL_LEAVE_OPTIONS.map((option) => (
+                <button
+                  key={option.name}
+                  type="button"
+                  aria-pressed={annualLeave === option.name}
+                  onClick={() => setAnnualLeave(option.name)}
+                  className={cn(
+                    "type-label-large rounded-full border px-4 py-2 transition-colors",
+                    annualLeave === option.name
+                      ? "border-transparent bg-tertiary-container font-bold text-on-tertiary-container"
+                      : "border-outline text-on-surface hover:bg-on-surface/8",
+                  )}
+                >
+                  {option.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 全休の日に勤務場所は入らない。半休の日は残り半日ぶんを選ばせる。 */}
+        {placeOptions.length > 0 && (!isLeave || halfDay) && (
+          <div className="flex flex-col gap-2">
+            <span className="type-label-medium text-on-surface-variant">
+              {halfDay ? "残り半日の勤務場所" : "勤務場所"}
+            </span>
             <div className="flex flex-wrap gap-2">
               {placeOptions.map((option) => (
                 <button
@@ -190,16 +292,6 @@ export function WorkRecordDialog({
           </div>
         )}
 
-        {capabilities.businessTrip && (
-          <label className="flex items-center gap-3 py-1">
-            <Switch checked={businessTrip} onCheckedChange={setBusinessTrip} />
-            <span className="type-body-large">出張</span>
-            <span className="type-body-small ml-auto text-on-surface-variant">
-              事前申請・事後登録の対象にする
-            </span>
-          </label>
-        )}
-
         {businessTrip && (
           <Input
             id="work-destination"
@@ -209,16 +301,16 @@ export function WorkRecordDialog({
           />
         )}
 
-        <div className={cn("grid gap-2", businessTrip && "grid-cols-2")}>
+        <div className={cn("grid gap-2", spanned && "grid-cols-2")}>
           <Input
             id="work-start-date"
-            label={businessTrip ? "開始日" : "日付"}
+            label={spanned ? "開始日" : "日付"}
             type="date"
             value={startDate}
             onChange={(event) => setStartDate(event.target.value)}
           />
-          {/* 終了日は出張のときだけ。通常の勤務は1日1件で、期間を持たせる意味が無い。 */}
-          {businessTrip && (
+          {/* 終了日は出張と全休の年休だけ。通常の勤務と半休は1日1件で、期間を持たせる意味が無い。 */}
+          {spanned && (
             <Input
               id="work-end-date"
               label="終了日"
@@ -228,6 +320,17 @@ export function WorkRecordDialog({
             />
           )}
         </div>
+
+        {/* 年休が持つのは事前申請だけ。休んだことを後から届け出る手続きは無い。 */}
+        {isLeave && capabilities.annualLeave && (
+          <label className="flex items-center gap-3 py-1.5">
+            <Checkbox
+              checked={preApplied}
+              onCheckedChange={(next) => setPreApplied(next === true)}
+            />
+            <span className="type-body-medium">{WORK_TODO_LABELS.preApplied}を済ませた</span>
+          </label>
+        )}
 
         {businessTrip && capabilities.approval && (
           <div className="flex flex-col gap-1">
