@@ -62,21 +62,15 @@ export function WorkRecordDialog({
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
+  // 新規のときに入る場所は、利用者が選んだものではなくNotionのselectの定義順の先頭。
+  // ここで出張の既定まで立てると、日の行を押しただけの下書きが出張として開くことがある。
+  // 出張扱い（docs/spec.md §34）が効くのは、場所のチップを押して選んだときだけにする。
   const initialPlace = existing?.place ?? placeOptions[0]?.name ?? "";
-  // 出張扱いの場所（docs/spec.md §34）を選んでいるなら、開いた時点で出張として始める。
-  // 出張のチェックを持たないDBでは出張として保存できないため、既定も立てない。
-  const placeDrivenTrip =
-    draft.mode === "create" && capabilities.businessTrip && isTripPlace(tripPlaces, initialPlace);
-  const initialTrip =
-    draft.mode === "edit" ? draft.record.businessTrip : draft.businessTrip || placeDrivenTrip;
+  const initialTrip = draft.mode === "edit" ? draft.record.businessTrip : draft.businessTrip;
 
   const [place, setPlace] = useState(initialPlace);
   const [businessTrip, setBusinessTrip] = useState(initialTrip);
-  // 行き先を先に埋めるのは、場所から出張になったときだけ。「出張を追加」から開いた場合は
-  // 行き先が決まっていないため、たまたま先頭にある勤務場所の名前を入れない。
-  const [destination, setDestination] = useState(
-    existing?.businessTrip ? existing.title : placeDrivenTrip ? initialPlace : "",
-  );
+  const [destination, setDestination] = useState(existing?.businessTrip ? existing.title : "");
 
   /**
    * 出張のスイッチを手で操作したか。
