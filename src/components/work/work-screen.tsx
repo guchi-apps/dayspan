@@ -15,6 +15,7 @@ import { tagChipClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
+import { japaneseHolidayName } from "@/lib/japanese-holidays";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
@@ -252,8 +253,11 @@ export function WorkScreen({
             <CardContent className="flex flex-col gap-3">
               <div className="flex items-baseline gap-2">
                 <span className="type-label-large">今日の勤務場所</span>
-                <span className="type-body-small ml-auto tabular-nums text-on-surface-variant">
+                <span className={cn("type-body-small ml-auto tabular-nums", dateClass(todayKey))}>
                   {dayLabel(todayKey)}
+                  {japaneseHolidayName(todayKey) && (
+                    <span className="ml-1">{japaneseHolidayName(todayKey)}</span>
+                  )}
                 </span>
               </div>
 
@@ -314,6 +318,7 @@ export function WorkScreen({
           <CardContent className="px-4">
             {days.map((dateKey) => {
               const record = records.find((item) => coversDate(item, dateKey));
+              const holiday = japaneseHolidayName(dateKey);
               return (
                 <button
                   key={dateKey}
@@ -324,7 +329,7 @@ export function WorkScreen({
                   <span
                     className={cn(
                       "type-body-small w-16 shrink-0 tabular-nums",
-                      weekdayClass(dateKey),
+                      dateClass(dateKey),
                       dateKey === todayKey && "font-bold",
                     )}
                   >
@@ -341,6 +346,12 @@ export function WorkScreen({
                     </span>
                   ) : (
                     <span className="type-body-medium text-outline">未登録</span>
+                  )}
+                  {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
+                  {holiday && (
+                    <span className="type-label-small ml-auto min-w-0 truncate text-error">
+                      {holiday}
+                    </span>
                   )}
                 </button>
               );
@@ -479,9 +490,16 @@ function dayLabel(dateKey: string): string {
   return `${Number(dateKey.slice(8, 10))}(${WEEKDAYS[weekdayOf(dateKey)]})`;
 }
 
-function weekdayClass(dateKey: string): string {
+/**
+ * 日付の文字色。日曜と祝日は赤（`error`）、土曜は青（`travel`）にする。
+ *
+ * 祝日を日曜と同じ色にするのは、勤務場所を入れるときに見ているのが曜日ではなく
+ * 「その日が働く日かどうか」のため。月曜が祝日で灰色のままだと、入れ忘れなのか
+ * そもそも働いていない日なのかが一覧から読めない。
+ */
+function dateClass(dateKey: string): string {
   const day = weekdayOf(dateKey);
-  if (day === 0) return "text-error";
+  if (day === 0 || japaneseHolidayName(dateKey)) return "text-error";
   if (day === 6) return "text-travel";
   return "text-on-surface-variant";
 }
