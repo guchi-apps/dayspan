@@ -20,6 +20,8 @@ import type {
   TaskItem,
   TravelItem,
 } from "@/types/calendar";
+import type { TagOption } from "@/services/notion/tag-options";
+import type { WorkRecordItem } from "@/types/work";
 
 import { eventColors } from "./calendar-color";
 import {
@@ -38,6 +40,7 @@ import { TravelMark } from "./travel-mark";
 import { useLongPress } from "./use-long-press";
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
 import { useWeekZoom } from "./use-week-zoom";
+import { WorkPlaceChip, workRecordsByDate } from "./work-place-chip";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -138,6 +141,8 @@ export function ContinuousMonthView({
   tasks,
   reminders,
   travels,
+  workRecords,
+  workPlaceOptions,
   weekStartsOn,
   utils,
   scrollTarget,
@@ -157,6 +162,10 @@ export function ContinuousMonthView({
   tasks: TaskItem[];
   reminders: ReminderItem[];
   travels: TravelItem[];
+  /** その日の勤務場所（docs/spec.md §34）。帯ではなく日付の見出しに添える。 */
+  workRecords: WorkRecordItem[];
+  /** 勤務場所の選択肢。色を引くためだけに使う。 */
+  workPlaceOptions: TagOption[];
   weekStartsOn: number;
   utils: CalendarDateUtils;
   /**
@@ -238,6 +247,10 @@ export function ContinuousMonthView({
    * そこがどの月かを一度で言い当てられる（窓の端で頭打ちにすると、窓が追いつくまで
    * 何度も張り直すことになる）。
    */
+  // 日付の見出しに添える勤務場所（docs/spec.md §34）。出張は期間の全ての日にかかるため、
+  // 日付キーから引ける形にしておく。週ごとの描き直しで毎回組み立て直さない。
+  const workByDate = useMemo(() => workRecordsByDate(workRecords), [workRecords]);
+
   const geometry = useMemo(() => {
     const lead = spacersReady ? weeksBetween(virtual.firstWeekKey, weeks[0][0]) : 0;
 
@@ -554,6 +567,7 @@ export function ContinuousMonthView({
             >
               {week.map((dateKey) => {
                 const isFirstOfMonth = dateKey.slice(8, 10) === "01";
+                const workRecord = workByDate.get(dateKey);
 
                 return (
                   <div
@@ -572,22 +586,37 @@ export function ContinuousMonthView({
                       {...dayPress(dateKey)}
                     />
 
-                    {/* 重ねた面より後ろに沈まないよう、数字の側も配置対象にしておく。 */}
-                    <button
-                      type="button"
-                      className={cn(
-                        "relative grid h-7 min-w-7 shrink-0 place-items-center self-start rounded-full px-2 text-[11px] select-none sm:h-6 sm:min-w-6 sm:px-1.5 sm:text-xs",
-                        dateKey === todayKey
-                          ? "bg-primary font-semibold text-primary-foreground"
-                          : "font-medium hover:bg-muted",
+                    {/*
+                      日付の数字と、その日の勤務場所。勤務場所は帯の段を使わず、数字の右の
+                      空いている幅へ置く（docs/spec.md §34）。幅が足りない列では名前が端から
+                      切れて色だけが残る。画面幅では切り替えない（列の幅は表示形式と画面幅の
+                      掛け算で決まるため、ブレークポイントで切ると幅のある列でも名前が消える）。
+
+                      この行はセル幅いっぱいに広がるため、押下は受けない。受けてしまうと、数字の
+                      右の空いているところを押したときに上の「1日表示へ移動」まで届かなくなる。
+                    */}
+                    <div className="pointer-events-none relative flex min-w-0 items-center gap-0.5">
+                      {/* 重ねた面より後ろに沈まないよう、数字の側も配置対象にしておく。 */}
+                      <button
+                        type="button"
+                        className={cn(
+                          "pointer-events-auto relative grid h-7 min-w-7 shrink-0 place-items-center self-start rounded-full px-2 text-[11px] select-none sm:h-6 sm:min-w-6 sm:px-1.5 sm:text-xs",
+                          dateKey === todayKey
+                            ? "bg-primary font-semibold text-primary-foreground"
+                            : "font-medium hover:bg-muted",
+                        )}
+                        {...dayPress(dateKey)}
+                      >
+                        {/* 月替わりは日付の並びだけでは分からないため、1日にだけ月を添える。 */}
+                        {isFirstOfMonth
+                          ? `${Number(dateKey.slice(5, 7))}/1`
+                          : Number(dateKey.slice(8, 10))}
+                      </button>
+
+                      {workRecord && (
+                        <WorkPlaceChip record={workRecord} options={workPlaceOptions} />
                       )}
-                      {...dayPress(dateKey)}
-                    >
-                      {/* 月替わりは日付の並びだけでは分からないため、1日にだけ月を添える。 */}
-                      {isFirstOfMonth
-                        ? `${Number(dateKey.slice(5, 7))}/1`
-                        : Number(dateKey.slice(8, 10))}
-                    </button>
+                    </div>
                   </div>
                 );
               })}

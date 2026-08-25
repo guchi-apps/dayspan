@@ -1038,6 +1038,13 @@ function CalendarBody({
   });
 
   /**
+   * 勤務場所の色（docs/spec.md §34）。選択肢はNotionのプロパティ定義が一次情報源で、
+   * タグ・種類と同じ経路（loadTagCatalog）で既に読んでいる。参照を保って渡さないと、
+   * memo で包んだ日ごとの列が毎回描き直しになる。
+   */
+  const workPlaceOptions = useMemo(() => tagCatalog.work ?? [], [tagCatalog.work]);
+
+  /**
    * 月表示に出す予定。活動記録は除く（issue #241）。
    *
    * 月表示は1日に数件しか置けない。睡眠のように毎日必ず入る記録がその枠を占めると、
@@ -1127,6 +1134,8 @@ function CalendarBody({
           tasks={data.tasks}
           reminders={data.reminders}
           travels={data.travels}
+          workRecords={data.workRecords}
+          workPlaceOptions={workPlaceOptions}
           weekStartsOn={weekStartsOn}
           utils={utils}
           scrollTarget={scrollTarget}
@@ -1148,6 +1157,8 @@ function CalendarBody({
           tasks={data.tasks}
           reminders={data.reminders}
           travels={data.travels}
+          workRecords={data.workRecords}
+          workPlaceOptions={workPlaceOptions}
           runningActivity={runningActivity}
           activityCalendarIds={activityCalendars}
           utils={utils}
