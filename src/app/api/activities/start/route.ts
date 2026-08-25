@@ -5,13 +5,19 @@ import { notifyActivityStarted } from "@/services/notifications/activity";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { ACTIVITY_NAME_MAX_LENGTH } from "@/services/activity/presets";
-import { ActivityCalendarNotFoundError, startActivity } from "@/services/activity/running";
+import {
+  ActivityCalendarNotFoundError,
+  ActivityTimeRangeError,
+  startActivity,
+} from "@/services/activity/running";
 
 type Body = {
   /** 選択肢から始める場合。記録する名前は選択肢のものになる。 */
   presetId?: string;
   /** 選択肢に無いことを1回だけ記録する場合。 */
   title?: string;
+  /** 開始時刻（ISO 8601）。押し忘れて後から始めるとき以外は送らない。 */
+  startedAt?: string;
 };
 
 /**
@@ -28,10 +34,16 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as Body;
 
-  // 開始時刻はサーバーの時計で決める。端末の時計がずれていると、記録した時間帯そのものが
-  // ずれた予定になる。押し忘れの修正は開始時刻を直す経路（PATCH /api/activities/running）で行う。
+  // 開始時刻は既定ではサーバーの時計で決める。端末の時計がずれていると、記録した時間帯
+  // そのものがずれた予定になるため。押し忘れて後から始めるときだけ startedAt を受け、
+  // それでも未来は受けない（サービス側の resolveRecordTime）。
   // 保存先は項目ごとではなく記録全体で1つのため、ここでは受け取らない（設定から選ぶ）。
   let title = body.title?.trim() ?? "";
+
+  const startedAt = body.startedAt ? new Date(body.startedAt) : undefined;
+  if (startedAt && Number.isNaN(startedAt.getTime())) {
+    return NextResponse.json({ error: "startedAt is invalid" }, { status: 400 });
+  }
 
   if (body.presetId) {
     const preset = await db.activityPreset.findFirst({
@@ -54,7 +66,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await startActivity(userId, { title });
+    const result = await startActivity(userId, { title, startedAt });
 
     // 記録中であることを通知として残す（docs/spec.md §32）。応答を待たせないのは、
     // 送信先のプッシュサーバーへの往復が、押してから画面が変わるまでの時間になるため。
@@ -71,6 +83,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof ActivityTimeRangeError) {
+      return NextResponse.json({ error: "invalid_time", message: error.message }, { status: 400 });
+    }
     if (error instanceof ActivityCalendarNotFoundError) {
       return NextResponse.json(
         { error: "calendar_not_found", message: error.message },

@@ -1,0 +1,266 @@
+import type { Client } from "@notionhq/client";
+
+// 勤務場所と出張のデータソース（docs/spec.md §34）。
+//
+// 通常の勤務（1日1件）も出張（期間で1件）も、同じDBの同じ形のページとして持つ。
+// 違うのは日付が範囲かどうかと「出張」チェックだけで、種類ごとにDBを分けると
+// 月の一覧を出すのに2つのDBへ問い合わせることになる。
+//
+// タスク・日付リマインド・場所と同じく、一次情報源はNotion側でDaySpanには保存しない。
+
+export type WorkField =
+  | "title"
+  | "date"
+  | "place"
+  | "businessTrip"
+  | "preApplied"
+  | "postRegistered"
+  | "memo";
+
+export type WorkPropertyMap = Partial<Record<WorkField, string>>;
+
+type PropertyConfig = { id: string; name: string; type: string };
+type Requirement = {
+  field: WorkField;
+  label: string;
+  types: string[];
+  required: boolean;
+  hints: string[];
+  /**
+   * 名前が当たったときだけ対応付ける項目（場所DBの「座標」と同じ扱い）。
+   *
+   * 出張・事前申請・事後登録はどれも checkbox で、型だけで空いている欄へ順に割り当てると
+   * 事前申請と事後登録が入れ替わりうる。入れ替わったことは画面からは分からず、
+   * 申請したはずのものが未対応として残り続けるため、推測では割り当てない。
+   */
+  hintOnly?: boolean;
+};
+
+export const WORK_FIELD_REQUIREMENTS: Requirement[] = [
+  {
+    field: "title",
+    label: "タイトル",
+    types: ["title"],
+    required: true,
+    hints: ["タイトル", "名前", "title", "name", "勤務"],
+  },
+  {
+    field: "date",
+    label: "日付",
+    types: ["date"],
+    required: true,
+    hints: ["日付", "date", "勤務日", "期間"],
+  },
+  {
+    field: "place",
+    label: "勤務場所",
+    types: ["select"],
+    required: true,
+    hints: ["勤務場所", "場所", "place", "location", "区分", "種類"],
+  },
+  {
+    field: "businessTrip",
+    label: "出張",
+    types: ["checkbox"],
+    required: false,
+    hints: ["出張", "trip", "business"],
+    hintOnly: true,
+  },
+  {
+    field: "preApplied",
+    label: "事前申請",
+    types: ["checkbox"],
+    required: false,
+    hints: ["事前申請", "事前", "申請", "apply", "application"],
+    hintOnly: true,
+  },
+  {
+    field: "postRegistered",
+    label: "事後登録",
+    types: ["checkbox"],
+    required: false,
+    hints: ["事後登録", "事後", "登録", "report", "register"],
+    hintOnly: true,
+  },
+  {
+    field: "memo",
+    label: "メモ",
+    types: ["rich_text"],
+    required: false,
+    hints: ["メモ", "備考", "memo", "note"],
+  },
+];
+
+export type WorkValidation = {
+  propertyMap: WorkPropertyMap;
+  missingRequired: { field: WorkField; label: string; types: string[] }[];
+  missingOptional: { field: WorkField; label: string; types: string[] }[];
+};
+
+/**
+ * 勤務記録DBとして使えるかを検証し、アプリの項目名とNotionプロパティ名の対応を組み立てる。
+ * 型の一致を主、名前の一致を従として推定するのはタスク・リマインド・場所と同じ。
+ */
+export function buildWorkPropertyMap(properties: Record<string, PropertyConfig>): WorkValidation {
+  const entries = Object.values(properties);
+  const used = new Set<string>();
+  const propertyMap: WorkPropertyMap = {};
+  const missingRequired: WorkValidation["missingRequired"] = [];
+  const missingOptional: WorkValidation["missingOptional"] = [];
+  const hinted = (property: PropertyConfig, requirement: Requirement) =>
+    requirement.hints.some((hint) => property.name.toLowerCase().includes(hint.toLowerCase()));
+
+  for (const requirement of WORK_FIELD_REQUIREMENTS) {
+    const property = entries.find(
+      (entry) =>
+        requirement.types.includes(entry.type) && !used.has(entry.name) && hinted(entry, requirement),
+    );
+    if (property) {
+      propertyMap[requirement.field] = property.name;
+      used.add(property.name);
+    }
+  }
+
+  for (const requirement of WORK_FIELD_REQUIREMENTS) {
+    if (propertyMap[requirement.field]) continue;
+    const property = requirement.hintOnly
+      ? undefined
+      : entries.find((entry) => requirement.types.includes(entry.type) && !used.has(entry.name));
+    if (property) {
+      propertyMap[requirement.field] = property.name;
+      used.add(property.name);
+    } else {
+      (requirement.required ? missingRequired : missingOptional).push({
+        field: requirement.field,
+        label: requirement.label,
+        types: requirement.types,
+      });
+    }
+  }
+
+  return { propertyMap, missingRequired, missingOptional };
+}
+
+function plainTitle(items: Array<{ plain_text?: string }> | undefined): string {
+  return items?.map((item) => item.plain_text ?? "").join("").trim() || "(無題)";
+}
+
+export async function validateWorkDataSource(notion: Client, dataSourceId: string) {
+  const source = await notion.dataSources.retrieve({ data_source_id: dataSourceId });
+  const validation = buildWorkPropertyMap(source.properties as Record<string, PropertyConfig>);
+  if (!("title" in source)) return { ...validation, title: "(無題)", databaseId: null };
+  const parent = source.database_parent;
+  return {
+    ...validation,
+    title: plainTitle(source.title),
+    databaseId: parent?.type === "database_id" ? parent.database_id : null,
+  };
+}
+
+/** 新規作成する勤務記録DBのプロパティ名。propertyMapの初期値もこの名前で確定させる。 */
+export const WORK_DATABASE_TEMPLATE = {
+  title: "タイトル",
+  date: "日付",
+  place: "勤務場所",
+  businessTrip: "出張",
+  preApplied: "事前申請",
+  postRegistered: "事後登録",
+  memo: "メモ",
+} as const satisfies Required<Record<WorkField, string>>;
+
+/**
+ * 勤務場所の初期の選択肢。
+ *
+ * 空のselectから始めると、勤務場所を1つ足すまで何も登録できない。よくある区分を入れておき、
+ * 要らないものは設定（タグ）から消してもらう。色はNotionの既定の10色から選ぶ。
+ */
+const DEFAULT_PLACE_OPTIONS = [
+  { name: "出社", color: "blue" },
+  { name: "在宅", color: "green" },
+  { name: "客先", color: "orange" },
+  { name: "出張", color: "purple" },
+] as const;
+
+/**
+ * 必要なプロパティを揃えた勤務記録DBを作成する。
+ *
+ * 出張・事前申請・事後登録は名前が当たったときだけ対応付ける（hintOnly）ため、既存のDBを
+ * 選んでもらう経路では揃わないことがある。ここで作れば、その3つを含めて必ず揃った構成になる。
+ */
+export async function createWorkDatabase(
+  notion: Client,
+  { parentPageId, title }: { parentPageId: string; title: string },
+): Promise<{
+  dataSourceId: string;
+  databaseId: string;
+  title: string;
+  propertyMap: WorkPropertyMap;
+}> {
+  const database = await notion.databases.create({
+    parent: { type: "page_id", page_id: parentPageId },
+    title: [{ type: "text", text: { content: title } }],
+    initial_data_source: {
+      properties: {
+        [WORK_DATABASE_TEMPLATE.title]: { title: {} },
+        // 出張は複数日にまたがるため、日付は範囲（start–end）でも入る。
+        [WORK_DATABASE_TEMPLATE.date]: { date: {} },
+        [WORK_DATABASE_TEMPLATE.place]: {
+          select: { options: DEFAULT_PLACE_OPTIONS.map((option) => ({ ...option })) },
+        },
+        [WORK_DATABASE_TEMPLATE.businessTrip]: { checkbox: {} },
+        [WORK_DATABASE_TEMPLATE.preApplied]: { checkbox: {} },
+        [WORK_DATABASE_TEMPLATE.postRegistered]: { checkbox: {} },
+        [WORK_DATABASE_TEMPLATE.memo]: { rich_text: {} },
+      },
+    },
+  });
+
+  if (!("data_sources" in database) || database.data_sources.length === 0) {
+    throw new Error("Created database has no data source");
+  }
+
+  return {
+    dataSourceId: database.data_sources[0].id,
+    databaseId: database.id,
+    title,
+    propertyMap: { ...WORK_DATABASE_TEMPLATE },
+  };
+}
+
+/**
+ * すでに使っている勤務記録DBへ、足りない任意プロパティ（出張・事前申請・事後登録・メモ）を足す。
+ *
+ * この3つは名前が当たったときだけ対応付けるため、既存のDBを選ぶと揃わないことがある。
+ * どの型で何という名前にすればよいのかは画面のどこにも出ていないので、設定画面から
+ * 実行できるようにする（場所DBの「座標」と同じ経路）。
+ *
+ * すでに同じ名前のプロパティがあるときは作らない。型が違っていても作り直さないのは、
+ * 利用者が別の用途で使っている欄を黙って壊さないため。
+ */
+export async function addWorkTripProperties(
+  notion: Client,
+  dataSourceId: string,
+): Promise<WorkValidation & { title: string; databaseId: string | null }> {
+  const source = await notion.dataSources.retrieve({ data_source_id: dataSourceId });
+  const properties = source.properties as Record<string, PropertyConfig>;
+  const names = new Set(Object.values(properties).map((property) => property.name));
+
+  const additions: Record<string, unknown> = {};
+  for (const field of ["businessTrip", "preApplied", "postRegistered"] as const) {
+    const name = WORK_DATABASE_TEMPLATE[field];
+    if (!names.has(name)) additions[name] = { checkbox: {} };
+  }
+  if (!names.has(WORK_DATABASE_TEMPLATE.memo)) {
+    additions[WORK_DATABASE_TEMPLATE.memo] = { rich_text: {} };
+  }
+
+  if (Object.keys(additions).length > 0) {
+    await notion.dataSources.update({
+      data_source_id: dataSourceId,
+      properties: additions as never,
+    });
+  }
+
+  // 足したあとの構成で対応付けを取り直す。作っただけでは propertyMap に載らない。
+  return validateWorkDataSource(notion, dataSourceId);
+}

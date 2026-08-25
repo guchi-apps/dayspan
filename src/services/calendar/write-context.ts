@@ -40,6 +40,12 @@ export async function getNotionReminderConnection(userId: string): Promise<Notio
   return connection?.reminderDataSourceId ? connection : null;
 }
 
+/** 勤務記録の書き込み先（docs/spec.md §34）。他のDBと同じく、設定済みかどうかを別に見る。 */
+export async function getNotionWorkConnection(userId: string): Promise<NotionConnection | null> {
+  const connection = await db.notionConnection.findUnique({ where: { userId } });
+  return connection?.workDataSourceId ? connection : null;
+}
+
 /** 場所の書き込み先。設定していないユーザーもいるため、タスク・リマインドとは別に見る。 */
 export async function getNotionPlaceConnection(userId: string): Promise<NotionConnection | null> {
   const connection = await db.notionConnection.findUnique({ where: { userId } });

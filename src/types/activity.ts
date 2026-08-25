@@ -47,7 +47,7 @@ export type ActivityTodayUnavailable = "calendar_not_selected" | "google_unavail
  * iPhoneウィジェットへ返す活動記録の一式（docs/spec.md §28）。
  *
  * 経過時間はサーバーの時計で決める。端末の時計がずれていると、そのぶんずれた時間が出る
- * （記録そのものの時刻もサーバーの時計で決めている＝§27）。
+ * （記録そのものの時刻も、指定が無ければサーバーの時計で決めている＝§27）。
  */
 export type ActivityWidgetSummary = {
   timeZone: string;
