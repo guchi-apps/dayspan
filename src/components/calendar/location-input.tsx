@@ -34,6 +34,7 @@ export function LocationInput({
   label = "場所",
   value,
   onChange,
+  onCommit,
   places,
   eventTitle,
   placeDatabaseReady,
@@ -43,6 +44,12 @@ export function LocationInput({
   label?: string;
   value: string;
   onChange: (value: string) => void;
+  /**
+   * 値が確定したとき（欄から離れた・候補を選んだ・地図から登録した）。
+   * 打ち終えた時点で保存する画面（設定の既定の出発地）で使う。
+   * 候補を押してもフォーカスは欄に残るため、選んだ時点でも呼ぶ。
+   */
+  onCommit?: (value: string) => void;
   /** Notionの場所DBに登録済みの場所。 */
   places: PlaceItem[];
   /** AIが場所の見当をつける手がかりにする、入力中の予定のタイトル。 */
@@ -105,7 +112,9 @@ export function LocationInput({
   };
 
   const choose = async (name: string, address: string | null, fromAi: boolean) => {
-    onChange(toLocationText(name, address));
+    const text = toLocationText(name, address);
+    onChange(text);
+    onCommit?.(text);
     setOpen(false);
     setSuggestions(null);
 
@@ -163,7 +172,9 @@ export function LocationInput({
   const useRegistered = (place: PlaceItem) => {
     setMapOpen(false);
     setAdded((current) => [...current, place]);
-    onChange(toLocationText(place.name, place.address));
+    const text = toLocationText(place.name, place.address);
+    onChange(text);
+    onCommit?.(text);
     setOpen(false);
     setNotice(`「${place.name}」を場所DBに登録しました。`);
   };
@@ -188,7 +199,10 @@ export function LocationInput({
             value={value}
             onChange={(event) => change(event.target.value)}
             onFocus={() => setOpen(true)}
-            onBlur={() => setOpen(false)}
+            onBlur={(event) => {
+              setOpen(false);
+              onCommit?.(event.target.value);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Escape" && open) {
                 event.stopPropagation();
@@ -334,6 +348,21 @@ function CandidateButton({
 /** 場所欄へ入れる文字列。住所があれば添える。Google Calendar側で地図が引けるようにするため。 */
 function toLocationText(name: string, address: string | null): string {
   return address ? `${name} ${address}` : name;
+}
+
+/**
+ * 登録済みの場所と同じ名前なら住所を添えた文字列にする。
+ *
+ * 「自宅」のような名前だけでは地点が定まらず、所要時間の見積もりが常に0件になる。
+ * 場所DBに住所があるならそれを添えて渡す（docs/spec.md §29「所要時間」）。
+ * 名前が完全に一致したときだけ補うのは、すでに `自宅 東京都…` の形で住所が
+ * 入っている値へ二重に足さないため。
+ */
+export function withPlaceAddress(text: string, places: PlaceItem[]): string {
+  const query = text.trim();
+  if (!query) return query;
+  const place = places.find((item) => item.address && item.name === query);
+  return place ? toLocationText(place.name, place.address) : query;
 }
 
 /**

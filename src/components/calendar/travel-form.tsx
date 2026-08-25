@@ -18,7 +18,7 @@ import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { ItemFormActions } from "./item-form-actions";
-import { LocationInput } from "./location-input";
+import { LocationInput, withPlaceAddress } from "./location-input";
 import { readErrorMessage } from "./response-error";
 import type { TouchedRange } from "./use-calendar-chunks";
 
@@ -107,10 +107,16 @@ export function TravelForm({
     setEstimating(true);
     setError(null);
     try {
+      // AIへは住所まで添えて渡す。「自宅」のような名前だけでは地点が定まらず、
+      // 見積もりが常に0件になる。場所DBは既に手元にあるため往復は増えない。
       const response = await fetch("/api/travels/estimate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ origin: origin.trim(), destination: destination.trim(), mode }),
+        body: JSON.stringify({
+          origin: withPlaceAddress(origin, placeCatalog.places),
+          destination: withPlaceAddress(destination, placeCatalog.places),
+          mode,
+        }),
       });
       if (!response.ok) {
         setError(await readErrorMessage(response, "所要時間を調べられませんでした。"));

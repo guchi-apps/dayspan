@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
+import { LocationInput } from "@/components/calendar/location-input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import type { PlaceCatalog } from "@/services/notion/places";
 import type { TravelSettings } from "@/services/travel/settings";
 import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type WritableCalendar } from "@/types/calendar";
 
@@ -31,13 +31,17 @@ const DEFAULT_CALENDAR_VALUE = "__default__";
 export function TravelSection({
   settings,
   calendars,
+  placeCatalog,
 }: {
   settings: TravelSettings;
   calendars: WritableCalendar[];
+  /** 既定の出発地の入力候補。Notionの場所DBに登録済みのもの。 */
+  placeCatalog: PlaceCatalog;
 }) {
-  const router = useRouter();
-
   const [value, setValue] = useState(settings);
+  // 出発地は入力中の文字列を持つ。保存した値（value.defaultOrigin）とは別に持たないと、
+  // 送信中に欄が巻き戻る。
+  const [origin, setOrigin] = useState(settings.defaultOrigin ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,7 +72,9 @@ export function TravelSection({
         return;
       }
 
-      router.refresh();
+      // 保存できたら楽観更新した値がそのまま正になる。router.refresh() を呼ばないのは、
+      // このページのサーバー側が場所DBを読んでおり、交通手段や書き出し先を切り替えるたびに
+      // Notionの全件取得が走ってしまうため（docs/spec.md §20）。
     } catch {
       setError("設定を保存できませんでした。");
       setValue(previous);
@@ -87,24 +93,30 @@ export function TravelSection({
         )}
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="travel-origin">既定の出発地</Label>
-          {/* 打ち終えて欄から離れた時点で保存する。1文字ごとに送ると、打っている途中が保存される。 */}
-          <Input
+          {/* 予定の「場所」欄・移動の出発地と同じ入力にする。自宅のような名前だけでは
+              所要時間の見積もりが地点を特定できないため、ここから住所付きで登録・選択できる
+              必要がある（docs/spec.md §29「設定」）。
+              場所DBが未設定のときは候補も登録も出ないが、「AIに聞く」から選んだ住所は欄へ入る。
+              登録先が無くても、この欄に住所を入れる目的は果たせる。
+              保存中も欄は止めない。打っている文字を落とさないため（保存は欄から離れた時点）。 */}
+          <LocationInput
             id="travel-origin"
-            className="h-10"
-            placeholder="自宅"
-            defaultValue={value.defaultOrigin ?? ""}
-            disabled={busy}
-            onBlur={(event) => {
-              const next = event.target.value.trim() || null;
-              if (next !== value.defaultOrigin) void send({ defaultOrigin: next });
+            label="既定の出発地"
+            value={origin}
+            onChange={setOrigin}
+            // 打ち終えて欄から離れた時点・候補を選んだ時点で保存する。
+            // 1文字ごとに送ると、打っている途中が保存される。
+            onCommit={(next) => {
+              const trimmed = next.trim() || null;
+              if (trimmed !== value.defaultOrigin) void send({ defaultOrigin: trimmed });
             }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
+            places={placeCatalog.places}
+            eventTitle=""
+            placeDatabaseReady={placeCatalog.ready}
           />
           <p className="type-body-small text-on-surface-variant">
-            予定から移動を足すとき、出発地の初期値になります。
+            予定から移動を足すとき、出発地の初期値になります。住所まで入れておくと、
+            所要時間を調べるときに地点が定まります。地図のアイコンから自宅を登録できます。
           </p>
         </div>
 
