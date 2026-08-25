@@ -7,6 +7,7 @@ import { createNotionClient } from "@/services/notion/client";
 import { listGarbageDaysInRange } from "@/services/notion/garbage";
 import { listTasksInRange } from "@/services/notion/tasks";
 import { listRemindersInRange } from "@/services/notion/reminders";
+import { listWorkRecordsInRange, workDatabaseReady } from "@/services/notion/work-logs";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
 import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
 import type {
@@ -17,6 +18,7 @@ import type {
   TravelItem,
   WritableCalendar,
 } from "@/types/calendar";
+import type { WorkRecordItem } from "@/types/work";
 
 /**
  * 書き込み可能なカレンダーのリストを読み込む。
@@ -103,6 +105,7 @@ export async function loadCalendarData(
     tasks,
     reminders: notion.reminders,
     travels,
+    workRecords: notion.workRecords,
     calendars: events.calendars,
     notionReady: notion.ready,
     reminderReady: notion.reminderReady,
@@ -235,6 +238,7 @@ async function loadNotionItems(
 ): Promise<{
   tasks: TaskItem[];
   reminders: ReminderItem[];
+  workRecords: WorkRecordItem[];
   ready: boolean;
   reminderReady: boolean;
   errors: CalendarLoadResult["errors"];
@@ -243,9 +247,17 @@ async function loadNotionItems(
   if (
     !connection?.taskDataSourceId &&
     !connection?.reminderDataSourceId &&
-    !connection?.garbageDataSourceId
+    !connection?.garbageDataSourceId &&
+    !connection?.workDataSourceId
   ) {
-    return { tasks: [], reminders: [], ready: false, reminderReady: false, errors: [] };
+    return {
+      tasks: [],
+      reminders: [],
+      workRecords: [],
+      ready: false,
+      reminderReady: false,
+      errors: [],
+    };
   }
 
   try {
@@ -256,14 +268,17 @@ async function loadNotionItems(
       to: range.timeMax.slice(0, 10),
     };
     // ゴミの日は日付リマインドと同じ形で描くため、同じ配列へ混ぜて返す（docs/spec.md §9）。
-    const [tasks, reminders, garbageDays] = await Promise.all([
+    // 勤務場所（docs/spec.md §34）は日付の見出しに出す別枠のため、混ぜずに分けて返す。
+    const [tasks, reminders, garbageDays, workRecords] = await Promise.all([
       connection.taskDataSourceId ? listTasksInRange(notion, connection, dateRange) : [],
       connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],
       connection.garbageDataSourceId ? listGarbageDaysInRange(notion, connection, dateRange) : [],
+      workDatabaseReady(connection) ? listWorkRecordsInRange(notion, connection, dateRange) : [],
     ]);
     return {
       tasks,
       reminders: [...reminders, ...garbageDays],
+      workRecords,
       ready: Boolean(connection.taskDataSourceId),
       reminderReady: Boolean(connection.reminderDataSourceId),
       errors: [],
@@ -272,12 +287,13 @@ async function loadNotionItems(
     return {
       tasks: [],
       reminders: [],
+      workRecords: [],
       ready: Boolean(connection.taskDataSourceId),
       reminderReady: Boolean(connection.reminderDataSourceId),
       errors: [
         {
           source: "notion",
-          reason: "Notionのタスク・日付リマインド・ゴミの日を取得できませんでした。",
+          reason: "Notionのタスク・日付リマインド・ゴミの日・勤務場所を取得できませんでした。",
         },
       ],
     };

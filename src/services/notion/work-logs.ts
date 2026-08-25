@@ -101,11 +101,28 @@ async function queryWorkPages(
 }
 
 /**
+ * 問い合わせの下限を、範囲の開始日から何日さかのぼるか。
+ *
+ * Notionの日付フィルタは範囲の開始日だけを見るため、`on_or_after: range.from` にすると
+ * 範囲より前に始まって続いている出張が落ちる。かといって下限を置かないと、勤務記録は
+ * 1日1件で増え続けるため、過去の全件をページングすることになる（5年で約1,800件＝18往復）。
+ * カレンダーは月を送るたびにこれを通るので、現実的な出張の長さを超える幅で下限を作る。
+ * これより長い期間の記録は、開始日が範囲の外にあると出てこない。
+ */
+const WORK_RANGE_LOOKBACK_DAYS = 92;
+
+/** YYYY-MM-DD から日数をさかのぼった YYYY-MM-DD。時刻を持たないためUTCで数えて構わない。 */
+function shiftDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
  * 期間に重なる勤務記録を取得する。
  *
- * Notionの日付フィルタは範囲の開始日だけを見るため、`on_or_after` だけでは月をまたいで
- * 続いている出張（前の月に始まった出張）が落ちる。開始日が範囲の終わり以前のものを採り、
- * 終了日での絞り込みはこちら側で行う。
+ * 開始日が範囲の終わり以前・下限以降のものを採り、終了日での絞り込みはこちら側で行う
+ * （Notionの日付フィルタは範囲の開始日しか見ないため）。
  */
 export async function listWorkRecordsInRange(
   notion: Client,
@@ -116,8 +133,13 @@ export async function listWorkRecordsInRange(
   if (!connection.workDataSourceId || !map.date) return [];
 
   const pages = await queryWorkPages(notion, connection.workDataSourceId, {
-    property: map.date,
-    date: { on_or_before: range.to },
+    and: [
+      { property: map.date, date: { on_or_before: range.to } },
+      {
+        property: map.date,
+        date: { on_or_after: shiftDateKey(range.from, -WORK_RANGE_LOOKBACK_DAYS) },
+      },
+    ],
   });
 
   return pages

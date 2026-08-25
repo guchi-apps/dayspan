@@ -12,6 +12,8 @@ import type {
   TaskItem,
   TravelItem,
 } from "@/types/calendar";
+import type { TagOption } from "@/services/notion/tag-options";
+import type { WorkRecordItem } from "@/types/work";
 
 import { ActivityLaneBlock } from "./activity-lane-block";
 import { ActivityMark } from "./activity-mark";
@@ -65,6 +67,7 @@ import {
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
 import { useSlotRange, type SlotRangeCommit, type SlotRangePreview } from "./use-slot-range";
 import { useTimeZoom } from "./use-time-zoom";
+import { WorkPlaceChip, workRecordsByDate } from "./work-place-chip";
 
 /** 左から順に、前の期間・表示中の期間・次の期間。 */
 type PaneDays = [string[], string[], string[]];
@@ -88,6 +91,8 @@ export function TimeGridView({
   tasks,
   reminders,
   travels,
+  workRecords,
+  workPlaceOptions,
   runningActivity,
   activityCalendarIds,
   utils,
@@ -108,6 +113,10 @@ export function TimeGridView({
   tasks: TaskItem[];
   reminders: ReminderItem[];
   travels: TravelItem[];
+  /** その日の勤務場所（docs/spec.md §34）。終日エリアではなく日付ヘッダーに添える。 */
+  workRecords: WorkRecordItem[];
+  /** 勤務場所の選択肢。色を引くためだけに使う。 */
+  workPlaceOptions: TagOption[];
   /** 記録中の活動。まだGoogleに予定は無く、開始時刻から現在時刻までを画面上で伸ばす。 */
   runningActivity: RunningActivityItem | null;
   /**
@@ -186,6 +195,10 @@ export function TimeGridView({
   // 場所を取るため、同じ幅を右へ空けないと下の時間グリッドと列の境目がずれる（issue #136）。
   const scrollbarGutter = useScrollbarGutter(scrollRef);
   const gridHeight = hourHeight * 24;
+
+  // 日付ヘッダーに添える勤務場所（docs/spec.md §34）。出張は期間の全ての日にかかるため、
+  // 日付キーから引ける形にしておく。前後の期間ぶんも同じ表から引く。
+  const workByDate = useMemo(() => workRecordsByDate(workRecords), [workRecords]);
 
   // ピンチ・ドラッグのあとに残るclickで、予定や空き時間の画面が開かないようにする。
   // どれか1つで打ち切らず全て確かめる。確かめなかった側の「動かした」印が残ると、
@@ -269,7 +282,14 @@ export function TimeGridView({
       >
         <div className="w-12 shrink-0" />
         <SwipeTrack registerTrack={registerSwipeTrack} panes={panes}>
-          {(paneDays) => <DayHeaderPane days={paneDays} todayKey={todayKey} />}
+          {(paneDays) => (
+            <DayHeaderPane
+              days={paneDays}
+              todayKey={todayKey}
+              workByDate={workByDate}
+              workPlaceOptions={workPlaceOptions}
+            />
+          )}
         </SwipeTrack>
       </div>
 
@@ -403,34 +423,54 @@ function SwipeTrack({
 const DayHeaderPane = memo(function DayHeaderPane({
   days,
   todayKey,
+  workByDate,
+  workPlaceOptions,
 }: {
   days: string[];
   todayKey: string;
+  /** 日付キーから引ける勤務場所（docs/spec.md §34）。出張は期間の全ての日にかかる。 */
+  workByDate: Map<string, WorkRecordItem>;
+  workPlaceOptions: TagOption[];
 }) {
   return (
     <div className="grid" style={dayColumnsStyle(days.length)}>
-      {days.map((dateKey) => (
-        <div key={dateKey} className="py-1.5 text-center">
-          <div
-            className={cn(
-              "type-label-small",
-              weekdayTone(dateKey) ?? "text-on-surface-variant",
+      {days.map((dateKey) => {
+        const workRecord = workByDate.get(dateKey);
+
+        return (
+          <div key={dateKey} className="min-w-0 py-1.5 text-center">
+            <div
+              className={cn(
+                "type-label-small",
+                weekdayTone(dateKey) ?? "text-on-surface-variant",
+              )}
+            >
+              {weekdayLabel(dateKey)}
+            </div>
+            <div
+              className={cn(
+                "mx-auto mt-0.5 grid size-7 place-items-center rounded-full text-sm",
+                dateKey === todayKey
+                  ? "bg-primary font-semibold text-primary-foreground"
+                  : "font-medium",
+              )}
+            >
+              {Number(dateKey.slice(8, 10))}
+            </div>
+
+            {/*
+              勤務場所は終日エリアへ入れない。毎日1件あるため、入れると終日エリアが毎日1段ぶん
+              伸びる（Google Calendarへ書き出さないと決めた理由がそのまま起きる・docs/spec.md §34）。
+              日付ヘッダーは日数によらず高さが決まっているので、置いても他の面を押し出さない。
+            */}
+            {workRecord && (
+              <div className="mt-0.5 flex min-w-0 justify-center">
+                <WorkPlaceChip record={workRecord} options={workPlaceOptions} />
+              </div>
             )}
-          >
-            {weekdayLabel(dateKey)}
           </div>
-          <div
-            className={cn(
-              "mx-auto mt-0.5 grid size-7 place-items-center rounded-full text-sm",
-              dateKey === todayKey
-                ? "bg-primary font-semibold text-primary-foreground"
-                : "font-medium",
-            )}
-          >
-            {Number(dateKey.slice(8, 10))}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 });

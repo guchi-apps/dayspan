@@ -14,6 +14,7 @@ import type {
   TravelItem,
   WritableCalendar,
 } from "@/types/calendar";
+import type { WorkRecordItem } from "@/types/work";
 
 import { taskOccurrences } from "./item-layout";
 
@@ -28,6 +29,7 @@ type MonthChunk = {
   tasks: TaskItem[];
   reminders: ReminderItem[];
   travels: TravelItem[];
+  workRecords: WorkRecordItem[];
   /** 取得時刻。一定時間経った月は、窓に入り直したときに取り直す。 */
   fetchedAt: number;
 };
@@ -71,6 +73,17 @@ export function withTaskLinks(tasks: TaskItem[]): TaskItem[] {
 }
 
 /**
+ * 勤務場所を持たない応答も受ける（docs/spec.md §21）。
+ *
+ * `workRecords` は項目が増えただけの変更なので `public/sw.js` の `VERSION` は上げていない
+ * （上げると `activate` で古い世代のキャッシュがまとめて消え、オフラインで開けていた画面が
+ * 一度失われる）。そのぶん、勤務場所を足す前に保存された応答がそのまま渡ってくる。
+ */
+function withWorkRecords(data: CalendarLoadResult): CalendarLoadResult {
+  return data.workRecords ? data : { ...data, workRecords: [] };
+}
+
+/**
  * タスクがカレンダーで場所を取っている日付。期限と予定日で別の日に現れるため、
  * 取り直しの対象も両方になる（どちらも未設定ならカレンダーに出ていない）。
  */
@@ -93,13 +106,20 @@ export function monthsOfRanges(ranges: TouchedRange[]): string[] {
 
 /** 取得結果を月ごとに仕分ける。月をまたぐ予定は、かかる月すべてに入る。 */
 function splitByMonth(
-  data: Pick<CalendarLoadResult, "events" | "tasks" | "reminders" | "travels">,
+  data: Pick<CalendarLoadResult, "events" | "tasks" | "reminders" | "travels" | "workRecords">,
   months: string[],
   fetchedAt: number,
 ): Map<string, MonthChunk> {
   const chunks = new Map<string, MonthChunk>();
   for (const month of months) {
-    chunks.set(month, { events: [], tasks: [], reminders: [], travels: [], fetchedAt });
+    chunks.set(month, {
+      events: [],
+      tasks: [],
+      reminders: [],
+      travels: [],
+      workRecords: [],
+      fetchedAt,
+    });
   }
 
   for (const event of data.events) {
@@ -132,6 +152,14 @@ function splitByMonth(
     }
   }
 
+  // 出張は月をまたぐ（docs/spec.md §34）。かかる月すべてに入れないと、月を送った先の
+  // 日付の見出しから勤務場所が抜ける。
+  for (const record of data.workRecords ?? []) {
+    for (const month of monthKeysBetween(record.startDate, record.endDate)) {
+      chunks.get(month)?.workRecords.push(record);
+    }
+  }
+
   return chunks;
 }
 
@@ -160,6 +188,7 @@ export type CalendarWindowData = {
   tasks: TaskItem[];
   reminders: ReminderItem[];
   travels: TravelItem[];
+  workRecords: WorkRecordItem[];
   calendars: WritableCalendar[];
   notionReady: boolean;
   reminderReady: boolean;
@@ -201,7 +230,9 @@ export function useCalendarChunks({
   /** 取得中かどうか。読み込み中の表示はSuspense境界の外にあるため、呼び出し側へ渡す。 */
   onLoadingChange: (loading: boolean) => void;
 }): CalendarWindowData {
-  const [chunks, setChunks] = useState(() => splitByMonth(initial, serverMonths, Date.now()));
+  const [chunks, setChunks] = useState(() =>
+    splitByMonth(withWorkRecords(initial), serverMonths, Date.now()),
+  );
   const [meta, setMeta] = useState({
     calendars: initial.calendars,
     notionReady: initial.notionReady,
@@ -238,7 +269,7 @@ export function useCalendarChunks({
     if (seededRef.current === initial) return;
     seededRef.current = initial;
 
-    setChunks(splitByMonth(initial, serverMonths, Date.now()));
+    setChunks(splitByMonth(withWorkRecords(initial), serverMonths, Date.now()));
     setMeta({
       calendars: initial.calendars,
       notionReady: initial.notionReady,
@@ -259,7 +290,7 @@ export function useCalendarChunks({
 
       const data = (await response.json()) as CalendarLoadResult;
       const fresh = splitByMonth(
-        { ...data, tasks: withTaskLinks(data.tasks) },
+        { ...withWorkRecords(data), tasks: withTaskLinks(data.tasks) },
         months,
         Date.now(),
       );
@@ -291,6 +322,7 @@ export function useCalendarChunks({
             tasks: existing?.tasks ?? [],
             reminders: existing?.reminders ?? [],
             travels: existing?.travels ?? [],
+            workRecords: existing?.workRecords ?? [],
             fetchedAt,
           });
         }
@@ -332,15 +364,17 @@ export function useCalendarChunks({
   }, [enabled, windowMonths, chunks, autoRefreshSeconds, fetchMonths]);
 
   // 窓のぶんを1つに束ねる。月をまたぐ予定は複数の月に入っているため、ここで重複を落とす。
-  const { events, tasks, reminders, travels } = useMemo(() => {
+  const { events, tasks, reminders, travels, workRecords } = useMemo(() => {
     const events: CalendarEventItem[] = [];
     const tasks: TaskItem[] = [];
     const reminders: ReminderItem[] = [];
     const travels: TravelItem[] = [];
+    const workRecords: WorkRecordItem[] = [];
     const seenEvents = new Set<string>();
     const seenTasks = new Set<string>();
     const seenReminders = new Set<string>();
     const seenTravels = new Set<string>();
+    const seenWorkRecords = new Set<string>();
 
     for (const month of windowMonths) {
       const chunk = chunks.get(month);
@@ -371,9 +405,14 @@ export function useCalendarChunks({
         seenTravels.add(travel.id);
         travels.push(travel);
       }
+      for (const record of chunk.workRecords) {
+        if (seenWorkRecords.has(record.id)) continue;
+        seenWorkRecords.add(record.id);
+        workRecords.push(record);
+      }
     }
 
-    return { events, tasks, reminders, travels };
+    return { events, tasks, reminders, travels, workRecords };
   }, [chunks, windowMonths]);
 
   // 一度も取得できていない月だけを「読み込み中」とする。取り直し中の月まで含めると、
@@ -411,6 +450,7 @@ export function useCalendarChunks({
       tasks: initial.tasks,
       reminders: initial.reminders,
       travels: initial.travels,
+      workRecords: initial.workRecords ?? [],
       calendars: initial.calendars,
       notionReady: initial.notionReady,
       reminderReady: initial.reminderReady,
@@ -426,6 +466,7 @@ export function useCalendarChunks({
     tasks,
     reminders,
     travels,
+    workRecords,
     calendars: meta.calendars,
     notionReady: meta.notionReady,
     reminderReady: meta.reminderReady,
