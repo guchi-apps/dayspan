@@ -25,20 +25,23 @@ import {
   REMINDER_FIELD_REQUIREMENTS,
   type ReminderPropertyMap,
 } from "@/services/notion/reminder-database";
+import { WORK_FIELD_REQUIREMENTS, type WorkPropertyMap } from "@/services/notion/work-database";
 
 type MissingProperty = { field: string; label: string; types: string[] };
 
 /** 新規作成できるDB。作成の手順は同じで、APIの経路と既定名だけが違う。 */
-type DatabaseKind = "task" | "place";
+type DatabaseKind = "task" | "place" | "work";
 
 const DATABASE_LABELS: Record<DatabaseKind, string> = {
   task: "タスクDB",
   place: "場所DB",
+  work: "勤務記録DB",
 };
 
 const DATABASE_DEFAULT_TITLES: Record<DatabaseKind, string> = {
   task: "DaySpan タスク",
   place: "DaySpan 場所",
+  work: "DaySpan 勤務記録",
 };
 
 /** Notionが返したメッセージがあればそれを見せる。原因が分からないまま止まらないようにする。 */
@@ -66,6 +69,9 @@ export type NotionSectionState = {
   garbageDataSourceId: string | null;
   garbageTitle: string | null;
   garbagePropertyMap: ReminderPropertyMap | null;
+  workDataSourceId: string | null;
+  workTitle: string | null;
+  workPropertyMap: WorkPropertyMap | null;
   dataSources: DataSourceSummary[];
   sharedPages: SharedPageSummary[];
   dataSourcesFailed: boolean;
@@ -246,6 +252,59 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
         return;
       }
       setMessage({ text: "ゴミの日DBを設定しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectWorkDataSource = async (dataSourceId: string) => {
+    setBusy(true);
+    setMissing(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/work-database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataSourceId }),
+      });
+      if (response.status === 422) {
+        const body = (await response.json()) as { missingRequired: MissingProperty[] };
+        setMissing(body.missingRequired);
+        setMessage({ text: "勤務記録DBに必要なプロパティが不足しています。", tone: "error" });
+        return;
+      }
+      if (!response.ok) {
+        setMessage({
+          text: await errorText(response, "勤務記録DBを設定できませんでした。"),
+          tone: "error",
+        });
+        return;
+      }
+      setMessage({ text: "勤務記録DBを設定しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * 使用中の勤務記録DBへ、出張・事前申請・事後登録・メモのプロパティを足す。
+   * この3つは名前が当たったときだけ対応付けるため、既存のDBを選ぶと揃わないことがある。
+   */
+  const addWorkTripProperties = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/work-database", { method: "PATCH" });
+      if (!response.ok) {
+        setMessage({
+          text: await errorText(response, "出張のプロパティを追加できませんでした。"),
+          tone: "error",
+        });
+        return;
+      }
+      setMessage({ text: "勤務記録DBに出張のプロパティを追加しました。", tone: "ok" });
       startTransition(() => router.refresh());
     } finally {
       setBusy(false);
@@ -547,9 +606,77 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
             <Separator />
 
             <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">勤務記録DBを選択</span>
+              <p className="text-xs text-muted-foreground">
+                その日どこで働いたかと、出張の事前申請・事後登録を記録します。
+                タイトル・日付・勤務場所が必要です。出張・事前申請・事後登録（チェックボックス）は
+                名前が一致したときだけ対応付けます。
+              </p>
+              {state.workDataSourceId && (
+                <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="secondary">勤務記録DB</Badge>
+                    <span className="font-medium">{state.workTitle}</span>
+                  </div>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {WORK_FIELD_REQUIREMENTS.map((requirement) => (
+                      <div key={requirement.field} className="contents">
+                        <dt>{requirement.label}</dt>
+                        <dd>{state.workPropertyMap?.[requirement.field] ?? "未対応"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {!(
+                    state.workPropertyMap?.businessTrip &&
+                    state.workPropertyMap?.preApplied &&
+                    state.workPropertyMap?.postRegistered
+                  ) && (
+                    <div className="flex flex-col items-start gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        出張のプロパティが揃っていません。足すと、出張の事前申請・事後登録の
+                        済み・未済を勤務の画面で追えるようになります。無いままでも勤務場所は登録できます。
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={addWorkTripProperties}
+                      >
+                        <Plus className="size-4" />
+                        出張のプロパティを追加
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <ul className="flex flex-wrap gap-2">
+                {state.dataSources.map((dataSource) => (
+                  <li key={dataSource.dataSourceId}>
+                    <Button
+                      variant={state.workDataSourceId === dataSource.dataSourceId ? "secondary" : "outline"}
+                      size="sm"
+                      disabled={
+                        disabled ||
+                        state.taskDataSourceId === dataSource.dataSourceId ||
+                        state.reminderDataSourceId === dataSource.dataSourceId ||
+                        state.placeDataSourceId === dataSource.dataSourceId ||
+                        state.garbageDataSourceId === dataSource.dataSourceId
+                      }
+                      onClick={() => selectWorkDataSource(dataSource.dataSourceId)}
+                    >
+                      {dataSource.title}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <Separator />
+
+            <div className="flex flex-col gap-2">
               {!creating ? (
                 <div className="flex flex-wrap gap-2">
-                  {(["task", "place"] as const).map((kind) => (
+                  {(["task", "place", "work"] as const).map((kind) => (
                     <Button
                       key={kind}
                       variant="outline"

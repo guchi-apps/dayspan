@@ -4,6 +4,7 @@ import type { NotionConnection } from "@prisma/client";
 import { createNotionClient } from "./client";
 import type { ReminderPropertyMap } from "./reminder-database";
 import type { PropertyMap } from "./task-database";
+import type { WorkPropertyMap } from "./work-database";
 
 // タスクのタグ（multi_select）と日付リマインドの種類（select）の選択肢を扱う。
 //
@@ -52,8 +53,13 @@ export type TagOption = {
   color: TagColor;
 };
 
-/** タグを置いているプロパティの種別。タスクは複数選択、リマインドの種類は単一選択。 */
-export type TagKind = "task" | "reminder";
+/**
+ * タグを置いているプロパティの種別。タスクは複数選択、リマインドの種類と勤務場所は単一選択。
+ *
+ * 勤務場所（docs/spec.md §34）をここへ含めるのは、選択肢と色がNotionのプロパティ定義そのもので、
+ * 追加・削除の手順もタグとまったく同じため。別の経路を作ると、同じ操作が2か所に増える。
+ */
+export type TagKind = "task" | "reminder" | "work";
 
 /**
  * 登録済みのタグ・種類。
@@ -64,9 +70,10 @@ export type TagKind = "task" | "reminder";
 export type TagCatalog = {
   task: TagOption[] | null;
   reminder: TagOption[] | null;
+  work: TagOption[] | null;
 };
 
-export const EMPTY_TAG_CATALOG: TagCatalog = { task: null, reminder: null };
+export const EMPTY_TAG_CATALOG: TagCatalog = { task: null, reminder: null, work: null };
 
 type PropertyConfig = {
   type?: string;
@@ -82,6 +89,12 @@ export function tagLocation(connection: NotionConnection, kind: TagKind): TagLoc
     const propertyName = (connection.propertyMap as PropertyMap | null)?.tags;
     if (!connection.taskDataSourceId || !propertyName) return null;
     return { dataSourceId: connection.taskDataSourceId, propertyName };
+  }
+
+  if (kind === "work") {
+    const propertyName = (connection.workPropertyMap as WorkPropertyMap | null)?.place;
+    if (!connection.workDataSourceId || !propertyName) return null;
+    return { dataSourceId: connection.workDataSourceId, propertyName };
   }
 
   const propertyName = (connection.reminderPropertyMap as ReminderPropertyMap | null)?.category;
@@ -115,6 +128,28 @@ async function fetchOptions(
 }
 
 /**
+ * 1種類ぶんの選択肢だけを取得する。
+ *
+ * 勤務の画面では勤務場所しか要らない。まとめて取る `loadTagCatalog` を呼ぶと、使わない
+ * タスクのタグと日付リマインドの種類のぶんまでNotionへ問い合わせることになる。
+ */
+export async function loadTagOptions(
+  connection: NotionConnection | null,
+  kind: TagKind,
+): Promise<TagOption[] | null> {
+  if (!connection) return null;
+  const location = tagLocation(connection, kind);
+  if (!location) return null;
+
+  try {
+    return await fetchOptions(createNotionClient(connection), location);
+  } catch {
+    // 選択肢は入力の候補でしかない。取れなくても画面は開けるようにする。
+    return null;
+  }
+}
+
+/**
  * 登録済みのタグ・種類をまとめて取得する。
  *
  * 取得に失敗しても画面自体は開けるようにする。タグは表示の彩りと入力の候補であって、
@@ -125,15 +160,17 @@ export async function loadTagCatalog(connection: NotionConnection | null): Promi
 
   const taskLocation = tagLocation(connection, "task");
   const reminderLocation = tagLocation(connection, "reminder");
-  if (!taskLocation && !reminderLocation) return EMPTY_TAG_CATALOG;
+  const workLocation = tagLocation(connection, "work");
+  if (!taskLocation && !reminderLocation && !workLocation) return EMPTY_TAG_CATALOG;
 
   try {
     const notion = createNotionClient(connection);
-    const [task, reminder] = await Promise.all([
+    const [task, reminder, work] = await Promise.all([
       taskLocation ? fetchOptions(notion, taskLocation) : null,
       reminderLocation ? fetchOptions(notion, reminderLocation) : null,
+      workLocation ? fetchOptions(notion, workLocation) : null,
     ]);
-    return { task, reminder };
+    return { task, reminder, work };
   } catch {
     return EMPTY_TAG_CATALOG;
   }
@@ -152,8 +189,7 @@ async function writeOptions(
   kind: TagKind,
   options: Array<{ id: string } | { name: string; color: TagColor }>,
 ): Promise<void> {
-  const config =
-    kind === "task" ? { multi_select: { options } } : { select: { options } };
+  const config = kind === "task" ? { multi_select: { options } } : { select: { options } };
 
   await notion.dataSources.update({
     data_source_id: dataSourceId,

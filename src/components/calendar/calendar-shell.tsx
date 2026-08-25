@@ -13,7 +13,15 @@ import {
   useState,
   useTransition,
 } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Plus, RefreshCw, Settings } from "lucide-react";
+import {
+  Briefcase,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  RefreshCw,
+  Settings,
+} from "lucide-react";
 
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
@@ -782,6 +790,13 @@ export function CalendarShell({
           onClick={() => startTransition(() => router.refresh())}
         >
           <RefreshCw className="size-5" />
+        </Button>
+        {/* 勤務（docs/spec.md §34）。スマートフォンはヘッダー左上のメニューから入るが、
+            PCはドロワーを持たないため、設定と同じ経路でここに置く。 */}
+        <Button variant="ghost" size="icon-sm" asChild aria-label="勤務" className="hidden md:inline-flex">
+          <Link href="/work">
+            <Briefcase className="size-4" />
+          </Link>
         </Button>
         <Button variant="ghost" size="icon-sm" asChild aria-label="設定" className="hidden md:inline-flex">
           <Link href="/settings">
