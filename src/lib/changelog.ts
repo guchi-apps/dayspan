@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.2.4",
+    date: "2026-08-25",
+    changes: [
+      "CI・デプロイまわりの内部的な設定更新のみで、画面や機能に変更はありません。",
+    ],
+  },
+  {
     version: "2.2.3",
     date: "2026-08-25",
     changes: [
