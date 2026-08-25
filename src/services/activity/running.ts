@@ -14,6 +14,29 @@ import type { ActivitySavedRange, RunningActivityItem } from "@/types/activity";
  */
 const MIN_ACTIVITY_MINUTES = 1;
 
+/**
+ * 指定された時刻が未来でも「いま」として受け入れる幅（ミリ秒）。
+ *
+ * 時刻の入力欄は分単位で、押した時点の分をそのまま初期値に入れる。端末の時計が数秒進んで
+ * いるだけで断ると、「いま」を指定しただけの操作が通らなくなる。これより先は利用者の
+ * 入れ間違いとして断る（記録は過ぎた時間の事実で、まだ経っていない時間は記録できない）。
+ */
+const FUTURE_TOLERANCE_MS = 60_000;
+
+/**
+ * 記録の時刻として受け取った値を、実際に使う時刻へ直す。
+ *
+ * 未来はこの幅までなら現在時刻へ丸め、それより先は断る。丸めた結果は経過時間0分として
+ * 画面に出るため、指定が効いていないことは見て分かる。
+ */
+function resolveRecordTime(at: Date, now: Date, label: "開始" | "終了"): Date {
+  const ahead = at.getTime() - now.getTime();
+  if (ahead <= 0) return at;
+  if (ahead <= FUTURE_TOLERANCE_MS) return now;
+
+  throw new ActivityTimeRangeError(`${label}時刻に未来の時刻は指定できません。`);
+}
+
 /** 進行中の記録。無ければ null。 */
 export async function getRunningActivity(userId: string): Promise<RunningActivityItem | null> {
   const running = await db.runningActivity.findUnique({ where: { userId } });
@@ -29,18 +52,26 @@ export async function getRunningActivity(userId: string): Promise<RunningActivit
 /**
  * 記録を始める。すでに記録中なら、それをその時刻で終わらせてから始める。
  *
+ * 開始時刻は指定が無ければサーバーの時計で決める。押し忘れて後から始めるときのために
+ * 指定も受けるが、端末の時計をそのまま信じるわけではなく、未来は受けない
+ * （`resolveRecordTime`）。
+ *
  * 前の記録の書き出しに失敗した場合は例外のまま抜け、新しい記録も始めない。
  * 始めてしまうと、書き出せなかったぶんが画面からも消えて取り戻せなくなるため。
  */
 export async function startActivity(
   userId: string,
-  input: { title: string },
+  input: { title: string; startedAt?: Date },
 ): Promise<{ running: RunningActivityItem; saved: ActivitySavedRange | null }> {
   // 切り替えでは、前の記録の終わりと次の記録の始まりを同じ時刻にする。
   // それぞれで現在時刻を取ると、その間に何も記録していない数ミリ秒の隙間ができる。
   const now = new Date();
+  const startedAt = input.startedAt ? resolveRecordTime(input.startedAt, now, "開始") : now;
 
-  const saved = await stopRunningActivity(userId, now);
+  const saved = await stopRunningActivity(userId, startedAt, {
+    earlierThanStartMessage:
+      "開始時刻が、記録中の項目の開始より前です。記録中のものを先に停止するか、それより後の時刻を指定してください。",
+  });
 
   const calendarId = await resolveActivityCalendarId(userId);
   if (!calendarId) {
@@ -49,8 +80,8 @@ export async function startActivity(
 
   const running = await db.runningActivity.upsert({
     where: { userId },
-    create: { userId, title: input.title, calendarId, startedAt: now },
-    update: { title: input.title, calendarId, startedAt: now },
+    create: { userId, title: input.title, calendarId, startedAt },
+    update: { title: input.title, calendarId, startedAt },
   });
 
   return {
@@ -70,13 +101,44 @@ export type StopResult =
 /**
  * 記録を終わらせ、Google Calendarの予定にする。
  *
+ * 終了時刻は指定が無ければ呼び出し側が渡す現在時刻。止め忘れに気付いたときのために
+ * 指定も受けるが、開始より前の時刻は受けない（何時から何時までが決まらない）。
+ *
  * 予定を作れた場合だけ進行中の行を消す。先に消すと、Googleが失敗したときに
  * 記録していた時間そのものが失われる。失敗は例外のまま呼び出し側へ返し、
  * 画面には外部APIが返した理由を出す（CLAUDE.md「外部APIの扱い」）。
  */
-export async function stopRunningActivity(userId: string, endedAt: Date): Promise<StopResult> {
+export async function stopRunningActivity(
+  userId: string,
+  endedAt: Date,
+  /**
+   * 終了時刻が開始より前だったときの断り文。
+   * 切り替え（`startActivity`）ではこの時刻は「次の記録の開始」として指定されたもので、
+   * 終了時刻を直したときと同じ文面を出すと、どの欄を直せばよいのか読めない。
+   */
+  options?: { earlierThanStartMessage?: string },
+): Promise<StopResult> {
   const running = await db.runningActivity.findUnique({ where: { userId } });
   if (!running) return { status: "not_running" };
+
+  // 未来の扱いは開始と同じ。切り替え（startActivity）から来た時刻はそこで済ませてあるため、
+  // ここで断るのは終了時刻を指定して止めたときだけになる。
+  const requestedEnd = resolveRecordTime(endedAt, new Date(), "終了");
+
+  // 開始と同じ時刻になるぶんは断らない。最短の長さまで伸ばせば記録として成り立ち、
+  // 始めた直後に押し直したときの既存の扱い（MIN_ACTIVITY_MINUTES）と同じ結果になる。
+  //
+  // 比べる相手は開始そのものではなく、その分の頭にする。時刻の入力欄は分までしか持たず、
+  // 開始が 01:10:45 のときに指定できるいちばん近い値は 01:10 になる。秒まで見て断ると、
+  // 画面では受け付けた値がサーバーで断られる。
+  const startMinute = Math.floor(running.startedAt.getTime() / 60_000) * 60_000;
+
+  if (requestedEnd.getTime() < startMinute) {
+    throw new ActivityTimeRangeError(
+      options?.earlierThanStartMessage ??
+        "終了時刻が記録の開始より前です。開始より後の時刻を指定してください。",
+    );
+  }
 
   // 記録を始めたあとで保存先の「使用」がオフにされることもある。そのときもここで止まる。
   const target = await resolveGoogleAccountForCalendar(userId, running.calendarId);
@@ -86,7 +148,7 @@ export async function stopRunningActivity(userId: string, endedAt: Date): Promis
 
   const start = running.startedAt;
   const end = new Date(
-    Math.max(endedAt.getTime(), start.getTime() + MIN_ACTIVITY_MINUTES * 60_000),
+    Math.max(requestedEnd.getTime(), start.getTime() + MIN_ACTIVITY_MINUTES * 60_000),
   );
 
   const uiSetting = await db.uiSetting.findUnique({ where: { userId } });
@@ -129,10 +191,13 @@ export async function updateRunningActivityStart(
   userId: string,
   startedAt: Date,
 ): Promise<RunningActivityItem | null> {
-  // まだ来ていない時刻から記録していることにはできない。
-  if (startedAt.getTime() > Date.now()) return null;
+  // まだ来ていない時刻から記録していることにはできない（未来の扱いは開始・終了と同じ）。
+  const resolved = resolveRecordTime(startedAt, new Date(), "開始");
 
-  const result = await db.runningActivity.updateMany({ where: { userId }, data: { startedAt } });
+  const result = await db.runningActivity.updateMany({
+    where: { userId },
+    data: { startedAt: resolved },
+  });
   if (result.count === 0) return null;
 
   return getRunningActivity(userId);
@@ -181,5 +246,18 @@ export class ActivityCalendarNotFoundError extends Error {
         : "保存先のカレンダーが見つかりません。設定からGoogle Calendarを確認してください。",
     );
     this.name = "ActivityCalendarNotFoundError";
+  }
+}
+
+/**
+ * 指定された開始・終了の時刻が、記録として成り立たない状態。
+ *
+ * 未来の時刻、開始より前の終了時刻がこれに当たる。外部APIの失敗ではなく入力の問題なので、
+ * 呼び出し側は400と、この文面をそのまま画面へ出す。
+ */
+export class ActivityTimeRangeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ActivityTimeRangeError";
   }
 }

@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
 import { useState, useTransition } from "react";
-import { Settings2, Square, Timer } from "lucide-react";
+import { Clock3, Settings2, Square, Timer } from "lucide-react";
 
+import { invalidEnd, invalidStartAt, savedRangeLabel } from "@/components/activity/activity-time";
 import { formatElapsed } from "@/components/calendar/activity-format";
 import { DateTimeInput } from "@/components/calendar/date-time-input";
 import { isoToLocalInput, localInputToIso } from "@/components/calendar/datetime-fields";
@@ -59,6 +60,25 @@ export function ActivityScreen({
   const [editingStart, setEditingStart] = useState(false);
   const [startInput, setStartInput] = useState("");
 
+  // 終了時刻を指定して止めるときの欄。止め忘れに気付いてから止めるための経路で、
+  // 押した時点で止める「停止して保存」はそのまま残す。
+  const [editingEnd, setEditingEnd] = useState(false);
+  const [endInput, setEndInput] = useState("");
+
+  /*
+    欄の初期値（「いま」）は端末の時計で作る一方、未来かどうかを決めるのはサーバーの時計。
+    端末が1〜2分進んでいると、何も直さずに押しただけで「未来の時刻」として断られる。
+    直していないなら時刻を添えずに送り、従来どおりサーバーの時計で決めさせる。
+  */
+  const [startAtTouched, setStartAtTouched] = useState(false);
+  const [endTouched, setEndTouched] = useState(false);
+
+  // 開始時刻を指定して始めるときの欄。開いている間だけ、押した項目がこの時刻から始まる。
+  // 常に出しておかないのは、記録を始める操作が押す回数のいちばん多い操作で、
+  // 毎回時刻を確かめさせると、そのぶん記録そのものが遅れるため（docs/spec.md §27）。
+  const [startAtOpen, setStartAtOpen] = useState(false);
+  const [startAtInput, setStartAtInput] = useState("");
+
   const nowIso = useNowIso();
 
   // 開始・停止は画面側で先に反映するが、正はサーバーにある（別の端末で止めることもある）。
@@ -102,23 +122,48 @@ export function ActivityScreen({
    * 予定ができた場合はカレンダー側も古くなるため、サーバーから取り直させる。
    */
   const start = async (body: { presetId?: string; title?: string }) => {
+    // 時刻の欄を開いて、実際に直したときだけその時刻を添える。閉じているあいだと
+    // 初期値のままのときはサーバーの時計で決める（端末の時計のずれを、記録した
+    // 時間帯そのもののずれにしないため）。
+    const startedAt =
+      startAtOpen && startAtTouched && startAtInput
+        ? localInputToIso(startAtInput, timeZone)
+        : undefined;
+
     const result = await send(
       "/api/activities/start",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, startedAt }),
+      },
       "記録を開始できませんでした。",
     );
     if (!result) return;
 
     setRunning((result.running as RunningActivityItem) ?? null);
     setTitle("");
+    // 指定は1回ぶん。開いたままにすると、次に押した項目まで気付かないうちに
+    // 過去の時刻から始まる。
+    setStartAtOpen(false);
     startTransition(() => router.refresh());
   };
 
-  const stop = async () => {
-    const result = await send("/api/activities/stop", { method: "POST" }, "記録を保存できませんでした。");
+  /** 記録を止める。時刻を渡さなければ、サーバーがその時点で止める。 */
+  const stop = async (endedAt?: string) => {
+    const result = await send(
+      "/api/activities/stop",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(endedAt ? { endedAt } : {}),
+      },
+      "記録を保存できませんでした。",
+    );
     if (!result) return;
 
     setRunning(null);
+    setEditingEnd(false);
     // 「記録中」の通知は止めた時点で事実と違う（docs/spec.md §32）。この端末のぶんを消す。
     void closeActivityNotification();
     startTransition(() => router.refresh());
@@ -165,10 +210,41 @@ export function ActivityScreen({
   const beginEditStart = () => {
     if (!running) return;
     setStartInput(isoToLocalInput(running.startedAt, timeZone));
+    // 開始と終了の欄を同時に出すと、どちらの日時を触っているのか読めなくなる。
+    setEditingEnd(false);
     setEditingStart(true);
   };
 
+  /** 終了時刻を指定して止める欄を開く。初期値は「いま」で、直さずに押せば停止と同じ結果になる。 */
+  const beginEditEnd = () => {
+    if (!running) return;
+    setEndInput(isoToLocalInput(nowIso ?? new Date().toISOString(), timeZone));
+    setEndTouched(false);
+    setEditingStart(false);
+    setEditingEnd(true);
+  };
+
+  const toggleStartAt = () => {
+    if (startAtOpen) {
+      setStartAtOpen(false);
+      return;
+    }
+    setStartAtInput(isoToLocalInput(nowIso ?? new Date().toISOString(), timeZone));
+    setStartAtTouched(false);
+    setStartAtOpen(true);
+  };
+
+  // 現在時刻も入力欄と同じ分単位に落として比べる（useNowIso は分の頭で止まっている）。
+  const nowInput = nowIso ? isoToLocalInput(nowIso, timeZone) : null;
+
+  // 押す前に断れるものはここで断る。サーバー側でも同じ判定を行うが、押してから
+  // 往復ぶん待たせて断ると、どの欄が悪いのかを確かめるまでが遠くなる。
+  const startAtInvalid = startAtOpen
+    ? invalidStartAt(startAtInput, nowInput, running, timeZone)
+    : null;
+
   const disabled = busy || offline;
+  const startDisabled = disabled || startAtInvalid !== null;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -214,6 +290,16 @@ export function ActivityScreen({
               onBeginEditStart={beginEditStart}
               onCancelEditStart={() => setEditingStart(false)}
               onSaveStart={saveStart}
+              editingEnd={editingEnd}
+              endInput={endInput}
+              endTouched={endTouched}
+              nowInput={nowInput}
+              onEndInputChange={(value) => {
+                setEndInput(value);
+                setEndTouched(true);
+              }}
+              onBeginEditEnd={beginEditEnd}
+              onCancelEditEnd={() => setEditingEnd(false)}
               onStop={stop}
               onDiscard={discard}
             />
@@ -230,9 +316,47 @@ export function ActivityScreen({
           )}
 
           <div className="flex flex-col gap-2">
-            <h2 className="type-title-small text-on-surface-variant">
-              {running ? "切り替える" : "記録を始める"}
-            </h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="type-title-small text-on-surface-variant">
+                {running ? "切り替える" : "記録を始める"}
+              </h2>
+              {/* 時刻を確かめるのは押し忘れたときだけ。常に欄を出すと、いちばん多い
+                  「いま押して始める」操作が毎回そのぶん遅くなる。 */}
+              <Button
+                variant={startAtOpen ? "secondary" : "ghost"}
+                size="sm"
+                disabled={disabled}
+                onClick={toggleStartAt}
+              >
+                <Clock3 className="size-4" />
+                開始時刻を指定
+              </Button>
+            </div>
+
+            {startAtOpen && (
+              <div className="flex flex-col gap-2 rounded-lg border border-outline-variant bg-surface-container-low p-3">
+                <DateTimeInput
+                  id="activity-start-at"
+                  dateLabel="開始日"
+                  timeLabel="開始時刻"
+                  value={startAtInput}
+                  onChange={(value) => {
+                    setStartAtInput(value);
+                    setStartAtTouched(true);
+                  }}
+                />
+                {startAtInvalid ? (
+                  <p className="type-body-small text-destructive">{startAtInvalid}</p>
+                ) : (
+                  <p className="type-body-small text-on-surface-variant">
+                    押した項目を {startAtInput.replace("T", " ")} から記録します。
+                    {/* 切り替えでは前の記録の終わりも同じ時刻になる。記録の無い時間帯を
+                        作らないための扱いだが、書かないと勝手に終わったように見える。 */}
+                    {running && `記録中の「${running.title}」も同じ時刻で終わります。`}
+                  </p>
+                )}
+              </div>
+            )}
 
             {presets.length === 0 ? (
               <p className="type-body-medium text-on-surface-variant">
@@ -251,7 +375,7 @@ export function ActivityScreen({
                       key={preset.id}
                       variant={current ? "secondary" : "outline"}
                       className="type-title-small h-16 justify-center rounded-lg px-3"
-                      disabled={disabled || current}
+                      disabled={startDisabled || current}
                       onClick={() => start({ presetId: preset.id })}
                     >
                       <span className="truncate">{preset.name}</span>
@@ -275,13 +399,15 @@ export function ActivityScreen({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && title.trim() && !disabled) start({ title: title.trim() });
+                  if (e.key === "Enter" && title.trim() && !startDisabled) {
+                    start({ title: title.trim() });
+                  }
                 }}
               />
             </div>
             <Button
               className="h-14 shrink-0"
-              disabled={disabled || !title.trim()}
+              disabled={startDisabled || !title.trim()}
               onClick={() => start({ title: title.trim() })}
             >
               開始
@@ -314,6 +440,13 @@ function RunningCard({
   onBeginEditStart,
   onCancelEditStart,
   onSaveStart,
+  editingEnd,
+  endInput,
+  endTouched,
+  nowInput,
+  onEndInputChange,
+  onBeginEditEnd,
+  onCancelEditEnd,
   onStop,
   onDiscard,
 }: {
@@ -328,9 +461,23 @@ function RunningCard({
   onBeginEditStart: () => void;
   onCancelEditStart: () => void;
   onSaveStart: () => void;
-  onStop: () => void;
+  editingEnd: boolean;
+  endInput: string;
+  /**
+   * 終了時刻の欄を実際に直したか。直していないなら時刻を渡さず、サーバーの時計で止める
+   * （端末の時計が進んでいるだけで「未来の時刻」として断られるのを避けるため）。
+   */
+  endTouched: boolean;
+  /** 現在時刻を入力欄と同じ分単位にしたもの。未来を指定していないか比べるために使う。 */
+  nowInput: string | null;
+  onEndInputChange: (value: string) => void;
+  onBeginEditEnd: () => void;
+  onCancelEditEnd: () => void;
+  onStop: (endedAt?: string) => void;
   onDiscard: () => void;
 }) {
+  const endInvalid = editingEnd ? invalidEnd(endInput, nowInput, running, timeZone) : null;
+
   return (
     <Card className="bg-primary-container text-on-primary-container">
       <CardContent className="flex flex-col gap-3">
@@ -378,16 +525,59 @@ function RunningCard({
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-2">
-          {/* 押し間違えて始めた記録まで予定にすると、消しにいく手間のほうが大きい。 */}
-          <Button variant="destructive" size="sm" disabled={disabled} onClick={onDiscard}>
-            取り消す
-          </Button>
-          <Button size="lg" disabled={disabled} onClick={onStop}>
-            <Square className="fill-current" />
-            停止して保存
-          </Button>
-        </div>
+        {editingEnd ? (
+          <div className="flex flex-col gap-2">
+            <DateTimeInput
+              id="activity-ended-at"
+              dateLabel="終了日"
+              timeLabel="終了時刻"
+              value={endInput}
+              onChange={onEndInputChange}
+            />
+            {/* 保存される時間帯と長さを先に出す。指定するのは終わりの時刻だけで、
+                結果として記録が何時間になるのかは、開始と見比べないと分からない。 */}
+            <p className={`type-body-small ${endInvalid ? "text-destructive" : ""}`}>
+              {endInvalid ?? savedRangeLabel(running.startedAt, endInput, timeZone)}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" disabled={disabled} onClick={onCancelEditEnd}>
+                やめる
+              </Button>
+              <Button
+                size="sm"
+                disabled={disabled || endInvalid !== null}
+                onClick={() => onStop(endTouched ? localInputToIso(endInput, timeZone) : undefined)}
+              >
+                この時刻で停止
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              {/* 押し間違えて始めた記録まで予定にすると、消しにいく手間のほうが大きい。 */}
+              <Button variant="destructive" size="sm" disabled={disabled} onClick={onDiscard}>
+                取り消す
+              </Button>
+              <Button size="lg" disabled={disabled} onClick={() => onStop()}>
+                <Square className="fill-current" />
+                停止して保存
+              </Button>
+            </div>
+            {/* 止め忘れて後から気付くこともある。押した時点で止める道は上に残したまま、
+                終わりの時刻を決めて止める道を足す。 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-end"
+              disabled={disabled}
+              onClick={onBeginEditEnd}
+            >
+              <Clock3 className="size-4" />
+              終了時刻を指定して停止
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

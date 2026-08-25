@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import {
+  ActivityTimeRangeError,
   discardRunningActivity,
   updateRunningActivityStart,
 } from "@/services/activity/running";
@@ -27,15 +28,20 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "startedAt is required" }, { status: 400 });
   }
 
-  const running = await updateRunningActivityStart(userId, parsed);
-  if (!running) {
-    return NextResponse.json(
-      { error: "not_updatable", message: "記録中の項目が無いか、開始時刻が未来です。" },
-      { status: 400 },
-    );
-  }
+  try {
+    const running = await updateRunningActivityStart(userId, parsed);
+    if (!running) {
+      return NextResponse.json({ error: "not_running" }, { status: 404 });
+    }
 
-  return NextResponse.json({ running });
+    return NextResponse.json({ running });
+  } catch (error) {
+    // 未来の時刻は開始・停止と同じ判定で断る（サービス側の resolveRecordTime）。
+    if (error instanceof ActivityTimeRangeError) {
+      return NextResponse.json({ error: "invalid_time", message: error.message }, { status: 400 });
+    }
+    throw error;
+  }
 }
 
 /** 進行中の記録を、予定にせず取り消す。押し間違えて始めた記録を残さないため。 */
