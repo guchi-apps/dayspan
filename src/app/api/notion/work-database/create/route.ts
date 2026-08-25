@@ -4,7 +4,7 @@ import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
-import { createWorkDatabase } from "@/services/notion/work-database";
+import { createWorkDatabase, DEFAULT_TRIP_PLACES } from "@/services/notion/work-database";
 
 type Body = { parentPageId?: string; title?: string };
 
@@ -43,6 +43,8 @@ export async function POST(request: Request) {
       workDatabaseId: created.databaseId,
       workTitle: created.title,
       workPropertyMap: created.propertyMap,
+      // 初期の選択肢に「出張」が入るため、その場所を選んだら出張になる状態から始める。
+      workTripPlaces: DEFAULT_TRIP_PLACES,
       lastValidatedAt: new Date(),
     },
   });

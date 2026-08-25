@@ -15,6 +15,7 @@ import {
   listWorkRecordsInRange,
   workCapabilities,
   workDatabaseReady,
+  workTripPlaces,
 } from "@/services/notion/work-logs";
 import type { WorkRecordItem } from "@/types/work";
 
@@ -73,6 +74,7 @@ export default async function WorkPage({
       records={records}
       openTrips={openTrips.map((trip) => byId.get(trip.id) ?? trip)}
       placeOptions={placeOptions ?? []}
+      tripPlaces={workTripPlaces(connection)}
       capabilities={workCapabilities(connection)}
     />
   );

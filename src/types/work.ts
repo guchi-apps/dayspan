@@ -57,6 +57,16 @@ export function workTodos(record: WorkRecordItem, todayKey: string): WorkTodo[] 
   return todos;
 }
 
+/**
+ * その勤務場所が出張扱いか。
+ *
+ * 「行けば必ず出張になる勤務先」を場所ごとに覚えておき（NotionConnection.workTripPlaces）、
+ * その場所を選んだ時点で出張の既定を立てる。未選択（null・空文字）は出張ではない。
+ */
+export function isTripPlace(tripPlaces: string[], place: string | null | undefined): boolean {
+  return Boolean(place) && tripPlaces.includes(place as string);
+}
+
 /** その記録が指定の日にかかっているか。出張は期間の全ての日にかかる。 */
 export function coversDate(record: WorkRecordItem, dateKey: string): boolean {
   return record.startDate <= dateKey && dateKey <= record.endDate;

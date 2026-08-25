@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
   coversDate,
+  isTripPlace,
   WORK_TODO_LABELS,
   workTodos,
   type WorkCapabilities,
@@ -39,6 +40,7 @@ export function WorkScreen({
   records,
   openTrips,
   placeOptions,
+  tripPlaces,
   capabilities,
 }: {
   /** YYYY-MM */
@@ -49,6 +51,8 @@ export function WorkScreen({
   /** 手続きが残っている出張。月の外のものも含む。 */
   openTrips: WorkRecordItem[];
   placeOptions: TagOption[];
+  /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
+  tripPlaces: string[];
   capabilities: WorkCapabilities;
 }) {
   const router = useRouter();
@@ -94,13 +98,35 @@ export function WorkScreen({
   };
 
   /**
+   * 今日の記録をチップから直せるか。
+   *
+   * 場所から出張になった単日の記録（行き先＝場所名）は、もう一度押して取り消せる必要がある。
+   * 1押しで登録したものを1押しで戻せないと、消すためだけに日の行から入り直すことになる。
+   * 手で作った出張は行き先が場所名と違う・複数日にまたがるため、チップで上書きすると
+   * 行き先や期間が消える。従来どおり上の出張の一覧から直す。
+   */
+  const todayEditableByChip =
+    !todayRecord?.businessTrip ||
+    (todayRecord.startDate === todayRecord.endDate &&
+      todayRecord.title === todayRecord.place &&
+      isTripPlace(tripPlaces, todayRecord.place));
+
+  /**
    * 今日の勤務場所を1押しで決める。
    *
    * すでに同じ場所が入っているときは取り消す。押した先が変わらない操作を残すより、
    * 押し間違えたときに同じ場所をもう一度押せば戻せるほうが道が短い。
+   *
+   * 出張扱いの場所（docs/spec.md §34）はその場で出張として登録する。出張かどうかは毎回
+   * 明示して送る。送らないとNotion側の既存のチェックが残り、出張扱いでない場所へ変えても
+   * 出張のままになる。
    */
   const pickToday = async (place: string) => {
-    if (todayRecord?.businessTrip) return;
+    if (!todayEditableByChip) return;
+
+    const trip = capabilities.businessTrip
+      ? { businessTrip: isTripPlace(tripPlaces, place) }
+      : {};
 
     if (todayRecord && todayRecord.place === place) {
       await send(
@@ -117,7 +143,7 @@ export function WorkScreen({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ place, title: place }),
+          body: JSON.stringify({ place, title: place, ...trip }),
         },
         "勤務場所を変更できませんでした。",
       );
@@ -129,7 +155,7 @@ export function WorkScreen({
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startDate: todayKey, place, title: place }),
+        body: JSON.stringify({ startDate: todayKey, place, title: place, ...trip }),
       },
       "勤務場所を登録できませんでした。",
     );
@@ -231,7 +257,7 @@ export function WorkScreen({
                 </span>
               </div>
 
-              {todayRecord?.businessTrip ? (
+              {!todayEditableByChip && todayRecord ? (
                 <p className="type-body-medium">
                   出張・{todayRecord.title}
                   <span className="type-body-small ml-2 text-on-surface-variant">
@@ -269,6 +295,14 @@ export function WorkScreen({
                     );
                   })}
                 </div>
+              )}
+
+              {/* 場所から出張になったことは、押した本人にも見えている必要がある。
+                  事前申請・事後登録はこのカードには置かず、上の出張の一覧で扱う。 */}
+              {todayEditableByChip && todayRecord?.businessTrip && (
+                <p className="type-body-small text-travel">
+                  この場所は出張扱いです。事前申請・事後登録は上の出張から。
+                </p>
               )}
             </CardContent>
           </Card>
@@ -330,6 +364,7 @@ export function WorkScreen({
         <WorkRecordDialog
           draft={draft}
           placeOptions={placeOptions}
+          tripPlaces={tripPlaces}
           capabilities={capabilities}
           onClose={() => setDraft(null)}
           onSaved={() => {

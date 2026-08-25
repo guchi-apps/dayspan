@@ -12,6 +12,7 @@ import {
   type TagColor,
   type TagKind,
 } from "@/services/notion/tag-options";
+import { workTripPlaces } from "@/services/notion/work-logs";
 
 // タスクのタグ・日付リマインドの種類・勤務場所の選択肢を追加・削除する。
 // 選択肢はNotion側のプロパティ定義が一次情報源のため、DaySpanのDBには保存しない。
@@ -86,6 +87,19 @@ export async function DELETE(request: Request) {
 
   try {
     const options = await removeTagOption(prepared.connection, prepared.kind, prepared.name);
+
+    // 消した勤務場所が出張扱いのままだと、どの画面からも外せない名前が設定に居座る
+    // （出張扱いのスイッチは選択肢の一覧に添えて出しているため）。
+    if (prepared.kind === "work") {
+      const tripPlaces = workTripPlaces(prepared.connection);
+      if (tripPlaces.includes(prepared.name)) {
+        await db.notionConnection.update({
+          where: { id: prepared.connection.id },
+          data: { workTripPlaces: tripPlaces.filter((place) => place !== prepared.name) },
+        });
+      }
+    }
+
     return NextResponse.json({ options });
   } catch (error) {
     return externalApiError("notion", "remove tag option", error);
