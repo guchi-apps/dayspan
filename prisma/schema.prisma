@@ -129,6 +129,14 @@ model NotionConnection {
   garbageTitle        String?
   garbagePropertyMap  Json?
 
+  // 勤務場所と出張（docs/spec.md §34）。1日1件の勤務場所と、期間で1件の出張を同じDBに置く。
+  // Googleの予定にもタスクにも入る欄が無い記録だが、DaySpanのDBではなくNotionを一次情報源に
+  // するのは、後から見返して集計し、手で直す種類の記録のため（場所DBと同じ考え方）。
+  workDataSourceId String?
+  workDatabaseId   String?
+  workTitle        String?
+  workPropertyMap  Json?
+
   lastValidatedAt DateTime?
 
   createdAt DateTime @default(now())

@@ -13,7 +13,7 @@ import {
   type TagKind,
 } from "@/services/notion/tag-options";
 
-// タスクのタグ・日付リマインドの種類の選択肢を追加・削除する。
+// タスクのタグ・日付リマインドの種類・勤務場所の選択肢を追加・削除する。
 // 選択肢はNotion側のプロパティ定義が一次情報源のため、DaySpanのDBには保存しない。
 // 既存の選択肢の名前と色はNotion APIが変更を受け付けないため、更新の口は用意しない。
 
@@ -25,12 +25,19 @@ function reject(body: Record<string, unknown>, status: number): Prepared {
   return { error: NextResponse.json(body, { status }) };
 }
 
+/** タグ用のプロパティが無いDBを選んでいることもある。何を直せばよいか分かる形で返す。 */
+const TAG_PROPERTY_MISSING_MESSAGES: Record<TagKind, string> = {
+  task: "タスクDBにタグ（マルチセレクト）のプロパティがありません。",
+  reminder: "日付リマインドDBに種類（セレクト）のプロパティがありません。",
+  work: "勤務記録DBに勤務場所（セレクト）のプロパティがありません。",
+};
+
 /** 追加も削除もNotionの現状を取り直して書き戻すため、前準備は同じ。 */
 async function prepare(rawKind: unknown, rawName: unknown): Promise<Prepared> {
   const userId = await requireUserId();
   if (!userId) return reject({ error: "unauthorized" }, 401);
 
-  if (rawKind !== "task" && rawKind !== "reminder") {
+  if (rawKind !== "task" && rawKind !== "reminder" && rawKind !== "work") {
     return reject({ error: "kind is required" }, 400);
   }
   const kind: TagKind = rawKind;
@@ -41,15 +48,11 @@ async function prepare(rawKind: unknown, rawName: unknown): Promise<Prepared> {
   const connection = await db.notionConnection.findUnique({ where: { userId } });
   if (!connection) return reject({ error: "not_connected" }, 404);
 
-  // タグ用のプロパティが無いDBを選んでいることもある。何を直せばよいか分かる形で返す。
   if (!tagLocation(connection, kind)) {
     return reject(
       {
         error: "tag_property_missing",
-        message:
-          kind === "task"
-            ? "タスクDBにタグ（マルチセレクト）のプロパティがありません。"
-            : "日付リマインドDBに種類（セレクト）のプロパティがありません。",
+        message: TAG_PROPERTY_MISSING_MESSAGES[kind],
       },
       422,
     );

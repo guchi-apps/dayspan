@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, History, Menu, Settings } from "lucide-react";
+import { Briefcase, ChevronRight, History, Menu, Settings } from "lucide-react";
 
 import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,27 @@ import { cn } from "@/lib/utils";
 export function AppMenuButton({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
   const navigateOffline = useOfflineNavigate();
+
+  // 手続きが残っている出張の件数（docs/spec.md §34）。開いたときに1回だけ取りにいく。
+  // 各画面のサーバー側で数えると、勤務を開かない日もNotionへの往復が画面の数だけ増える
+  // （記録の長押しシートと同じ扱い）。取れなければ数字を出さないだけで、メニューは開ける。
+  const [workTodoCount, setWorkTodoCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    let alive = true;
+    fetch("/api/work/alerts")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { count?: number } | null) => {
+        if (alive) setWorkTodoCount(body?.count ?? null);
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, [open]);
 
   // ドロワーの行はソフトナビゲーションで移動する。オフラインでは保存済みがあれば
   // ハードナビゲーションへ切り替える（issue #321。メインナビの項目と同じ扱い）。
@@ -59,6 +80,13 @@ export function AppMenuButton({ className }: { className?: string }) {
 
         <nav className="flex flex-col">
           <DrawerItem
+            href="/work"
+            icon={Briefcase}
+            label="勤務"
+            badge={workTodoCount && workTodoCount > 0 ? workTodoCount : null}
+            onClick={handleClick("/work")}
+          />
+          <DrawerItem
             href="/settings"
             icon={Settings}
             label="設定"
@@ -90,11 +118,14 @@ function DrawerItem({
   href,
   icon: Icon,
   label,
+  badge,
   onClick,
 }: {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
+  /** 開く前に片付けるものがあると分かる数字。0件のときは出さない。 */
+  badge?: number | null;
   onClick: (event: React.MouseEvent) => void;
 }) {
   return (
@@ -104,7 +135,12 @@ function DrawerItem({
       className="mx-3 flex items-center gap-3 rounded-full px-4 py-3 text-on-surface transition-colors hover:bg-on-surface/8"
     >
       <Icon className="size-5 shrink-0 text-on-surface-variant" />
-      <span className="type-body-large">{label}</span>
+      <span className="type-body-large flex-1">{label}</span>
+      {badge != null && (
+        <span className="type-label-medium rounded-full bg-error-container px-2 py-0.5 tabular-nums text-on-error-container">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }

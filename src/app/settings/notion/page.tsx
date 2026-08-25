@@ -14,6 +14,7 @@ import {
 } from "@/services/notion/task-database";
 import type { PlacePropertyMap } from "@/services/notion/place-database";
 import type { ReminderPropertyMap } from "@/services/notion/reminder-database";
+import type { WorkPropertyMap } from "@/services/notion/work-database";
 
 export default async function NotionSettingsPage() {
   const user = await getCurrentUser();
@@ -52,6 +53,9 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
       garbageDataSourceId: null,
       garbageTitle: null,
       garbagePropertyMap: null,
+      workDataSourceId: null,
+      workTitle: null,
+      workPropertyMap: null,
       dataSources: [],
       sharedPages: [],
       dataSourcesFailed: false,
@@ -88,6 +92,9 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
     garbageDataSourceId: connection.garbageDataSourceId,
     garbageTitle: connection.garbageTitle,
     garbagePropertyMap: (connection.garbagePropertyMap as ReminderPropertyMap | null) ?? null,
+    workDataSourceId: connection.workDataSourceId,
+    workTitle: connection.workTitle,
+    workPropertyMap: (connection.workPropertyMap as WorkPropertyMap | null) ?? null,
     dataSources,
     sharedPages,
     dataSourcesFailed,

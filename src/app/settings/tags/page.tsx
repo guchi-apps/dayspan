@@ -39,12 +39,21 @@ export default async function TagSettingsPage() {
         "日付リマインドDBに種類（セレクト）のプロパティがありません。Notion側で追加してから、設定のNotion画面で日付リマインドDBを選び直してください。",
       databaseUrl: notionUrl(connection.reminderDatabaseId),
     },
+    {
+      kind: "work",
+      title: "勤務場所",
+      description: "勤務の記録に付けられる場所です。1件につき1つだけ選べます。",
+      options: catalog.work,
+      missingMessage:
+        "勤務記録DBに勤務場所（セレクト）のプロパティがありません。Notion側で追加してから、設定のNotion画面で勤務記録DBを選び直してください。",
+      databaseUrl: notionUrl(connection.workDatabaseId),
+    },
   ];
 
   return (
     <SettingsShell
       title="タグ"
-      description="タスクのタグと日付リマインドの種類を、色つきで登録しておけます。"
+      description="タスクのタグ・日付リマインドの種類・勤務場所を、色つきで登録しておけます。"
       backHref="/settings"
       backLabel="設定"
     >

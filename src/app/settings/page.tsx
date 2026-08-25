@@ -82,7 +82,7 @@ export default async function SettingsPage() {
             href="/settings/tags"
             icon={Tags}
             label="タグ"
-            value="タスクのタグと日付リマインドの種類"
+            value="タスクのタグ・日付リマインドの種類・勤務場所"
           />
         )}
         {/* 記録の保存先はGoogle Calendar。未接続では保存先が選べないため、行ごと出さない。 */}
