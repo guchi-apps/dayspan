@@ -4,7 +4,7 @@ import { tagChipClass, tagColorOf } from "@/components/tags/tag-color";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
-import type { WorkRecordItem } from "@/types/work";
+import { annualLeaveDays, type WorkRecordItem } from "@/types/work";
 
 /**
  * カレンダーに出す勤務場所（docs/spec.md §34）。
@@ -44,7 +44,9 @@ export function WorkPlaceChip({
         色だけに意味を持たせない（狭い列では名前が端から切れて色だけが残る）。
         読み上げには何の値なのかまで残す。
       */}
-      <span className="sr-only">{record.businessTrip ? "出張" : "勤務場所"}</span>
+      <span className="sr-only">
+        {record.annualLeave ? "年休" : record.businessTrip ? "出張" : "勤務場所"}
+      </span>
       <span className="overflow-hidden">{label}</span>
     </span>
   );
@@ -55,8 +57,16 @@ export function WorkPlaceChip({
  *
  * 通常の勤務は勤務場所そのもの（勤務の画面はタイトルにも同じ値を入れる）。出張はタイトルに
  * 行き先が入っており、そちらのほうが「どこへ行っているか」を示す。
+ *
+ * 年休はタイトル（「年休（午前半休）」）をそのまま出すと、10pxの狭い列では末尾から切れて
+ * 括弧の途中で終わる。全休は「年休」まで、半休は区分と残り半日の勤務場所を出す（勤務場所だけ
+ * にすると年休だと分からず、区分だけにするとその日出社したことが消える）。
  */
 export function workPlaceLabel(record: WorkRecordItem): string {
+  if (record.annualLeave) {
+    if (annualLeaveDays(record.annualLeave) === 1) return "年休";
+    return record.place ? `${record.annualLeave}・${record.place}` : record.annualLeave;
+  }
   const label = record.businessTrip ? record.title : (record.place ?? record.title);
   return label.trim();
 }
