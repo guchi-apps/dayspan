@@ -38,6 +38,18 @@ export function validateWorkBody(
       { status: 400 },
     );
   }
+  // 出張と年休は同じ日に立てられない。月の集計でどちらに数えるかが決まらないため。
+  // 画面では3択にして選べないようにしているが、隠すだけだとAPIや将来のMCPから直接
+  // 呼ばれた要求が素通りする。
+  if (body.businessTrip && body.annualLeave) {
+    return NextResponse.json(
+      {
+        error: "conflicting_kind",
+        message: "出張と年休は同じ記録には登録できません。どちらかにしてください。",
+      },
+      { status: 400 },
+    );
+  }
   return null;
 }
 
