@@ -2,6 +2,8 @@ import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
 import type { ReminderItem } from "@/types/calendar";
+
+import type { NotionQueryFilter } from "./client";
 import type { ReminderField, ReminderPropertyMap } from "./reminder-database";
 
 type PropertyValue = {
@@ -93,7 +95,7 @@ function expandAnnual(reminder: ReminderItem, range: { from: string; to: string 
 export async function queryDatePages(
   notion: Client,
   dataSourceId: string,
-  filter?: Record<string, unknown>,
+  filter?: NotionQueryFilter,
 ): Promise<DatePage[]> {
   const pages: DatePage[] = [];
   let cursor: string | undefined;
@@ -101,7 +103,7 @@ export async function queryDatePages(
     const response = await notion.dataSources.query({
       data_source_id: dataSourceId,
       page_size: 100,
-      ...(filter ? { filter: filter as never } : {}),
+      ...(filter ? { filter } : {}),
       ...(cursor ? { start_cursor: cursor } : {}),
     });
     for (const result of response.results) {

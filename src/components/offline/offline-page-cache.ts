@@ -45,6 +45,26 @@ export function useWarmOfflinePage(path: string): void {
 }
 
 /**
+ * そのパスの保存済みを捨てるよう Service Worker へ頼む（issue #407）。
+ *
+ * 画面を描く途中で投げた例外は、シェルがすでに流れていると HTTP 200 で返るため、
+ * Service Worker からは正常なページと区別が付かず PAGE_CACHE へ入る。捨てておかないと、
+ * 次にオフラインになったときや proxy.ts が5xxを返したときに、原因が直ったあとでも
+ * その画面だけがエラーの面を出し続ける。
+ *
+ * 判断はここでは行わない。エラーの面が出たという事実を知っているのは画面側だけのため。
+ */
+export function dropOfflinePage(path: string): void {
+  navigator.serviceWorker?.ready
+    .then((registration) =>
+      registration.active?.postMessage({ type: "dayspan:drop-page", paths: [path] }),
+    )
+    .catch(() => {
+      // Service Worker が居ない環境（開発サーバー・非対応ブラウザ）では捨てるものが無い。
+    });
+}
+
+/**
  * そのパスの画面が保存済みか（issue #321）。
  *
  * オフライン中のナビの移動をハードナビゲーションへ切り替えてよいかの判定に使う。
