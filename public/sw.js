@@ -100,6 +100,12 @@ self.addEventListener("message", (event) => {
   // 開いている画面から呼ぶ（issue #321）。その画面のHTMLを先に保存しておく。
   if (event.data?.type === "dayspan:warm") {
     event.waitUntil(warmPages(event.data.paths));
+    return;
+  }
+
+  // エラー画面（src/app/error.tsx）から呼ぶ（issue #407）。そのページの保存済みを捨てる。
+  if (event.data?.type === "dayspan:drop-page") {
+    event.waitUntil(dropPages(event.data.paths));
   }
 });
 
@@ -370,6 +376,33 @@ async function warmPages(paths) {
     } catch {
       // オフラインなら取れなくて当然。保存済みがあればそれが使われる。
     }
+  }
+}
+
+/**
+ * 保存済みのページを捨てる（issue #407）。
+ *
+ * 画面を描く途中で投げた例外は、シェルがすでに流れていると HTTP 200 で返る
+ * （ルートに loading.tsx があるため、勤務・カレンダーのように動的な画面は全てこの形になる）。
+ * つまりエラーの面がそのまま「保存してよい応答」として PAGE_CACHE に入る。そのまま残すと、
+ * 次にオフラインになったときや proxy.ts が5xxを返したときに、その画面はいつまでも
+ * エラーの面を出し続ける。原因が直っても、保存済みだけが古い失敗を再生する。
+ *
+ * クエリ違いまでは消さない。月や日付が違う保存済みは、その回の失敗とは別に取れたもので、
+ * オフラインのときの手掛かりとして残しておくほうがよい。
+ */
+async function dropPages(paths) {
+  if (!Array.isArray(paths)) return;
+
+  const cache = await caches.open(PAGE_CACHE);
+
+  for (const path of paths) {
+    if (typeof path !== "string" || !path.startsWith("/")) continue;
+
+    const url = new URL(path, self.location.origin);
+    if (url.origin !== self.location.origin) continue;
+
+    await cache.delete(url.href, { ignoreVary: true });
   }
 }
 
