@@ -52,6 +52,28 @@ scripts/sync-github-secrets.sh --only VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_S
 デプロイのたびに `secrets-check` ジョブ（`.github/scripts/check-repo-secrets.sh`）が
 マニフェストの `repo` 項目と突き合わせ、空のものがあればSignalyへ1通出す（値そのものは出さない）。
 
+### 「鍵が設定されていません」と出たとき
+
+設定画面のこの文言は、`VAPID_*` の3つが揃っていないか、鍵の対が食い違っているかのどちらかを指す。
+次の順に確かめると最短で分かれる。
+
+```bash
+gh secret list --repo guchi-apps/dayspan
+```
+
+1. `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` が並ばない → 同期されていない（→「本番へ配る」）。
+   **1Passwordに入っているかどうかは判定にならない。** 入っていても同期しなければ本番には届かない。
+   #359 と #400 はどちらもこの状態で、1Password側の3つは最初から揃っていた。
+2. 3つ並ぶのに出る → 同期より後にデプロイしたか。Secretsは既に終わったデプロイへは遡って効かない。
+   本番の `.env` は次のデプロイで `update_env` が書き直すまで空文字のまま残る。
+3. それでも出る → 鍵の対が食い違っている（→「公開鍵と秘密鍵の食い違い」）。
+   サーバーログに `[dayspan] VAPID keys are unusable:` が出る。
+
+**デプロイが緑であることは、値が揃っている根拠にならない。** `secrets-check` は空の値を見つけても
+warning を出すだけでジョブは success のまま終わる（無くても他の機能が動く値を含むため、デプロイを
+止めない判断。`.github/workflows/deploy.yml`）。空だったことが残るのはSignalyの1通と
+Actionsのログの warning だけで、画面にも本番のログにも出ない。
+
 ### 公開鍵と秘密鍵の食い違い
 
 別々の環境変数にあるため、片方だけ入れ替わっていても値としては読める。その状態では
