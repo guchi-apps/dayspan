@@ -5,6 +5,7 @@ import { TagSection, type TagSectionState } from "@/components/settings/tag-sect
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { loadTagCatalog } from "@/services/notion/tag-options";
+import { workCapabilities, workTripPlaces } from "@/services/notion/work-logs";
 
 /** NotionのページURL。IDのハイフンを外した形がそのままURLになる。 */
 function notionUrl(databaseId: string | null): string | null {
@@ -47,6 +48,12 @@ export default async function TagSettingsPage() {
       missingMessage:
         "勤務記録DBに勤務場所（セレクト）のプロパティがありません。Notion側で追加してから、設定のNotion画面で勤務記録DBを選び直してください。",
       databaseUrl: notionUrl(connection.workDatabaseId),
+      // 行けば必ず出張になる勤務先は、場所を選んだ時点で出張の既定を立てる（docs/spec.md §34）。
+      // 選択肢の一覧がここにあるため、場所ごとの設定も同じ行に添える。
+      trip: {
+        places: workTripPlaces(connection),
+        available: workCapabilities(connection).businessTrip,
+      },
     },
   ];
 

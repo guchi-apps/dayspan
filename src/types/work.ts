@@ -1,8 +1,8 @@
 /**
- * 勤務場所と出張（docs/spec.md §34）。
+ * 勤務場所・出張・年休（docs/spec.md §34）。
  *
- * 通常の勤務も出張も、Notionの勤務記録DBにある同じ形のページとして扱う。
- * 違うのは日付が範囲かどうかと「出張」チェックだけで、種類として分けない。
+ * 通常の勤務も出張も年休も、Notionの勤務記録DBにある同じ形のページとして扱う。
+ * 違うのは日付が範囲かどうかと「出張」チェック・「年休」の区分だけで、種類として分けない。
  */
 export type WorkRecordItem = {
   /** Notionのページ ID */
@@ -14,6 +14,13 @@ export type WorkRecordItem = {
   endDate: string;
   /** 勤務場所（Notionのselectの選択肢）。DBに列が無い・未入力なら null。 */
   place: string | null;
+  /**
+   * 年休の区分（全休・午前半休・午後半休）。年休ではない日は null。
+   *
+   * チェック2つ（年休か・半休か）ではなく1つのselectで持つのは、「半休なのに全休が立つ」
+   * 組み合わせを作れないようにするため。
+   */
+  annualLeave: string | null;
   businessTrip: boolean;
   preApplied: boolean;
   postRegistered: boolean;
@@ -24,12 +31,14 @@ export type WorkRecordItem = {
 /**
  * 勤務記録DBで何が使えるか。
  *
- * 出張・事前申請・事後登録は名前が当たったときだけ対応付ける任意プロパティのため、
+ * 年休・出張・事前申請・事後登録は名前が当たったときだけ対応付ける任意プロパティのため、
  * 既存のDBを選んだ場合は揃っていないことがある。使えないものを画面から出すと、
  * 押しても保存されない操作が残るため、揃っているかどうかを画面まで渡す。
  */
 export type WorkCapabilities = {
   businessTrip: boolean;
+  /** 年休を登録し、事前申請の済み未済まで持てるか。 */
+  annualLeave: boolean;
   approval: boolean;
   memo: boolean;
 };
@@ -43,18 +52,50 @@ export const WORK_TODO_LABELS: Record<WorkTodo, string> = {
 };
 
 /**
- * その出張で未対応の手続き。
+ * その記録で未対応の手続き。
+ *
+ * 年休が持つのは事前申請だけ。休んだことを後から届け出る手続きは無く、出張の事後登録に
+ * あたるものが存在しない。
  *
  * 事後登録は終了日を過ぎてから数える。出張の前から未対応に混ざると、まだできないものが
- * 件数に含まれ続け、いま手を打つべき件数として読めなくなるため。
+ * 件数に含まれ続け、いま手を打つべき件数として読めなくなるため。事前申請は日付によらず
+ * 未対応に数える（過ぎた日でも申請そのものは残っている）。
  */
 export function workTodos(record: WorkRecordItem, todayKey: string): WorkTodo[] {
+  if (record.annualLeave) return record.preApplied ? [] : ["preApplied"];
   if (!record.businessTrip) return [];
 
   const todos: WorkTodo[] = [];
   if (!record.preApplied) todos.push("preApplied");
   if (!record.postRegistered && record.endDate < todayKey) todos.push("postRegistered");
   return todos;
+}
+
+/**
+ * その勤務場所が出張扱いか。
+ *
+ * 「行けば必ず出張になる勤務先」を場所ごとに覚えておき（NotionConnection.workTripPlaces）、
+ * その場所を選んだ時点で出張の既定を立てる。未選択（null・空文字）は出張ではない。
+ */
+export function isTripPlace(tripPlaces: string[], place: string | null | undefined): boolean {
+  return Boolean(place) && tripPlaces.includes(place as string);
+}
+
+/**
+ * 年休1日ぶんの日数。半休は 0.5 日。
+ *
+ * 区分の名前で決める。DaySpanが作る選択肢は全休・午前半休・午後半休の3つだが、Notionの
+ * selectは書き込んだ名前がそのまま選択肢になるため、利用者が足した名前でも同じ規則で読める。
+ * 月の集計（勤怠の提出で見る数字）が半休を1日として数えると使えないため、ここで分ける。
+ */
+export function annualLeaveDays(kind: string | null): number {
+  if (!kind) return 0;
+  return kind.includes("半") ? 0.5 : 1;
+}
+
+/** 集計に出す日数。整数の日を `12.0` と出さない。 */
+export function formatDays(days: number): string {
+  return Number.isInteger(days) ? String(days) : days.toFixed(1);
 }
 
 /** その記録が指定の日にかかっているか。出張は期間の全ての日にかかる。 */

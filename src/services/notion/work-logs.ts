@@ -6,7 +6,7 @@ import type { WorkCapabilities, WorkRecordItem } from "@/types/work";
 import type { WorkField, WorkPropertyMap } from "./work-database";
 
 /**
- * 勤務場所と出張の読み書き（docs/spec.md §34）。
+ * 勤務場所・出張・年休の読み書き（docs/spec.md §34）。
  *
  * 一次情報源はNotionの勤務記録DBで、DaySpanのDBには何も保存しない。日付リマインドと同じく、
  * 利用者が後から見返し・集計し・手で直す種類の記録のため。
@@ -39,15 +39,35 @@ export function workPropertyMap(connection: NotionConnection): WorkPropertyMap {
  *
  * 出張の3つはどれか1つでも欠けると出張の管理が成立しない（出張だと分からない・申請の
  * 済み未済を持てない）ため、まとめて判定する。
+ *
+ * 年休も同じで、区分と事前申請の両方が要る。年休は事前に申請するもので、申請の済み未済を
+ * 持てないなら記録できても片手落ちになる。事前申請は出張と同じ列を使う（指しているものが
+ * 同じで、checkboxを増やすほど名前で当てる対応付けの取り違えの余地が増えるため）。
  */
 export function workCapabilities(connection: NotionConnection | null): WorkCapabilities {
-  if (!connection) return { businessTrip: false, approval: false, memo: false };
+  if (!connection) {
+    return { businessTrip: false, annualLeave: false, approval: false, memo: false };
+  }
   const map = workPropertyMap(connection);
   return {
     businessTrip: Boolean(map.businessTrip),
+    annualLeave: Boolean(map.annualLeave && map.preApplied),
     approval: Boolean(map.businessTrip && map.preApplied && map.postRegistered),
     memo: Boolean(map.memo),
   };
+}
+
+/**
+ * 出張扱いにする勤務場所の名前（docs/spec.md §34）。
+ *
+ * 「行けば必ず出張になる勤務先」を場所ごとに覚えておき、その場所を選んだ時点で出張の既定を
+ * 立てる。壊れた値（配列でない・文字列でない要素）は落として空として扱う。設定が読めないことを
+ * 理由に勤務の記録そのものを止めないため。
+ */
+export function workTripPlaces(connection: NotionConnection | null): string[] {
+  const value = connection?.workTripPlaces;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 /** 勤務記録DBが読み書きできる状態か。データソースと必須プロパティが揃って初めて使える。 */
@@ -70,6 +90,7 @@ function normalizeWorkPage(page: WorkPage, map: WorkPropertyMap): WorkRecordItem
     // 単日の記録では end が空。期間の判定をどこでも同じ形で書けるよう、開始日で埋める。
     endDate: dateKeyOf(get("date")?.date?.end) ?? startDate,
     place: get("place")?.select?.name ?? null,
+    annualLeave: get("annualLeave")?.select?.name ?? null,
     businessTrip: Boolean(get("businessTrip")?.checkbox),
     preApplied: Boolean(get("preApplied")?.checkbox),
     postRegistered: Boolean(get("postRegistered")?.checkbox),
@@ -101,11 +122,28 @@ async function queryWorkPages(
 }
 
 /**
+ * 問い合わせの下限を、範囲の開始日から何日さかのぼるか。
+ *
+ * Notionの日付フィルタは範囲の開始日だけを見るため、`on_or_after: range.from` にすると
+ * 範囲より前に始まって続いている出張が落ちる。かといって下限を置かないと、勤務記録は
+ * 1日1件で増え続けるため、過去の全件をページングすることになる（5年で約1,800件＝18往復）。
+ * カレンダーは月を送るたびにこれを通るので、現実的な出張の長さを超える幅で下限を作る。
+ * これより長い期間の記録は、開始日が範囲の外にあると出てこない。
+ */
+const WORK_RANGE_LOOKBACK_DAYS = 92;
+
+/** YYYY-MM-DD から日数をさかのぼった YYYY-MM-DD。時刻を持たないためUTCで数えて構わない。 */
+function shiftDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
  * 期間に重なる勤務記録を取得する。
  *
- * Notionの日付フィルタは範囲の開始日だけを見るため、`on_or_after` だけでは月をまたいで
- * 続いている出張（前の月に始まった出張）が落ちる。開始日が範囲の終わり以前のものを採り、
- * 終了日での絞り込みはこちら側で行う。
+ * 開始日が範囲の終わり以前・下限以降のものを採り、終了日での絞り込みはこちら側で行う
+ * （Notionの日付フィルタは範囲の開始日しか見ないため）。
  */
 export async function listWorkRecordsInRange(
   notion: Client,
@@ -116,8 +154,13 @@ export async function listWorkRecordsInRange(
   if (!connection.workDataSourceId || !map.date) return [];
 
   const pages = await queryWorkPages(notion, connection.workDataSourceId, {
-    property: map.date,
-    date: { on_or_before: range.to },
+    and: [
+      { property: map.date, date: { on_or_before: range.to } },
+      {
+        property: map.date,
+        date: { on_or_after: shiftDateKey(range.from, -WORK_RANGE_LOOKBACK_DAYS) },
+      },
+    ],
   });
 
   return pages
@@ -128,31 +171,47 @@ export async function listWorkRecordsInRange(
 }
 
 /**
- * まだ手続きが済んでいない出張。
+ * まだ手続きが済んでいない記録（出張の事前申請・事後登録と、年休の事前申請）。
  *
  * 事後登録が未対応かどうかは終了日を過ぎたかで決まり、Notionの日付フィルタでは判定できない
- * （範囲の開始日しか見ないため）。ここでは「出張で、どちらかが未チェック」までを絞り込み、
+ * （範囲の開始日しか見ないため）。ここでは「どれかが未チェック」までを絞り込み、
  * 終了日の判定は `workTodos()` に任せる。年に数十件の規模のため、全件を採っても往復は1回。
+ *
+ * 出張と年休をひとつのクエリで採るのは、どちらもメニューの同じ数字（未対応の件数）になるため。
+ * 分けると、その数字ひとつのためにNotionへの往復が2回になる。
  */
-export async function listOpenBusinessTrips(
+export async function listPendingWorkRecords(
   notion: Client,
   connection: NotionConnection,
 ): Promise<WorkRecordItem[]> {
   const map = workPropertyMap(connection);
-  if (!connection.workDataSourceId || !map.date) return [];
-  if (!map.businessTrip || !map.preApplied || !map.postRegistered) return [];
+  if (!connection.workDataSourceId || !map.date || !map.preApplied) return [];
 
-  const pages = await queryWorkPages(notion, connection.workDataSourceId, {
-    and: [
-      { property: map.businessTrip, checkbox: { equals: true } },
-      {
-        or: [
-          { property: map.preApplied, checkbox: { equals: false } },
-          { property: map.postRegistered, checkbox: { equals: false } },
-        ],
-      },
-    ],
-  });
+  const conditions: Record<string, unknown>[] = [];
+  if (map.businessTrip && map.postRegistered) {
+    conditions.push({
+      and: [
+        { property: map.businessTrip, checkbox: { equals: true } },
+        {
+          or: [
+            { property: map.preApplied, checkbox: { equals: false } },
+            { property: map.postRegistered, checkbox: { equals: false } },
+          ],
+        },
+      ],
+    });
+  }
+  if (map.annualLeave) {
+    conditions.push({
+      and: [
+        { property: map.annualLeave, select: { is_not_empty: true } },
+        { property: map.preApplied, checkbox: { equals: false } },
+      ],
+    });
+  }
+  if (conditions.length === 0) return [];
+
+  const pages = await queryWorkPages(notion, connection.workDataSourceId, { or: conditions });
 
   return pages
     .map((page) => normalizeWorkPage(page, map))
@@ -169,6 +228,8 @@ export type WorkWriteInput = {
   /** YYYY-MM-DD。単日なら startDate と同じ値、または null。 */
   endDate?: string | null;
   place?: string | null;
+  /** 年休の区分（全休・午前半休・午後半休）。年休を外すときは null。 */
+  annualLeave?: string | null;
   businessTrip?: boolean;
   preApplied?: boolean;
   postRegistered?: boolean;
@@ -197,6 +258,9 @@ function toProperties(input: WorkWriteInput, map: WorkPropertyMap): Record<strin
   }
   if (input.place !== undefined) {
     set("place", { select: input.place ? { name: input.place } : null });
+  }
+  if (input.annualLeave !== undefined) {
+    set("annualLeave", { select: input.annualLeave ? { name: input.annualLeave } : null });
   }
   if (input.businessTrip !== undefined) {
     set("businessTrip", { checkbox: input.businessTrip });
@@ -310,6 +374,7 @@ export async function createWorkRecord(
     startDate: input.startDate,
     endDate,
     place: input.place ?? null,
+    annualLeave: input.annualLeave ?? null,
     businessTrip: Boolean(input.businessTrip),
     preApplied: Boolean(input.preApplied),
     postRegistered: Boolean(input.postRegistered),
