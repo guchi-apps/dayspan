@@ -12,7 +12,13 @@ import {
 
 import { dateTaken, validateWorkBody } from "../shared";
 
-/** 勤務場所・出張を1件作る（docs/spec.md §34）。 */
+/** タイトルが省かれたときの名前。年休は区分まで、通常の勤務は勤務場所をそのまま使う。 */
+function defaultWorkTitle(body: WorkWriteInput): string {
+  if (body.annualLeave) return `年休（${body.annualLeave}）`;
+  return body.place || "勤務";
+}
+
+/** 勤務場所・出張・年休を1件作る（docs/spec.md §34）。 */
 export async function POST(request: Request) {
   const userId = await requireUserId();
   if (!userId) {
@@ -32,7 +38,8 @@ export async function POST(request: Request) {
     const created = await createWorkRecord(createNotionClient(connection), connection, {
       ...body,
       startDate: body.startDate!,
-      title: body.title?.trim() || body.place || "勤務",
+      // タイトルを送ってこない経路（API・将来のMCP）でも、Notionの一覧で開かずに読める名前にする。
+      title: body.title?.trim() || defaultWorkTitle(body),
     });
     return NextResponse.json({ record: created });
   } catch (error) {

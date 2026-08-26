@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
 import { loadTagOptions } from "@/services/notion/tag-options";
 import {
-  listOpenBusinessTrips,
+  listPendingWorkRecords,
   listWorkRecordsInRange,
   workCapabilities,
   workDatabaseReady,
@@ -55,24 +55,26 @@ export default async function WorkPage({
   const notion = createNotionClient(connection);
   const range = monthRange(monthKey);
 
-  // 月ぶんの記録と、手続きが残っている出張を同時に取りにいく。未対応の出張は月の外にも
-  // ありうる（先月の出張の事後登録が残っている）ため、月の取得とは別に引く。
-  const [records, openTrips, placeOptions] = await Promise.all([
+  // 月ぶんの記録と、手続きが残っている記録を同時に取りにいく。未対応のものは月の外にも
+  // ありうる（先月の出張の事後登録・来月の年休の申請が残っている）ため、月の取得とは別に引く。
+  const [records, pending, placeOptions] = await Promise.all([
     listWorkRecordsInRange(notion, connection, range),
-    listOpenBusinessTrips(notion, connection),
+    listPendingWorkRecords(notion, connection),
     loadTagOptions(connection, "work"),
   ]);
 
-  // 月内の出張は両方に現れる。同じ記録を2度描かないよう、IDで寄せてから渡す。
+  // 月内の記録は両方に現れる。同じ記録を2度描かないよう、IDで寄せてから渡す。
   const byId = new Map<string, WorkRecordItem>();
-  for (const record of [...records, ...openTrips]) byId.set(record.id, record);
+  for (const record of [...records, ...pending]) byId.set(record.id, record);
+  const dedupe = (list: WorkRecordItem[]) => list.map((item) => byId.get(item.id) ?? item);
 
   return (
     <WorkScreen
       monthKey={monthKey}
       todayKey={todayKey}
       records={records}
-      openTrips={openTrips.map((trip) => byId.get(trip.id) ?? trip)}
+      openTrips={dedupe(pending.filter((record) => record.businessTrip && !record.annualLeave))}
+      openLeaves={dedupe(pending.filter((record) => record.annualLeave))}
       placeOptions={placeOptions ?? []}
       tripPlaces={workTripPlaces(connection)}
       capabilities={workCapabilities(connection)}
@@ -88,7 +90,7 @@ function ConnectPrompt() {
         <CardHeader>
           <CardTitle>勤務記録DBが設定されていません</CardTitle>
           <CardDescription>
-            勤務場所と出張はNotionのデータベースに記録します。設定のNotion画面で勤務記録DBを選ぶか、
+            勤務場所・出張・年休はNotionのデータベースに記録します。設定のNotion画面で勤務記録DBを選ぶか、
             新しく作成してください。
           </CardDescription>
         </CardHeader>

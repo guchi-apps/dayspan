@@ -19,7 +19,9 @@ import { japaneseHolidayName } from "@/lib/japanese-holidays";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
+  annualLeaveDays,
   coversDate,
+  formatDays,
   isTripPlace,
   WORK_TODO_LABELS,
   workTodos,
@@ -29,7 +31,7 @@ import {
 } from "@/types/work";
 
 /**
- * 勤務場所と出張の画面（docs/spec.md §34）。
+ * 勤務場所・出張・年休の画面（docs/spec.md §34）。
  *
  * 登録も確認もこの画面に閉じている。勤務場所は毎日押すものだが、記録（活動記録）のように
  * 「いま」その瞬間を押さえる操作ではなく、一日の終わりや翌朝にまとめて入れられる。
@@ -40,6 +42,7 @@ export function WorkScreen({
   todayKey,
   records,
   openTrips,
+  openLeaves,
   placeOptions,
   tripPlaces,
   capabilities,
@@ -51,6 +54,8 @@ export function WorkScreen({
   records: WorkRecordItem[];
   /** 手続きが残っている出張。月の外のものも含む。 */
   openTrips: WorkRecordItem[];
+  /** 事前申請が済んでいない年休。月の外のものも含む。 */
+  openLeaves: WorkRecordItem[];
   placeOptions: TagOption[];
   /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
   tripPlaces: string[];
@@ -104,13 +109,15 @@ export function WorkScreen({
    * 場所から出張になった単日の記録（行き先＝場所名）は、もう一度押して取り消せる必要がある。
    * 1押しで登録したものを1押しで戻せないと、消すためだけに日の行から入り直すことになる。
    * 手で作った出張は行き先が場所名と違う・複数日にまたがるため、チップで上書きすると
-   * 行き先や期間が消える。従来どおり上の出張の一覧から直す。
+   * 行き先や期間が消える。年休は場所と無関係に決められたものなので、従来どおり上の
+   * 出張・年休の一覧から直す。
    */
   const todayEditableByChip =
-    !todayRecord?.businessTrip ||
-    (todayRecord.startDate === todayRecord.endDate &&
-      todayRecord.title === todayRecord.place &&
-      isTripPlace(tripPlaces, todayRecord.place));
+    !todayRecord?.annualLeave &&
+    (!todayRecord?.businessTrip ||
+      (todayRecord.startDate === todayRecord.endDate &&
+        todayRecord.title === todayRecord.place &&
+        isTripPlace(tripPlaces, todayRecord.place)));
 
   /**
    * 今日の勤務場所を1押しで決める。
@@ -162,16 +169,16 @@ export function WorkScreen({
     );
   };
 
-  /** 出張の手続きの済み・未済を切り替える。日付は動かさないため、重なりの確認は要らない。 */
-  const toggleTodo = async (trip: WorkRecordItem, todo: WorkTodo, done: boolean) => {
+  /** 手続きの済み・未済を切り替える。日付は動かさないため、重なりの確認は要らない。 */
+  const toggleTodo = async (record: WorkRecordItem, todo: WorkTodo, done: boolean) => {
     await send(
-      `/api/work/records/${trip.id}`,
+      `/api/work/records/${record.id}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [todo]: done }),
       },
-      "出張の状況を変更できませんでした。",
+      "手続きの状況を変更できませんでした。",
     );
   };
 
@@ -180,12 +187,16 @@ export function WorkScreen({
     setDraft(
       existing
         ? { mode: "edit", record: existing }
-        : { mode: "create", startDate: dateKey, businessTrip: false },
+        : { mode: "create", startDate: dateKey, kind: "work" },
     );
   };
 
   const monthLabel = `${monthKey.slice(0, 4)}年${Number(monthKey.slice(5, 7))}月`;
   const openTodos = openTrips.flatMap((trip) => workTodos(trip, todayKey));
+  const trips = mergeRecords(openTrips, monthTrips(records), todayKey);
+  const monthLeaves = records.filter((record) => record.annualLeave);
+  const leaves = mergeRecords(openLeaves, monthLeaves, todayKey);
+  const openLeaveCount = openLeaves.length;
 
   return (
     <SettingsShell title="勤務" backHref="/activity" backLabel="記録">
@@ -222,21 +233,59 @@ export function WorkScreen({
             )}
           </div>
 
-          {openTrips.length === 0 && monthTrips(records).length === 0 ? (
+          {trips.length === 0 ? (
             <p className="type-body-small text-on-surface-variant">
               この月の出張はありません。日を押すと出張として登録できます。
             </p>
           ) : (
             <div className="flex flex-col gap-2">
-              {sortTrips(openTrips, monthTrips(records), todayKey).map((trip) => (
-                <TripRow
+              {trips.map((trip) => (
+                <RecordRow
                   key={trip.id}
-                  trip={trip}
+                  record={trip}
                   todayKey={todayKey}
-                  approval={capabilities.approval}
+                  todos={capabilities.approval ? ["preApplied", "postRegistered"] : []}
+                  tone="travel"
                   disabled={busy || pending || offline}
                   onToggle={toggleTodo}
                   onOpen={() => setDraft({ mode: "edit", record: trip })}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 年休。出張と同じ形にする。開く理由の多くは「まだ申請していないものを片付けること」で、
+          日別の一覧を上から探すのでは見つからないため。 */}
+      {capabilities.annualLeave && (
+        <section className="flex flex-col gap-3">
+          <div className="flex items-baseline gap-2">
+            <h2 className="type-title-small">年休</h2>
+            {openLeaveCount > 0 && (
+              <span className="type-label-medium flex items-center gap-1 text-error">
+                <CircleAlert className="size-3.5" />
+                未申請 {openLeaveCount}件
+              </span>
+            )}
+          </div>
+
+          {leaves.length === 0 ? (
+            <p className="type-body-small text-on-surface-variant">
+              この月の年休はありません。日を押すと年休として登録できます。
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {leaves.map((leave) => (
+                <RecordRow
+                  key={leave.id}
+                  record={leave}
+                  todayKey={todayKey}
+                  todos={["preApplied"]}
+                  tone="leave"
+                  disabled={busy || pending || offline}
+                  onToggle={toggleTodo}
+                  onOpen={() => setDraft({ mode: "edit", record: leave })}
                 />
               ))}
             </div>
@@ -263,9 +312,9 @@ export function WorkScreen({
 
               {!todayEditableByChip && todayRecord ? (
                 <p className="type-body-medium">
-                  出張・{todayRecord.title}
+                  {recordLabel(todayRecord)}
                   <span className="type-body-small ml-2 text-on-surface-variant">
-                    直すときは上の出張から
+                    直すときは上の{todayRecord.annualLeave ? "年休" : "出張"}から
                   </span>
                 </p>
               ) : placeOptions.length === 0 ? (
@@ -340,9 +389,10 @@ export function WorkScreen({
                       className={cn(
                         "type-body-medium min-w-0 truncate",
                         record.businessTrip && "font-bold text-travel",
+                        record.annualLeave && "font-bold text-tertiary",
                       )}
                     >
-                      {record.businessTrip ? `出張・${record.title}` : (record.place ?? record.title)}
+                      {recordLabel(record)}
                     </span>
                   ) : (
                     <span className="type-body-medium text-outline">未登録</span>
@@ -353,22 +403,63 @@ export function WorkScreen({
                       {holiday}
                     </span>
                   )}
+                  {/* 申請が残っている日は一覧からも分かるようにする。上の区画まで戻らずに気付ける。
+                      祝日の名前と並ぶ日は、名前の側を削って未対応の印を残す（印は2〜3文字で、
+                      削られると何が残っているのかが読めなくなる）。 */}
+                  {record && workTodos(record, todayKey).length > 0 && (
+                    <span
+                      className={cn(
+                        "type-label-small shrink-0 font-bold text-error",
+                        !holiday && "ml-auto",
+                      )}
+                    >
+                      {record.annualLeave ? "未申請" : "未対応"}
+                    </span>
+                  )}
                 </button>
               );
             })}
           </CardContent>
         </Card>
 
-        <Button
-          variant="outline"
-          disabled={offline}
-          onClick={() =>
-            setDraft({ mode: "create", startDate: defaultDate(monthKey, todayKey), businessTrip: true })
-          }
-        >
-          <Plus className="size-4" />
-          出張を追加
-        </Button>
+        {/* 出張・年休は先の日付に入れるものが多い。日別の一覧をスクロールして押させるより、
+            開いてから日付を選ばせるほうが短い。 */}
+        {(capabilities.businessTrip || capabilities.annualLeave) && (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {capabilities.businessTrip && (
+              <Button
+                variant="outline"
+                disabled={offline}
+                onClick={() =>
+                  setDraft({
+                    mode: "create",
+                    startDate: defaultDate(monthKey, todayKey),
+                    kind: "trip",
+                  })
+                }
+              >
+                <Plus className="size-4" />
+                出張を追加
+              </Button>
+            )}
+            {capabilities.annualLeave && (
+              <Button
+                variant="outline"
+                disabled={offline}
+                onClick={() =>
+                  setDraft({
+                    mode: "create",
+                    startDate: defaultDate(monthKey, todayKey),
+                    kind: "leave",
+                  })
+                }
+              >
+                <Plus className="size-4" />
+                年休を追加
+              </Button>
+            )}
+          </div>
+        )}
       </section>
 
       {draft && (
@@ -388,44 +479,65 @@ export function WorkScreen({
   );
 }
 
-/** 出張1件ぶんの行。済み・未済はその場で切り替えられる。 */
-function TripRow({
-  trip,
+/**
+ * 出張・年休1件ぶんの行。済み・未済はその場で切り替えられる。
+ *
+ * 出張と年休で作りを変えないのは、開く理由（まだ済ませていない手続きを片付ける）が同じで、
+ * 別の形にすると同じことをするのに覚えることが2つに増えるため。違うのは色と、出せる
+ * 手続きの数だけにする。
+ */
+function RecordRow({
+  record,
   todayKey,
-  approval,
+  todos: shown,
+  tone,
   disabled,
   onToggle,
   onOpen,
 }: {
-  trip: WorkRecordItem;
+  record: WorkRecordItem;
   todayKey: string;
-  approval: boolean;
+  /** 出せる手続き。年休は事前申請だけ、出張は事前申請と事後登録。 */
+  todos: WorkTodo[];
+  tone: "travel" | "leave";
   disabled: boolean;
-  onToggle: (trip: WorkRecordItem, todo: WorkTodo, done: boolean) => void;
+  onToggle: (record: WorkRecordItem, todo: WorkTodo, done: boolean) => void;
   onOpen: () => void;
 }) {
-  const todos = workTodos(trip, todayKey);
+  const open = workTodos(record, todayKey);
+  // 半休の日は残り半日どこで働いたかも持つ。行に出さないと、開かないと分からない。
+  const sub =
+    record.annualLeave && annualLeaveDays(record.annualLeave) < 1 && record.place
+      ? `残り半日は${record.place}`
+      : null;
 
   return (
     <div
       className={cn(
         "flex flex-col gap-2 rounded-xl border p-3",
-        todos.length > 0 ? "border-error" : "border-outline-variant",
+        open.length > 0
+          ? "border-error"
+          : tone === "leave"
+            ? "border-tertiary"
+            : "border-outline-variant",
       )}
     >
-      <button type="button" onClick={onOpen} className="flex items-baseline gap-2 text-left">
-        <span className="type-body-large min-w-0 truncate font-bold">{trip.title}</span>
-        <span className="type-body-small ml-auto shrink-0 tabular-nums text-on-surface-variant">
-          {spanLabel(trip)}
+      <button type="button" onClick={onOpen} className="flex flex-col gap-0.5 text-left">
+        <span className="flex items-baseline gap-2">
+          <span className="type-body-large min-w-0 truncate font-bold">{record.title}</span>
+          <span className="type-body-small ml-auto shrink-0 tabular-nums text-on-surface-variant">
+            {spanLabel(record)}
+          </span>
         </span>
+        {sub && <span className="type-body-small text-on-surface-variant">{sub}</span>}
       </button>
 
-      {approval && (
+      {shown.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {(["preApplied", "postRegistered"] as const).map((todo) => {
-            const done = todo === "preApplied" ? trip.preApplied : trip.postRegistered;
+          {shown.map((todo) => {
+            const done = todo === "preApplied" ? record.preApplied : record.postRegistered;
             // 事後登録は出張が終わってから。終わる前は押せる状態にしておく必要も無い。
-            const waiting = todo === "postRegistered" && !done && trip.endDate >= todayKey;
+            const waiting = todo === "postRegistered" && !done && record.endDate >= todayKey;
 
             return (
               <button
@@ -433,11 +545,13 @@ function TripRow({
                 type="button"
                 disabled={disabled}
                 aria-pressed={done}
-                onClick={() => onToggle(trip, todo, !done)}
+                onClick={() => onToggle(record, todo, !done)}
                 className={cn(
                   "type-label-medium rounded-full border px-3 py-1.5 transition-colors disabled:opacity-38",
                   done
-                    ? "border-transparent bg-travel-container text-on-travel-container"
+                    ? tone === "leave"
+                      ? "border-transparent bg-tertiary-container text-on-tertiary-container"
+                      : "border-transparent bg-travel-container text-on-travel-container"
                     : waiting
                       ? "border-dashed border-outline text-on-surface-variant"
                       : "border-transparent bg-error-container font-bold text-on-error-container",
@@ -453,14 +567,27 @@ function TripRow({
   );
 }
 
-/** その月に何日ずつどこで働いたか。勤務場所ごとに数える。 */
+/**
+ * その月に何日ずつどこで働いたか。勤務場所ごとに数える。
+ *
+ * 半休の日は年休に 0.5 日、残り半日の勤務場所に 0.5 日を足す。勤怠の提出で見るのはこの数字
+ * そのもので、半休を1日として数えると使えないため。
+ */
 function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] }) {
   const counts = new Map<string, number>();
+  const add = (name: string, days: number) => counts.set(name, (counts.get(name) ?? 0) + days);
+
   for (const dateKey of days) {
     const record = records.find((item) => coversDate(item, dateKey));
     if (!record) continue;
-    const key = record.businessTrip ? "出張" : (record.place ?? "その他");
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+
+    if (record.annualLeave) {
+      const leave = annualLeaveDays(record.annualLeave);
+      add("年休", leave);
+      if (leave < 1 && record.place) add(record.place, 1 - leave);
+      continue;
+    }
+    add(record.businessTrip ? "出張" : (record.place ?? "その他"), 1);
   }
 
   if (counts.size === 0) return null;
@@ -469,7 +596,7 @@ function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] })
     <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
       {[...counts.entries()].map(([name, count]) => (
         <span key={name} className="type-body-small text-on-surface-variant">
-          <b className="type-title-small mr-1 tabular-nums text-on-surface">{count}</b>
+          <b className="type-title-small mr-1 tabular-nums text-on-surface">{formatDays(count)}</b>
           {name}
         </span>
       ))}
@@ -504,11 +631,11 @@ function dateClass(dateKey: string): string {
   return "text-on-surface-variant";
 }
 
-function spanLabel(trip: WorkRecordItem): string {
+function spanLabel(record: WorkRecordItem): string {
   const short = (dateKey: string) => `${Number(dateKey.slice(5, 7))}/${Number(dateKey.slice(8, 10))}`;
-  return trip.startDate === trip.endDate
-    ? short(trip.startDate)
-    : `${short(trip.startDate)} – ${short(trip.endDate)}`;
+  return record.startDate === record.endDate
+    ? short(record.startDate)
+    : `${short(record.startDate)} – ${short(record.endDate)}`;
 }
 
 function daysOfMonth(monthKey: string): string[] {
@@ -534,20 +661,22 @@ function defaultDate(monthKey: string, todayKey: string): string {
 }
 
 function monthTrips(records: WorkRecordItem[]): WorkRecordItem[] {
-  return records.filter((record) => record.businessTrip);
+  // 年休を出張のチェックと同時に立てることはできない（サーバー側でも断る）が、Notionで
+  // 直接両方を立てられてしまう。そのときは年休の側に置き、同じ記録を2つの区画に出さない。
+  return records.filter((record) => record.businessTrip && !record.annualLeave);
 }
 
 /**
- * 出張の並び。手続きが残っているものを先に、そのあとを日付順に置く。
+ * 区画に出す並び。手続きが残っているものを先に、そのあとを日付順に置く。
  * 開いた理由のほとんどが「まだ済ませていないものを片付けること」のため。
  */
-function sortTrips(
-  openTrips: WorkRecordItem[],
+function mergeRecords(
+  pending: WorkRecordItem[],
   inMonth: WorkRecordItem[],
   todayKey: string,
 ): WorkRecordItem[] {
   const byId = new Map<string, WorkRecordItem>();
-  for (const trip of [...openTrips, ...inMonth]) byId.set(trip.id, trip);
+  for (const record of [...pending, ...inMonth]) byId.set(record.id, record);
 
   return [...byId.values()].sort((a, b) => {
     const openA = workTodos(a, todayKey).length > 0 ? 0 : 1;
@@ -555,4 +684,19 @@ function sortTrips(
     if (openA !== openB) return openA - openB;
     return a.startDate.localeCompare(b.startDate);
   });
+}
+
+/**
+ * 一覧の1行に出す文字列。
+ *
+ * 年休は区分（全休・午前半休）まで出し、半休なら残り半日の勤務場所を添える。「年休」だけでは
+ * 丸一日休むのか半日働くのかが読めず、月の集計の 0.5 日と行の見え方が食い違う。
+ */
+function recordLabel(record: WorkRecordItem): string {
+  if (record.annualLeave) {
+    const suffix = annualLeaveDays(record.annualLeave) < 1 && record.place ? `・${record.place}` : "";
+    return `年休（${record.annualLeave}）${suffix}`;
+  }
+  if (record.businessTrip) return `出張・${record.title}`;
+  return record.place ?? record.title;
 }

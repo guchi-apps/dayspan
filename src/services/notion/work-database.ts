@@ -1,10 +1,10 @@
 import type { Client } from "@notionhq/client";
 
-// 勤務場所と出張のデータソース（docs/spec.md §34）。
+// 勤務場所・出張・年休のデータソース（docs/spec.md §34）。
 //
-// 通常の勤務（1日1件）も出張（期間で1件）も、同じDBの同じ形のページとして持つ。
-// 違うのは日付が範囲かどうかと「出張」チェックだけで、種類ごとにDBを分けると
-// 月の一覧を出すのに2つのDBへ問い合わせることになる。
+// 通常の勤務（1日1件）も出張（期間で1件）も年休も、同じDBの同じ形のページとして持つ。
+// 違うのは日付が範囲かどうかと「出張」チェック・「年休」の区分だけで、種類ごとにDBを分けると
+// 月の一覧を出すのに複数のDBへ問い合わせることになる。
 //
 // タスク・日付リマインド・場所と同じく、一次情報源はNotion側でDaySpanには保存しない。
 
@@ -12,6 +12,7 @@ export type WorkField =
   | "title"
   | "date"
   | "place"
+  | "annualLeave"
   | "businessTrip"
   | "preApplied"
   | "postRegistered"
@@ -57,6 +58,16 @@ export const WORK_FIELD_REQUIREMENTS: Requirement[] = [
     types: ["select"],
     required: true,
     hints: ["勤務場所", "場所", "place", "location", "区分", "種類"],
+  },
+  {
+    field: "annualLeave",
+    label: "年休",
+    types: ["select"],
+    required: false,
+    hints: ["年休", "有休", "有給", "leave", "vacation"],
+    // 勤務場所と同じ select のため、型だけを見て空いている欄へ割り当てると入れ替わりうる。
+    // 入れ替わると勤務場所の選択肢が年休の区分として出るため、推測では割り当てない。
+    hintOnly: true,
   },
   {
     field: "businessTrip",
@@ -162,6 +173,7 @@ export const WORK_DATABASE_TEMPLATE = {
   title: "タイトル",
   date: "日付",
   place: "勤務場所",
+  annualLeave: "年休",
   businessTrip: "出張",
   preApplied: "事前申請",
   postRegistered: "事後登録",
@@ -190,10 +202,25 @@ const DEFAULT_PLACE_OPTIONS = [
 export const DEFAULT_TRIP_PLACES: string[] = ["出張"];
 
 /**
+ * 年休の区分（docs/spec.md §34）。
+ *
+ * 選択肢はDaySpanが決める。勤務場所と違って利用者が足すものではなく、半日を 0.5 日として
+ * 数えるかどうかがこの名前で決まるため（`annualLeaveDays()`）。Notionのselectは、
+ * 定義に無い名前を書き込むとその場で選択肢が増えるので、画面はこの3つだけを出す。
+ */
+export const ANNUAL_LEAVE_OPTIONS = [
+  { name: "全休", color: "pink" },
+  { name: "午前半休", color: "purple" },
+  { name: "午後半休", color: "purple" },
+] as const;
+
+export type AnnualLeaveKind = (typeof ANNUAL_LEAVE_OPTIONS)[number]["name"];
+
+/**
  * 必要なプロパティを揃えた勤務記録DBを作成する。
  *
- * 出張・事前申請・事後登録は名前が当たったときだけ対応付ける（hintOnly）ため、既存のDBを
- * 選んでもらう経路では揃わないことがある。ここで作れば、その3つを含めて必ず揃った構成になる。
+ * 年休・出張・事前申請・事後登録は名前が当たったときだけ対応付ける（hintOnly）ため、既存のDBを
+ * 選んでもらう経路では揃わないことがある。ここで作れば、その4つを含めて必ず揃った構成になる。
  */
 export async function createWorkDatabase(
   notion: Client,
@@ -214,6 +241,9 @@ export async function createWorkDatabase(
         [WORK_DATABASE_TEMPLATE.date]: { date: {} },
         [WORK_DATABASE_TEMPLATE.place]: {
           select: { options: DEFAULT_PLACE_OPTIONS.map((option) => ({ ...option })) },
+        },
+        [WORK_DATABASE_TEMPLATE.annualLeave]: {
+          select: { options: ANNUAL_LEAVE_OPTIONS.map((option) => ({ ...option })) },
         },
         [WORK_DATABASE_TEMPLATE.businessTrip]: { checkbox: {} },
         [WORK_DATABASE_TEMPLATE.preApplied]: { checkbox: {} },
@@ -236,16 +266,16 @@ export async function createWorkDatabase(
 }
 
 /**
- * すでに使っている勤務記録DBへ、足りない任意プロパティ（出張・事前申請・事後登録・メモ）を足す。
+ * すでに使っている勤務記録DBへ、足りない任意プロパティ（年休・出張・事前申請・事後登録・メモ）を足す。
  *
- * この3つは名前が当たったときだけ対応付けるため、既存のDBを選ぶと揃わないことがある。
- * どの型で何という名前にすればよいのかは画面のどこにも出ていないので、設定画面から
- * 実行できるようにする（場所DBの「座標」と同じ経路）。
+ * 年休・出張・事前申請・事後登録は名前が当たったときだけ対応付けるため、既存のDBを選ぶと
+ * 揃わないことがある。どの型で何という名前にすればよいのかは画面のどこにも出ていないので、
+ * 設定画面から実行できるようにする（場所DBの「座標」と同じ経路）。
  *
  * すでに同じ名前のプロパティがあるときは作らない。型が違っていても作り直さないのは、
  * 利用者が別の用途で使っている欄を黙って壊さないため。
  */
-export async function addWorkTripProperties(
+export async function addWorkOptionalProperties(
   notion: Client,
   dataSourceId: string,
 ): Promise<WorkValidation & { title: string; databaseId: string | null }> {
@@ -257,6 +287,11 @@ export async function addWorkTripProperties(
   for (const field of ["businessTrip", "preApplied", "postRegistered"] as const) {
     const name = WORK_DATABASE_TEMPLATE[field];
     if (!names.has(name)) additions[name] = { checkbox: {} };
+  }
+  if (!names.has(WORK_DATABASE_TEMPLATE.annualLeave)) {
+    additions[WORK_DATABASE_TEMPLATE.annualLeave] = {
+      select: { options: ANNUAL_LEAVE_OPTIONS.map((option) => ({ ...option })) },
+    };
   }
   if (!names.has(WORK_DATABASE_TEMPLATE.memo)) {
     additions[WORK_DATABASE_TEMPLATE.memo] = { rich_text: {} };
