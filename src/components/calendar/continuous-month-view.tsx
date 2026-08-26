@@ -588,9 +588,10 @@ export function ContinuousMonthView({
 
                     {/*
                       日付の数字と、その日の勤務場所。勤務場所は帯の段を使わず、数字の右の
-                      空いている幅へ置く（docs/spec.md §34）。幅が足りない列では名前が端から
-                      切れて色だけが残る。画面幅では切り替えない（列の幅は表示形式と画面幅の
-                      掛け算で決まるため、ブレークポイントで切ると幅のある列でも名前が消える）。
+                      空いている幅へ置く（docs/spec.md §34）。幅が足りない列では名前が入る
+                      ぶんだけ（文字の途中では切らずに）残り、1文字も入らなければ色と印だけに
+                      なる。画面幅では切り替えない（列の幅は表示形式と画面幅の掛け算で決まる
+                      ため、ブレークポイントで切ると幅のある列でも名前が消える）。
 
                       この行はセル幅いっぱいに広がるため、押下は受けない。受けてしまうと、数字の
                       右の空いているところを押したときに上の「1日表示へ移動」まで届かなくなる。
@@ -613,8 +614,15 @@ export function ContinuousMonthView({
                           : Number(dateKey.slice(8, 10))}
                       </button>
 
+                      {/*
+                        名前をどこまで出すかは、数字の右に残っている幅そのもので決まる
+                        （画面幅では切り替えない）。その幅をチップから読めるよう、
+                        残りを占めるこの枠をコンテナにする。
+                      */}
                       {workRecord && (
-                        <WorkPlaceChip record={workRecord} options={workPlaceOptions} />
+                        <div className="@container flex min-w-0 flex-1">
+                          <WorkPlaceChip record={workRecord} options={workPlaceOptions} />
+                        </div>
                       )}
                     </div>
                   </div>

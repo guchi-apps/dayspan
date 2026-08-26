@@ -15,6 +15,11 @@ import { annualLeaveDays, type WorkRecordItem } from "@/types/work";
  *
  * 押せる印にはしない。日付の見出しを押したときの行き先は「その日の1日表示へ移動」で既に決まっており、
  * そこへ別の行き先を重ねると、日を開くつもりの操作が入力画面になる。登録・修正は勤務の画面に閉じる。
+ *
+ * 名前は残った幅ぶんだけ出すが、**文字の途中では切らない**（issue #406）。1文字ずつ折り返させ、
+ * 1行ぶんの高さ（`leading-[15px]`）で隠すことで、入る文字だけが丸ごと残る。pxで切ると、
+ * スマートフォンの月表示（チップに残るのは約21px）で2文字目が数pxだけ顔を出した形で切れ、
+ * 色も形も壊れて見えた。置き場所の側は `@container` にしておく必要がある。
  */
 export function WorkPlaceChip({
   record,
@@ -41,15 +46,40 @@ export function WorkPlaceChip({
       {/* 出張の勤務場所には行き先（「大阪」）が入るため、名前だけでは通常の勤務と区別が付かない。 */}
       {record.businessTrip && <Briefcase aria-hidden className="size-2.5 shrink-0" />}
       {/*
-        色だけに意味を持たせない（狭い列では名前が端から切れて色だけが残る）。
-        読み上げには何の値なのかまで残す。
+        色だけに意味を持たせない（1文字も入らない幅では名前を出さず色と印だけが残る）。
+        読み上げには何の値なのかと名前の全体まで残す。見えている名前のほうは目のための
+        ものとして読み上げから外す（幅で消えるのは見えている側だけにする）。
       */}
       <span className="sr-only">
-        {record.annualLeave ? "年休" : record.businessTrip ? "出張" : "勤務場所"}
+        {record.annualLeave ? "年休" : record.businessTrip ? "出張" : "勤務場所"} {label}
       </span>
-      <span className="overflow-hidden">{label}</span>
+      <span
+        aria-hidden
+        className={cn(
+          "h-[15px] min-w-0 overflow-hidden break-all whitespace-normal",
+          nameHiddenClass(record),
+        )}
+      >
+        {label}
+      </span>
     </span>
   );
+}
+
+/**
+ * 1文字ぶんも入らない幅で、名前ごと出さないための指定（issue #406）。
+ *
+ * 名前は1行ぶんの高さで切っており、切れ目は必ず文字と文字の境目に来る。ただし残り幅が
+ * 1文字（10px）に満たないところでは、1文字目そのものが数pxだけ欠けて出る。判定は画面幅では
+ * なく**チップに残っている幅**で行う（列の幅は表示形式と画面幅の掛け算で決まるため、
+ * ブレークポイントで切るとPCの月表示のような幅のある列でも名前が消える・docs/spec.md §34）。
+ *
+ * 境目はチップの中身の幅から決まる。左右の余白が4pxずつ、文字が10px、出張はさらに印10pxと
+ * 間隔3px。出張で名前ではなく印を残すのは、行き先（「大阪」）は名前だけでは通常の勤務と
+ * 区別が付かず、区別を持っているのが印のほうだから（§34）。
+ */
+function nameHiddenClass(record: WorkRecordItem): string {
+  return record.businessTrip ? "@max-[31px]:hidden" : "@max-[18px]:hidden";
 }
 
 /**

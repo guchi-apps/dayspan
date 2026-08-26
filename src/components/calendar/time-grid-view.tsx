@@ -464,7 +464,8 @@ const DayHeaderPane = memo(function DayHeaderPane({
               日付ヘッダーは日数によらず高さが決まっているので、置いても他の面を押し出さない。
             */}
             {workRecord && (
-              <div className="mt-0.5 flex min-w-0 justify-center">
+              // 名前をどこまで出すかは列に残っている幅で決まる（画面幅では切り替えない）。
+              <div className="@container mt-0.5 flex min-w-0 justify-center">
                 <WorkPlaceChip record={workRecord} options={workPlaceOptions} />
               </div>
             )}
