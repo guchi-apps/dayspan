@@ -601,7 +601,11 @@ export function ContinuousMonthView({
                       <button
                         type="button"
                         className={cn(
-                          "pointer-events-auto relative grid h-7 min-w-7 shrink-0 place-items-center self-start rounded-full px-2 text-[11px] select-none sm:h-6 sm:min-w-6 sm:px-1.5 sm:text-xs",
+                          "pointer-events-auto relative grid h-7 min-w-7 shrink-0 place-items-center self-start rounded-full text-[11px] select-none sm:h-6 sm:min-w-6 sm:px-1.5 sm:text-xs",
+                          // 1日は `9/1` のように中身で広がる。左右の余白まで同じにすると、
+                          // その日だけ勤務場所へ残る幅が1文字ぶんを割り、名前が消える。
+                          // `min-w-7` があるため、詰めても押せる大きさは変わらない。
+                          isFirstOfMonth ? "px-1" : "px-2",
                           dateKey === todayKey
                             ? "bg-primary font-semibold text-primary-foreground"
                             : "font-medium hover:bg-muted",

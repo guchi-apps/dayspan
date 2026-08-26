@@ -43,8 +43,12 @@ export function WorkPlaceChip({
         className,
       )}
     >
-      {/* 出張の勤務場所には行き先（「大阪」）が入るため、名前だけでは通常の勤務と区別が付かない。 */}
-      {record.businessTrip && <Briefcase aria-hidden className="size-2.5 shrink-0" />}
+      {/*
+        出張の勤務場所には行き先（「大阪」）が入るため、名前だけでは通常の勤務と区別が付かない。
+        印そのものも入らない幅（余白8px＋印10px）では落とす。印は縮まないため、残すと外側の
+        `overflow-hidden` が印の右端を削り、直そうとしている見え方がそのまま印で起きる。
+      */}
+      {record.businessTrip && <Briefcase aria-hidden className="size-2.5 shrink-0 @max-[18px]:hidden" />}
       {/*
         色だけに意味を持たせない（1文字も入らない幅では名前を出さず色と印だけが残る）。
         読み上げには何の値なのかと名前の全体まで残す。見えている名前のほうは目のための
@@ -81,6 +85,18 @@ export function WorkPlaceChip({
 function nameHiddenClass(record: WorkRecordItem): string {
   return record.businessTrip ? "@max-[31px]:hidden" : "@max-[18px]:hidden";
 }
+
+/**
+ * 幅ごとの見え方（余白8px・文字10px・印10px＋間隔3px から決まる）。
+ *
+ * | チップに残る幅 | 通常の勤務 | 出張 |
+ * |---|---|---|
+ * | 31px以上 | 入る文字だけ | 印＋入る文字だけ |
+ * | 18〜31px | 入る文字だけ | 印だけ |
+ * | 18px未満 | 色だけ | 色だけ |
+ *
+ * 18px未満になるのは、月表示のうち月の変わり目の日（数字が `9/1` のように広がる）くらい。
+ */
 
 /**
  * チップに出す文字列。
