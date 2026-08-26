@@ -3,6 +3,7 @@ import type { NotionConnection } from "@prisma/client";
 
 import type { WorkCapabilities, WorkRecordItem } from "@/types/work";
 
+import type { NotionFilterGroup, NotionQueryFilter } from "./client";
 import type { WorkField, WorkPropertyMap } from "./work-database";
 
 /**
@@ -102,7 +103,7 @@ function normalizeWorkPage(page: WorkPage, map: WorkPropertyMap): WorkRecordItem
 async function queryWorkPages(
   notion: Client,
   dataSourceId: string,
-  filter?: Record<string, unknown>,
+  filter?: NotionQueryFilter,
 ): Promise<WorkPage[]> {
   const pages: WorkPage[] = [];
   let cursor: string | undefined;
@@ -110,7 +111,7 @@ async function queryWorkPages(
     const response = await notion.dataSources.query({
       data_source_id: dataSourceId,
       page_size: 100,
-      ...(filter ? { filter: filter as never } : {}),
+      ...(filter ? { filter } : {}),
       ...(cursor ? { start_cursor: cursor } : {}),
     });
     for (const result of response.results) {
@@ -187,19 +188,26 @@ export async function listPendingWorkRecords(
   const map = workPropertyMap(connection);
   if (!connection.workDataSourceId || !map.date || !map.preApplied) return [];
 
-  const conditions: Record<string, unknown>[] = [];
+  const conditions: NotionFilterGroup[] = [];
   if (map.businessTrip && map.postRegistered) {
-    conditions.push({
-      and: [
-        { property: map.businessTrip, checkbox: { equals: true } },
-        {
-          or: [
-            { property: map.preApplied, checkbox: { equals: false } },
-            { property: map.postRegistered, checkbox: { equals: false } },
-          ],
-        },
-      ],
-    });
+    // 「出張 かつ（事前申請が未 または 事後登録が未）」を、`and` の中へ `or` を入れる形で
+    // 書くとネストが3段になり、Notionは受け付けない（複合フィルタは2段まで）。400が返り、
+    // 勤務の画面がまるごと開けなくなる（issue #402）。手続きごとの条件へ展開して2段に収める。
+    // 両方が未チェックの記録も、ページ単位の絞り込みなので二重には出てこない。
+    conditions.push(
+      {
+        and: [
+          { property: map.businessTrip, checkbox: { equals: true } },
+          { property: map.preApplied, checkbox: { equals: false } },
+        ],
+      },
+      {
+        and: [
+          { property: map.businessTrip, checkbox: { equals: true } },
+          { property: map.postRegistered, checkbox: { equals: false } },
+        ],
+      },
+    );
   }
   if (map.annualLeave) {
     conditions.push({
