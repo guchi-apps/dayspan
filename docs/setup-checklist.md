@@ -38,6 +38,11 @@ gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPI
 これを見つけるために、デプロイのたびに `secrets-check` ジョブがマニフェストの `repo` 項目と
 突き合わせ、空のものがあればSignalyへ知らせる。
 
+同期したあとは `gh secret list` に並んだことを確かめる。**ここまでやって初めて済んだことになる。**
+`secrets-check` は空を見つけても warning を出すだけでジョブは success のまま終わるため、
+デプロイが緑であることは登録できた根拠にならない（#400 では #359 と同じ状態が
+気付かれずに残り、同じ症状が再び報告された）。
+
 ## 2. Supabase（他アプリと共有のプロジェクト）
 
 - Authentication > URL Configuration > Redirect URLs に以下を追加する
