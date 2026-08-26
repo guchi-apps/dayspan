@@ -44,6 +44,7 @@ export function WorkScreen({
   openTrips,
   openLeaves,
   placeOptions,
+  loadError = null,
   tripPlaces,
   capabilities,
 }: {
@@ -57,6 +58,8 @@ export function WorkScreen({
   /** 事前申請が済んでいない年休。月の外のものも含む。 */
   openLeaves: WorkRecordItem[];
   placeOptions: TagOption[];
+  /** Notionから読めなかったときの理由。画面は開いたまま、何が起きたかだけを伝える。 */
+  loadError?: string | null;
   /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
   tripPlaces: string[];
   capabilities: WorkCapabilities;
@@ -214,9 +217,10 @@ export function WorkScreen({
         </Button>
       </div>
 
-      {error && (
+      {/* 書き込みの失敗を先に出す。押した操作の結果のほうが、開いた時点の取得の失敗より新しい。 */}
+      {(error ?? loadError) && (
         <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container">
-          {error}
+          {error ?? loadError}
         </p>
       )}
 

@@ -3,6 +3,7 @@ import type { NotionConnection } from "@prisma/client";
 
 import type { TaskItem } from "@/types/calendar";
 
+import type { NotionQueryFilter } from "./client";
 import { formatRecurrence, nextDue, parseRecurrence } from "./recurrence";
 import type { PropertyMap } from "./task-database";
 
@@ -86,7 +87,7 @@ export function normalizeTask(page: NotionPage, propertyMap: PropertyMap): TaskI
 async function queryTasks(
   notion: Client,
   dataSourceId: string,
-  filter: Record<string, unknown> | undefined,
+  filter: NotionQueryFilter | undefined,
 ): Promise<NotionPage[]> {
   const pages: NotionPage[] = [];
   let cursor: string | undefined;
@@ -95,7 +96,7 @@ async function queryTasks(
     const response = await notion.dataSources.query({
       data_source_id: dataSourceId,
       page_size: 100,
-      ...(filter ? { filter: filter as never } : {}),
+      ...(filter ? { filter } : {}),
       ...(cursor ? { start_cursor: cursor } : {}),
     });
 

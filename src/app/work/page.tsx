@@ -6,10 +6,11 @@ import { SettingsShell } from "@/components/settings/settings-shell";
 import { WorkScreen } from "@/components/work/work-screen";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { externalApiMessage } from "@/lib/api-error";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
-import { loadTagOptions } from "@/services/notion/tag-options";
+import { loadTagOptions, type TagOption } from "@/services/notion/tag-options";
 import {
   listPendingWorkRecords,
   listWorkRecordsInRange,
@@ -57,11 +58,24 @@ export default async function WorkPage({
 
   // 月ぶんの記録と、手続きが残っている記録を同時に取りにいく。未対応のものは月の外にも
   // ありうる（先月の出張の事後登録・来月の年休の申請が残っている）ため、月の取得とは別に引く。
-  const [records, pending, placeOptions] = await Promise.all([
-    listWorkRecordsInRange(notion, connection, range),
-    listPendingWorkRecords(notion, connection),
-    loadTagOptions(connection, "work"),
-  ]);
+  //
+  // Notionが失敗しても画面自体は開く。ここで投げるとNext.jsの汎用のエラー画面へ落ち、
+  // 何が起きたのかも、月を送り直せることも画面から分からなくなる（issue #402）。
+  // 失敗は握りつぶさず、Notionが返したメッセージをそのまま画面へ出す。
+  let records: WorkRecordItem[] = [];
+  let pending: WorkRecordItem[] = [];
+  let placeOptions: TagOption[] | null = null;
+  let loadError: string | null = null;
+
+  try {
+    [records, pending, placeOptions] = await Promise.all([
+      listWorkRecordsInRange(notion, connection, range),
+      listPendingWorkRecords(notion, connection),
+      loadTagOptions(connection, "work"),
+    ]);
+  } catch (error) {
+    loadError = `勤務記録を取得できませんでした。${externalApiMessage("notion", "勤務記録の取得", error)}`;
+  }
 
   // 月内の記録は両方に現れる。同じ記録を2度描かないよう、IDで寄せてから渡す。
   const byId = new Map<string, WorkRecordItem>();
@@ -76,6 +90,7 @@ export default async function WorkPage({
       openTrips={dedupe(pending.filter((record) => record.businessTrip && !record.annualLeave))}
       openLeaves={dedupe(pending.filter((record) => record.annualLeave))}
       placeOptions={placeOptions ?? []}
+      loadError={loadError}
       tripPlaces={workTripPlaces(connection)}
       capabilities={workCapabilities(connection)}
     />
