@@ -57,6 +57,19 @@ export function workCapabilities(connection: NotionConnection | null): WorkCapab
   };
 }
 
+/**
+ * 出張扱いにする勤務場所の名前（docs/spec.md §34）。
+ *
+ * 「行けば必ず出張になる勤務先」を場所ごとに覚えておき、その場所を選んだ時点で出張の既定を
+ * 立てる。壊れた値（配列でない・文字列でない要素）は落として空として扱う。設定が読めないことを
+ * 理由に勤務の記録そのものを止めないため。
+ */
+export function workTripPlaces(connection: NotionConnection | null): string[] {
+  const value = connection?.workTripPlaces;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
 /** 勤務記録DBが読み書きできる状態か。データソースと必須プロパティが揃って初めて使える。 */
 export function workDatabaseReady(connection: NotionConnection | null): boolean {
   if (!connection?.workDataSourceId) return false;

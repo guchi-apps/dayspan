@@ -23,6 +23,7 @@ import { ANNUAL_LEAVE_OPTIONS } from "@/services/notion/work-database";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
   annualLeaveDays,
+  isTripPlace,
   WORK_TODO_LABELS,
   type WorkCapabilities,
   type WorkRecordItem,
@@ -57,12 +58,15 @@ function kindOf(record: WorkRecordItem): WorkKind {
 export function WorkRecordDialog({
   draft,
   placeOptions,
+  tripPlaces,
   capabilities,
   onClose,
   onSaved,
 }: {
   draft: WorkDraft;
   placeOptions: TagOption[];
+  /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
+  tripPlaces: string[];
   capabilities: WorkCapabilities;
   onClose: () => void;
   onSaved: () => void;
@@ -75,6 +79,9 @@ export function WorkRecordDialog({
   const [confirming, setConfirming] = useState(false);
 
   const [place, setPlace] = useState(existing?.place ?? placeOptions[0]?.name ?? "");
+  // 新規のときの種類はdraftの指定どおり。ここで場所から出張の既定を立てると、
+  // 日の行を押しただけの下書きが出張として開くことがある。出張扱い（docs/spec.md §34）が
+  // 効くのは、場所のチップを押して選んだときだけにする。
   const [kind, setKind] = useState<WorkKind>(
     draft.mode === "edit" ? kindOf(draft.record) : draft.kind,
   );
@@ -82,6 +89,21 @@ export function WorkRecordDialog({
     existing?.annualLeave ?? ANNUAL_LEAVE_OPTIONS[0].name,
   );
   const [destination, setDestination] = useState(existing?.businessTrip ? existing.title : "");
+
+  /**
+   * 出張の種類選択を手で操作したか。
+   *
+   * 触るまでは勤務場所の既定へ追従し、一度触ったあとは場所を選び直しても動かさない。
+   * 選んだつもりの状態が黙って書き換わらないようにするため（繰り返しの曜日と同じ考え方）。
+   * すでに出張として保存されている記録は、場所とは無関係にそう決められたものなので、
+   * 開いた時点で「触った」扱いにして追従させない。
+   */
+  const [tripTouched, setTripTouched] = useState(
+    draft.mode === "edit" &&
+      draft.record.businessTrip &&
+      !isTripPlace(tripPlaces, draft.record.place),
+  );
+
   const [startDate, setStartDate] = useState(
     draft.mode === "edit" ? draft.record.startDate : draft.startDate,
   );
@@ -104,6 +126,26 @@ export function WorkRecordDialog({
     ...(capabilities.businessTrip ? (["trip"] as const) : []),
     ...(capabilities.annualLeave ? (["leave"] as const) : []),
   ];
+
+  /** 種類を手で選ぶ。以降は場所を選び直しても出張扱いの既定を追従させない。 */
+  const chooseKind = (next: WorkKind) => {
+    setTripTouched(true);
+    setKind(next);
+  };
+
+  /**
+   * 勤務場所を選ぶ。出張扱いの場所なら、種類と行き先まで出張へ合わせる。
+   * 半休の残り半日の勤務場所を選ぶ操作では、種類（年休）を動かさない。
+   * 行き先を上書きするのは、空のときと前の場所の名前がそのまま残っているときだけ。
+   */
+  const choosePlace = (name: string) => {
+    setPlace(name);
+    if (isLeave || tripTouched || !capabilities.businessTrip) return;
+
+    const trip = isTripPlace(tripPlaces, name);
+    setKind(trip ? "trip" : "work");
+    if (trip && (!destination.trim() || destination === place)) setDestination(name);
+  };
 
   const close = () => {
     setOpen(false);
@@ -227,7 +269,7 @@ export function WorkRecordDialog({
                 type="button"
                 role="radio"
                 aria-checked={kind === option}
-                onClick={() => setKind(option)}
+                onClick={() => chooseKind(option)}
                 className={cn(
                   "type-label-large py-2 text-center transition-colors",
                   kind === option
@@ -277,7 +319,7 @@ export function WorkRecordDialog({
                   key={option.id}
                   type="button"
                   aria-pressed={place === option.name}
-                  onClick={() => setPlace(option.name)}
+                  onClick={() => choosePlace(option.name)}
                   className={cn(
                     "type-label-large rounded-full border px-4 py-2 transition-colors",
                     place === option.name

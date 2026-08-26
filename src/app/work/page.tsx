@@ -15,6 +15,7 @@ import {
   listWorkRecordsInRange,
   workCapabilities,
   workDatabaseReady,
+  workTripPlaces,
 } from "@/services/notion/work-logs";
 import type { WorkRecordItem } from "@/types/work";
 
@@ -75,6 +76,7 @@ export default async function WorkPage({
       openTrips={dedupe(pending.filter((record) => record.businessTrip && !record.annualLeave))}
       openLeaves={dedupe(pending.filter((record) => record.annualLeave))}
       placeOptions={placeOptions ?? []}
+      tripPlaces={workTripPlaces(connection)}
       capabilities={workCapabilities(connection)}
     />
   );
