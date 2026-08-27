@@ -73,7 +73,13 @@ export async function POST(request: Request) {
 
   try {
     const estimates = await estimateTravel(token, { origin, destination, preferredMode: mode });
-    return NextResponse.json({ estimates, attribution: null, quota: await currentQuota() });
+    // 残り回数を添えるのは電車のときだけ。徒歩や車の見積もりで「経路検索は残り◯回」と出ると、
+    // 何も使っていないのに使ったように読める（枠を消費するのは電車の経路検索だけ）。
+    return NextResponse.json({
+      estimates,
+      attribution: null,
+      quota: mode === "TRAIN" ? await currentQuota() : null,
+    });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[dayspan] claude travel estimate failed:", detail);
