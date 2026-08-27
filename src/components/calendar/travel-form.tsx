@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { TravelEstimate } from "@/lib/ai-travel-estimate";
+import { formatQuotaDate, isQuotaExhausted, type TransitQuota } from "@/lib/transit-quota";
 import type { PlaceCatalog } from "@/services/notion/places";
 import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelItem, type TravelMode } from "@/types/calendar";
 
@@ -71,6 +72,9 @@ export function TravelForm({
   const [roundTrip, setRoundTrip] = useState(Boolean(draft.roundTrip && draft.linkedEvent));
 
   const [estimates, setEstimates] = useState<TravelEstimate[] | null>(null);
+  // 経路検索（NAVITIME）の残り回数。見積もりの応答に一緒に載って返る（そのためだけの
+  // 往復は増やさない）。DaySpanが経路検索を使うまでは null のまま。
+  const [transitQuota, setTransitQuota] = useState<TransitQuota | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +107,25 @@ export function TravelForm({
     setDepartAt(new Date(arrive.getTime() - estimate.minutes * 60_000).toISOString().slice(0, 16));
   };
 
+  /**
+   * 所要時間の区画に添える1行（docs/spec.md §29「経路検索の利用状況」）。
+   *
+   * 使い切っているときにこれが無いと、実データのはずの電車の所要時間が黙ってAIの目安に戻り、
+   * 値が前回と違う理由が画面のどこにも出ない。枠が残っていて単に取れなかったとき
+   * （座標が引けない・trainrouteが応答しない）は出さず、従来の断り書きのままにする。
+   */
+  const quotaExhausted = transitQuota !== null && isQuotaExhausted(transitQuota);
+  const quotaResetDate = transitQuota ? formatQuotaDate(transitQuota.resetAt, timeZone) : null;
+  const quotaNote = !transitQuota
+    ? null
+    : quotaExhausted
+      ? `${transitQuota.label}の枠を使い切ったため、AIによる目安を出しています。${
+          quotaResetDate ? `${quotaResetDate}にリセットされます。` : ""
+        }`
+      : `電車は${transitQuota.label}の経路検索を使います（残り${transitQuota.remaining}回${
+          quotaResetDate ? `・${quotaResetDate}にリセット` : ""
+        }）`;
+
   const askEstimate = async () => {
     setEstimating(true);
     setError(null);
@@ -122,8 +145,13 @@ export function TravelForm({
         setError(await readErrorMessage(response, "所要時間を調べられませんでした。"));
         return;
       }
-      const body = (await response.json()) as { estimates: TravelEstimate[] };
+      const body = (await response.json()) as {
+        estimates: TravelEstimate[];
+        transit?: { quotas: TransitQuota[] } | null;
+      };
       setEstimates(body.estimates);
+      // 複数の提供元が返るときは、経路検索に使うものが先頭に来る（trainroute側の契約）。
+      setTransitQuota(body.transit?.quotas[0] ?? null);
     } catch {
       setError("所要時間を調べられませんでした。");
     } finally {
@@ -280,7 +308,9 @@ export function TravelForm({
           {estimates === null ? (
             <>
               <p className="text-xs text-muted-foreground">
-                所要時間はAIによる目安です。時刻表や道路状況は見ていません。
+                {quotaExhausted
+                  ? quotaNote
+                  : "所要時間はAIによる目安です。時刻表や道路状況は見ていません。"}
               </p>
               <Button
                 type="button"
@@ -293,6 +323,7 @@ export function TravelForm({
                 <Route className="size-4" />
                 {estimating ? "調べています…" : "所要時間を調べる"}
               </Button>
+              {!quotaExhausted && <QuotaNote note={quotaNote} />}
             </>
           ) : estimates.length === 0 ? (
             <>
@@ -310,25 +341,30 @@ export function TravelForm({
               </Button>
             </>
           ) : (
-            <ul className="flex flex-col gap-1">
-              {estimates.map((estimate) => (
-                <li key={estimate.mode}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
-                    onClick={() => applyEstimate(estimate)}
-                  >
-                    <span className="shrink-0 rounded-full bg-travel-container px-2 py-0.5 text-[11px] font-semibold text-on-travel-container">
-                      {TRAVEL_MODE_LABELS[estimate.mode]}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                      {estimate.detail ?? `${origin.trim()} → ${destination.trim()}`}
-                    </span>
-                    <span className="shrink-0 text-sm font-semibold">{estimate.minutes}分</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="flex flex-col gap-1">
+                {estimates.map((estimate) => (
+                  <li key={estimate.mode}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
+                      onClick={() => applyEstimate(estimate)}
+                    >
+                      <span className="shrink-0 rounded-full bg-travel-container px-2 py-0.5 text-[11px] font-semibold text-on-travel-container">
+                        {TRAVEL_MODE_LABELS[estimate.mode]}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                        {estimate.detail ?? `${origin.trim()} → ${destination.trim()}`}
+                      </span>
+                      <span className="shrink-0 text-sm font-semibold">{estimate.minutes}分</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {/* 押した直後は、いま使った1回が引かれた値に変わる。減ったことが
+                  その場で見えるのが、設定画面ではなくここにも置く理由。 */}
+              <QuotaNote note={quotaNote} />
+            </>
           )}
         </div>
 
@@ -365,6 +401,18 @@ export function TravelForm({
         />
       )}
     </>
+  );
+}
+
+/** 経路検索の残り回数の1行。取れていないときは何も出さない。 */
+function QuotaNote({ note }: { note: string | null }) {
+  if (!note) return null;
+
+  return (
+    <p className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-travel" />
+      {note}
+    </p>
   );
 }
 

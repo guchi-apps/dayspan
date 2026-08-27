@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { LocationInput } from "@/components/calendar/location-input";
+import { TransitQuotaBlock } from "@/components/settings/transit-quota-block";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import type { TransitQuota } from "@/lib/transit-quota";
 import { cn } from "@/lib/utils";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { TravelSettings } from "@/services/travel/settings";
@@ -32,11 +34,17 @@ export function TravelSection({
   settings,
   calendars,
   placeCatalog,
+  transitQuotas,
+  timeZone,
 }: {
   settings: TravelSettings;
   calendars: WritableCalendar[];
   /** 既定の出発地の入力候補。Notionの場所DBに登録済みのもの。 */
   placeCatalog: PlaceCatalog;
+  /** 経路検索APIの利用枠。取れなかったときは null で、そのときは区画ごと出さない。 */
+  transitQuotas: TransitQuota[] | null;
+  /** リセット日の解釈に使う。実行環境のローカル時刻に依存させない。 */
+  timeZone: string;
 }) {
   const [value, setValue] = useState(settings);
   // 出発地は入力中の文字列を持つ。保存した値（value.defaultOrigin）とは別に持たないと、
@@ -91,6 +99,8 @@ export function TravelSection({
             {error}
           </p>
         )}
+
+        <TransitQuotaBlock quotas={transitQuotas} timeZone={timeZone} />
 
         <div className="flex flex-col gap-2">
           {/* 予定の「場所」欄・移動の出発地と同じ入力にする。自宅のような名前だけでは

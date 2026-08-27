@@ -23,6 +23,12 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 
 共通アイテム（`DB` / `Server` / `githubaction-sshkey` / `Supabase`）は既存のものをそのまま参照する（`.github/deploy.env.tpl` 参照）。
 
+`TRAINROUTE_TOKEN` だけは `dayspan` アイテムではなく **`apps/trainroute` の `internal-api-key`
+をそのまま指す**（`.github/secrets-manifest.tsv`）。trainroute のサーバー間参照用APIを呼ぶための
+共有シークレットで、写しを作ると片方だけ回したときに黙って止まるため。DaySpan側では
+`gh workflow run sync-secrets.yml -f only=TRAINROUTE_TOKEN` で同期する。未設定でも移動は使えるが、
+経路検索（NAVITIME）の利用状況が出ない（docs/spec.md §29）。
+
 機械可読の正は `.github/secrets-manifest.tsv` で、この表はその人手作業ぶんを日本語で並べたもの。
 1Passwordへ入れたあとは、GitHub Secretsへの同期まで行って初めて本番へ届く。
 

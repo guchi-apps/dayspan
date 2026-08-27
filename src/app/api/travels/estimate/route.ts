@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { estimateTravel } from "@/lib/ai-travel-estimate";
 import { requireUserId } from "@/lib/auth-user";
+import type { TransitQuota } from "@/lib/transit-quota";
+import { TRANSIT_ESTIMATE_ENABLED, fetchTransitQuota } from "@/services/trainroute/client";
 import { isTravelMode } from "@/types/calendar";
 
 /**
@@ -9,6 +11,8 @@ import { isTravelMode } from "@/types/calendar";
  *
  * 呼び出しごとにプラン枠を消費するため、画面側ではボタン操作からだけ呼ぶ。
  * 場所の「AIに聞く」（/api/places/suggest）と同じ扱い。
+ *
+ * 経路検索（NAVITIME）の残り回数も一緒に返す。残り回数のためだけに往復を1つ増やさないため。
  */
 export async function POST(request: Request) {
   const userId = await requireUserId();
@@ -41,10 +45,27 @@ export async function POST(request: Request) {
       destination,
       preferredMode: isTravelMode(body.mode) ? body.mode : null,
     });
-    return NextResponse.json({ estimates });
+    return NextResponse.json({ estimates, transit: await loadTransitQuotas() });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[dayspan] claude travel estimate failed:", detail);
     return NextResponse.json({ error: "ai_request_failed", message: detail }, { status: 502 });
   }
+}
+
+/**
+ * 入力画面に添える経路検索の利用枠。
+ *
+ * DaySpanが経路検索を使うようになるまでは返さない（`TRANSIT_ESTIMATE_ENABLED`）。
+ * 使っていないのに「電車はNAVITIMEの経路検索を使います」と出すと、実際にはAIの目安が
+ * 出ているのに実データが出るかのように読める。設定 ▸ 移動の区画はこの判定を通さない
+ * （trainroute側が既に使った分を見るのが目的のため）。
+ *
+ * 複数の提供元が返ったときは、経路検索に使うものが先頭に来る（trainroute側の契約）。
+ */
+async function loadTransitQuotas(): Promise<{ quotas: TransitQuota[] } | null> {
+  if (!TRANSIT_ESTIMATE_ENABLED) return null;
+
+  const quotas = await fetchTransitQuota();
+  return quotas && quotas.length > 0 ? { quotas } : null;
 }
