@@ -1,4 +1,5 @@
 import type { TravelEstimate } from "@/lib/ai-travel-estimate";
+import { formatQuotaDate, isQuotaExhausted, type TransitQuota } from "@/lib/transit-quota";
 import type { TravelEstimateSource, TravelMode } from "@/types/calendar";
 
 /**
@@ -70,4 +71,26 @@ export function transitDetail(transit: NonNullable<TravelEstimate["transit"]>): 
   if (transit.walkMinutes > 0) parts.push(`徒歩${transit.walkMinutes}分`);
   if (transit.fare) parts.push(`¥${transit.fare.ic ?? transit.fare.ticket}`);
   return parts.join(" ・ ");
+}
+
+/**
+ * 経路検索の残り回数の1行（docs/spec.md §29「経路検索の利用状況」）。
+ *
+ * **使い切っているときは、AIの目安になった理由を出す。** これが無いと、前回まで実データで
+ * 出ていた電車の所要時間が黙って目安に戻り、値が変わった理由が画面のどこにも出ない。
+ * 枠が残っていて単に取れなかったとき（座標が引けない・trainrouteが応答しない）は出さず、
+ * `estimateNote()` の「調べられないときはAIの目安を出します」のままにする。理由を偽らないため。
+ */
+export function quotaNote(quota: TransitQuota | null, timeZone: string): string | null {
+  if (!quota) return null;
+
+  const resetDate = formatQuotaDate(quota.resetAt, timeZone);
+
+  if (isQuotaExhausted(quota)) {
+    const reset = resetDate ? `${resetDate}にリセットされます。` : "";
+    return `${quota.label}の枠を使い切ったため、AIによる目安を出しています。${reset}`;
+  }
+
+  const reset = resetDate ? `・${resetDate}にリセット` : "";
+  return `${quota.label}の経路検索は残り${quota.remaining}回${reset}`;
 }

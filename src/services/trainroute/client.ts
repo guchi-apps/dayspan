@@ -197,23 +197,21 @@ function readAttribution(value: unknown): TransitSearchResult["attribution"] {
   return { provider, termsUrl: readString((value as { termsUrl?: unknown }).termsUrl) };
 }
 
-type TransitQuotaResponse = {
-  generatedAt?: unknown;
-  providers?: unknown;
-};
-
 /**
- * 経路検索APIの利用枠を取る（`GET /api/internal/transit-quota`）。
+ * 経路検索APIの利用枠を引く（`GET /api/internal/transit-quota`。docs/spec.md §29）。
  *
- * このAPI自体は外部APIを呼ばない。trainrouteが経路検索のついでに保存した残数を返すだけなので、
- * 残り回数を見るために枠を1回消費する、ということが起きない（docs/spec.md §29）。
+ * **このAPIは外部APIを呼ばない。** trainroute が経路検索のついでに保存した残数を返すだけなので、
+ * 残り回数を見るために枠を1回消費する、ということが起きない。
+ *
+ * 数えるのを trainroute に任せるのは、NAVITIMEを実際に呼ぶのがそちらだから。DaySpanが自分の
+ * 呼び出しを数えると、他の呼び出し元（AIDE等）が消費した分が抜ける。加えて無料枠が戻るのは
+ * 暦の月末ではなく契約日からの請求サイクルで、DaySpan側で「今月」を数えるとずれる。
  *
  * - 経路検索が使えない（提供元のキーが未設定・未契約）ときは空の配列が返る
  * - 取れなかったときは null。呼び出し元は区画ごと出さない
  */
 export async function fetchTransitQuota(): Promise<TransitQuota[] | null> {
   const token = process.env.TRAINROUTE_TOKEN;
-  // 未設定は「連携していない」であって失敗ではない。ログにも出さない。
   if (!token) return null;
 
   const base = process.env.TRAINROUTE_INTERNAL_URL?.trim() || DEFAULT_BASE_URL;
@@ -226,61 +224,68 @@ export async function fetchTransitQuota(): Promise<TransitQuota[] | null> {
       cache: "no-store",
     });
   } catch (cause) {
-    // 例外にURLとトークンを載せない。ログへ出た時点で共有シークレットが経路上に残る。
+    // 経路検索と同じく、例外にURLとトークンを載せない。
     const timedOut = cause instanceof Error && cause.name === "TimeoutError";
     console.error(
-      `[dayspan] trainroute transit-quota lookup failed: ${timedOut ? `no response in ${TIMEOUT_MS}ms` : "connection failed"}`,
+      `[dayspan] trainroute quota lookup failed: ${timedOut ? `no response in ${TIMEOUT_MS}ms` : "connection failed"}`,
     );
     return null;
   }
 
-  // 本文は載せない。状態コードだけで、未デプロイ（404）・キー違い（401）・
-  // trainroute側の未設定（503）を切り分けられる。
   if (!response.ok) {
-    console.error(`[dayspan] trainroute transit-quota lookup returned HTTP ${response.status}`);
+    console.error(`[dayspan] trainroute quota lookup returned HTTP ${response.status}`);
     return null;
   }
 
-  let json: TransitQuotaResponse;
+  let json: unknown;
   try {
-    json = (await response.json()) as TransitQuotaResponse;
+    json = await response.json();
   } catch {
-    console.error("[dayspan] trainroute transit-quota lookup returned a body that is not JSON");
+    console.error("[dayspan] trainroute quota lookup returned a body that is not JSON");
     return null;
   }
 
-  if (!Array.isArray(json.providers)) {
-    console.error("[dayspan] trainroute /api/internal/transit-quota returned an unexpected shape");
-    return null;
-  }
-
-  return json.providers.map(toTransitQuota).filter((quota): quota is TransitQuota => quota !== null);
+  return normalizeQuota(json);
 }
 
 /**
- * 受け取った1件を検算する。trainrouteは別リポジトリで、こちらの想定より古い・新しい形が返りうる。
- * 残り回数が読めない行は、出すものが無いので落とす。
+ * 応答を読む。**残り回数が読めない行は落とす。**
+ *
+ * 出せる数字が無い行を残すと、区画だけが空で出る。trainroute は別リポジトリで、
+ * こちらの想定より項目が増えることも減ることもある（経路の読み方と同じ扱い）。
  */
-function toTransitQuota(raw: unknown): TransitQuota | null {
-  if (!raw || typeof raw !== "object") return null;
-  const value = raw as Record<string, unknown>;
+function normalizeQuota(json: unknown): TransitQuota[] | null {
+  if (typeof json !== "object" || json === null) return null;
 
-  const key = typeof value.key === "string" && value.key ? value.key : null;
-  const remaining = readNumber(value.remaining);
-  if (!key || remaining === null) return null;
+  const providers = (json as { providers?: unknown }).providers;
+  if (!Array.isArray(providers)) {
+    console.error("[dayspan] trainroute quota lookup returned an unexpected shape");
+    return null;
+  }
 
-  return {
-    key,
-    label: typeof value.label === "string" && value.label ? value.label : key,
-    limit: readNumber(value.limit),
-    remaining: Math.max(0, remaining),
-    resetAt: readIsoString(value.resetAt),
-    updatedAt: readIsoString(value.updatedAt),
-    source: value.source === "local" ? "local" : "provider",
-  };
+  return providers
+    .map((raw): TransitQuota | null => {
+      if (typeof raw !== "object" || raw === null) return null;
+      const value = raw as Record<string, unknown>;
+
+      const key = readString(value.key);
+      const remaining = readNumber(value.remaining);
+      if (!key || remaining === null) return null;
+
+      return {
+        key,
+        label: readString(value.label) ?? key,
+        limit: readNumber(value.limit),
+        remaining: Math.max(0, Math.round(remaining)),
+        resetAt: readIso(value.resetAt),
+        updatedAt: readIso(value.updatedAt),
+        source: value.source === "local" ? "local" : "provider",
+      };
+    })
+    .filter((quota): quota is TransitQuota => quota !== null);
 }
 
-function readIsoString(value: unknown): string | null {
-  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return null;
-  return value;
+function readIso(value: unknown): string | null {
+  const text = readString(value);
+  return text && !Number.isNaN(Date.parse(text)) ? text : null;
 }

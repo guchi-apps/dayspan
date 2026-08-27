@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { estimateTravel, type TravelEstimate } from "@/lib/ai-travel-estimate";
 import { requireUserId } from "@/lib/auth-user";
 import { isLatLng, type LatLng } from "@/lib/coordinates";
-import type { TransitQuota } from "@/lib/transit-quota";
 import { searchPlace } from "@/services/geocoding/nominatim";
+import type { TransitQuota } from "@/lib/transit-quota";
 import { fetchTransitQuota, searchTransitRoutes } from "@/services/trainroute/client";
 import { toTravelEstimates } from "@/services/trainroute/estimate";
 import { isTravelMode, type TravelMode } from "@/types/calendar";
@@ -20,7 +20,8 @@ import { isTravelMode, type TravelMode } from "@/types/calendar";
  * どちらも呼び出しごとに枠を消費する（NAVITIMEは月500回のハードリミット、AIはプラン枠）ため、
  * 画面側ではボタン操作からだけ呼ぶ。場所の「AIに聞く」（/api/places/suggest）と同じ扱い。
  *
- * 経路検索（NAVITIME）の残り回数も一緒に返す。残り回数のためだけに往復を1つ増やさないため。
+ * 経路検索の残り回数も応答に添える（`quota`）。そのためだけに往復を1つ増やさないため。
+ * 残数を返すのは trainroute のDBで、NAVITIMEへは行かない（docs/spec.md §29）。
  */
 
 type EstimateBody = {
@@ -54,10 +55,9 @@ export async function POST(request: Request) {
   const mode: TravelMode | null = isTravelMode(body.mode) ? body.mode : null;
 
   if (mode === "TRAIN") {
-    const transitResult = await lookupTransit(body, origin, destination);
-    if (transitResult) {
-      return NextResponse.json({ ...transitResult, transit: await loadTransitQuotas() });
-    }
+    const transit = await lookupTransit(body, origin, destination);
+    // 残り回数は経路検索の**あと**に引く。いま使った1回が引かれた値を画面へ返すため。
+    if (transit) return NextResponse.json({ ...transit, quota: await currentQuota() });
   }
 
   const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 
   try {
     const estimates = await estimateTravel(token, { origin, destination, preferredMode: mode });
-    return NextResponse.json({ estimates, attribution: null, transit: await loadTransitQuotas() });
+    return NextResponse.json({ estimates, attribution: null, quota: await currentQuota() });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("[dayspan] claude travel estimate failed:", detail);
@@ -147,12 +147,12 @@ async function resolveCoordinates(
 }
 
 /**
- * 入力画面に添える経路検索の利用枠。
+ * 画面に添える経路検索の残り回数。取れなければ null（画面は何も出さない）。
  *
- * 複数の提供元が返ったときは、経路検索に使うものが先頭に来る（trainroute側の契約）。
- * 取れなかったときはnull。呼び出し元（画面）は区画ごと出さない。
+ * 複数の提供元が返るときは、経路検索に使うものが先頭に来る（trainroute側の契約）。
+ * ここで断らないのは、残り回数が分からないことが所要時間を返せない理由にはならないため。
  */
-async function loadTransitQuotas(): Promise<{ quotas: TransitQuota[] } | null> {
+async function currentQuota(): Promise<TransitQuota | null> {
   const quotas = await fetchTransitQuota();
-  return quotas && quotas.length > 0 ? { quotas } : null;
+  return quotas?.[0] ?? null;
 }
