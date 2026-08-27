@@ -110,7 +110,9 @@ export function TravelDetailDialog({
           <DetailRow icon={<Route className="size-4" />}>
             {TRAVEL_MODE_LABELS[travel.mode]} {minutes}分
             {travel.estimated && (
-              <span className="text-on-surface-variant">（AIによる目安）</span>
+              <span className="text-on-surface-variant">
+                {travel.estimateSource === "TRANSIT" ? "（経路検索の平均）" : "（AIによる目安）"}
+              </span>
             )}
           </DetailRow>
 

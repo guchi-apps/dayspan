@@ -32,6 +32,7 @@ export async function POST(request: Request) {
         arriveAt: body.arriveAt!,
         note: body.note ?? null,
         estimated: body.estimated ?? false,
+        estimateSource: body.estimateSource,
         linkedEventId: body.linkedEventId ?? null,
         linkedCalendarId: body.linkedCalendarId ?? null,
       },

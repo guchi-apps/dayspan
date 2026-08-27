@@ -254,9 +254,15 @@ enum TravelMode {
 
 /// 所要時間の出どころ。AIの見積もりは目安でしかないため、手で入れた値と区別して示す。
 /// 将来Routes APIなどへ差し替えるときも、既存の記録がどちらで入ったか分かるようにする。
+/// 所要時間の出どころ（docs/spec.md §29）。
+///
+/// TRANSIT は trainroute 経由で引いた経路検索の結果。AI の見積もりと同じく確定した時刻では
+/// ないが、実際の路線網・乗換・徒歩を計算した値で、精度が違う。区別できないと、あとから
+/// 「この数字はどこから来たのか」を読めなくなる。
 enum TravelEstimateSource {
   MANUAL
   AI
+  TRANSIT
 }
 
 model TravelPlan {

@@ -13,14 +13,26 @@ import { cn } from "@/lib/utils";
 import type { TravelEstimate } from "@/lib/ai-travel-estimate";
 import { formatQuotaDate, isQuotaExhausted, type TransitQuota } from "@/lib/transit-quota";
 import type { PlaceCatalog } from "@/services/notion/places";
-import { TRAVEL_MODES, TRAVEL_MODE_LABELS, type TravelItem, type TravelMode } from "@/types/calendar";
+import {
+  TRAVEL_MODES,
+  TRAVEL_MODE_LABELS,
+  type TravelEstimateSource,
+  type TravelItem,
+  type TravelMode,
+} from "@/types/calendar";
 
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { ItemFormActions } from "./item-form-actions";
-import { LocationInput, withPlaceAddress } from "./location-input";
+import { LocationInput, placeCoordinates, withPlaceAddress } from "./location-input";
 import { readErrorMessage } from "./response-error";
+import {
+  estimateNote,
+  resultNote,
+  transitDetail,
+  type EstimateAttribution,
+} from "./travel-estimate-notes";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export type TravelDraft = {
@@ -67,13 +79,17 @@ export function TravelForm({
   const [departAt, setDepartAt] = useState(draft.departAt);
   const [arriveAt, setArriveAt] = useState(draft.arriveAt);
   const [note, setNote] = useState(draft.note ?? "");
-  // 所要時間をAIから入れたかどうか。目安であることを保存先にも残す。
-  const [estimated, setEstimated] = useState(editing?.estimated ?? false);
+  // 所要時間の出どころ。手で入れた値・AIの目安・経路検索の結果を保存先にも残す。
+  const [estimateSource, setEstimateSource] = useState<TravelEstimateSource>(
+    editing?.estimateSource ?? "MANUAL",
+  );
   const [roundTrip, setRoundTrip] = useState(Boolean(draft.roundTrip && draft.linkedEvent));
 
   const [estimates, setEstimates] = useState<TravelEstimate[] | null>(null);
+  // 経路検索の提供元。NAVITIMEの規約が表示を求めるため、返ってきた値をそのまま出す。
+  const [attribution, setAttribution] = useState<EstimateAttribution | null>(null);
   // 経路検索（NAVITIME）の残り回数。見積もりの応答に一緒に載って返る（そのためだけの
-  // 往復は増やさない）。DaySpanが経路検索を使うまでは null のまま。
+  // 往復は増やさない。docs/spec.md §29「経路検索の利用状況」）。まだ調べていない間は null。
   const [transitQuota, setTransitQuota] = useState<TransitQuota | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -95,16 +111,45 @@ export function TravelForm({
     rangeError ??
     (origin.trim() && destination.trim() ? null : "出発地と目的地を入力してください。");
 
-  /** 所要時間の候補を選んだとき。到着時刻は動かさず、そこから出発時刻を逆算する。 */
+  /**
+   * 所要時間の候補を選んだとき。
+   *
+   * 経路検索の候補は経路そのものの出発時刻を持っているので、引き算をせずその値を入れる。
+   * AIの見積もりは分数しか持たないため、到着時刻は動かさずそこから逆算する。
+   */
   const applyEstimate = (estimate: TravelEstimate) => {
     setMode(estimate.mode);
-    setEstimated(true);
+    setEstimateSource(estimate.source === "transit" ? "TRANSIT" : "AI");
     setEstimates(null);
+
+    if (estimate.departAt) {
+      setDepartAt(isoToLocalInput(estimate.departAt, timeZone));
+      if (estimate.arriveAt) setArriveAt(isoToLocalInput(estimate.arriveAt, timeZone));
+      return;
+    }
 
     if (!arriveAt) return;
     const arrive = new Date(`${arriveAt}:00Z`);
     if (Number.isNaN(arrive.getTime())) return;
     setDepartAt(new Date(arrive.getTime() - estimate.minutes * 60_000).toISOString().slice(0, 16));
+  };
+
+  /**
+   * 時刻を手で直したとき。出どころを手入力へ戻す。
+   *
+   * 直した値はもう経路検索・AIが出したものではない。戻さないと、手で入れた時刻に
+   * 「経路検索の平均」と付いたまま保存され、Googleの予定の説明にもその断りが残る。
+   * 候補を押したときは applyEstimate が直接 setDepartAt / setArriveAt を呼ぶため、
+   * この経路は通らない（出どころが押した候補のまま残る）。
+   */
+  const editDepartAt = (value: string) => {
+    setDepartAt(value);
+    setEstimateSource("MANUAL");
+  };
+
+  const editArriveAt = (value: string) => {
+    setArriveAt(value);
+    setEstimateSource("MANUAL");
   };
 
   /**
@@ -132,6 +177,9 @@ export function TravelForm({
     try {
       // AIへは住所まで添えて渡す。「自宅」のような名前だけでは地点が定まらず、
       // 見積もりが常に0件になる。場所DBは既に手元にあるため往復は増えない。
+      //
+      // 経路検索は座標で行うため、場所DBに登録済みの座標も一緒に渡す。サーバー側で
+      // 引き直すと、押すたびにNotionの全件取得が増える（docs/spec.md §29）。
       const response = await fetch("/api/travels/estimate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -139,6 +187,9 @@ export function TravelForm({
           origin: withPlaceAddress(origin, placeCatalog.places),
           destination: withPlaceAddress(destination, placeCatalog.places),
           mode,
+          arriveAt: arriveAt ? localInputToIso(arriveAt, timeZone) : null,
+          originCoordinates: placeCoordinates(origin, placeCatalog.places),
+          destinationCoordinates: placeCoordinates(destination, placeCatalog.places),
         }),
       });
       if (!response.ok) {
@@ -147,9 +198,11 @@ export function TravelForm({
       }
       const body = (await response.json()) as {
         estimates: TravelEstimate[];
+        attribution?: EstimateAttribution | null;
         transit?: { quotas: TransitQuota[] } | null;
       };
       setEstimates(body.estimates);
+      setAttribution(body.attribution ?? null);
       // 複数の提供元が返るときは、経路検索に使うものが先頭に来る（trainroute側の契約）。
       setTransitQuota(body.transit?.quotas[0] ?? null);
     } catch {
@@ -188,7 +241,7 @@ export function TravelForm({
         departAt: departIso,
         arriveAt: arriveIso,
         note: note.trim() || null,
-        estimated,
+        estimateSource,
         ...(editing
           ? {}
           : {
@@ -291,26 +344,26 @@ export function TravelForm({
             dateLabel="出発日"
             timeLabel="出発時刻"
             value={departAt}
-            onChange={setDepartAt}
+            onChange={editDepartAt}
           />
           <DateTimeInput
             id="travel-arrive"
             dateLabel="到着日"
             timeLabel="到着時刻"
             value={arriveAt}
-            onChange={setArriveAt}
+            onChange={editArriveAt}
           />
         </div>
 
         {/* 所要時間は押したときだけ調べる。入力のたびに呼ぶと、打っている途中の
-            文字列で何度も問い合わせることになる（場所の「AIに聞く」と同じ）。 */}
+            文字列で何度も問い合わせることになる（場所の「AIに聞く」と同じ）。
+            電車は経路検索の枠（月500回）、それ以外はAIのプラン枠を消費する。 */}
         <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
           {estimates === null ? (
             <>
               <p className="text-xs text-muted-foreground">
-                {quotaExhausted
-                  ? quotaNote
-                  : "所要時間はAIによる目安です。時刻表や道路状況は見ていません。"}
+                {estimateNote(estimateSource, mode, attribution)}
+                <TermsLink attribution={estimateSource === "TRANSIT" ? attribution : null} />
               </p>
               <Button
                 type="button"
@@ -321,9 +374,12 @@ export function TravelForm({
                 onClick={askEstimate}
               >
                 <Route className="size-4" />
-                {estimating ? "調べています…" : "所要時間を調べる"}
+                {estimating
+                  ? "調べています…"
+                  : estimateSource === "MANUAL"
+                    ? "所要時間を調べる"
+                    : "調べ直す"}
               </Button>
-              {!quotaExhausted && <QuotaNote note={quotaNote} />}
             </>
           ) : estimates.length === 0 ? (
             <>
@@ -342,31 +398,50 @@ export function TravelForm({
             </>
           ) : (
             <>
+              <p className="text-xs text-muted-foreground">
+                {resultNote(estimates, attribution)}
+                <TermsLink
+                  attribution={
+                    estimates.some((estimate) => estimate.source === "transit") ? attribution : null
+                  }
+                />
+              </p>
               <ul className="flex flex-col gap-1">
-                {estimates.map((estimate) => (
-                  <li key={estimate.mode}>
+                {estimates.map((estimate, index) => (
+                  // 経路検索では同じ「電車」の候補が複数並ぶ。交通手段は一意にならない。
+                  <li key={`${estimate.source}-${estimate.mode}-${index}`}>
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
+                      className="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
                       onClick={() => applyEstimate(estimate)}
                     >
-                      <span className="shrink-0 rounded-full bg-travel-container px-2 py-0.5 text-[11px] font-semibold text-on-travel-container">
+                      <span className="mt-0.5 shrink-0 rounded-full bg-travel-container px-2 py-0.5 text-[11px] font-semibold text-on-travel-container">
                         {TRAVEL_MODE_LABELS[estimate.mode]}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                        {estimate.detail ?? `${origin.trim()} → ${destination.trim()}`}
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">
+                          {estimate.detail ?? `${origin.trim()} → ${destination.trim()}`}
+                        </span>
+                        {/* 渡しているのは座標なので、ずれていれば別の駅が選ばれる。
+                            使われた駅と徒歩の分数が出ていれば、数字を信じる前に気付ける。 */}
+                        {estimate.transit && (
+                          <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                            {transitDetail(estimate.transit)}
+                          </span>
+                        )}
                       </span>
-                      <span className="shrink-0 text-sm font-semibold">{estimate.minutes}分</span>
+                      <span className="shrink-0 self-center text-sm font-semibold">
+                        {estimate.minutes}分
+                      </span>
                     </button>
                   </li>
                 ))}
               </ul>
-              {/* 押した直後は、いま使った1回が引かれた値に変わる。減ったことが
-                  その場で見えるのが、設定画面ではなくここにも置く理由。 */}
-              <QuotaNote note={quotaNote} />
             </>
           )}
         </div>
+
+        {quotaNote && <p className="px-1 text-xs text-muted-foreground">{quotaNote}</p>}
 
         {/* 往復は元になった予定があるときだけ。単独の移動では帰りの起点が決まらない。 */}
         {!editing && draft.linkedEvent && (
@@ -404,15 +479,26 @@ export function TravelForm({
   );
 }
 
-/** 経路検索の残り回数の1行。取れていないときは何も出さない。 */
-function QuotaNote({ note }: { note: string | null }) {
-  if (!note) return null;
-
+/**
+ * 提供元の利用規約へのリンク。
+ *
+ * NAVITIMEの利用規約が、規約へのリンクをサイト内に出すことを求めている。URLは
+ * trainroute が応答へ添えてくるので、こちらでは持たない（提供元が変わってもここは変えない）。
+ */
+function TermsLink({ attribution }: { attribution: EstimateAttribution | null }) {
+  if (!attribution?.termsUrl) return null;
   return (
-    <p className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
-      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-travel" />
-      {note}
-    </p>
+    <>
+      {" "}
+      <a
+        href={attribution.termsUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline underline-offset-2"
+      >
+        利用規約
+      </a>
+    </>
   );
 }
 
