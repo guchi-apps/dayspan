@@ -106,6 +106,7 @@ jobs:
       VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
       VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
       VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      TRAINROUTE_TOKEN: ${{ secrets.TRAINROUTE_TOKEN }}
       SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
 
     steps:
@@ -161,6 +162,7 @@ jobs:
       VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
       VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
       VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      TRAINROUTE_TOKEN: ${{ secrets.TRAINROUTE_TOKEN }}
       SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
 
     steps:
@@ -244,6 +246,7 @@ jobs:
       VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
       VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
       VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      TRAINROUTE_TOKEN: ${{ secrets.TRAINROUTE_TOKEN }}
       SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
 
     steps:
@@ -301,13 +304,14 @@ jobs:
           VAPID_PUBLIC_KEY: ${{ env.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ env.VAPID_PRIVATE_KEY }}
           VAPID_SUBJECT: ${{ env.VAPID_SUBJECT }}
+          TRAINROUTE_TOKEN: ${{ env.TRAINROUTE_TOKEN }}
           TARGET_DIR: ${{ env.TARGET_DIR }}
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USERNAME }}
           key: ${{ env.SSH_PRIVATE_KEY }}
           port: ${{ env.SSH_PORT }}
-          envs: DATABASE_URL,MIGRATE_DATABASE_URL,DB_USER,DB_PASSWORD,DB_HOST,DB_PORT,DB_NAME,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,ALLOWED_GOOGLE_EMAILS,TOKEN_ENCRYPTION_KEY,GOOGLE_CALENDAR_CLIENT_ID,GOOGLE_CALENDAR_CLIENT_SECRET,CLAUDE_CODE_OAUTH_TOKEN,INTERNAL_API_KEY,VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT,TARGET_DIR
+          envs: DATABASE_URL,MIGRATE_DATABASE_URL,DB_USER,DB_PASSWORD,DB_HOST,DB_PORT,DB_NAME,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,ALLOWED_GOOGLE_EMAILS,TOKEN_ENCRYPTION_KEY,GOOGLE_CALENDAR_CLIENT_ID,GOOGLE_CALENDAR_CLIENT_SECRET,CLAUDE_CODE_OAUTH_TOKEN,INTERNAL_API_KEY,VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT,TRAINROUTE_TOKEN,TARGET_DIR
           script: |
             set -euo pipefail
             cd "${TARGET_DIR}"
@@ -347,6 +351,9 @@ jobs:
             update_env VAPID_PUBLIC_KEY "$VAPID_PUBLIC_KEY"
             update_env VAPID_PRIVATE_KEY "$VAPID_PRIVATE_KEY"
             update_env VAPID_SUBJECT "$VAPID_SUBJECT"
+            # 電車の所要時間の取得元（docs/spec.md §29）。未設定でもDaySpanは動き、
+            # 経路検索だけがAIの見積もりへ落ちる。接続先URLは既定（127.0.0.1:3112）のまま。
+            update_env TRAINROUTE_TOKEN "$TRAINROUTE_TOKEN"
 
             echo "Installing production dependencies..."
             corepack enable pnpm >/dev/null 2>&1 || true

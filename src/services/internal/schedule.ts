@@ -161,6 +161,7 @@ export function buildDay(
         startTime,
         endTime,
         estimated: travel.estimated,
+        estimateSource: travel.estimateSource,
         returnLeg: travel.returnLeg,
         note: travel.note,
       };

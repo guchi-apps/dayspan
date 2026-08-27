@@ -21,11 +21,36 @@ const MAX_ESTIMATES = 4;
 /** 見積もりとして受け付ける上限（分）。24時間を超える移動は入力の取り違えとみなす。 */
 const MAX_MINUTES = 24 * 60;
 
+/**
+ * 所要時間の候補。
+ *
+ * AIの見積もりと、trainroute 経由で引いた経路検索の結果の両方をこの形で画面へ渡す。
+ * 別々の型にすると、候補の一覧・押したときの処理を出どころの数だけ書くことになる。
+ */
 export type TravelEstimate = {
   mode: TravelMode;
   minutes: number;
   /** 経路の要点（利用路線・乗換回数など）。分からなければ null。 */
   detail: string | null;
+  /** 出どころ。画面の注記と、保存する estimateSource をこれで決める。 */
+  source: "ai" | "transit";
+  /**
+   * 経路検索のときだけ入る、その経路そのものの出発・到着時刻（ISO 8601）。
+   * 到着時刻から分数を引く逆算より、返ってきた時刻をそのまま入れるほうが正確。
+   */
+  departAt?: string;
+  arriveAt?: string;
+  /**
+   * 経路検索のときだけ入る内訳。渡した座標から想定と違う駅が選ばれていないかを
+   * 画面で読めるようにするために持つ（出発地・目的地は駅とは限らないため）。
+   */
+  transit?: {
+    transitCount: number;
+    walkMinutes: number;
+    boardStation: string | null;
+    alightStation: string | null;
+    fare: { ticket: number; ic: number | null } | null;
+  };
 };
 
 export type TravelEstimateInput = {
@@ -122,10 +147,11 @@ export async function estimateTravel(
         isTravelMode((item as { mode?: unknown }).mode) &&
         Number.isFinite((item as { minutes?: unknown }).minutes),
     )
-    .map((item) => ({
+    .map((item): TravelEstimate => ({
       mode: item.mode as TravelMode,
       minutes: Math.round(item.minutes),
       detail: typeof item.detail === "string" && item.detail.trim() ? item.detail.trim() : null,
+      source: "ai",
     }))
     .filter((estimate) => {
       // 同じ手段が2件出ると、どちらを選べばよいか決まらない。先に出たほうを採る。
