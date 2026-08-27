@@ -23,19 +23,27 @@ import { ANNUAL_LEAVE_OPTIONS } from "@/services/notion/work-database";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
   annualLeaveDays,
+  COMPANY_HOLIDAY_TITLE,
   isTripPlace,
   WORK_TODO_LABELS,
   type WorkCapabilities,
   type WorkRecordItem,
 } from "@/types/work";
 
-/** 記録の種類。同時には立てられないため、スイッチではなく3択で持つ。 */
-export type WorkKind = "work" | "trip" | "leave";
+/** 記録の種類。同時には立てられないため、スイッチではなく択一で持つ。 */
+export type WorkKind = "work" | "trip" | "leave" | "holiday";
 
+/**
+ * 並びに出す名前。
+ *
+ * 会社休業日だけ「休業」と短くする。4つが1つの帯に並ぶため、ここだけ5文字あると
+ * スマートフォンでは枠に収まらない。何の記録なのかはダイアログの見出しで「会社休業日」と出す。
+ */
 const KIND_LABELS: Record<WorkKind, string> = {
   work: "勤務",
   trip: "出張",
   leave: "年休",
+  holiday: "休業",
 };
 
 /** 開くときに渡す下書き。新規はその日から、編集は既存の記録から始める。 */
@@ -44,16 +52,17 @@ export type WorkDraft =
   | { mode: "edit"; record: WorkRecordItem };
 
 function kindOf(record: WorkRecordItem): WorkKind {
+  if (record.companyHoliday) return "holiday";
   if (record.annualLeave) return "leave";
   return record.businessTrip ? "trip" : "work";
 }
 
 /**
- * 勤務場所・出張・年休の入力（docs/spec.md §34）。
+ * 勤務場所・出張・年休・会社休業日の入力（docs/spec.md §34）。
  *
- * 3つを1つのダイアログの中で切り替える。押す前に種類を決めさせると、入力の途中で違うと
+ * どれも1つのダイアログの中で切り替える。押す前に種類を決めさせると、入力の途中で違うと
  * 気付いたときに閉じて選び直すことになるため（追加UIと同じ考え方）。スイッチを種類の数だけ
- * 並べないのは、同時に立てられない3つが並ぶと、どれを消せばよいのかが画面から読めないため。
+ * 並べないのは、同時に立てられないものが並ぶと、どれを消せばよいのかが画面から読めないため。
  */
 export function WorkRecordDialog({
   draft,
@@ -89,6 +98,11 @@ export function WorkRecordDialog({
     existing?.annualLeave ?? ANNUAL_LEAVE_OPTIONS[0].name,
   );
   const [destination, setDestination] = useState(existing?.businessTrip ? existing.title : "");
+  // 会社休業日の名称（「夏季休業」）。空のままでも登録できる（既定は「会社休業日」）。
+  // 名称を入れずに登録した記録はタイトルが既定のままなので、空欄として開く。
+  const [holidayName, setHolidayName] = useState(
+    existing?.companyHoliday && existing.title !== COMPANY_HOLIDAY_TITLE ? existing.title : "",
+  );
 
   /**
    * 出張の種類選択を手で操作したか。
@@ -116,15 +130,18 @@ export function WorkRecordDialog({
 
   const businessTrip = kind === "trip";
   const isLeave = kind === "leave";
+  const isHoliday = kind === "holiday";
   // 半休の日は残り半日どこで働いたかも要る（勤怠の提出で使う）。全休の日は入る値が無い。
   const halfDay = isLeave && annualLeaveDays(annualLeave) < 1;
-  // 期間を持てるのは出張と全休の年休だけ。半休は単日に限る（半日ずつ2日ぶんという形が無い）。
-  const spanned = businessTrip || (isLeave && !halfDay);
+  // 期間を持てるのは出張・全休の年休・会社休業日。半休は単日に限る（半日ずつ2日ぶんという
+  // 形が無い）。会社休業日はお盆・年末年始のように続くため、出張と同じく期間で1件にする。
+  const spanned = businessTrip || (isLeave && !halfDay) || isHoliday;
   // 使える種類だけを出す。揃っていないプロパティの種類を出すと、押しても保存されない道が残る。
   const kinds: WorkKind[] = [
     "work",
     ...(capabilities.businessTrip ? (["trip"] as const) : []),
     ...(capabilities.annualLeave ? (["leave"] as const) : []),
+    ...(capabilities.companyHoliday ? (["holiday"] as const) : []),
   ];
 
   /** 種類を手で選ぶ。以降は場所を選び直しても出張扱いの既定を追従させない。 */
@@ -140,7 +157,7 @@ export function WorkRecordDialog({
    */
   const choosePlace = (name: string) => {
     setPlace(name);
-    if (isLeave || tripTouched || !capabilities.businessTrip) return;
+    if (isLeave || isHoliday || tripTouched || !capabilities.businessTrip) return;
 
     const trip = isTripPlace(tripPlaces, name);
     setKind(trip ? "trip" : "work");
@@ -192,22 +209,38 @@ export function WorkRecordDialog({
       setError("残り半日の勤務場所を選んでください。");
       return;
     }
-    if (!businessTrip && !isLeave && !place) {
+    if (!businessTrip && !isLeave && !isHoliday && !place) {
       setError("勤務場所を選んでください。");
       return;
     }
 
     // 通常の勤務は勤務場所の名前をそのままタイトルにする。Notionの一覧で開かずに読めるようにし、
-    // 入力の欄も1つ減らす。出張は行き先が、年休は区分がタイトルになる。
-    const title = isLeave ? `年休（${annualLeave}）` : businessTrip ? destination.trim() : place;
+    // 入力の欄も1つ減らす。出張は行き先が、年休は区分がタイトルになる。会社休業日は名称を
+    // 入れなくても登録できるため、空なら種類の名前をそのまま置く。
+    const title = isHoliday
+      ? holidayName.trim() || COMPANY_HOLIDAY_TITLE
+      : isLeave
+        ? `年休（${annualLeave}）`
+        : businessTrip
+          ? destination.trim()
+          : place;
     const body = {
       title,
       startDate,
       endDate: spanned && endDate ? endDate : startDate,
-      // 全休の日に勤務場所は入らない。半休の日は残り半日の勤務場所を持つ。
-      place: isLeave ? (halfDay ? place || null : null) : businessTrip ? place || null : place,
+      // 全休の日と会社休業日に勤務場所は入らない。半休の日は残り半日の勤務場所を持つ。
+      place: isHoliday
+        ? null
+        : isLeave
+          ? halfDay
+            ? place || null
+            : null
+          : businessTrip
+            ? place || null
+            : place,
       ...(capabilities.businessTrip ? { businessTrip } : {}),
       ...(capabilities.annualLeave ? { annualLeave: isLeave ? annualLeave : null } : {}),
+      ...(capabilities.companyHoliday ? { companyHoliday: isHoliday } : {}),
       ...(capabilities.approval && businessTrip ? { preApplied, postRegistered } : {}),
       ...(capabilities.annualLeave && isLeave ? { preApplied } : {}),
       ...(capabilities.memo ? { memo: memo.trim() || null } : {}),
@@ -241,9 +274,16 @@ export function WorkRecordDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
-        <DialogTitle>{kind === "work" ? "勤務場所" : KIND_LABELS[kind]}</DialogTitle>
+        <DialogTitle>
+          {kind === "work"
+            ? "勤務場所"
+            : kind === "holiday"
+              ? COMPANY_HOLIDAY_TITLE
+              : KIND_LABELS[kind]}
+        </DialogTitle>
         <DialogDescription className="sr-only">
-          勤務場所・出張・年休の登録。出張では事前申請と事後登録、年休では事前申請の状況も持てます。
+          勤務場所・出張・年休・会社休業日の登録。出張では事前申請と事後登録、年休では事前申請の
+          状況も持てます。
         </DialogDescription>
 
         {error && (
@@ -252,15 +292,19 @@ export function WorkRecordDialog({
           </p>
         )}
 
-        {/* 種類。同時に立てられない3つなので、スイッチを並べず1つの並びから選ばせる。 */}
+        {/* 種類。同時に立てられないので、スイッチを並べず1つの並びから選ばせる。 */}
         {kinds.length > 1 && (
           <div
             role="radiogroup"
             aria-label="記録の種類"
             className={cn(
               "grid overflow-hidden rounded-full border border-outline",
-              // 使える種類の数で列を決める。3列に固定すると、年休だけを足したDBで空の枠が並ぶ。
-              kinds.length === 3 ? "grid-cols-3" : "grid-cols-2",
+              // 使える種類の数で列を決める。4列に固定すると、年休だけを足したDBで空の枠が並ぶ。
+              kinds.length === 4
+                ? "grid-cols-4"
+                : kinds.length === 3
+                  ? "grid-cols-3"
+                  : "grid-cols-2",
             )}
           >
             {kinds.map((option) => (
@@ -307,8 +351,8 @@ export function WorkRecordDialog({
           </div>
         )}
 
-        {/* 全休の日に勤務場所は入らない。半休の日は残り半日ぶんを選ばせる。 */}
-        {placeOptions.length > 0 && (!isLeave || halfDay) && (
+        {/* 会社休業日と全休の日に勤務場所は入らない。半休の日は残り半日ぶんを選ばせる。 */}
+        {placeOptions.length > 0 && !isHoliday && (!isLeave || halfDay) && (
           <div className="flex flex-col gap-2">
             <span className="type-label-medium text-on-surface-variant">
               {halfDay ? "残り半日の勤務場所" : "勤務場所"}
@@ -334,6 +378,16 @@ export function WorkRecordDialog({
           </div>
         )}
 
+        {/* 名称は任意。「夏季休業」「年末年始」のように名前が付いているときだけ入れれば足りる。 */}
+        {isHoliday && (
+          <Input
+            id="work-holiday-name"
+            label="名称（任意）"
+            value={holidayName}
+            onChange={(event) => setHolidayName(event.target.value)}
+          />
+        )}
+
         {businessTrip && (
           <Input
             id="work-destination"
@@ -351,7 +405,8 @@ export function WorkRecordDialog({
             value={startDate}
             onChange={(event) => setStartDate(event.target.value)}
           />
-          {/* 終了日は出張と全休の年休だけ。通常の勤務と半休は1日1件で、期間を持たせる意味が無い。 */}
+          {/* 終了日は出張・全休の年休・会社休業日だけ。通常の勤務と半休は1日1件で、
+              期間を持たせる意味が無い。 */}
           {spanned && (
             <Input
               id="work-end-date"

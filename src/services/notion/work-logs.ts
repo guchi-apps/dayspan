@@ -7,7 +7,7 @@ import type { NotionFilterGroup, NotionQueryFilter } from "./client";
 import type { WorkField, WorkPropertyMap } from "./work-database";
 
 /**
- * 勤務場所・出張・年休の読み書き（docs/spec.md §34）。
+ * 勤務場所・出張・年休・会社休業日の読み書き（docs/spec.md §34）。
  *
  * 一次情報源はNotionの勤務記録DBで、DaySpanのDBには何も保存しない。日付リマインドと同じく、
  * 利用者が後から見返し・集計し・手で直す種類の記録のため。
@@ -47,12 +47,20 @@ export function workPropertyMap(connection: NotionConnection): WorkPropertyMap {
  */
 export function workCapabilities(connection: NotionConnection | null): WorkCapabilities {
   if (!connection) {
-    return { businessTrip: false, annualLeave: false, approval: false, memo: false };
+    return {
+      businessTrip: false,
+      annualLeave: false,
+      companyHoliday: false,
+      approval: false,
+      memo: false,
+    };
   }
   const map = workPropertyMap(connection);
   return {
     businessTrip: Boolean(map.businessTrip),
     annualLeave: Boolean(map.annualLeave && map.preApplied),
+    // 会社休業日は申請を持たないため、この列さえあれば登録できる。
+    companyHoliday: Boolean(map.companyHoliday),
     approval: Boolean(map.businessTrip && map.preApplied && map.postRegistered),
     memo: Boolean(map.memo),
   };
@@ -93,6 +101,7 @@ function normalizeWorkPage(page: WorkPage, map: WorkPropertyMap): WorkRecordItem
     place: get("place")?.select?.name ?? null,
     annualLeave: get("annualLeave")?.select?.name ?? null,
     businessTrip: Boolean(get("businessTrip")?.checkbox),
+    companyHoliday: Boolean(get("companyHoliday")?.checkbox),
     preApplied: Boolean(get("preApplied")?.checkbox),
     postRegistered: Boolean(get("postRegistered")?.checkbox),
     memo: text(get("memo")?.rich_text) || null,
@@ -239,6 +248,8 @@ export type WorkWriteInput = {
   /** 年休の区分（全休・午前半休・午後半休）。年休を外すときは null。 */
   annualLeave?: string | null;
   businessTrip?: boolean;
+  /** 会社が休みの日か（お盆・年末年始など）。 */
+  companyHoliday?: boolean;
   preApplied?: boolean;
   postRegistered?: boolean;
   memo?: string | null;
@@ -272,6 +283,9 @@ function toProperties(input: WorkWriteInput, map: WorkPropertyMap): Record<strin
   }
   if (input.businessTrip !== undefined) {
     set("businessTrip", { checkbox: input.businessTrip });
+  }
+  if (input.companyHoliday !== undefined) {
+    set("companyHoliday", { checkbox: input.companyHoliday });
   }
   if (input.preApplied !== undefined) {
     set("preApplied", { checkbox: input.preApplied });
@@ -384,6 +398,7 @@ export async function createWorkRecord(
     place: input.place ?? null,
     annualLeave: input.annualLeave ?? null,
     businessTrip: Boolean(input.businessTrip),
+    companyHoliday: Boolean(input.companyHoliday),
     preApplied: Boolean(input.preApplied),
     postRegistered: Boolean(input.postRegistered),
     memo: input.memo ?? null,

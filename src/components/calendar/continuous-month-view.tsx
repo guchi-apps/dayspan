@@ -24,6 +24,7 @@ import type { TagOption } from "@/services/notion/tag-options";
 import type { WorkRecordItem } from "@/types/work";
 
 import { eventColors } from "./calendar-color";
+import { dayTone, weekdayOnlyTone } from "./day-tone";
 import {
   isAllDayItem,
   reminderAnnualYearLabel,
@@ -529,11 +530,7 @@ export function ContinuousMonthView({
               key={weekday}
               className={cn(
                 "type-label-small py-1.5 text-center",
-                weekday === 0
-                  ? "text-rose-700/80 dark:text-rose-300/80"
-                  : weekday === 6
-                    ? "text-sky-700/80 dark:text-sky-300/80"
-                    : "text-on-surface-variant",
+                weekdayOnlyTone(weekday) ?? "text-on-surface-variant",
               )}
             >
               {WEEKDAY_LABELS[weekday]}
@@ -608,7 +605,9 @@ export function ContinuousMonthView({
                           isFirstOfMonth ? "px-1" : "px-2",
                           dateKey === todayKey
                             ? "bg-primary font-semibold text-primary-foreground"
-                            : "font-medium hover:bg-muted",
+                            : // マスの中に曜日は出ないため、休みの日かどうかは数字の色でしか
+                              // 分からない（issue #413）。今日は紫の丸のままにする。
+                              cn("font-medium hover:bg-muted", dayTone(dateKey)),
                         )}
                         {...dayPress(dateKey)}
                       >

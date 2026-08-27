@@ -63,6 +63,7 @@ import type { TravelSettings } from "@/services/travel/settings";
 
 import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { dayTone, weekdayLabel } from "./day-tone";
 import { EventDetailDialog } from "./event-detail-dialog";
 import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
 import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./item-dialog";
@@ -74,7 +75,7 @@ import { toReminderDraft } from "./reminder-form";
 import { TaskDetailDialog } from "./task-detail-dialog";
 import { TaskLinkDialog } from "./task-link-dialog";
 import { toTaskDraft } from "./task-form";
-import { TimeGridView, weekdayLabel, weekdayTone } from "./time-grid-view";
+import { TimeGridView } from "./time-grid-view";
 import { TravelDetailDialog } from "./travel-detail-dialog";
 import { toTravelDraft } from "./travel-form";
 import {
@@ -1373,7 +1374,7 @@ function formatRangeLabel(view: CalendarView, anchorKey: string, days: string[])
       year,
       main: formatMonthDay(first),
       compact,
-      weekday: { label: weekdayLabel(first), tone: weekdayTone(first) },
+      weekday: { label: weekdayLabel(first), tone: dayTone(first) },
     };
   }
 

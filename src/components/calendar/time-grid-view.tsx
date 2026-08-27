@@ -4,6 +4,7 @@ import { memo, useCallback, useMemo } from "react";
 
 import { cn } from "@/lib/utils";
 import { eventColors, subduedEventColors } from "./calendar-color";
+import { dayTone, weekdayLabel } from "./day-tone";
 import type { RunningActivityItem } from "@/types/activity";
 import type {
   CalendarEventItem,
@@ -436,23 +437,21 @@ const DayHeaderPane = memo(function DayHeaderPane({
     <div className="grid" style={dayColumnsStyle(days.length)}>
       {days.map((dateKey) => {
         const workRecord = workByDate.get(dateKey);
+        const tone = dayTone(dateKey);
 
         return (
           <div key={dateKey} className="min-w-0 py-1.5 text-center">
-            <div
-              className={cn(
-                "type-label-small",
-                weekdayTone(dateKey) ?? "text-on-surface-variant",
-              )}
-            >
+            <div className={cn("type-label-small", tone ?? "text-on-surface-variant")}>
               {weekdayLabel(dateKey)}
             </div>
+            {/* 数字にも同じ色を当てる。曜日のラベルだけを塗ると、その下でいちばん大きく
+                出ている数字が平日と同じ色のまま残る（issue #413）。今日は紫の丸のまま。 */}
             <div
               className={cn(
                 "mx-auto mt-0.5 grid size-7 place-items-center rounded-full text-sm",
                 dateKey === todayKey
                   ? "bg-primary font-semibold text-primary-foreground"
-                  : "font-medium",
+                  : cn("font-medium", tone),
               )}
             >
               {Number(dateKey.slice(8, 10))}
@@ -1805,17 +1804,4 @@ function NowLine({
       />
     </div>
   );
-}
-
-/** 土日は日本のカレンダーの慣習に合わせて色を変える。彩度は落とし、予定の色より前に出さない。 */
-export function weekdayTone(dateKey: string): string | null {
-  const day = new Date(`${dateKey}T12:00:00Z`).getUTCDay();
-  if (day === 0) return "text-rose-700/80 dark:text-rose-300/80";
-  if (day === 6) return "text-sky-700/80 dark:text-sky-300/80";
-  return null;
-}
-
-export function weekdayLabel(dateKey: string): string {
-  const labels = ["日", "月", "火", "水", "木", "金", "土"];
-  return labels[new Date(`${dateKey}T12:00:00Z`).getUTCDay()];
 }

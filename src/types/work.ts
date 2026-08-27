@@ -1,8 +1,9 @@
 /**
- * 勤務場所・出張・年休（docs/spec.md §34）。
+ * 勤務場所・出張・年休・会社休業日（docs/spec.md §34）。
  *
- * 通常の勤務も出張も年休も、Notionの勤務記録DBにある同じ形のページとして扱う。
- * 違うのは日付が範囲かどうかと「出張」チェック・「年休」の区分だけで、種類として分けない。
+ * 通常の勤務も出張も年休も会社休業日も、Notionの勤務記録DBにある同じ形のページとして扱う。
+ * 違うのは日付が範囲かどうかと「出張」「会社休業日」チェック・「年休」の区分だけで、
+ * 種類として分けない。
  */
 export type WorkRecordItem = {
   /** Notionのページ ID */
@@ -22,6 +23,14 @@ export type WorkRecordItem = {
    */
   annualLeave: string | null;
   businessTrip: boolean;
+  /**
+   * 会社が休みの日（お盆・年末年始・創立記念日など）。
+   *
+   * 年休と違って申請するものが無く、勤務場所も入らない。年休のselectへ「会社休業日」という
+   * 選択肢を足す形にしないのは、Notionで名前を直した瞬間に振る舞いが変わり、直した本人にも
+   * 原因が読めなくなるため（年休を専用のプロパティにしたのと同じ理由）。
+   */
+  companyHoliday: boolean;
   preApplied: boolean;
   postRegistered: boolean;
   memo: string | null;
@@ -31,17 +40,27 @@ export type WorkRecordItem = {
 /**
  * 勤務記録DBで何が使えるか。
  *
- * 年休・出張・事前申請・事後登録は名前が当たったときだけ対応付ける任意プロパティのため、
- * 既存のDBを選んだ場合は揃っていないことがある。使えないものを画面から出すと、
+ * 年休・出張・会社休業日・事前申請・事後登録は名前が当たったときだけ対応付ける任意プロパティの
+ * ため、既存のDBを選んだ場合は揃っていないことがある。使えないものを画面から出すと、
  * 押しても保存されない操作が残るため、揃っているかどうかを画面まで渡す。
  */
 export type WorkCapabilities = {
   businessTrip: boolean;
   /** 年休を登録し、事前申請の済み未済まで持てるか。 */
   annualLeave: boolean;
+  /** 会社休業日を登録できるか。申請を持たないため、必要なのはこの列だけ。 */
+  companyHoliday: boolean;
   approval: boolean;
   memo: boolean;
 };
+
+/**
+ * 名称を入れずに登録した会社休業日のタイトル。
+ *
+ * Notionの一覧で開かずに読める名前が要るため、空にはしない。画面ではこの値かどうかで
+ * 「名称が付いていない休業」だと判断する（入力欄の初期値・一覧の表記・カレンダーのチップ）。
+ */
+export const COMPANY_HOLIDAY_TITLE = "会社休業日";
 
 /** 出張について、まだ済ませていない手続き。 */
 export type WorkTodo = "preApplied" | "postRegistered";
@@ -54,14 +73,16 @@ export const WORK_TODO_LABELS: Record<WorkTodo, string> = {
 /**
  * その記録で未対応の手続き。
  *
- * 年休が持つのは事前申請だけ。休んだことを後から届け出る手続きは無く、出張の事後登録に
- * あたるものが存在しない。
+ * 会社休業日は何も持たない（会社が決めた休みで、出す申請が無い）。年休が持つのは事前申請だけ。
+ * 休んだことを後から届け出る手続きは無く、出張の事後登録にあたるものが存在しない。
  *
  * 事後登録は終了日を過ぎてから数える。出張の前から未対応に混ざると、まだできないものが
  * 件数に含まれ続け、いま手を打つべき件数として読めなくなるため。事前申請は日付によらず
  * 未対応に数える（過ぎた日でも申請そのものは残っている）。
  */
 export function workTodos(record: WorkRecordItem, todayKey: string): WorkTodo[] {
+  // 会社休業日は会社が決めた休みで、出す申請も後からの届け出も無い。
+  if (record.companyHoliday) return [];
   if (record.annualLeave) return record.preApplied ? [] : ["preApplied"];
   if (!record.businessTrip) return [];
 
@@ -69,6 +90,38 @@ export function workTodos(record: WorkRecordItem, todayKey: string): WorkTodo[] 
   if (!record.preApplied) todos.push("preApplied");
   if (!record.postRegistered && record.endDate < todayKey) todos.push("postRegistered");
   return todos;
+}
+
+/**
+ * 出張・年休の区画に出す記録。手続きが残っているものだけを日付順に並べる。
+ *
+ * 済んだものをその月のあいだ並べたままにすると、開く理由（まだ済ませていないものを片付ける）に
+ * 対して読むものが増えるだけになる。出張の前で事後登録だけが残っている記録も、`workTodos()` が
+ * 終了日を過ぎるまで数えないため一緒に落ちる（日付の規則をここへ二重に持たない）。
+ * 済んだ記録は日別の一覧に残っており、行を押せば入力ダイアログから外せる（issue #412）。
+ */
+export function openWorkRecords(records: WorkRecordItem[], todayKey: string): WorkRecordItem[] {
+  return records
+    .filter((record) => workTodos(record, todayKey).length > 0)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
+
+/**
+ * 行に出す手続き。いま押せるものと、済ませたものだけを残す。
+ *
+ * 事後登録は出張の翌日以降にするもので、終わるまで出しても押すものは増えない。済んだ手続きを
+ * 残すのは、まだ他に未対応が残っている行で「何が済んでいるか」を同じ場所で確かめられるように
+ * するため。最後の1つを済ませた記録は行ごと区画から消えるので、そこから戻すことはできない。
+ * 戻すのは日別の一覧の行 → 入力ダイアログのチェック。
+ */
+export function shownWorkTodos(
+  record: WorkRecordItem,
+  todayKey: string,
+  todos: WorkTodo[],
+): WorkTodo[] {
+  return todos.filter(
+    (todo) => todo !== "postRegistered" || record.postRegistered || record.endDate < todayKey,
+  );
 }
 
 /**

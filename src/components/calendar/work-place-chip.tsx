@@ -4,7 +4,7 @@ import { tagChipClass, tagColorOf } from "@/components/tags/tag-color";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
-import { annualLeaveDays, type WorkRecordItem } from "@/types/work";
+import { annualLeaveDays, COMPANY_HOLIDAY_TITLE, type WorkRecordItem } from "@/types/work";
 
 /**
  * カレンダーに出す勤務場所（docs/spec.md §34）。
@@ -55,7 +55,14 @@ export function WorkPlaceChip({
         ものとして読み上げから外す（幅で消えるのは見えている側だけにする）。
       */}
       <span className="sr-only">
-        {record.annualLeave ? "年休" : record.businessTrip ? "出張" : "勤務場所"} {label}
+        {record.companyHoliday
+          ? COMPANY_HOLIDAY_TITLE
+          : record.annualLeave
+            ? "年休"
+            : record.businessTrip
+              ? "出張"
+              : "勤務場所"}{" "}
+        {label}
       </span>
       <span
         aria-hidden
@@ -107,8 +114,14 @@ function nameHiddenClass(record: WorkRecordItem): string {
  * 年休はタイトル（「年休（午前半休）」）をそのまま出すと、10pxの狭い列では末尾から切れて
  * 括弧の途中で終わる。全休は「年休」まで、半休は区分と残り半日の勤務場所を出す（勤務場所だけ
  * にすると年休だと分からず、区分だけにするとその日出社したことが消える）。
+ *
+ * 会社休業日は名称（「夏季休業」）があればそれを出す。名称を入れずに登録した記録は
+ * タイトルが「会社休業日」で、狭い列では「会社」までしか入らず何の日か読めないため「休業」にする。
  */
 export function workPlaceLabel(record: WorkRecordItem): string {
+  if (record.companyHoliday) {
+    return record.title && record.title !== COMPANY_HOLIDAY_TITLE ? record.title.trim() : "休業";
+  }
   if (record.annualLeave) {
     if (annualLeaveDays(record.annualLeave) === 1) return "年休";
     return record.place ? `${record.annualLeave}・${record.place}` : record.annualLeave;
