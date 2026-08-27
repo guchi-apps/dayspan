@@ -100,7 +100,7 @@ function ConnectPrompt() {
         <CardHeader>
           <CardTitle>勤務記録DBが設定されていません</CardTitle>
           <CardDescription>
-            勤務場所・出張・年休はNotionのデータベースに記録します。設定のNotion画面で勤務記録DBを選ぶか、
+            勤務場所・出張・年休・会社休業日はNotionのデータベースに記録します。設定のNotion画面で勤務記録DBを選ぶか、
             新しく作成してください。
           </CardDescription>
         </CardHeader>
