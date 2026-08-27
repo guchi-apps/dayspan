@@ -39,6 +39,20 @@ export function parseCoordinates(text: string | null | undefined): LatLng | null
   return { lat, lng };
 }
 
+/**
+ * 受け取った値を座標として読めるか。
+ *
+ * APIの本文（`{ lat, lng }`）はブラウザから来るため、形だけでなく範囲も確かめる。
+ * parseCoordinates と同じ条件にして、場所DBの文字列から読んだ値と扱いを揃える。
+ */
+export function isLatLng(value: unknown): value is LatLng {
+  if (typeof value !== "object" || value === null) return false;
+  const { lat, lng } = value as { lat?: unknown; lng?: unknown };
+  if (typeof lat !== "number" || typeof lng !== "number") return false;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  return Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+}
+
 export function clampLatitude(lat: number): number {
   return Math.min(MAX_LATITUDE, Math.max(-MAX_LATITUDE, lat));
 }
