@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { loadWritableCalendars } from "@/services/calendar/load";
 import { loadPlaceCatalog } from "@/services/notion/places";
+import { fetchTransitQuota } from "@/services/trainroute/client";
 import { getTravelSettings } from "@/services/travel/settings";
 
 export default async function TravelSettingsPage() {
@@ -16,12 +17,15 @@ export default async function TravelSettingsPage() {
   // （書き出し先が選べないだけで、出発地・交通手段・往復は使える）。
   // 場所DBは既定の出発地の候補に使う。取得に失敗しても loadPlaceCatalog は空を返すため、
   // Notion未接続・場所DB未設定でも設定画面は開ける（候補が出ないだけ）。
-  const [settings, calendars, placeCatalog] = await Promise.all([
+  // 経路検索の利用枠も同じ扱いで、trainrouteと連携していなければ null が返り区画が出ないだけ。
+  const [settings, calendars, placeCatalog, transitQuotas, uiSetting] = await Promise.all([
     getTravelSettings(user.id),
     loadWritableCalendars(user.id),
     db.notionConnection
       .findUnique({ where: { userId: user.id } })
       .then((connection) => loadPlaceCatalog(connection)),
+    fetchTransitQuota(),
+    db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),
   ]);
 
   return (
@@ -31,7 +35,13 @@ export default async function TravelSettingsPage() {
       backHref="/settings"
       backLabel="設定"
     >
-      <TravelSection settings={settings} calendars={calendars} placeCatalog={placeCatalog} />
+      <TravelSection
+        settings={settings}
+        calendars={calendars}
+        placeCatalog={placeCatalog}
+        transitQuotas={transitQuotas}
+        timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
+      />
     </SettingsShell>
   );
 }

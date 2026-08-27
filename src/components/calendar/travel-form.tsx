@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { TravelEstimate } from "@/lib/ai-travel-estimate";
+import type { TransitQuota } from "@/lib/transit-quota";
 import type { PlaceCatalog } from "@/services/notion/places";
 import {
   TRAVEL_MODES,
@@ -28,6 +29,7 @@ import { LocationInput, placeCoordinates, withPlaceAddress } from "./location-in
 import { readErrorMessage } from "./response-error";
 import {
   estimateNote,
+  quotaNote,
   resultNote,
   transitDetail,
   type EstimateAttribution,
@@ -87,6 +89,8 @@ export function TravelForm({
   const [estimates, setEstimates] = useState<TravelEstimate[] | null>(null);
   // 経路検索の提供元。NAVITIMEの規約が表示を求めるため、返ってきた値をそのまま出す。
   const [attribution, setAttribution] = useState<EstimateAttribution | null>(null);
+  // 経路検索の残り回数。見積もりの応答に一緒に載って返る（そのためだけの往復は増やさない）。
+  const [quota, setQuota] = useState<TransitQuota | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -176,9 +180,11 @@ export function TravelForm({
       const body = (await response.json()) as {
         estimates: TravelEstimate[];
         attribution?: EstimateAttribution | null;
+        quota?: TransitQuota | null;
       };
       setEstimates(body.estimates);
       setAttribution(body.attribution ?? null);
+      setQuota(body.quota ?? null);
     } catch {
       setError("所要時間を調べられませんでした。");
     } finally {
@@ -354,6 +360,7 @@ export function TravelForm({
                     ? "所要時間を調べる"
                     : "調べ直す"}
               </Button>
+              <QuotaNote note={quotaNote(quota, timeZone)} />
             </>
           ) : estimates.length === 0 ? (
             <>
@@ -411,6 +418,9 @@ export function TravelForm({
                   </li>
                 ))}
               </ul>
+              {/* 押した直後は、いま使った1回が引かれた値に変わる。減ったことがその場で
+                  見えるのが、設定画面（設定 ▸ 移動）ではなくここにも置く理由。 */}
+              <QuotaNote note={quotaNote(quota, timeZone)} />
             </>
           )}
         </div>
@@ -457,6 +467,18 @@ export function TravelForm({
  * NAVITIMEの利用規約が、規約へのリンクをサイト内に出すことを求めている。URLは
  * trainroute が応答へ添えてくるので、こちらでは持たない（提供元が変わってもここは変えない）。
  */
+/** 経路検索の残り回数の1行。取れていないときは何も出さない。 */
+function QuotaNote({ note }: { note: string | null }) {
+  if (!note) return null;
+
+  return (
+    <p className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-travel" />
+      {note}
+    </p>
+  );
+}
+
 function TermsLink({ attribution }: { attribution: EstimateAttribution | null }) {
   if (!attribution?.termsUrl) return null;
   return (

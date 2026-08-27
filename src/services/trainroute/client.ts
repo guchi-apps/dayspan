@@ -1,4 +1,5 @@
 import type { LatLng } from "@/lib/coordinates";
+import type { TransitQuota } from "@/lib/transit-quota";
 
 /**
  * trainroute（guchi-apps/trainroute）のサーバー間参照用APIを叩く（docs/spec.md §29）。
@@ -194,4 +195,97 @@ function readAttribution(value: unknown): TransitSearchResult["attribution"] {
   const provider = readString((value as { provider?: unknown }).provider);
   if (!provider) return null;
   return { provider, termsUrl: readString((value as { termsUrl?: unknown }).termsUrl) };
+}
+
+/**
+ * 経路検索APIの利用枠を引く（`GET /api/internal/transit-quota`。docs/spec.md §29）。
+ *
+ * **このAPIは外部APIを呼ばない。** trainroute が経路検索のついでに保存した残数を返すだけなので、
+ * 残り回数を見るために枠を1回消費する、ということが起きない。
+ *
+ * 数えるのを trainroute に任せるのは、NAVITIMEを実際に呼ぶのがそちらだから。DaySpanが自分の
+ * 呼び出しを数えると、他の呼び出し元（AIDE等）が消費した分が抜ける。加えて無料枠が戻るのは
+ * 暦の月末ではなく契約日からの請求サイクルで、DaySpan側で「今月」を数えるとずれる。
+ *
+ * - 経路検索が使えない（提供元のキーが未設定・未契約）ときは空の配列が返る
+ * - 取れなかったときは null。呼び出し元は区画ごと出さない
+ */
+export async function fetchTransitQuota(): Promise<TransitQuota[] | null> {
+  const token = process.env.TRAINROUTE_TOKEN;
+  if (!token) return null;
+
+  const base = process.env.TRAINROUTE_INTERNAL_URL?.trim() || DEFAULT_BASE_URL;
+
+  let response: Response;
+  try {
+    response = await fetch(`${base}/api/internal/transit-quota`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      cache: "no-store",
+    });
+  } catch (cause) {
+    // 経路検索と同じく、例外にURLとトークンを載せない。
+    const timedOut = cause instanceof Error && cause.name === "TimeoutError";
+    console.error(
+      `[dayspan] trainroute quota lookup failed: ${timedOut ? `no response in ${TIMEOUT_MS}ms` : "connection failed"}`,
+    );
+    return null;
+  }
+
+  if (!response.ok) {
+    console.error(`[dayspan] trainroute quota lookup returned HTTP ${response.status}`);
+    return null;
+  }
+
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch {
+    console.error("[dayspan] trainroute quota lookup returned a body that is not JSON");
+    return null;
+  }
+
+  return normalizeQuota(json);
+}
+
+/**
+ * 応答を読む。**残り回数が読めない行は落とす。**
+ *
+ * 出せる数字が無い行を残すと、区画だけが空で出る。trainroute は別リポジトリで、
+ * こちらの想定より項目が増えることも減ることもある（経路の読み方と同じ扱い）。
+ */
+function normalizeQuota(json: unknown): TransitQuota[] | null {
+  if (typeof json !== "object" || json === null) return null;
+
+  const providers = (json as { providers?: unknown }).providers;
+  if (!Array.isArray(providers)) {
+    console.error("[dayspan] trainroute quota lookup returned an unexpected shape");
+    return null;
+  }
+
+  return providers
+    .map((raw): TransitQuota | null => {
+      if (typeof raw !== "object" || raw === null) return null;
+      const value = raw as Record<string, unknown>;
+
+      const key = readString(value.key);
+      const remaining = readNumber(value.remaining);
+      if (!key || remaining === null) return null;
+
+      return {
+        key,
+        label: readString(value.label) ?? key,
+        limit: readNumber(value.limit),
+        remaining: Math.max(0, Math.round(remaining)),
+        resetAt: readIso(value.resetAt),
+        updatedAt: readIso(value.updatedAt),
+        source: value.source === "local" ? "local" : "provider",
+      };
+    })
+    .filter((quota): quota is TransitQuota => quota !== null);
+}
+
+function readIso(value: unknown): string | null {
+  const text = readString(value);
+  return text && !Number.isNaN(Date.parse(text)) ? text : null;
 }
