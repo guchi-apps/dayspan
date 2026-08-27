@@ -77,18 +77,13 @@ export default async function WorkPage({
     loadError = `勤務記録を取得できませんでした。${externalApiMessage("notion", "勤務記録の取得", error)}`;
   }
 
-  // 月内の記録は両方に現れる。同じ記録を2度描かないよう、IDで寄せてから渡す。
-  const byId = new Map<string, WorkRecordItem>();
-  for (const record of [...records, ...pending]) byId.set(record.id, record);
-  const dedupe = (list: WorkRecordItem[]) => list.map((item) => byId.get(item.id) ?? item);
-
   return (
     <WorkScreen
       monthKey={monthKey}
       todayKey={todayKey}
       records={records}
-      openTrips={dedupe(pending.filter((record) => record.businessTrip && !record.annualLeave))}
-      openLeaves={dedupe(pending.filter((record) => record.annualLeave))}
+      openTrips={pending.filter((record) => record.businessTrip && !record.annualLeave)}
+      openLeaves={pending.filter((record) => record.annualLeave)}
       placeOptions={placeOptions ?? []}
       loadError={loadError}
       tripPlaces={workTripPlaces(connection)}
