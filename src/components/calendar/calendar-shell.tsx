@@ -1232,6 +1232,8 @@ function CalendarBody({
           linkedTasks={data.tasks
             .filter((task) => task.links.some((link) => link.eventId === viewingEvent.id))
             .map((task) => task.title)}
+          // 場所を地図で開くとき、登録済みの場所なら座標で開く（issue #426）。
+          places={placeCatalog.places}
           onDeleted={handleSaved}
         />
       )}
