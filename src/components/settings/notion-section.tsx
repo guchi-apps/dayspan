@@ -25,23 +25,29 @@ import {
   REMINDER_FIELD_REQUIREMENTS,
   type ReminderPropertyMap,
 } from "@/services/notion/reminder-database";
+import {
+  SHOPPING_FIELD_REQUIREMENTS,
+  type ShoppingPropertyMap,
+} from "@/services/notion/shopping-database";
 import { WORK_FIELD_REQUIREMENTS, type WorkPropertyMap } from "@/services/notion/work-database";
 
 type MissingProperty = { field: string; label: string; types: string[] };
 
 /** 新規作成できるDB。作成の手順は同じで、APIの経路と既定名だけが違う。 */
-type DatabaseKind = "task" | "place" | "work";
+type DatabaseKind = "task" | "place" | "work" | "shopping";
 
 const DATABASE_LABELS: Record<DatabaseKind, string> = {
   task: "タスクDB",
   place: "場所DB",
   work: "勤務記録DB",
+  shopping: "買い物リストDB",
 };
 
 const DATABASE_DEFAULT_TITLES: Record<DatabaseKind, string> = {
   task: "DaySpan タスク",
   place: "DaySpan 場所",
   work: "DaySpan 勤務記録",
+  shopping: "DaySpan 買い物リスト",
 };
 
 /** Notionが返したメッセージがあればそれを見せる。原因が分からないまま止まらないようにする。 */
@@ -72,6 +78,9 @@ export type NotionSectionState = {
   workDataSourceId: string | null;
   workTitle: string | null;
   workPropertyMap: WorkPropertyMap | null;
+  shoppingDataSourceId: string | null;
+  shoppingTitle: string | null;
+  shoppingPropertyMap: ShoppingPropertyMap | null;
   dataSources: DataSourceSummary[];
   sharedPages: SharedPageSummary[];
   dataSourcesFailed: boolean;
@@ -282,6 +291,36 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
         return;
       }
       setMessage({ text: "勤務記録DBを設定しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectShoppingDataSource = async (dataSourceId: string) => {
+    setBusy(true);
+    setMissing(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/shopping-database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataSourceId }),
+      });
+      if (response.status === 422) {
+        const body = (await response.json()) as { missingRequired: MissingProperty[] };
+        setMissing(body.missingRequired);
+        setMessage({ text: "買い物リストDBに必要なプロパティが不足しています。", tone: "error" });
+        return;
+      }
+      if (!response.ok) {
+        setMessage({
+          text: await errorText(response, "買い物リストDBを設定できませんでした。"),
+          tone: "error",
+        });
+        return;
+      }
+      setMessage({ text: "買い物リストDBを設定しました。", tone: "ok" });
       startTransition(() => router.refresh());
     } finally {
       setBusy(false);
@@ -680,9 +719,62 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
             <Separator />
 
             <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">買い物リストDBを選択</span>
+              <p className="text-xs text-muted-foreground">
+                買うものを記録します。項目（タイトル）だけが必須で、メモ・購入済みは型から、
+                カテゴリ・優先度は名前が一致したときだけ対応付けます（どちらもセレクトのため、
+                型だけで割り当てると入れ替わります）。shopping-listアプリと同じDBを選べば、
+                どちらから足したものも両方に出ます。
+              </p>
+              {state.shoppingDataSourceId && (
+                <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="secondary">買い物リストDB</Badge>
+                    <span className="font-medium">{state.shoppingTitle}</span>
+                  </div>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {SHOPPING_FIELD_REQUIREMENTS.map((requirement) => (
+                      <div key={requirement.field} className="contents">
+                        <dt>{requirement.label}</dt>
+                        <dd>{state.shoppingPropertyMap?.[requirement.field] ?? "未対応"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
+              <ul className="flex flex-wrap gap-2">
+                {state.dataSources.map((dataSource) => (
+                  <li key={dataSource.dataSourceId}>
+                    <Button
+                      variant={
+                        state.shoppingDataSourceId === dataSource.dataSourceId
+                          ? "secondary"
+                          : "outline"
+                      }
+                      size="sm"
+                      disabled={
+                        disabled ||
+                        state.taskDataSourceId === dataSource.dataSourceId ||
+                        state.reminderDataSourceId === dataSource.dataSourceId ||
+                        state.placeDataSourceId === dataSource.dataSourceId ||
+                        state.garbageDataSourceId === dataSource.dataSourceId ||
+                        state.workDataSourceId === dataSource.dataSourceId
+                      }
+                      onClick={() => selectShoppingDataSource(dataSource.dataSourceId)}
+                    >
+                      {dataSource.title}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <Separator />
+
+            <div className="flex flex-col gap-2">
               {!creating ? (
                 <div className="flex flex-wrap gap-2">
-                  {(["task", "place", "work"] as const).map((kind) => (
+                  {(["task", "place", "work", "shopping"] as const).map((kind) => (
                     <Button
                       key={kind}
                       variant="outline"

@@ -137,6 +137,13 @@ model NotionConnection {
   workTitle        String?
   workPropertyMap  Json?
 
+  // 買い物リスト（docs/spec.md §36）。shopping-listアプリが読み書きしているDBをそのまま指せる。
+  // タスク・日付リマインド・場所・勤務と同じく、一次情報源はNotion側でDaySpanには保存しない。
+  shoppingDataSourceId String?
+  shoppingDatabaseId   String?
+  shoppingTitle        String?
+  shoppingPropertyMap  Json?
+
   // 出張扱いにする勤務場所の名前（string[]）。その場所を選んだ時点で「出張」の既定が立つ。
   // UiSettingではなくここに置くのは、勤務場所の選択肢が勤務記録DBのselectのプロパティ定義
   // そのもので、DBを選び直せば選択肢ごと入れ替わるため。UiSettingへ置くと、DBを差し替えた
