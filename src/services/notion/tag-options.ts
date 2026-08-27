@@ -3,15 +3,20 @@ import type { NotionConnection } from "@prisma/client";
 
 import { createNotionClient } from "./client";
 import type { ReminderPropertyMap } from "./reminder-database";
+import type { ShoppingPropertyMap } from "./shopping-database";
 import type { PropertyMap } from "./task-database";
 import type { WorkPropertyMap } from "./work-database";
 
-// タスクのタグ（multi_select）と日付リマインドの種類（select）の選択肢を扱う。
+// タスクのタグ（multi_select）と、日付リマインドの種類・勤務場所・買い物のカテゴリ（select）の
+// 選択肢を扱う。
 //
 // 選択肢そのものはNotion側のプロパティ定義が一次情報源で、DaySpanのDBには持たない
-// （docs/spec.md §19）。DaySpanからできるのは追加と削除だけ。既存の選択肢の名前と色は
-// Notion APIが変更を受け付けないため（色は `Cannot update color of select with id: ...`、
-// 名前はエラーにならず無視される）、変えたい場合はNotion側で直してもらう。
+// （docs/spec.md §19）。DaySpanからできるのは追加・削除・改名・並び替えまで。
+// 色だけはNotion APIが既存の選択肢への変更を拒む（`Cannot update color of select with id: ...`）
+// ため、変えたい場合はNotion側で直してもらう。
+//
+// 書き戻したあとは必ずNotionから取り直して返す。仮にNotionが要求を無視しても、画面には
+// 変わらないままの一覧が返るだけで、「変えられたことにする」表示にはならない。
 
 /** Notionのselect / multi_selectが取りうる色。DaySpanから指定できるのもこの10色に限る。 */
 export const TAG_COLORS = [
@@ -54,12 +59,13 @@ export type TagOption = {
 };
 
 /**
- * タグを置いているプロパティの種別。タスクは複数選択、リマインドの種類と勤務場所は単一選択。
+ * タグを置いているプロパティの種別。タスクは複数選択、それ以外は単一選択。
  *
- * 勤務場所（docs/spec.md §34）をここへ含めるのは、選択肢と色がNotionのプロパティ定義そのもので、
- * 追加・削除の手順もタグとまったく同じため。別の経路を作ると、同じ操作が2か所に増える。
+ * 勤務場所（docs/spec.md §34）と買い物のカテゴリ（§36）をここへ含めるのは、選択肢と色が
+ * Notionのプロパティ定義そのもので、追加・削除・改名・並び替えの手順もタグとまったく同じため。
+ * 別の経路を作ると、同じ操作が2か所に増える。
  */
-export type TagKind = "task" | "reminder" | "work";
+export type TagKind = "task" | "reminder" | "work" | "shopping";
 
 /**
  * 登録済みのタグ・種類。
@@ -71,9 +77,15 @@ export type TagCatalog = {
   task: TagOption[] | null;
   reminder: TagOption[] | null;
   work: TagOption[] | null;
+  shopping: TagOption[] | null;
 };
 
-export const EMPTY_TAG_CATALOG: TagCatalog = { task: null, reminder: null, work: null };
+export const EMPTY_TAG_CATALOG: TagCatalog = {
+  task: null,
+  reminder: null,
+  work: null,
+  shopping: null,
+};
 
 type PropertyConfig = {
   type?: string;
@@ -95,6 +107,12 @@ export function tagLocation(connection: NotionConnection, kind: TagKind): TagLoc
     const propertyName = (connection.workPropertyMap as WorkPropertyMap | null)?.place;
     if (!connection.workDataSourceId || !propertyName) return null;
     return { dataSourceId: connection.workDataSourceId, propertyName };
+  }
+
+  if (kind === "shopping") {
+    const propertyName = (connection.shoppingPropertyMap as ShoppingPropertyMap | null)?.category;
+    if (!connection.shoppingDataSourceId || !propertyName) return null;
+    return { dataSourceId: connection.shoppingDataSourceId, propertyName };
   }
 
   const propertyName = (connection.reminderPropertyMap as ReminderPropertyMap | null)?.category;
@@ -161,16 +179,20 @@ export async function loadTagCatalog(connection: NotionConnection | null): Promi
   const taskLocation = tagLocation(connection, "task");
   const reminderLocation = tagLocation(connection, "reminder");
   const workLocation = tagLocation(connection, "work");
-  if (!taskLocation && !reminderLocation && !workLocation) return EMPTY_TAG_CATALOG;
+  const shoppingLocation = tagLocation(connection, "shopping");
+  if (!taskLocation && !reminderLocation && !workLocation && !shoppingLocation) {
+    return EMPTY_TAG_CATALOG;
+  }
 
   try {
     const notion = createNotionClient(connection);
-    const [task, reminder, work] = await Promise.all([
+    const [task, reminder, work, shopping] = await Promise.all([
       taskLocation ? fetchOptions(notion, taskLocation) : null,
       reminderLocation ? fetchOptions(notion, reminderLocation) : null,
       workLocation ? fetchOptions(notion, workLocation) : null,
+      shoppingLocation ? fetchOptions(notion, shoppingLocation) : null,
     ]);
-    return { task, reminder, work };
+    return { task, reminder, work, shopping };
   } catch {
     return EMPTY_TAG_CATALOG;
   }
@@ -179,15 +201,17 @@ export async function loadTagCatalog(connection: NotionConnection | null): Promi
 /**
  * 選択肢の一覧をNotionへ書き戻す。
  *
- * Notionは配列に無い選択肢を削除するため、残すものは必ずIDで送り直す。
- * 名前や色を添えて送っても既存の選択肢には反映されない（無視される・エラーになる）ので、
- * 残す選択肢はIDだけにして、変更のつもりが削除と再作成にならないようにする。
+ * Notionは配列に無い選択肢を削除するため、残すものは必ずIDで送り直す。IDを添えずに
+ * 名前だけで送ると、変更のつもりが削除と再作成になり、それが付いていた既存ページからも外れる。
+ *
+ * 色は既存の選択肢へは送らない（Notionが拒む）。名前は `{ id, name }` で送れば変わる。
+ * 送った順がそのまま定義順になるため、並び替えもこの経路で行う。
  */
 async function writeOptions(
   notion: Client,
   { dataSourceId, propertyName }: TagLocation,
   kind: TagKind,
-  options: Array<{ id: string } | { name: string; color: TagColor }>,
+  options: Array<{ id: string } | { id: string; name: string } | { name: string; color: TagColor }>,
 ): Promise<void> {
   const config = kind === "task" ? { multi_select: { options } } : { select: { options } };
 
@@ -241,6 +265,97 @@ export async function removeTagOption(
     location,
     kind,
     current.filter((option) => option.name !== name).map((option) => ({ id: option.id })),
+  );
+
+  return (await fetchOptions(notion, location)) ?? [];
+}
+
+/** 選択肢の改名・並び替えで、現在の状態と食い違う要求を受けたときのエラー。API側で409に変える。 */
+export class TagOptionConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TagOptionConflictError";
+  }
+}
+
+/**
+ * 選択肢の名前を変える。
+ *
+ * IDで指すため、それが付いている既存ページの値も一緒に変わる（選択肢を消して作り直すのとは
+ * 違い、ページから外れない）。色は送らない（Notionが既存の選択肢への色の変更を拒むため）。
+ *
+ * 同じ名前が他にあると、Notionは同名の選択肢を2つ持つことになり、どちらを指しているのかが
+ * 画面からもNotionからも読めなくなる。実行する前に断る。
+ */
+export async function renameTagOption(
+  connection: NotionConnection,
+  kind: TagKind,
+  optionId: string,
+  name: string,
+): Promise<{ options: TagOption[]; previousName: string }> {
+  const location = tagLocation(connection, kind);
+  if (!location) throw new Error("Tag property is not configured");
+
+  const notion = createNotionClient(connection);
+  const current = (await fetchOptions(notion, location)) ?? [];
+
+  const target = current.find((option) => option.id === optionId);
+  if (!target) throw new TagOptionConflictError("選択肢が見つかりません。");
+  if (target.name === name) return { options: current, previousName: target.name };
+  if (current.some((option) => option.id !== optionId && option.name === name)) {
+    throw new TagOptionConflictError("同じ名前の選択肢がすでにあります。");
+  }
+
+  await writeOptions(
+    notion,
+    location,
+    kind,
+    current.map((option) =>
+      option.id === optionId ? { id: option.id, name } : { id: option.id },
+    ),
+  );
+
+  // 変える前の名前も返す。勤務場所の出張扱い（NotionConnection.workTripPlaces）は名前で
+  // 覚えているため、呼び出し側がそれを付け替えるのに要る。ここで取り直すと往復が1つ増える。
+  return { options: (await fetchOptions(notion, location)) ?? [], previousName: target.name };
+}
+
+/**
+ * 選択肢の並び順を入れ替える。
+ *
+ * Notionは送った配列の順をそのまま定義順にする。DaySpanの画面（タグのチップ・買い物の
+ * カテゴリのタブ）はこの定義順で並べているため、ここを変えると表示の並びも変わる。
+ *
+ * 送られた並びが現在の一覧と1件でも食い違っていたら実行しない。過不足のある配列を送ると、
+ * 抜けた選択肢がNotionから削除され、それが付いていた既存ページからも外れるため。
+ */
+export async function reorderTagOptions(
+  connection: NotionConnection,
+  kind: TagKind,
+  orderedIds: string[],
+): Promise<TagOption[]> {
+  const location = tagLocation(connection, kind);
+  if (!location) throw new Error("Tag property is not configured");
+
+  const notion = createNotionClient(connection);
+  const current = (await fetchOptions(notion, location)) ?? [];
+
+  const requested = new Set(orderedIds);
+  if (
+    orderedIds.length !== current.length ||
+    requested.size !== orderedIds.length ||
+    current.some((option) => !requested.has(option.id))
+  ) {
+    throw new TagOptionConflictError(
+      "並び替えの内容が現在の一覧と一致しません。画面を再読み込みしてからやり直してください。",
+    );
+  }
+
+  await writeOptions(
+    notion,
+    location,
+    kind,
+    orderedIds.map((id) => ({ id })),
   );
 
   return (await fetchOptions(notion, location)) ?? [];

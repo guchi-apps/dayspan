@@ -11,7 +11,7 @@ import { ActivityQuickSheet } from "@/components/nav/activity-quick-sheet";
 import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
 import { cn } from "@/lib/utils";
 
-// 並びは左から カレンダー・タスク・記録・日付・（買い物リスト）（issue #328）。
+// 並びは左から カレンダー・タスク・記録・日付・買い物リスト（issue #328・#434）。
 // 記録を中央に置くのは、押す回数がいちばん多く、他と同じ形で端に並べると
 // 「いま始める・止める」たびに探して押すことになるため（docs/spec.md §27）。
 const ITEMS = [
@@ -19,11 +19,12 @@ const ITEMS = [
   { href: "/tasks", key: "tasks", label: "タスク", icon: ListChecks },
   { href: "/activity", key: "activity", label: "記録", icon: Timer },
   { href: "/reminders", key: "reminders", label: "日付", icon: BellRing },
+  { href: "/shopping", key: "shopping", label: "買い物", icon: ShoppingCart },
 ] as const;
 
 export type NavKey = (typeof ITEMS)[number]["key"];
 
-/** 下部ナビの1項目の枠。5枠目（買い物リスト）まで含めて等分するため、格子の1マスに合わせる。 */
+/** 下部ナビの1項目の枠。5項目を等分するため、格子の1マスに合わせる。 */
 const ITEM_CLASS = "flex w-full min-w-0 flex-col items-center gap-1";
 
 /** アイコンを置く枠。中央の記録の円もこの高さの枠から上へはみ出させ、ラベルの高さを揃える。 */
@@ -129,8 +130,7 @@ export function BottomNav({
     // viewport-fit=cover でページがブラウザのツールバーやホームインジケーターの下まで
     // 広がるため、その分を内側へ確保しないとタップがブラウザ側に取られる。
     //
-    // 等分の格子にするのは、記録を必ず中央に置くため。買い物リスト（後日）の枠を
-    // 空けたままにしないと、4項目では記録が中央からずれる。
+    // 等分の格子にするのは、記録を必ず中央に置くため。5項目でちょうど3番目が中央に来る。
     <nav className="relative grid shrink-0 grid-cols-5 items-start bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
       {ITEMS.map((item) => {
         const active = item.key === current;
@@ -222,17 +222,6 @@ export function BottomNav({
           </Link>
         );
       })}
-
-      {/*
-        買い物リストの枠（後日実装）。押しても何も起きないため、読み上げからは外す。
-        枠を空けたままにするのは、4項目にすると記録が中央に来ないため。
-      */}
-      <span aria-hidden className={cn(ITEM_CLASS, "opacity-40")}>
-        <span className={ICON_SLOT_CLASS}>
-          <ShoppingCart className="size-6 text-on-surface-variant" />
-        </span>
-        <span className={cn(LABEL_CLASS, "text-on-surface-variant")}>買い物</span>
-      </span>
 
       <ActivityQuickSheet open={quickOpen} onOpenChange={setQuickOpen} />
     </nav>

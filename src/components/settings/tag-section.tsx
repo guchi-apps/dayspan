@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ExternalLink, Pencil, Plus, Trash2, X } from "lucide-react";
 
 import { TagChip } from "@/components/tags/tag-chip";
 import { tagSwatchClass } from "@/components/tags/tag-color";
@@ -40,11 +40,14 @@ export type TagSectionState = {
 };
 
 /**
- * タグ・種類の一覧と、その追加・削除（docs/spec.md §9）。
+ * タグ・種類の一覧と、その追加・削除・改名・並び替え（docs/spec.md §9）。
  *
- * 名前と色を変えられるのは追加のときだけにしている。Notion APIが既存の選択肢の
- * 名前・色の変更を受け付けないため。作り直せば変えられるが、選択肢を消すと
+ * 色を変えられるのは追加のときだけ。Notion APIが既存の選択肢の色の変更を拒むため
+ * （`Cannot update color of select with id: ...`）。作り直せば変えられるが、選択肢を消すと
  * それが付いていた既存ページからも外れてしまうので、DaySpanからはやらない。
+ *
+ * 名前と並び順はIDで指して書き戻すため、既存ページから外れない。並び順は入力画面の
+ * チップ・買い物のカテゴリのタブ（§36）の並びをそのまま決める。
  */
 export function TagSection({ state }: { state: TagSectionState }) {
   const router = useRouter();
@@ -53,6 +56,10 @@ export function TagSection({ state }: { state: TagSectionState }) {
   const [tripPlaces, setTripPlaces] = useState(state.trip?.places ?? []);
   const [name, setName] = useState("");
   const [color, setColor] = useState<TagColor>("default");
+  // 改名の欄は押されたときだけ出す。全行に入力欄を並べると、一覧を読むための画面が
+  // 入力の画面に変わってしまう。
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -153,6 +160,69 @@ export function TagSection({ state }: { state: TagSectionState }) {
     if (removed) setTripPlaces((places) => places.filter((place) => place !== target));
   };
 
+  const startRename = (option: TagOption) => {
+    setEditingId(option.id);
+    setEditingName(option.name);
+    setError(null);
+  };
+
+  const cancelRename = () => {
+    setEditingId(null);
+    setEditingName("");
+  };
+
+  /**
+   * 名前を変える。
+   *
+   * IDで指すため、それが付いているNotionのページの値も一緒に変わる（選択肢を消して
+   * 作り直すのとは違い、ページから外れない）。出張扱い（勤務場所）は名前で覚えているため、
+   * サーバー側でそちらも付け替える。
+   */
+  const rename = async (option: TagOption) => {
+    const trimmed = editingName.trim();
+    if (!trimmed || trimmed === option.name) {
+      cancelRename();
+      return;
+    }
+
+    const renamed = await send(
+      fetch("/api/notion/tags", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: state.kind, optionId: option.id, name: trimmed }),
+      }),
+    );
+
+    if (!renamed) return;
+    setTripPlaces((places) => places.map((place) => (place === option.name ? trimmed : place)));
+    cancelRename();
+  };
+
+  /**
+   * 1つぶん上下へ動かす。
+   *
+   * ドラッグにしないのは、この一覧が縦スクロールの中にあり、掴んだつもりのスクロールと
+   * 取り違えやすいため（同じ理由でカレンダーの一覧でもドラッグを避けている）。
+   * 送るのは並べ替えたあとの全件のIDで、Notionはその順をそのまま定義順にする。
+   */
+  const move = async (index: number, delta: number) => {
+    if (!options) return;
+    const target = index + delta;
+    if (target < 0 || target >= options.length) return;
+
+    const reordered = [...options];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+
+    await send(
+      fetch("/api/notion/tags", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: state.kind, order: reordered.map((item) => item.id) }),
+      }),
+    );
+  };
+
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
@@ -179,24 +249,93 @@ export function TagSection({ state }: { state: TagSectionState }) {
         ) : (
           <>
             <ul className="flex flex-col divide-y divide-rule">
-              {options.map((option) => (
+              {options.map((option, index) => (
                 <li key={option.id} className="flex flex-col gap-1 py-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <TagChip name={option.name} color={option.color} />
-                    <span className="type-body-small text-on-surface-variant">
-                      {TAG_COLOR_LABELS[option.color]}
-                    </span>
-                    <span className="flex-1" />
-                    <Button
-                      variant="destructive"
-                      size="icon-sm"
-                      aria-label={`${option.name} を削除`}
-                      disabled={busy}
-                      onClick={() => remove(option.name)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
+                  {editingId === option.id ? (
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Input
+                        className="h-10 min-w-0 flex-1"
+                        aria-label={`${option.name} の名前`}
+                        value={editingName}
+                        disabled={busy}
+                        autoFocus
+                        onChange={(event) => setEditingName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            rename(option);
+                          }
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            cancelRename();
+                          }
+                        }}
+                      />
+                      <Button
+                        size="icon-sm"
+                        aria-label="名前を保存"
+                        disabled={busy || !editingName.trim()}
+                        onClick={() => rename(option)}
+                      >
+                        <Check className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="やめる"
+                        disabled={busy}
+                        onClick={cancelRename}
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex min-w-0 items-center gap-2">
+                      <TagChip name={option.name} color={option.color} />
+                      <span className="type-body-small text-on-surface-variant">
+                        {TAG_COLOR_LABELS[option.color]}
+                      </span>
+                      <span className="flex-1" />
+                      {/* 並び替えは1つずつ。この一覧は縦スクロールの中にあり、ドラッグにすると
+                          掴んだつもりのスクロールと取り違えやすい。 */}
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`${option.name} を上へ`}
+                        disabled={busy || index === 0}
+                        onClick={() => move(index, -1)}
+                      >
+                        <ArrowUp className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`${option.name} を下へ`}
+                        disabled={busy || index === options.length - 1}
+                        onClick={() => move(index, 1)}
+                      >
+                        <ArrowDown className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`${option.name} の名前を変更`}
+                        disabled={busy}
+                        onClick={() => startRename(option)}
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="icon-sm"
+                        aria-label={`${option.name} を削除`}
+                        disabled={busy}
+                        onClick={() => remove(option.name)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  )}
 
                   {/* 出張扱いは名前の下へ置く。同じ行に足すと、狭い画面で場所の名前が
                       押し出される（勤務場所の名前はそれ自体が何の記録かを示す）。 */}
@@ -246,8 +385,9 @@ export function TagSection({ state }: { state: TagSectionState }) {
               <ColorPicker value={color} onChange={setColor} disabled={busy} />
 
               <p className="type-body-small text-on-surface-variant">
-                色を選べるのは追加のときだけです。すでにある{state.title}の色や名前は、
-                Notionのプロパティ設定から変更してください。
+                色を選べるのは追加のときだけです（Notionが既存の選択肢の色の変更を受け付けないため）。
+                名前と並び順は上の一覧から変えられます。名前を変えても、それが付いているNotionの
+                ページからは外れません。
               </p>
 
               {state.databaseUrl && (
