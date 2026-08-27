@@ -38,14 +38,19 @@ export function validateWorkBody(
       { status: 400 },
     );
   }
-  // 出張と年休は同じ日に立てられない。月の集計でどちらに数えるかが決まらないため。
-  // 画面では3択にして選べないようにしているが、隠すだけだとAPIや将来のMCPから直接
+  // 出張・年休・会社休業日は同じ日に立てられない。月の集計でどれに数えるかが決まらないため。
+  // 画面では択一にして選べないようにしているが、隠すだけだとAPIや将来のMCPから直接
   // 呼ばれた要求が素通りする。
-  if (body.businessTrip && body.annualLeave) {
+  const kinds = [
+    body.businessTrip ? "出張" : null,
+    body.annualLeave ? "年休" : null,
+    body.companyHoliday ? "会社休業日" : null,
+  ].filter((kind): kind is string => kind !== null);
+  if (kinds.length > 1) {
     return NextResponse.json(
       {
         error: "conflicting_kind",
-        message: "出張と年休は同じ記録には登録できません。どちらかにしてください。",
+        message: `${kinds.join("と")}は同じ記録には登録できません。どれかにしてください。`,
       },
       { status: 400 },
     );

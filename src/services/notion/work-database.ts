@@ -1,10 +1,10 @@
 import type { Client } from "@notionhq/client";
 
-// 勤務場所・出張・年休のデータソース（docs/spec.md §34）。
+// 勤務場所・出張・年休・会社休業日のデータソース（docs/spec.md §34）。
 //
-// 通常の勤務（1日1件）も出張（期間で1件）も年休も、同じDBの同じ形のページとして持つ。
-// 違うのは日付が範囲かどうかと「出張」チェック・「年休」の区分だけで、種類ごとにDBを分けると
-// 月の一覧を出すのに複数のDBへ問い合わせることになる。
+// 通常の勤務（1日1件）も出張（期間で1件）も年休も会社休業日も、同じDBの同じ形のページとして持つ。
+// 違うのは日付が範囲かどうかと「出張」「会社休業日」チェック・「年休」の区分だけで、種類ごとに
+// DBを分けると月の一覧を出すのに複数のDBへ問い合わせることになる。
 //
 // タスク・日付リマインド・場所と同じく、一次情報源はNotion側でDaySpanには保存しない。
 
@@ -14,6 +14,7 @@ export type WorkField =
   | "place"
   | "annualLeave"
   | "businessTrip"
+  | "companyHoliday"
   | "preApplied"
   | "postRegistered"
   | "memo";
@@ -30,8 +31,8 @@ type Requirement = {
   /**
    * 名前が当たったときだけ対応付ける項目（場所DBの「座標」と同じ扱い）。
    *
-   * 出張・事前申請・事後登録はどれも checkbox で、型だけで空いている欄へ順に割り当てると
-   * 事前申請と事後登録が入れ替わりうる。入れ替わったことは画面からは分からず、
+   * 出張・会社休業日・事前申請・事後登録はどれも checkbox で、型だけで空いている欄へ順に
+   * 割り当てると事前申請と事後登録が入れ替わりうる。入れ替わったことは画面からは分からず、
    * 申請したはずのものが未対応として残り続けるため、推測では割り当てない。
    */
   hintOnly?: boolean;
@@ -75,6 +76,16 @@ export const WORK_FIELD_REQUIREMENTS: Requirement[] = [
     types: ["checkbox"],
     required: false,
     hints: ["出張", "trip", "business"],
+    hintOnly: true,
+  },
+  {
+    field: "companyHoliday",
+    label: "会社休業日",
+    types: ["checkbox"],
+    required: false,
+    // 「休業」だけでも当てる。利用者が自分で作ったDBでは「休業日」「会社休み」のような
+    // 名前になりうるため。出張・事前申請・事後登録のヒントとは重ならない。
+    hints: ["会社休業日", "休業", "会社休み", "closed", "holiday"],
     hintOnly: true,
   },
   {
@@ -175,6 +186,7 @@ export const WORK_DATABASE_TEMPLATE = {
   place: "勤務場所",
   annualLeave: "年休",
   businessTrip: "出張",
+  companyHoliday: "会社休業日",
   preApplied: "事前申請",
   postRegistered: "事後登録",
   memo: "メモ",
@@ -219,8 +231,9 @@ export type AnnualLeaveKind = (typeof ANNUAL_LEAVE_OPTIONS)[number]["name"];
 /**
  * 必要なプロパティを揃えた勤務記録DBを作成する。
  *
- * 年休・出張・事前申請・事後登録は名前が当たったときだけ対応付ける（hintOnly）ため、既存のDBを
- * 選んでもらう経路では揃わないことがある。ここで作れば、その4つを含めて必ず揃った構成になる。
+ * 年休・出張・会社休業日・事前申請・事後登録は名前が当たったときだけ対応付ける（hintOnly）ため、
+ * 既存のDBを選んでもらう経路では揃わないことがある。ここで作れば、その5つを含めて必ず揃った
+ * 構成になる。
  */
 export async function createWorkDatabase(
   notion: Client,
@@ -246,6 +259,7 @@ export async function createWorkDatabase(
           select: { options: ANNUAL_LEAVE_OPTIONS.map((option) => ({ ...option })) },
         },
         [WORK_DATABASE_TEMPLATE.businessTrip]: { checkbox: {} },
+        [WORK_DATABASE_TEMPLATE.companyHoliday]: { checkbox: {} },
         [WORK_DATABASE_TEMPLATE.preApplied]: { checkbox: {} },
         [WORK_DATABASE_TEMPLATE.postRegistered]: { checkbox: {} },
         [WORK_DATABASE_TEMPLATE.memo]: { rich_text: {} },
@@ -266,9 +280,10 @@ export async function createWorkDatabase(
 }
 
 /**
- * すでに使っている勤務記録DBへ、足りない任意プロパティ（年休・出張・事前申請・事後登録・メモ）を足す。
+ * すでに使っている勤務記録DBへ、足りない任意プロパティ（年休・出張・会社休業日・事前申請・
+ * 事後登録・メモ）を足す。
  *
- * 年休・出張・事前申請・事後登録は名前が当たったときだけ対応付けるため、既存のDBを選ぶと
+ * 年休・出張・会社休業日・事前申請・事後登録は名前が当たったときだけ対応付けるため、既存のDBを選ぶと
  * 揃わないことがある。どの型で何という名前にすればよいのかは画面のどこにも出ていないので、
  * 設定画面から実行できるようにする（場所DBの「座標」と同じ経路）。
  *
@@ -284,7 +299,7 @@ export async function addWorkOptionalProperties(
   const names = new Set(Object.values(properties).map((property) => property.name));
 
   const additions: Record<string, unknown> = {};
-  for (const field of ["businessTrip", "preApplied", "postRegistered"] as const) {
+  for (const field of ["businessTrip", "companyHoliday", "preApplied", "postRegistered"] as const) {
     const name = WORK_DATABASE_TEMPLATE[field];
     if (!names.has(name)) additions[name] = { checkbox: {} };
   }
