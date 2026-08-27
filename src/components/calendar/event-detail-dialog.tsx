@@ -8,6 +8,7 @@ import {
   CalendarClock,
   ChevronRight,
   Copy,
+  ExternalLink,
   MapPin,
   Pencil,
   RotateCw,
@@ -24,9 +25,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { mapLink } from "@/lib/map-link";
+import type { PlaceItem } from "@/services/notion/places";
 import { TRAVEL_MODE_LABELS, type CalendarEventItem, type TravelItem } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { placeCoordinates } from "./location-input";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelMark } from "./travel-mark";
 import type { TouchedRange } from "./use-calendar-chunks";
@@ -52,6 +56,7 @@ export function EventDetailDialog({
   onOpenTravel,
   onLinkTask,
   linkedTasks,
+  places = [],
   onDeleted,
 }: {
   event: CalendarEventItem;
@@ -75,6 +80,11 @@ export function EventDetailDialog({
   onLinkTask: () => void;
   /** この予定に紐づいているタスクの名前。削除の確認で、外れる紐づけを示すために使う。 */
   linkedTasks?: string[];
+  /**
+   * 登録済みの場所（issue #426）。場所を地図で開くとき、同じ名前で登録されていれば
+   * その座標を使う。画面がすでに読んでいるものを渡すため、Notionへの往復は増えない。
+   */
+  places?: PlaceItem[];
   /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onDeleted: (touched: TouchedRange[] | null) => void;
 }) {
@@ -123,6 +133,12 @@ export function EventDetailDialog({
    * 出発時刻を逆算する起点が決まらない。
    */
   const canAddTravel = !event.allDay;
+
+  /*
+   * 場所を押したときの行き先（issue #426）。オフライン中は地図もアプリも開けないため
+   * （docs/spec.md §21）、押せる見た目にせず今までどおりの文字に戻す。
+   */
+  const locationLink = readOnly ? null : mapLink(event.location, placeCoordinates(event.location ?? "", places));
 
   const deleted = (touched: TouchedRange[] | null) => {
     setOpen(false);
@@ -194,8 +210,27 @@ export function EventDetailDialog({
             {event.calendarName}
           </DetailRow>
 
+          {/*
+            場所は押すと地図が開く（issue #426）。文字色だけを変えても本文の強調と区別が
+            付かないため、下線と外部リンクの印を添える。印を文中に流すのは、
+            別の要素にすると場所が長いときに印だけが次の行へ残るため。
+          */}
           {event.location && (
-            <DetailRow icon={<MapPin className="size-4" />}>{event.location}</DetailRow>
+            <DetailRow icon={<MapPin className="size-4" />}>
+              {locationLink ? (
+                <a
+                  href={locationLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-xs text-primary underline decoration-primary/40 underline-offset-3 hover:decoration-current focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  {event.location}
+                  <ExternalLink className="ml-1 inline size-3 shrink-0 align-[-1px]" />
+                </a>
+              ) : (
+                event.location
+              )}
+            </DetailRow>
           )}
 
           {event.attendees.length > 0 && (
