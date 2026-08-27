@@ -8,19 +8,28 @@ import {
   addTagOption,
   isTagColor,
   removeTagOption,
+  renameTagOption,
+  reorderTagOptions,
   tagLocation,
+  TagOptionConflictError,
   type TagColor,
   type TagKind,
 } from "@/services/notion/tag-options";
 import { workTripPlaces } from "@/services/notion/work-logs";
 
-// タスクのタグ・日付リマインドの種類・勤務場所の選択肢を追加・削除する。
+// タスクのタグ・日付リマインドの種類・勤務場所・買い物のカテゴリの選択肢を扱う。
 // 選択肢はNotion側のプロパティ定義が一次情報源のため、DaySpanのDBには保存しない。
-// 既存の選択肢の名前と色はNotion APIが変更を受け付けないため、更新の口は用意しない。
+// 色だけはNotion APIが既存の選択肢への変更を受け付けないため、追加のときにしか選べない。
+
+const TAG_KINDS: TagKind[] = ["task", "reminder", "work", "shopping"];
+
+function isTagKind(value: unknown): value is TagKind {
+  return typeof value === "string" && (TAG_KINDS as string[]).includes(value);
+}
 
 type Prepared =
-  | { error: NextResponse; kind?: undefined; connection?: undefined; name?: undefined }
-  | { error?: undefined; kind: TagKind; connection: NotionConnection; name: string };
+  | { error: NextResponse; kind?: undefined; connection?: undefined }
+  | { error?: undefined; kind: TagKind; connection: NotionConnection };
 
 function reject(body: Record<string, unknown>, status: number): Prepared {
   return { error: NextResponse.json(body, { status }) };
@@ -31,71 +40,141 @@ const TAG_PROPERTY_MISSING_MESSAGES: Record<TagKind, string> = {
   task: "タスクDBにタグ（マルチセレクト）のプロパティがありません。",
   reminder: "日付リマインドDBに種類（セレクト）のプロパティがありません。",
   work: "勤務記録DBに勤務場所（セレクト）のプロパティがありません。",
+  shopping: "買い物リストDBにカテゴリ（セレクト）のプロパティがありません。",
 };
 
-/** 追加も削除もNotionの現状を取り直して書き戻すため、前準備は同じ。 */
-async function prepare(rawKind: unknown, rawName: unknown): Promise<Prepared> {
+/** どの操作もNotionの現状を取り直して書き戻すため、前準備は同じ。 */
+async function prepare(rawKind: unknown): Promise<Prepared> {
   const userId = await requireUserId();
   if (!userId) return reject({ error: "unauthorized" }, 401);
 
-  if (rawKind !== "task" && rawKind !== "reminder" && rawKind !== "work") {
-    return reject({ error: "kind is required" }, 400);
-  }
+  if (!isTagKind(rawKind)) return reject({ error: "kind is required" }, 400);
   const kind: TagKind = rawKind;
-
-  const name = typeof rawName === "string" ? rawName.trim() : "";
-  if (!name) return reject({ error: "name is required" }, 400);
 
   const connection = await db.notionConnection.findUnique({ where: { userId } });
   if (!connection) return reject({ error: "not_connected" }, 404);
 
   if (!tagLocation(connection, kind)) {
     return reject(
-      {
-        error: "tag_property_missing",
-        message: TAG_PROPERTY_MISSING_MESSAGES[kind],
-      },
+      { error: "tag_property_missing", message: TAG_PROPERTY_MISSING_MESSAGES[kind] },
       422,
     );
   }
 
-  return { kind, connection, name };
+  return { kind, connection };
+}
+
+/** 現在の状態と食い違う要求（消えた選択肢・重複する名前）は、Notionへ書く前に断る。 */
+function conflict(error: TagOptionConflictError): NextResponse {
+  return NextResponse.json({ error: "tag_option_conflict", message: error.message }, { status: 409 });
 }
 
 export async function POST(request: Request) {
   const body = (await request.json()) as { kind?: unknown; name?: unknown; color?: unknown };
 
-  const prepared = await prepare(body.kind, body.name);
+  const prepared = await prepare(body.kind);
   if (prepared.error) return prepared.error;
+
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
 
   // 色を選べるのは追加のときだけ。Notionは既存の選択肢の色を変更させない。
   const color: TagColor = isTagColor(body.color) ? body.color : "default";
 
   try {
-    const options = await addTagOption(prepared.connection, prepared.kind, prepared.name, color);
+    const options = await addTagOption(prepared.connection, prepared.kind, name, color);
     return NextResponse.json({ options });
   } catch (error) {
     return externalApiError("notion", "add tag option", error);
   }
 }
 
+/**
+ * 選択肢の改名（`optionId` + `name`）と並び替え（`order`）。
+ *
+ * どちらもIDで既存の選択肢を指すため、それが付いている既存ページの値はそのまま残る
+ * （選択肢を消して作り直すのとは違い、ページから外れない）。
+ */
+export async function PATCH(request: Request) {
+  const body = (await request.json()) as {
+    kind?: unknown;
+    optionId?: unknown;
+    name?: unknown;
+    order?: unknown;
+  };
+
+  const prepared = await prepare(body.kind);
+  if (prepared.error) return prepared.error;
+
+  if (Array.isArray(body.order)) {
+    const order = body.order.filter((id): id is string => typeof id === "string");
+    if (order.length !== body.order.length) {
+      return NextResponse.json({ error: "order must be string[]" }, { status: 400 });
+    }
+
+    try {
+      const options = await reorderTagOptions(prepared.connection, prepared.kind, order);
+      return NextResponse.json({ options });
+    } catch (error) {
+      if (error instanceof TagOptionConflictError) return conflict(error);
+      return externalApiError("notion", "reorder tag options", error);
+    }
+  }
+
+  const optionId = typeof body.optionId === "string" ? body.optionId : "";
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!optionId) return NextResponse.json({ error: "optionId is required" }, { status: 400 });
+  if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+
+  const connection = prepared.connection;
+
+  let renamed;
+  try {
+    renamed = await renameTagOption(connection, prepared.kind, optionId, name);
+  } catch (error) {
+    if (error instanceof TagOptionConflictError) return conflict(error);
+    return externalApiError("notion", "rename tag option", error);
+  }
+
+  // 出張扱いは勤務場所の「名前」で覚えている（docs/spec.md §34）。改名に追従させないと、
+  // 一覧に出ていない名前が設定に残り、その勤務場所は出張扱いから外れる。
+  if (prepared.kind === "work" && renamed.previousName !== name) {
+    const tripPlaces = workTripPlaces(connection);
+    if (tripPlaces.includes(renamed.previousName)) {
+      await db.notionConnection.update({
+        where: { id: connection.id },
+        data: {
+          workTripPlaces: tripPlaces.map((place) =>
+            place === renamed.previousName ? name : place,
+          ),
+        },
+      });
+    }
+  }
+
+  return NextResponse.json({ options: renamed.options });
+}
+
 export async function DELETE(request: Request) {
   const params = new URL(request.url).searchParams;
 
-  const prepared = await prepare(params.get("kind"), params.get("name"));
+  const prepared = await prepare(params.get("kind"));
   if (prepared.error) return prepared.error;
 
+  const name = params.get("name")?.trim() ?? "";
+  if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+
   try {
-    const options = await removeTagOption(prepared.connection, prepared.kind, prepared.name);
+    const options = await removeTagOption(prepared.connection, prepared.kind, name);
 
     // 消した勤務場所が出張扱いのままだと、どの画面からも外せない名前が設定に居座る
     // （出張扱いのスイッチは選択肢の一覧に添えて出しているため）。
     if (prepared.kind === "work") {
       const tripPlaces = workTripPlaces(prepared.connection);
-      if (tripPlaces.includes(prepared.name)) {
+      if (tripPlaces.includes(name)) {
         await db.notionConnection.update({
           where: { id: prepared.connection.id },
-          data: { workTripPlaces: tripPlaces.filter((place) => place !== prepared.name) },
+          data: { workTripPlaces: tripPlaces.filter((place) => place !== name) },
         });
       }
     }

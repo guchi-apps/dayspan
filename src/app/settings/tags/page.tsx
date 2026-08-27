@@ -55,12 +55,22 @@ export default async function TagSettingsPage() {
         available: workCapabilities(connection).businessTrip,
       },
     },
+    {
+      kind: "shopping",
+      title: "買い物のカテゴリ",
+      description:
+        "買い物リストの項目に付けられるカテゴリです。買い物画面のタブもこの並び順で出ます。",
+      options: catalog.shopping,
+      missingMessage:
+        "買い物リストDBにカテゴリ（セレクト）のプロパティがありません。Notion側で追加してから、設定のNotion画面で買い物リストDBを選び直してください。",
+      databaseUrl: notionUrl(connection.shoppingDatabaseId),
+    },
   ];
 
   return (
     <SettingsShell
       title="タグ"
-      description="タスクのタグ・日付リマインドの種類・勤務場所を、色つきで登録しておけます。"
+      description="タスクのタグ・日付リマインドの種類・勤務場所・買い物のカテゴリを、色つきで登録しておけます。"
       backHref="/settings"
       backLabel="設定"
     >

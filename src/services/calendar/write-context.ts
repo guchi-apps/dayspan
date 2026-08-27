@@ -51,3 +51,11 @@ export async function getNotionPlaceConnection(userId: string): Promise<NotionCo
   const connection = await db.notionConnection.findUnique({ where: { userId } });
   return connection?.placeDataSourceId ? connection : null;
 }
+
+/** 買い物リストの書き込み先（docs/spec.md §36）。他のDBと同じく、設定済みかどうかを別に見る。 */
+export async function getNotionShoppingConnection(
+  userId: string,
+): Promise<NotionConnection | null> {
+  const connection = await db.notionConnection.findUnique({ where: { userId } });
+  return connection?.shoppingDataSourceId ? connection : null;
+}
