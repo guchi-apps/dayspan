@@ -33,6 +33,7 @@ export async function PATCH(
       arriveAt: body.arriveAt!,
       note: body.note ?? null,
       estimated: body.estimated ?? false,
+      estimateSource: body.estimateSource,
     });
 
     // 他人の移動を指されても解決できないよう、取得は必ずuserIdで絞っている。

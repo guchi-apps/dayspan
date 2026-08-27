@@ -6,7 +6,7 @@
 //
 // このファイルは呼び出し元（guchi-apps/aide）へ写して使える形にしてある。
 
-import type { TravelMode } from "@/types/calendar";
+import type { TravelEstimateSource, TravelMode } from "@/types/calendar";
 
 /** 予定。時刻は設定タイムゾーンでの HH:MM で、終日のときは null。 */
 export type InternalEvent = {
@@ -89,8 +89,10 @@ export type InternalTravel = {
   end: string;
   startTime: string | null;
   endTime: string | null;
-  /** 所要時間がAIの見積もりかどうか（目安であることを示すために持つ） */
+  /** 所要時間が手入力でないかどうか（目安であることを示すために持つ） */
   estimated: boolean;
+  /** 所要時間の出どころ。MANUAL / AI / TRANSIT（trainroute経由の経路検索） */
+  estimateSource: TravelEstimateSource;
   returnLeg: boolean;
   note: string | null;
 };

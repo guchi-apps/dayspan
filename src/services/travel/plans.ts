@@ -1,7 +1,13 @@
 import type { TravelPlan } from "@prisma/client";
 
 import { db } from "@/lib/db";
-import { isTravelMode, type TravelItem, type TravelMode } from "@/types/calendar";
+import {
+  isTravelEstimateSource,
+  isTravelMode,
+  type TravelEstimateSource,
+  type TravelItem,
+  type TravelMode,
+} from "@/types/calendar";
 
 import { exportTravelToGoogle, removeTravelFromGoogle, type TravelExportResult } from "./google-sync";
 import { resolveTravelCalendarId } from "./settings";
@@ -22,6 +28,11 @@ export type TravelWriteInput = {
   departAt: string;
   arriveAt: string;
   note?: string | null;
+  /**
+   * 所要時間の出どころ。渡されなければ estimated から決める。
+   * 古い呼び出し元（AIの見積もりしか無かった頃の形）をそのまま受けられるようにしておく。
+   */
+  estimateSource?: TravelEstimateSource;
   estimated?: boolean;
   linkedEventId?: string | null;
   linkedCalendarId?: string | null;
@@ -61,7 +72,8 @@ export function toTravelItem(plan: TravelPlan): TravelItem {
     start: plan.departAt.toISOString(),
     end: plan.arriveAt.toISOString(),
     note: plan.note,
-    estimated: plan.estimateSource === "AI",
+    estimated: plan.estimateSource !== "MANUAL",
+    estimateSource: plan.estimateSource,
     linkedEventId: plan.linkedEventId,
     returnLeg: plan.returnLeg,
     exported: Boolean(plan.googleEventId),
@@ -204,10 +216,22 @@ function toWriteData(input: TravelWriteInput) {
     departAt,
     arriveAt,
     note: input.note?.trim() || null,
-    estimateSource: input.estimated ? ("AI" as const) : ("MANUAL" as const),
+    estimateSource: resolveEstimateSource(input),
     linkedEventId: input.linkedEventId ?? null,
     linkedCalendarId: input.linkedCalendarId ?? null,
   };
+}
+
+/**
+ * 所要時間の出どころを決める。
+ *
+ * `estimateSource` を優先し、無ければ `estimated`（AIかどうか）から決める。
+ * どちらも無ければ手入力。UIで隠すだけにせずここで決めるのは、DaySpanのAPIや
+ * 将来のMCPから直接呼ばれた要求が画面を通らないため。
+ */
+function resolveEstimateSource(input: TravelWriteInput): TravelEstimateSource {
+  if (isTravelEstimateSource(input.estimateSource)) return input.estimateSource;
+  return input.estimated ? "AI" : "MANUAL";
 }
 
 async function getTimeZone(userId: string): Promise<string> {

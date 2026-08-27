@@ -181,6 +181,20 @@ export function isTravelMode(value: unknown): value is TravelMode {
 }
 
 /**
+ * 所要時間の出どころ。Prismaの TravelEstimateSource と同じ並びにする。
+ *
+ * TRANSIT は trainroute 経由で引いた経路検索の結果。AIの見積もりと同じく確定した時刻では
+ * ないが、実際の路線網・乗換・徒歩を計算した値で、精度が違う。
+ */
+export const TRAVEL_ESTIMATE_SOURCES = ["MANUAL", "AI", "TRANSIT"] as const;
+
+export type TravelEstimateSource = (typeof TRAVEL_ESTIMATE_SOURCES)[number];
+
+export function isTravelEstimateSource(value: unknown): value is TravelEstimateSource {
+  return typeof value === "string" && (TRAVEL_ESTIMATE_SOURCES as readonly string[]).includes(value);
+}
+
+/**
  * 移動（docs/spec.md §29）。出発地・目的地・交通手段はGoogle Calendarの予定には入らないため、
  * 本体はDaySpanのDBにあり、Googleへは写しを書き出す。
  */
@@ -199,8 +213,13 @@ export type TravelItem = {
   start: string;
   end: string;
   note: string | null;
-  /** 所要時間がAIの見積もりかどうか。目安であることを画面で示すために持つ。 */
+  /**
+   * 所要時間が手入力でないかどうか。「（目安）」を出す条件に使う。
+   * どこから来た値かは estimateSource が持つ。
+   */
   estimated: boolean;
+  /** 所要時間の出どころ（docs/spec.md §29）。 */
+  estimateSource: TravelEstimateSource;
   /** 元になった予定。予定側から「移動を足す」の済み・未済を判断するために持つ。 */
   linkedEventId: string | null;
   /** 復路かどうか。同じ予定から2件作られたときの並び順・表示に使う。 */

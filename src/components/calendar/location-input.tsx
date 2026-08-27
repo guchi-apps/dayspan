@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { PlaceSuggestion } from "@/lib/ai-place-suggest";
+import type { LatLng } from "@/lib/coordinates";
 import type { PlaceItem } from "@/services/notion/places";
 
 import { PlaceMapDialog } from "./place-map-dialog";
@@ -363,6 +364,20 @@ export function withPlaceAddress(text: string, places: PlaceItem[]): string {
   if (!query) return query;
   const place = places.find((item) => item.address && item.name === query);
   return place ? toLocationText(place.name, place.address) : query;
+}
+
+/**
+ * 登録済みの場所と同じ名前なら、その座標を返す。無ければ null。
+ *
+ * 電車の経路検索は座標で行う（docs/spec.md §29）。画面が持っている場所DBから引くのは、
+ * サーバー側で引き直すとボタンを押すたびにNotionの全件取得が増えるため。
+ * 名前が完全に一致したときだけ返すのは withPlaceAddress と同じ理由で、
+ * `自宅 東京都…` の形で住所まで入っている値を別の場所と取り違えないようにするため。
+ */
+export function placeCoordinates(text: string, places: PlaceItem[]): LatLng | null {
+  const query = text.trim();
+  if (!query) return null;
+  return places.find((item) => item.coordinates && item.name === query)?.coordinates ?? null;
 }
 
 /**
