@@ -89,7 +89,9 @@ export function openWorkRecords(records: WorkRecordItem[], todayKey: string): Wo
  * 行に出す手続き。いま押せるものと、済ませたものだけを残す。
  *
  * 事後登録は出張の翌日以降にするもので、終わるまで出しても押すものは増えない。済んだ手続きを
- * 残すのは、押し間違えたときにその場で戻せる必要があるため。
+ * 残すのは、まだ他に未対応が残っている行で「何が済んでいるか」を同じ場所で確かめられるように
+ * するため。最後の1つを済ませた記録は行ごと区画から消えるので、そこから戻すことはできない。
+ * 戻すのは日別の一覧の行 → 入力ダイアログのチェック。
  */
 export function shownWorkTodos(
   record: WorkRecordItem,
