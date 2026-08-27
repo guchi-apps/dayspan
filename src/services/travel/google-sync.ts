@@ -3,7 +3,7 @@ import type { TravelPlan } from "@prisma/client";
 import { db } from "@/lib/db";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
 import { createEvent, deleteEvent, updateEvent } from "@/services/google-calendar/events";
-import { TRAVEL_MODE_LABELS, type TravelMode } from "@/types/calendar";
+import { TRAVEL_MODE_LABELS, type TravelEstimateSource, type TravelMode } from "@/types/calendar";
 
 /**
  * 移動をGoogle Calendarの予定として書き出す（docs/spec.md §29）。
@@ -40,18 +40,30 @@ export function travelEventDescription(plan: {
   departAt: Date;
   arriveAt: Date;
   note: string | null;
-  estimateSource: "MANUAL" | "AI";
+  estimateSource: TravelEstimateSource;
 }): string {
   const lines = [
     `出発地: ${plan.origin}`,
     `目的地: ${plan.destination}`,
     `交通手段: ${TRAVEL_MODE_LABELS[plan.mode]}`,
-    `所要時間: ${travelMinutes(plan)}分${plan.estimateSource === "AI" ? "（AIによる目安）" : ""}`,
+    `所要時間: ${travelMinutes(plan)}分${estimateSuffix(plan.estimateSource)}`,
   ];
   if (plan.note) lines.push("", plan.note);
   // DaySpanが書いた予定であることを残す。Google側で直接編集しても戻ることを伝えるため。
   lines.push("", "DaySpanの移動として管理しています。編集はDaySpanから行ってください。");
   return lines.join("\n");
+}
+
+/**
+ * 所要時間に添える断り。Googleの予定の説明にも残す。
+ *
+ * DaySpanの画面を見ていない人（他の端末の標準カレンダー）が読む場所なので、
+ * 手で入れた値と、AI・経路検索から入れた値を区別できるようにしておく。
+ */
+function estimateSuffix(source: TravelEstimateSource): string {
+  if (source === "AI") return "（AIによる目安）";
+  if (source === "TRANSIT") return "（経路検索の平均）";
+  return "";
 }
 
 function travelMinutes(plan: { departAt: Date; arriveAt: Date }): number {

@@ -21,19 +21,21 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `vapid-private-key` | 同・秘密鍵。上のコマンドが公開鍵と対で出す |
 | `vapid-subject` | 同・連絡先。`mailto:` か `https://` で始める |
 
-共通アイテム（`DB` / `Server` / `githubaction-sshkey` / `Supabase`）は既存のものをそのまま参照する（`.github/deploy.env.tpl` 参照）。
+`TRAINROUTE_TOKEN`（電車の所要時間を trainroute 経由で引くための共有シークレット。docs/spec.md §29）は
+**`dayspan` アイテムには置かない。正は `op://apps/trainroute/internal-api-key`** で、trainroute が
+受ける側として持っている値をそのまま参照する。**両側が同じ値でないと 401 で連携が止まる。**
+このとき画面はエラーにならず、電車の所要時間だけがAIの見積もりへ静かに落ちるため、
+止まっていることに気付きにくい。値を更新するときは trainroute とDaySpanの両方を同時に同期する。
+未設定の間は、設定 ▸ 移動 の「経路検索の利用状況」も出ない（出す数字が無いため。docs/spec.md §29）。
 
-`TRAINROUTE_TOKEN` だけは `dayspan` アイテムではなく **`apps/trainroute` の `internal-api-key`
-をそのまま指す**（`.github/secrets-manifest.tsv`）。trainroute のサーバー間参照用APIを呼ぶための
-共有シークレットで、写しを作ると片方だけ回したときに黙って止まるため。DaySpan側では
-`gh workflow run sync-secrets.yml -f only=TRAINROUTE_TOKEN` で同期する。未設定でも移動は使えるが、
-経路検索（NAVITIME）の利用状況が出ない（docs/spec.md §29）。
+
+共通アイテム（`DB` / `Server` / `githubaction-sshkey` / `Supabase`）は既存のものをそのまま参照する（`.github/deploy.env.tpl` 参照）。
 
 機械可読の正は `.github/secrets-manifest.tsv` で、この表はその人手作業ぶんを日本語で並べたもの。
 1Passwordへ入れたあとは、GitHub Secretsへの同期まで行って初めて本番へ届く。
 
 ```bash
-gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
+gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT,TRAINROUTE_TOKEN
 ```
 
 （手元から `scripts/sync-github-secrets.sh` を叩く場合は個人アカウントのセッションが要る。

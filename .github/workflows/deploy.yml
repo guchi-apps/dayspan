@@ -351,6 +351,8 @@ jobs:
             update_env VAPID_PUBLIC_KEY "$VAPID_PUBLIC_KEY"
             update_env VAPID_PRIVATE_KEY "$VAPID_PRIVATE_KEY"
             update_env VAPID_SUBJECT "$VAPID_SUBJECT"
+            # 電車の所要時間の取得元（docs/spec.md §29）。未設定でもDaySpanは動き、
+            # 経路検索だけがAIの見積もりへ落ちる。接続先URLは既定（127.0.0.1:3112）のまま。
             update_env TRAINROUTE_TOKEN "$TRAINROUTE_TOKEN"
 
             echo "Installing production dependencies..."
