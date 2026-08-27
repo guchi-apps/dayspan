@@ -72,6 +72,36 @@ export function workTodos(record: WorkRecordItem, todayKey: string): WorkTodo[] 
 }
 
 /**
+ * 出張・年休の区画に出す記録。手続きが残っているものだけを日付順に並べる。
+ *
+ * 済んだものをその月のあいだ並べたままにすると、開く理由（まだ済ませていないものを片付ける）に
+ * 対して読むものが増えるだけになる。出張の前で事後登録だけが残っている記録も、`workTodos()` が
+ * 終了日を過ぎるまで数えないため一緒に落ちる（日付の規則をここへ二重に持たない）。
+ * 済んだ記録は日別の一覧に残っており、行を押せば入力ダイアログから外せる（issue #412）。
+ */
+export function openWorkRecords(records: WorkRecordItem[], todayKey: string): WorkRecordItem[] {
+  return records
+    .filter((record) => workTodos(record, todayKey).length > 0)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
+
+/**
+ * 行に出す手続き。いま押せるものと、済ませたものだけを残す。
+ *
+ * 事後登録は出張の翌日以降にするもので、終わるまで出しても押すものは増えない。済んだ手続きを
+ * 残すのは、押し間違えたときにその場で戻せる必要があるため。
+ */
+export function shownWorkTodos(
+  record: WorkRecordItem,
+  todayKey: string,
+  todos: WorkTodo[],
+): WorkTodo[] {
+  return todos.filter(
+    (todo) => todo !== "postRegistered" || record.postRegistered || record.endDate < todayKey,
+  );
+}
+
+/**
  * その勤務場所が出張扱いか。
  *
  * 「行けば必ず出張になる勤務先」を場所ごとに覚えておき（NotionConnection.workTripPlaces）、
