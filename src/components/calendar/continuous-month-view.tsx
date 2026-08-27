@@ -593,7 +593,12 @@ export function ContinuousMonthView({
                       この行はセル幅いっぱいに広がるため、押下は受けない。受けてしまうと、数字の
                       右の空いているところを押したときに上の「1日表示へ移動」まで届かなくなる。
                     */}
-                    <div className="pointer-events-none relative flex min-w-0 items-center gap-0.5">
+                    {/*
+                      数字とチップの間に隙間は置かない。数字の丸は内側に余白（`px-2`）を
+                      持っているため離れて見えるうえ、幅390pxの端末では隙間のぶんだけ
+                      勤務場所へ残る幅が2px削られ、8pxの文字が2つ入らなくなる（issue #433）。
+                    */}
+                    <div className="pointer-events-none relative flex min-w-0 items-center">
                       {/* 重ねた面より後ろに沈まないよう、数字の側も配置対象にしておく。 */}
                       <button
                         type="button"
