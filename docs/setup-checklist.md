@@ -47,9 +47,14 @@ gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPI
 突き合わせ、空のものがあればSignalyへ知らせる。
 
 同期したあとは `gh secret list` に並んだことを確かめる。**ここまでやって初めて済んだことになる。**
-`secrets-check` は空を見つけても warning を出すだけでジョブは success のまま終わるため、
-デプロイが緑であることは登録できた根拠にならない（#400 では #359 と同じ状態が
-気付かれずに残り、同じ症状が再び報告された）。
+
+**マニフェストへ `repo` 項目を足す変更は、同期まで済ませてからマージする。** CI（`ci.yml` の
+`secrets-check`）が develop 向けのPR・pushで同じ突き合わせを行い、届いていない値があれば
+**ジョブを落とす**。deploy側（`deploy.yml`）は warning を出すだけでデプロイを続けるため、
+デプロイが緑であることは登録できた根拠にならない（#400 では #359 と同じ状態が気付かれずに残り、
+同じ症状が再び報告された。#476 の `TRAINROUTE_TOKEN` も、1Passwordには入っているのに
+同期されないままリリースをまたいでいた）。deploy側を落とさないのは、VAPID鍵のように
+無くても他の機能は動く値が含まれるため。**気付ける場所をマージ前へ移すのがCI側の役割。**
 
 ## 2. Supabase（他アプリと共有のプロジェクト）
 

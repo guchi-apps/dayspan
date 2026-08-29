@@ -55,8 +55,74 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder
 
+  # マニフェストの repo 項目が、GitHub側から実際に値として届いているかを確かめる（#476）。
+  #
+  # 同じ確認は deploy.yml にもあるが、あちらが動くのは main へマージしたあと——
+  # 値が無いままリリースされ、本番の .env へ空文字が書かれたあとにしか気付けない。
+  # マニフェストへ項目を足すのは develop 向けのPRなので、そこで止める。
+  # 実際にVAPID鍵（#359・#400）とTRAINROUTE_TOKEN（#476）が、1Passwordには入って
+  # いるのにGitHubへ同期されないまま、それぞれリリースをまたいで残っていた。
+  # 手順は docs/setup-checklist.md に書かれていたが、実行したかを確かめる者がいなければ
+  # 同じ抜けが起きる（.github/scripts/check-repo-secrets.sh 冒頭の断り書きと同じ理由）。
+  #
+  # deploy側は警告だけでデプロイを続ける（値が無くても他の機能は動くため）。
+  # こちらは落とす。マージ前なら、同期してから再実行するだけで済む。
+  secrets-check:
+    runs-on: ubuntu-latest
+
+    # マニフェストの repo 項目をすべて並べる。並べ忘れた項目はスクリプトが
+    # undeclared として報告する（判定できないまま黙って通さない）。
+    # このブロックは scripts/generate-workflow-env-block.sh で生成する。
+    env:
+      TARGET_DIR: ${{ secrets.TARGET_DIR }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      ALLOWED_GOOGLE_EMAILS: ${{ secrets.ALLOWED_GOOGLE_EMAILS }}
+      GOOGLE_CALENDAR_CLIENT_ID: ${{ secrets.GOOGLE_CALENDAR_CLIENT_ID }}
+      GOOGLE_CALENDAR_CLIENT_SECRET: ${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}
+      TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+      INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+      VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+      VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+      VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      TRAINROUTE_TOKEN: ${{ secrets.TRAINROUTE_TOKEN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: マニフェストのrepo項目が届いているか確かめる
+        id: check
+        run: bash .github/scripts/check-repo-secrets.sh
+
+      - name: 届いていない値があれば落とす
+        if: steps.check.outputs.missing != '' || steps.check.outputs.undeclared != ''
+        # 値そのものは出さない。名前だけでどこを直せばよいか決まる。
+        env:
+          MISSING: ${{ steps.check.outputs.missing }}
+          UNDECLARED: ${{ steps.check.outputs.undeclared }}
+        run: |
+          # repo項目が1件残らず空なら、「1件足りない」ではなく「このrunへ
+          # repository secretが渡っていない」。forkからのPRとDependabotがこれに当たり、
+          # 落としてもPRの側では直せない。deploy側の警告が引き続き受け持つ。
+          total=$(awk -F'\t' '$1 !~ /^#/ && $1 != "" && $2 == "repo" { n++ } END { print n+0 }' .github/secrets-manifest.tsv)
+          missing_count=$(printf '%s' "$MISSING" | wc -w)
+          if [ -z "$UNDECLARED" ] && [ "$total" -gt 0 ] && [ "$missing_count" -eq "$total" ]; then
+            echo "::notice::このrunへrepository secretが渡っていません（forkからのPR・Dependabot）。確認を飛ばします"
+            exit 0
+          fi
+
+          if [ -n "$MISSING" ]; then
+            echo "::error::GitHub Secretsが空です: $MISSING"
+            echo "1Passwordへ入れたうえで 'gh workflow run sync-secrets.yml -f only=<KEY>' を実行し、gh secret list に並ぶことを確かめてください（docs/setup-checklist.md）"
+          fi
+          if [ -n "$UNDECLARED" ]; then
+            echo "::error::マニフェストにあるのに、このジョブのenvへ並んでいません: $UNDECLARED"
+            echo "ci.yml と deploy.yml の secrets-check ジョブの env へ足してください（scripts/generate-workflow-env-block.sh で生成できます）"
+          fi
+          exit 1
+
   notify:
-    needs: [lint-and-build]
+    needs: [lint-and-build, secrets-check]
     if: always()
     runs-on: ubuntu-latest
 
@@ -75,21 +141,32 @@ jobs:
 
       - name: Determine workflow status
         id: status
+        # needsの結果は`needs['secrets-check']`で読む。式の中では`-`を含む名前を
+        # ドットで辿れない（`needs.secrets-check`は構文エラーになる）。
+        env:
+          LINT_AND_BUILD: ${{ needs.lint-and-build.result }}
+          SECRETS_CHECK: ${{ needs['secrets-check'].result }}
         run: |
-          lint_and_build="${{ needs.lint-and-build.result }}"
-          if [ "$lint_and_build" = "success" ]; then
-            result=success
-          elif [ "$lint_and_build" = "cancelled" ]; then
-            result=cancelled
-          else
-            result=failure
+          result=success
+          jobs=""
+          for entry in "lint-and-build:$LINT_AND_BUILD" "secrets-check:$SECRETS_CHECK"; do
+            name="${entry%%:*}"
+            state="${entry#*:}"
+            if [ "$state" = "success" ]; then
+              continue
+            fi
+            jobs="${jobs:+$jobs, }$name: $state"
+            if [ "$state" = "cancelled" ] && [ "$result" != "failure" ]; then
+              result=cancelled
+            else
+              result=failure
+            fi
+          done
+          if [ -z "$jobs" ]; then
+            jobs="lint-and-build, secrets-check"
           fi
           echo "result=$result" >> "$GITHUB_OUTPUT"
-          if [ "$lint_and_build" = "success" ]; then
-            echo "jobs=lint-and-build" >> "$GITHUB_OUTPUT"
-          else
-            echo "jobs=lint-and-build: $lint_and_build" >> "$GITHUB_OUTPUT"
-          fi
+          echo "jobs=$jobs" >> "$GITHUB_OUTPUT"
           # develop push: failure only. main PR: success, failure, and cancelled.
           if [ "$result" = "failure" ]; then
             echo "should_notify=true" >> "$GITHUB_OUTPUT"
