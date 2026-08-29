@@ -471,6 +471,7 @@ export function TravelForm({
                   setPasteText(e.target.value);
                   applyYahooRoute(e.target.value);
                 }}
+                onClear={() => setPasteText("")}
               />
             )}
 
@@ -579,6 +580,7 @@ export function TravelForm({
           rows={2}
           value={note}
           onChange={(e) => setNote(e.target.value)}
+          onClear={() => setNote("")}
         />
 
         {inputError && <p className="text-sm text-destructive">{inputError}</p>}
