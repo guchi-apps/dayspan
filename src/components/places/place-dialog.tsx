@@ -150,13 +150,20 @@ export function PlaceDialog({
             </p>
           )}
 
-          <Input label="名前" value={name} onChange={(event) => setName(event.target.value)} />
+          {/* 文字を打つ欄には ✕ を出す（issue #446）。打ち直す前にまとめて消せるようにするため。 */}
+          <Input
+            label="名前"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onClear={() => setName("")}
+          />
 
           {capabilities.address && (
             <Input
               label="住所"
               value={address}
               onChange={(event) => setAddress(event.target.value)}
+              onClear={() => setAddress("")}
             />
           )}
 
