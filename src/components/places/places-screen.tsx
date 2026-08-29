@@ -11,10 +11,12 @@ import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh"
 import { PlaceDialog, type PlaceCapabilities } from "@/components/places/place-dialog";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { TagChip } from "@/components/tags/tag-chip";
+import { tagColorOf } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatCoordinates } from "@/lib/coordinates";
 import type { PlaceItem } from "@/services/notion/places";
+import type { TagOption } from "@/services/notion/tag-options";
 
 /**
  * 登録した場所の一覧（docs/spec.md §9）。
@@ -27,11 +29,14 @@ export function PlacesScreen({
   places,
   loadError = null,
   capabilities,
+  tagOptions = [],
 }: {
   places: PlaceItem[];
   /** Notionから読めなかったときの理由。画面は開いたまま、何が起きたかだけを伝える。 */
   loadError?: string | null;
   capabilities: PlaceCapabilities;
+  /** 場所DBのタグの選択肢。編集ダイアログの候補と、一覧のチップの色に使う。 */
+  tagOptions?: TagOption[];
 }) {
   const router = useRouter();
 
@@ -69,6 +74,7 @@ export function PlacesScreen({
         <PlaceDialog
           place={editing}
           capabilities={capabilities}
+          tagOptions={tagOptions}
           onClose={() => setEditing(null)}
           onSaved={refresh}
         />
@@ -149,7 +155,7 @@ export function PlacesScreen({
                 {place.tags.length > 0 && (
                   <div className="flex max-w-[40%] shrink-0 gap-1">
                     {place.tags.slice(0, 2).map((tag) => (
-                      <TagChip key={tag} name={tag} color="default" />
+                      <TagChip key={tag} name={tag} color={tagColorOf(tagOptions, tag)} />
                     ))}
                   </div>
                 )}
@@ -171,7 +177,7 @@ export function PlacesScreen({
 
         <p className="type-body-small text-on-surface-variant">
           場所の一次情報源はNotionの場所DBです。ここでの変更はNotionへそのまま書き込まれ、
-          削除はNotionのゴミ箱へ移します。タグの変更はNotion側で行ってください。
+          削除はNotionのゴミ箱へ移します。タグの色・並び順・名前は「設定 ▸ タグ」から変えられます。
         </p>
       </SettingsShell>
     </>

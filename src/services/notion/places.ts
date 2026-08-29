@@ -228,6 +228,14 @@ export type PlaceWriteInput = {
   address?: string | null;
   /** null は「地点を消す」、項目ごと渡さないのは「触らない」。 */
   coordinates?: LatLng | null;
+  /**
+   * 付けるタグの名前。渡した配列でそのまま置き換え、空配列は「全部外す」。
+   * 項目ごと渡さないのは「触らない」（住所・座標と同じ）。
+   *
+   * `null` を持たないのは、タグが multi_select で値を必ず読めるため。住所・座標のように
+   * 「画面に出ていない値がNotion側に入っている」ことが起きない。
+   */
+  tags?: string[];
 };
 
 /**
@@ -265,12 +273,17 @@ export async function updatePlace(
   const address = input.address?.trim() || null;
   const writeAddress = Boolean(map.address) && "address" in input;
   const writeCoordinates = Boolean(map.coordinates) && "coordinates" in input;
+  const writeTags = Boolean(map.tags) && "tags" in input;
+  const tags = input.tags ?? [];
   if (writeAddress) properties[map.address!] = address ? richText(address) : { rich_text: [] };
   if (writeCoordinates) {
     properties[map.coordinates!] = input.coordinates
       ? richText(formatCoordinates(input.coordinates))
       : { rich_text: [] };
   }
+  // 登録済みに無い名前を渡すとNotionが選択肢を足す（タスクのタグと同じ）。
+  // 入力の途中で思いついたタグを、設定画面へ回らずにその場で付けられるようにするため。
+  if (writeTags) properties[map.tags!] = { multi_select: tags.map((name) => ({ name })) };
 
   await notion.pages.update({ page_id: placeId, properties: properties as never });
 
@@ -280,7 +293,7 @@ export async function updatePlace(
     name,
     // 書いていない項目は、いまNotionにある値をそのまま残す。
     address: writeAddress ? address : (before?.address ?? null),
-    tags: before?.tags ?? [],
+    tags: writeTags ? tags : (before?.tags ?? []),
     coordinates: writeCoordinates ? (input.coordinates ?? null) : (before?.coordinates ?? null),
   };
 }
