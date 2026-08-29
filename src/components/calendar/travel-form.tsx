@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { TravelEstimate } from "@/lib/ai-travel-estimate";
-import { splitNameAndAddress } from "@/lib/japanese-address";
+import { splitNameAndAddress } from "@/lib/place-text";
 import {
   resolveYahooTransitBasis,
   yahooTransitLink,
@@ -183,8 +183,8 @@ export function TravelForm({
   /**
    * Yahoo!乗換案内を開くURL（docs/spec.md §29）。
    *
-   * 座標は場所DBから引く。サーバー側で引き直すと、押すたびにNotionの全件取得が増える
-   * （経路検索へ座標を渡しているのと同じ理由）。座標が無い場所は住所を検索語にする。
+   * 発着地は場所DBから引く（最寄り駅 → 座標 → 住所の順。`toYahooPlace`）。サーバー側で
+   * 引き直すと、押すたびにNotionの全件取得が増える（経路検索へ座標を渡しているのと同じ理由）。
    */
   const yahooUrl = yahooTransitLink({
     origin: toYahooPlace(origin, placeCatalog.places),
