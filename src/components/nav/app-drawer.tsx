@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Briefcase, ChevronRight, History, MapPin, Menu, Settings } from "lucide-react";
 
+import { NAV_ITEMS, type NavKey } from "@/components/nav/nav-items";
 import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,14 +18,26 @@ import { APP_VERSION } from "@/lib/app-version";
 import { cn } from "@/lib/utils";
 
 /**
- * ヘッダー左上のメニューボタンと、そこから左端に出るドロワー（issue #328）。
+ * ヘッダー左上のメニューボタンと、そこから左端に出るドロワー（issue #328・#463）。
  *
- * 下部ナビの5枠はカレンダー・タスク・記録・日付・買い物リストで埋まる。設定は毎日押すもの
- * ではないため枠を1つ占め続ける理由が無く、ここへ移した。
+ * 画面の移動（カレンダー・タスク・記録・日付・買い物リスト）と、毎日は押さない勤務・場所・設定を
+ * ここへまとめる。どの画面幅でも出す。iPad・PCではこれらをヘッダーへ横一列に並べていたが、
+ * カレンダーでは同じ帯に前へ・次へ・年月・今日・表示形式・再取得も乗るため、いま見ている期間が
+ * 押しどころの列の中に埋もれていた。ヘッダーにはその画面の操作だけを残す。
  *
- * スマートフォンだけに出す。PCは下部ナビを持たず、ヘッダー内のナビと歯車から設定へ入れる。
+ * 中身は画面幅で変えない。同じアプリの中で、探す位置が幅によって入れ替わらないようにするため。
  */
-export function AppMenuButton({ className }: { className?: string }) {
+export function AppMenuButton({
+  current,
+  activityRunning = false,
+  className,
+}: {
+  /** いまいる画面。その行を選択状態にする。 */
+  current?: NavKey;
+  /** 活動を記録中かどうか。記録の行と、閉じているときのボタンへ印を出す。 */
+  activityRunning?: boolean;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const navigateOffline = useOfflineNavigate();
 
@@ -62,10 +75,16 @@ export function AppMenuButton({ className }: { className?: string }) {
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="メニュー"
-          className={cn("shrink-0 md:hidden", className)}
+          aria-label={activityRunning ? "メニュー（記録中）" : "メニュー"}
+          className={cn("relative shrink-0", className)}
         >
           <Menu />
+          {/*
+            記録中だと、メニューを開かなくても分かるようにする（docs/spec.md §4）。
+            止め忘れたまま別の画面で作業していると、その間ずっと同じ項目を記録し続けるため。
+            記録の項目がドロワーの中へ入ったぶん、印はその入口にあたるこのボタンへ出す。
+          */}
+          {activityRunning && <RunningDot className="absolute top-0.5 right-0.5" />}
         </Button>
       </DialogTrigger>
 
@@ -74,11 +93,25 @@ export function AppMenuButton({ className }: { className?: string }) {
         showCloseButton={false}
         className="bg-surface-container-low pt-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
       >
-        <DialogTitle className="px-6 pb-3 text-base font-semibold">DaySpan</DialogTitle>
+        <DialogTitle className="px-6 pb-2 text-base font-semibold">DaySpan</DialogTitle>
         {/* 読み上げ用。見出しだけでは、ここが何の一覧なのかが読み上げでは伝わらない。 */}
-        <DialogDescription className="sr-only">設定とバージョン</DialogDescription>
+        <DialogDescription className="sr-only">画面の切り替えと設定</DialogDescription>
 
-        <nav className="flex flex-col">
+        <nav className="flex min-h-0 flex-col overflow-y-auto">
+          <DrawerGroup>画面</DrawerGroup>
+          {NAV_ITEMS.map((item) => (
+            <DrawerItem
+              key={item.href}
+              href={item.href}
+              icon={item.icon}
+              label={item.label}
+              active={item.key === current}
+              running={item.key === "activity" && activityRunning}
+              onClick={handleClick(item.href)}
+            />
+          ))}
+
+          <DrawerGroup>そのほか</DrawerGroup>
           <DrawerItem
             href="/work"
             icon={Briefcase}
@@ -121,12 +154,34 @@ export function AppMenuButton({ className }: { className?: string }) {
   );
 }
 
+/**
+ * 区画の見出し。画面の移動と、それ以外（勤務・場所・設定）は押す頻度も性質も違う。
+ * 続けて並べると、毎日押す項目と月に一度の項目が同じ一続きの列に見える。
+ */
+function DrawerGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="type-label-small px-6 pt-3 pb-1 text-on-surface-variant">{children}</div>
+  );
+}
+
+/** 記録中であることを示す印（下部ナビの記録の円に出しているものと同じ）。 */
+function RunningDot({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn("size-2 shrink-0 animate-pulse rounded-full bg-primary", className)}
+    />
+  );
+}
+
 /** ドロワーの1行。押す対象は文字幅ではなく行の高さで確保する（設定画面の一覧と同じ）。 */
 function DrawerItem({
   href,
   icon: Icon,
   label,
   badge,
+  active = false,
+  running = false,
   onClick,
 }: {
   href: string;
@@ -134,16 +189,27 @@ function DrawerItem({
   label: string;
   /** 開く前に片付けるものがあると分かる数字。0件のときは出さない。 */
   badge?: number | null;
+  /** いまいる画面かどうか。色だけに頼らないよう aria-current も添える。 */
+  active?: boolean;
+  /** 記録中の印を出すか。 */
+  running?: boolean;
   onClick: (event: React.MouseEvent) => void;
 }) {
   return (
     <Link
       href={href}
       onClick={onClick}
-      className="mx-3 flex items-center gap-3 rounded-full px-4 py-3 text-on-surface transition-colors hover:bg-on-surface/8"
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "mx-3 flex items-center gap-3 rounded-full px-4 py-3 transition-colors",
+        active
+          ? "bg-secondary-container text-on-secondary-container"
+          : "text-on-surface hover:bg-on-surface/8",
+      )}
     >
-      <Icon className="size-5 shrink-0 text-on-surface-variant" />
+      <Icon className={cn("size-5 shrink-0", active ? undefined : "text-on-surface-variant")} />
       <span className="type-body-large flex-1">{label}</span>
+      {running && <RunningDot />}
       {badge != null && (
         <span className="type-label-medium rounded-full bg-error-container px-2 py-0.5 tabular-nums text-on-error-container">
           {badge}

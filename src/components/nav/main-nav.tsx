@@ -3,26 +3,17 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BellRing, CalendarDays, ListChecks, ShoppingCart, Timer } from "lucide-react";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { useLongPress } from "@/components/calendar/use-long-press";
 import { ActivityQuickSheet } from "@/components/nav/activity-quick-sheet";
+import { NAV_ITEMS, type NavKey } from "@/components/nav/nav-items";
 import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
 import { cn } from "@/lib/utils";
 
-// 並びは左から カレンダー・タスク・記録・日付・買い物リスト（issue #328・#434）。
 // 記録を中央に置くのは、押す回数がいちばん多く、他と同じ形で端に並べると
 // 「いま始める・止める」たびに探して押すことになるため（docs/spec.md §27）。
-const ITEMS = [
-  { href: "/calendar", key: "calendar", label: "カレンダー", icon: CalendarDays },
-  { href: "/tasks", key: "tasks", label: "タスク", icon: ListChecks },
-  { href: "/activity", key: "activity", label: "記録", icon: Timer },
-  { href: "/reminders", key: "reminders", label: "日付", icon: BellRing },
-  { href: "/shopping", key: "shopping", label: "買い物", icon: ShoppingCart },
-] as const;
-
-export type NavKey = (typeof ITEMS)[number]["key"];
+// 並びそのものは nav-items.ts が持つ（ドロワーと共有する）。
 
 /** 下部ナビの1項目の枠。5項目を等分するため、格子の1マスに合わせる。 */
 const ITEM_CLASS = "flex w-full min-w-0 flex-col items-center gap-1";
@@ -132,7 +123,7 @@ export function BottomNav({
     //
     // 等分の格子にするのは、記録を必ず中央に置くため。5項目でちょうど3番目が中央に来る。
     <nav className="relative grid shrink-0 grid-cols-5 items-start bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
-      {ITEMS.map((item) => {
+      {NAV_ITEMS.map((item) => {
         const active = item.key === current;
         const Icon = item.icon;
 
@@ -225,48 +216,5 @@ export function BottomNav({
 
       <ActivityQuickSheet open={quickOpen} onOpenChange={setQuickOpen} />
     </nav>
-  );
-}
-
-/** PC向け。ナビゲーションバーは持たず、トップアプリバー内に切り替えを置く。 */
-export function HeaderNav({
-  current,
-  activityRunning = false,
-}: {
-  current: NavKey;
-  activityRunning?: boolean;
-}) {
-  const navigateOffline = useOfflineNavigate();
-
-  return (
-    <div className="hidden items-center gap-1 md:flex">
-      {ITEMS.map((item) => {
-        const active = item.key === current;
-        const Icon = item.icon;
-
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={(event) => {
-              if (isPlainClick(event) && navigateOffline(item.href)) event.preventDefault();
-            }}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "type-label-large flex items-center gap-2 rounded-full px-3 py-1.5 transition-colors",
-              active
-                ? "bg-secondary-container text-on-secondary-container"
-                : "text-on-surface-variant hover:bg-on-surface/8",
-            )}
-          >
-            <span className="relative flex items-center">
-              <Icon className="size-[18px]" />
-              {item.key === "activity" && activityRunning && <RunningDot />}
-            </span>
-            {item.label}
-          </Link>
-        );
-      })}
-    </div>
   );
 }
