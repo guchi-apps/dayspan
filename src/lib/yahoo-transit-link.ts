@@ -27,22 +27,50 @@ export type YahooTransitPlace = {
   coordinates: LatLng | null;
 };
 
-export type YahooTransitLinkInput = {
-  origin: YahooTransitPlace | null;
-  destination: YahooTransitPlace | null;
+/** 検索の基準。どちらの時刻を指定して探すか。 */
+export type YahooTransitBasis = "depart" | "arrive";
+
+/** 基準を決めるのに要るぶんだけ。画面のチップの状態もこれで決める。 */
+export type YahooTransitBasisInput = {
   /**
    * 入力欄の形式（`YYYY-MM-DDTHH:mm`）。設定タイムゾーンでの壁時計なので、
    * そのまま分解する。ここでDateへ通すと、サーバーのローカル時刻（UTC）が混ざる。
    */
   departAt: string;
   arriveAt: string;
+  /** 画面で選ばれた基準。既定は到着時刻（移動は「予定の開始までに着く」ために作るため）。 */
+  basis?: YahooTransitBasis;
 };
+
+export type YahooTransitLinkInput = YahooTransitBasisInput & {
+  origin: YahooTransitPlace | null;
+  destination: YahooTransitPlace | null;
+};
+
+/**
+ * どちらの時刻を指定して探すか。時刻がどちらも無ければ null（時刻を指定せずに開く）。
+ *
+ * **選ばれた側が空なら、もう一方へ落ちる。** 出発時刻だけ・到着時刻だけを入れた状態でも、
+ * 入っているほうで探せる必要があるため（issue #444）。
+ *
+ * 画面のチップの選択状態もこの関数で決める。規則を画面側にもう1つ書くと、押したチップと
+ * 実際に開くURLが食い違いうる。
+ */
+export function resolveYahooTransitBasis(input: YahooTransitBasisInput): YahooTransitBasis | null {
+  const hasDepart = splitLocalInput(input.departAt) !== null;
+  const hasArrive = splitLocalInput(input.arriveAt) !== null;
+
+  if (!hasDepart && !hasArrive) return null;
+  if (!hasDepart) return "arrive";
+  if (!hasArrive) return "depart";
+  return input.basis ?? "arrive";
+}
 
 /**
  * 検索URL。出発地・目的地が揃っていなければ null（リンクにしない）。
  *
- * 基準は到着時刻にする。移動は「予定の開始までに着く」ために作るため（§29）。
- * 到着時刻が無いときだけ出発時刻で開く。
+ * 基準の既定は到着時刻。移動は「予定の開始までに着く」ために作るため（§29）。出発時刻を
+ * 指定して探したいときは、画面のチップで基準を切り替える。
  */
 export function yahooTransitLink(input: YahooTransitLinkInput): string | null {
   const origin = input.origin;
@@ -53,18 +81,17 @@ export function yahooTransitLink(input: YahooTransitLinkInput): string | null {
   applyPlace(params, "from", "flatlon", origin);
   applyPlace(params, "to", "tlatlon", destination);
 
-  const arrive = splitLocalInput(input.arriveAt);
-  const depart = splitLocalInput(input.departAt);
-  const basis = arrive ?? depart;
-  if (basis) {
-    params.set("y", basis.year);
-    params.set("m", basis.month);
-    params.set("d", basis.day);
-    params.set("hh", basis.hour);
+  const basis = resolveYahooTransitBasis(input);
+  const at = basis && splitLocalInput(basis === "depart" ? input.departAt : input.arriveAt);
+  if (at) {
+    params.set("y", at.year);
+    params.set("m", at.month);
+    params.set("d", at.day);
+    params.set("hh", at.hour);
     // 分は十の位・一の位で分かれている（Yahoo!側の指定の形）。
-    params.set("m1", basis.minute.slice(0, 1));
-    params.set("m2", basis.minute.slice(1, 2));
-    params.set("type", arrive ? ARRIVE_AT : DEPART_AT);
+    params.set("m1", at.minute.slice(0, 1));
+    params.set("m2", at.minute.slice(1, 2));
+    params.set("type", basis === "depart" ? DEPART_AT : ARRIVE_AT);
   }
 
   return `${SEARCH}?${params.toString()}`;

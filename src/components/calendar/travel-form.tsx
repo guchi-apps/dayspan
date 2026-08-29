@@ -11,7 +11,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { TravelEstimate } from "@/lib/ai-travel-estimate";
-import { yahooTransitLink, type YahooTransitPlace } from "@/lib/yahoo-transit-link";
+import {
+  resolveYahooTransitBasis,
+  yahooTransitLink,
+  type YahooTransitBasis,
+  type YahooTransitPlace,
+} from "@/lib/yahoo-transit-link";
 import {
   parseYahooTransitRoute,
   yahooRouteFields,
@@ -61,6 +66,12 @@ export type TravelDraft = {
   roundTrip?: boolean;
 };
 
+/** Yahoo!乗換案内で探す基準の選択肢。並びは入力欄（出発 → 到着）と揃える。 */
+const SEARCH_BASIS_OPTIONS: { value: YahooTransitBasis; label: string }[] = [
+  { value: "depart", label: "出発時刻で探す" },
+  { value: "arrive", label: "到着時刻で探す" },
+];
+
 /**
  * 移動の入力欄（docs/spec.md §29）。ダイアログの枠と種類の切り替えは ItemDialog が持つ。
  *
@@ -107,6 +118,9 @@ export function TravelForm({
   );
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  // Yahoo!乗換案内をどちらの時刻で開くか（issue #444）。既定は到着時刻で、移動は
+  // 「予定の開始までに着く」ために作るため。出発時刻が決まっている移動ではチップで切り替える。
+  const [searchBasis, setSearchBasis] = useState<YahooTransitBasis>("arrive");
   // Yahoo!乗換案内から取り込んだ結果の報せ。何が入ったのかを押した場所で示す。
   const [yahooNotice, setYahooNotice] = useState<string | null>(null);
   // クリップボードを読めなかった・読めても経路ではなかったときの受け皿。
@@ -176,7 +190,14 @@ export function TravelForm({
     destination: toYahooPlace(destination, placeCatalog.places),
     departAt,
     arriveAt,
+    basis: searchBasis,
   });
+
+  /**
+   * 実際に開く基準。選んだ側の時刻が空なら、もう一方へ落ちる（`resolveYahooTransitBasis`）。
+   * チップの押されている側もこれで決め、押した見た目とURLが食い違わないようにする。
+   */
+  const activeBasis = resolveYahooTransitBasis({ departAt, arriveAt, basis: searchBasis });
 
   /**
    * コピーされた経路を取り込む。読めなければ何も書き換えない。
@@ -434,6 +455,47 @@ export function TravelForm({
             <p className="text-xs text-muted-foreground">
               {estimateNote(estimateSource, mode, attribution)}
             </p>
+
+            {/* どちらの時刻で探すか（issue #444）。時刻の有無だけで決めると、予定から足した
+                移動では出発時刻に仮の値（開始30分前）が必ず入っているぶん、その値で探すことに
+                なる。押した側と実際に開く基準が食い違わないよう、選択の見た目は
+                `activeBasis`（空の側は落ちる）で出し、空のほうのチップは押せなくする。
+                リンクを出さないとき（オフライン・地点が揃っていない・時刻が無い）は、
+                選んでも行き先が無いためチップごと出さない。 */}
+            {yahooUrl && !offline && activeBasis && (
+              <div
+                role="group"
+                aria-label="Yahoo!乗換案内で探す基準"
+                className="flex flex-wrap gap-2"
+              >
+                {SEARCH_BASIS_OPTIONS.map((option) => {
+                  const selected = option.value === activeBasis;
+                  // 選んでもその側にならない＝そちらの時刻が入っていない、ということ。
+                  // 判定を「欄が空か」で書き直さないのは、基準の規則を2か所に置かないため。
+                  const unavailable =
+                    resolveYahooTransitBasis({ departAt, arriveAt, basis: option.value }) !==
+                    option.value;
+
+                  return (
+                    <Button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={selected}
+                      disabled={unavailable}
+                      variant={selected ? "secondary" : "outline"}
+                      size="sm"
+                      className={cn(
+                        "rounded-full",
+                        selected && "bg-travel-container text-on-travel-container",
+                      )}
+                      onClick={() => setSearchBasis(option.value)}
+                    >
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               {/* 素の <a> にするのは、iOSがUniversal Linkでアプリを開けるようにするため。
