@@ -17,6 +17,7 @@ import {
 import { TRAVEL_MODE_LABELS, type TravelItem } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { estimateSourceLabel } from "./travel-estimate-notes";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 /**
@@ -111,7 +112,7 @@ export function TravelDetailDialog({
             {TRAVEL_MODE_LABELS[travel.mode]} {minutes}分
             {travel.estimated && (
               <span className="text-on-surface-variant">
-                {travel.estimateSource === "TRANSIT" ? "（経路検索の平均）" : "（AIによる目安）"}
+                {estimateSourceLabel(travel.estimateSource)}
               </span>
             )}
           </DetailRow>

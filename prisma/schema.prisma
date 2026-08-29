@@ -270,6 +270,7 @@ enum TravelEstimateSource {
   MANUAL
   AI
   TRANSIT
+  YAHOO
 }
 
 model TravelPlan {
