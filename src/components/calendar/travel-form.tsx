@@ -211,8 +211,11 @@ export function TravelForm({
    * 「コピーした経路を取り込む」を押したとき。
    *
    * 押した時点が取り込む意思表示なので、確認のボタンをもう1つ挟まずその場で反映する。
-   * クリップボードを読めない環境（許可しなかったとき・対応していないブラウザ）では、
-   * 同じ文字列を貼り付けられる欄へ落とす。読み取りの規則はどちらも同じものを通す。
+   *
+   * **クリップボードを読めないことがある。** `navigator.clipboard` はセキュアコンテキスト
+   * （https / localhost）でしか生えず、平文HTTPで開いた開発サーバーでは `undefined` になる。
+   * 利用者が許可しなかったときも読めない。そのときは同じ文字列を貼り付けられる欄へ落とす。
+   * 読み取りの規則はどちらも同じものを通すので、入る値は変わらない。
    */
   const importFromClipboard = async () => {
     setYahooNotice(null);
@@ -222,7 +225,9 @@ export function TravelForm({
       text = await navigator.clipboard.readText();
     } catch {
       setPasteOpen(true);
-      setError("クリップボードを読み取れませんでした。コピーした経路を下の欄へ貼り付けてください。");
+      setError(
+        "クリップボードを読み取れませんでした（許可されていないか、対応していない環境です）。コピーした経路を下の欄へ貼り付けてください。",
+      );
       return;
     }
 
