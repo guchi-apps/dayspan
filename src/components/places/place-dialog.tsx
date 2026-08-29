@@ -8,14 +8,16 @@ import { ItemFormActions } from "@/components/calendar/item-form-actions";
 import { PlaceMapDialog } from "@/components/calendar/place-map-dialog";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { TagPicker } from "@/components/tags/tag-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { formatCoordinates, type LatLng } from "@/lib/coordinates";
 import type { PlaceItem } from "@/services/notion/places";
+import type { TagOption } from "@/services/notion/tag-options";
 
-/** 場所DBの構成によって、住所・座標の置き場所そのものが無いことがある。 */
-export type PlaceCapabilities = { address: boolean; coordinates: boolean };
+/** 場所DBの構成によって、住所・タグ・座標の置き場所そのものが無いことがある。 */
+export type PlaceCapabilities = { address: boolean; tags: boolean; coordinates: boolean };
 
 /**
  * 登録済みの場所の編集（docs/spec.md §9）。
@@ -27,11 +29,14 @@ export type PlaceCapabilities = { address: boolean; coordinates: boolean };
 export function PlaceDialog({
   place,
   capabilities,
+  tagOptions,
   onClose,
   onSaved,
 }: {
   place: PlaceItem;
   capabilities: PlaceCapabilities;
+  /** 場所DBのタグの選択肢。取得できなかったときは空で、選択中のタグだけが並ぶ。 */
+  tagOptions: TagOption[];
   onClose: () => void;
   /** 保存・削除できたとき。一覧を取り直すのは呼び出し側の役目。 */
   onSaved: () => void;
@@ -43,6 +48,7 @@ export function PlaceDialog({
 
   const [name, setName] = useState(place.name);
   const [address, setAddress] = useState(place.address ?? "");
+  const [tags, setTags] = useState<string[]>(place.tags);
   const [coordinates, setCoordinates] = useState<LatLng | null>(place.coordinates);
   const [mapOpen, setMapOpen] = useState(false);
   /**
@@ -102,6 +108,7 @@ export function PlaceDialog({
         body: JSON.stringify({
           name: trimmed,
           ...(capabilities.address ? { address: address.trim() || null } : {}),
+          ...(capabilities.tags ? { tags } : {}),
           ...(capabilities.coordinates && (coordinatesTouched || place.coordinates)
             ? { coordinates: coordinates ? formatCoordinates(coordinates) : null }
             : {}),
@@ -156,7 +163,7 @@ export function PlaceDialog({
         <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
           <DialogTitle>場所を編集</DialogTitle>
           <DialogDescription className="sr-only">
-            名前・住所・地点を変更するか、この場所を削除します。
+            名前・住所・タグ・地点を変更するか、この場所を削除します。
           </DialogDescription>
 
           {error && (
@@ -225,6 +232,20 @@ export function PlaceDialog({
                   : capabilities.address
                     ? "地図で選ぶと、その地点の住所が入ります。場所DBに座標のプロパティが無いため、地点は保存されません。"
                     : "地図で選ぶと、この場所の地点を置き換えます。地点があると、この場所を開くときに地図とYahoo!乗換案内がその座標を使います。"}
+              </p>
+            </div>
+          )}
+
+          {/*
+            タグは登録済みから押して選び、無い名前はここから足す（タスク・日付リマインドと
+            同じ TagPicker）。足した名前はNotionが選択肢として登録する。色・並び順・改名は
+            選択肢そのものの話なので、設定 ▸ タグ に置く。
+          */}
+          {capabilities.tags && (
+            <div className="flex flex-col gap-1">
+              <TagPicker label="タグ" options={tagOptions} value={tags} multiple onChange={setTags} />
+              <p className="type-body-small text-on-surface-variant">
+                色・並び順・名前の変更は「設定 ▸ タグ」の「場所のタグ」から行えます。
               </p>
             </div>
           )}

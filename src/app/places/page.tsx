@@ -10,6 +10,7 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import type { PlacePropertyMap } from "@/services/notion/place-database";
 import { listPlaces, type PlaceItem } from "@/services/notion/places";
+import { loadTagOptions, type TagOption } from "@/services/notion/tag-options";
 
 /**
  * 登録した場所の一覧・編集（docs/spec.md §9）。
@@ -30,10 +31,17 @@ export default async function PlacesPage() {
   // Notionが失敗しても画面自体は開く。ここで投げるとNext.jsの汎用のエラー画面へ落ち、
   // 何が起きたのかも、開き直せば直るのかも画面から分からなくなる（issue #402）。
   // loadPlaces ではなく listPlaces を使うのは、0件と取得失敗を区別する必要があるため。
+  // タグの選択肢はこの画面（と設定 ▸ タグ）でしか要らないため、まとめて取る loadTagCatalog
+  // ではなく1種類ぶんだけ読む。カレンダー・タスクの経路へNotionへの往復を足さないため
+  // （docs/spec.md §20）。取得に失敗しても null が返り、画面は開く。
   let places: PlaceItem[] = [];
   let loadError: string | null = null;
+  let tagOptions: TagOption[] | null = null;
   try {
-    places = await listPlaces(connection);
+    [places, tagOptions] = await Promise.all([
+      listPlaces(connection),
+      loadTagOptions(connection, "place"),
+    ]);
   } catch (error) {
     loadError = `場所を取得できませんでした。${externalApiMessage("notion", "場所の取得", error)}`;
   }
@@ -42,8 +50,13 @@ export default async function PlacesPage() {
     <PlacesScreen
       places={places}
       loadError={loadError}
-      // 場所DBの構成によっては住所・座標の置き場所そのものが無い。持っていない欄は出さない。
-      capabilities={{ address: Boolean(map.address), coordinates: Boolean(map.coordinates) }}
+      // 場所DBの構成によっては住所・タグ・座標の置き場所そのものが無い。持っていない欄は出さない。
+      capabilities={{
+        address: Boolean(map.address),
+        tags: Boolean(map.tags),
+        coordinates: Boolean(map.coordinates),
+      }}
+      tagOptions={tagOptions ?? []}
     />
   );
 }
