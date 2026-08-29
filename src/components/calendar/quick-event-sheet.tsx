@@ -195,6 +195,7 @@ export function QuickEventSheet({
             label="タイトル"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            onClear={() => setTitle("")}
           />
 
           {/* 日付は押した日から動かさないことが多い。時刻2つより幅を取らせない。 */}

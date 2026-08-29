@@ -199,6 +199,8 @@ export function LocationInput({
             label={label}
             value={value}
             onChange={(event) => change(event.target.value)}
+            // 消した直後は別の場所を選び直したいことが多い。候補は開いたままにする。
+            onClear={() => change("")}
             onFocus={() => setOpen(true)}
             onBlur={(event) => {
               setOpen(false);

@@ -18,6 +18,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  MapPin,
   Plus,
   RefreshCw,
   Settings,
@@ -797,6 +798,12 @@ export function CalendarShell({
         <Button variant="ghost" size="icon-sm" asChild aria-label="勤務" className="hidden md:inline-flex">
           <Link href="/work">
             <Briefcase className="size-4" />
+          </Link>
+        </Button>
+        {/* 場所（docs/spec.md §9）。勤務・設定とまったく同じ経路に並べれば、探す場所が増えない。 */}
+        <Button variant="ghost" size="icon-sm" asChild aria-label="場所" className="hidden md:inline-flex">
+          <Link href="/places">
+            <MapPin className="size-4" />
           </Link>
         </Button>
         <Button variant="ghost" size="icon-sm" asChild aria-label="設定" className="hidden md:inline-flex">

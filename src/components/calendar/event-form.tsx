@@ -217,6 +217,7 @@ export function EventForm({
           label="タイトル"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
+          onClear={() => onTitleChange("")}
           autoFocus={autoFocusTitle}
         />
 
@@ -293,6 +294,7 @@ export function EventForm({
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          onClear={() => setDescription("")}
         />
 
         {inputError && <p className="text-sm text-destructive">{inputError}</p>}

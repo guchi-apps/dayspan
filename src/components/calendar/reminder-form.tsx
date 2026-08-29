@@ -143,6 +143,7 @@ export function ReminderForm({
           label="タイトル"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
+          onClear={() => onTitleChange("")}
           autoFocus={autoFocusTitle}
         />
 
@@ -200,6 +201,7 @@ export function ReminderForm({
           rows={3}
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
+          onClear={() => setMemo("")}
         />
 
         <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
