@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   formatCoordinates,
+  isLatLng,
   isSamePoint,
   parseCoordinates,
   type LatLng,
@@ -230,7 +231,11 @@ export function PlaceMapDialog({
         if (!response.ok) return;
         const body = (await response.json()) as { place: { lat: number; lng: number } | null };
         if (cancelled || !body.place) return;
-        moveTo({ lat: body.place.lat, lng: body.place.lng });
+        const found = { lat: body.place.lat, lng: body.place.lng };
+        // 座標として読めない値では動かさない。手掛かりが引けなかっただけで、
+        // 地図はいまの中心のまま操作できる（読めない値で動かすと、選んでいた地点を失う）。
+        if (!isLatLng(found)) return;
+        moveTo(found);
       } catch {
         // 見つからなければ前回の中心のまま。地図を動かして選べる状態にはなっている。
       }

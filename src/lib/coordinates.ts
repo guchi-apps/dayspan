@@ -53,6 +53,25 @@ export function isLatLng(value: unknown): value is LatLng {
   return Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
 }
 
+/**
+ * クエリの `lat` / `lon` を地点として読む。**両方が値として来ているときだけ**地点にする。
+ *
+ * `Number(null)` も `Number("")` も 0 になるため、`Number(params.get("lat"))` を
+ * そのまま `Number.isFinite()` に掛けると、`lat` も `lon` も付いていない要求まで
+ * 「緯度0・経度0」として読めてしまう。`/api/places/geocode` ではこれで `?q=`（地名から
+ * 地点を引く）の要求が逆ジオコーディングとして扱われ、Nominatimがギニア湾の海上を
+ * 該当なしとして返し、地図が0,0へ飛んでいた（issue #471）。
+ */
+export function parsePointParams(params: URLSearchParams): LatLng | null {
+  const lat = params.get("lat")?.trim();
+  const lon = params.get("lon")?.trim();
+  if (!lat || !lon) return null;
+
+  // 範囲まで確かめる。読めない値は地点として扱わない（呼び出し元は `q` の側へ落とせる）。
+  const point = { lat: Number(lat), lng: Number(lon) };
+  return isLatLng(point) ? point : null;
+}
+
 export function clampLatitude(lat: number): number {
   return Math.min(MAX_LATITUDE, Math.max(-MAX_LATITUDE, lat));
 }
