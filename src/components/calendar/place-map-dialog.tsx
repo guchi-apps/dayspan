@@ -79,6 +79,7 @@ export type PickedPoint = { coordinates: LatLng; address: string };
 export function PlaceMapDialog({
   query,
   places,
+  initialCenter = null,
   onCancel,
   onRegistered,
   onPicked,
@@ -87,6 +88,15 @@ export function PlaceMapDialog({
   query: string;
   /** 登録済みの場所。同じ名前のものに座標があれば、そこを中心にして開く。 */
   places: PlaceItem[];
+  /**
+   * 開いたときの中心を呼び出し側で決める（場所の編集画面。docs/spec.md §9）。
+   *
+   * すでに地点を持っている場所を選び直す場面では、始める位置はその地点で決まっている。
+   * 名前から引き直すと、名前を書き換えている途中の文字列で別の地点が中心になり、
+   * そのまま「この地点にする」を押した操作が座標を黙って動かす。渡されたときは
+   * 地名の検索も現在地の取得も行わない（往復もそのぶん減る）。
+   */
+  initialCenter?: LatLng | null;
   onCancel: () => void;
   /** 登録できたとき。場所欄へ入れるのは呼び出し側の役目。 */
   onRegistered: (place: PlaceItem) => void;
@@ -99,14 +109,14 @@ export function PlaceMapDialog({
   onPicked?: (picked: PickedPoint) => void;
 }) {
   const [open, setOpen] = useState(true);
-  // 開いたときの中心。登録済みの場所に座標があればそこから始める。
+  // 開いたときの中心。呼び出し側の指定・登録済みの場所の座標があればそこから始める。
   // 残りの手掛かり（入力中の地名・現在地）は取得に往復が要るため、下のeffectで置き換える。
   const [center, setCenter] = useState<LatLng>(() => {
     const typed = query.trim();
     const known = typed
       ? places.find((place) => place.name === typed && place.coordinates)
       : undefined;
-    return known?.coordinates ?? readLastCenter() ?? FALLBACK_CENTER;
+    return initialCenter ?? known?.coordinates ?? readLastCenter() ?? FALLBACK_CENTER;
   });
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [name, setName] = useState(query.trim());
@@ -161,6 +171,9 @@ export function PlaceMapDialog({
     let cancelled = false;
 
     const resolve = async () => {
+      // 呼び出し側が中心を決めているときは、そこから動かさない。
+      if (initialCenter) return;
+
       const typed = query.trim();
       const known = typed
         ? places.find((place) => place.name === typed && place.coordinates)
