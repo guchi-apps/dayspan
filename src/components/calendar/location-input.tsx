@@ -381,6 +381,23 @@ export function placeCoordinates(text: string, places: PlaceItem[]): LatLng | nu
 }
 
 /**
+ * 場所欄の値に合う場所DBの1件。無ければ null。
+ *
+ * 候補から選んだあとの欄には `名前 住所` が入る（`toLocationText`）。名前だけの一致を見る
+ * `withPlaceAddress` / `placeCoordinates` はこの形に当たらないため、住所を添えた形も見る。
+ * 名前・住所・座標を別々に要る呼び出し元（Yahoo!乗換案内のURL。docs/spec.md §29）が
+ * 元の1件へ戻れるようにするために置く。
+ */
+export function findPlace(text: string, places: PlaceItem[]): PlaceItem | null {
+  const query = text.trim();
+  if (!query) return null;
+  return (
+    places.find((item) => item.name === query || toLocationText(item.name, item.address) === query) ??
+    null
+  );
+}
+
+/**
  * 入力に合う場所を絞る。前方一致を先に、部分一致を後に置く。
  * 打ち始めの数文字で目当ての場所が上に来るようにするため。
  */

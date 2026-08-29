@@ -111,7 +111,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
           "end": "2026-08-19T01:00:00Z",
           "startTime": "09:30",
           "endTime": "10:00",
-          "estimated": true,                  // 所要時間がAIの見積もりかどうか（目安）
+          "estimated": true,                  // 所要時間が手入力ではないかどうか（AI / 経路検索 / Yahoo!乗換案内）
           "returnLeg": false,
           "note": null
         }
