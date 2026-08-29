@@ -132,6 +132,15 @@ export function PlaceDialog({
           query={name}
           places={[]}
           initialCenter={coordinates}
+          // 地図側の文言も、この場所DBで実際に保存されるものに合わせる。座標のプロパティが
+          // 無い構成では、選んでも入るのは住所だけ（`writeCoordinates` がそこで落ちる）。
+          picks={
+            capabilities.address && capabilities.coordinates
+              ? "both"
+              : capabilities.address
+                ? "address"
+                : "point"
+          }
           onCancel={() => setMapOpen(false)}
           onRegistered={() => setMapOpen(false)}
           onPicked={(picked) => {

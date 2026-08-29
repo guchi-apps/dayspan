@@ -76,6 +76,29 @@ function writeLastCenter(center: LatLng) {
  */
 export type PickedPoint = { coordinates: LatLng; address: string };
 
+/**
+ * 選んだ地点から呼び出し側が保存するもの。地点を保存できない場所DB（座標のプロパティが無い）から
+ * 開いても「地点になります」と出していると、押した先で何が変わるのかを画面が偽ることになる。
+ */
+const PICK_TITLES = {
+  point: "地点を選び直す",
+  address: "住所を地図から選ぶ",
+  both: "住所と地点を選び直す",
+} as const;
+
+const PICK_DESCRIPTIONS = {
+  point: "中央のピンの位置がこの場所の地点になります。",
+  address:
+    "中央のピンの位置の住所がこの場所の住所になります。場所DBに座標のプロパティが無いため、地点は保存されません。",
+  both: "中央のピンの位置がこの場所の住所と地点になります。",
+} as const;
+
+const PICK_ACTIONS = {
+  point: "この地点にする",
+  address: "この住所にする",
+  both: "この地点にする",
+} as const;
+
 export function PlaceMapDialog({
   query,
   places,
@@ -83,6 +106,7 @@ export function PlaceMapDialog({
   onCancel,
   onRegistered,
   onPicked,
+  picks = "point",
 }: {
   /** 場所欄に入力されている文字列。名前の初期値と、開いたときの中心を決める手掛かりにする。 */
   query: string;
@@ -107,6 +131,14 @@ export function PlaceMapDialog({
    * Notionへの書き込みをここへ持たせると、書き込みの経路が2つに分かれてしまう。
    */
   onPicked?: (picked: PickedPoint) => void;
+  /**
+   * `onPicked` で呼び出し側が実際に受け取って**保存するもの**（既定は地点）。
+   *
+   * 場所DBの構成によっては住所か座標のどちらかのプロパティが無く、選んだ地点がそのまま
+   * 保存されるとは限らない。座標を持たないDBから開いても「地点になります」「この地点にする」と
+   * 出していると、押した先で何が変わるのかを画面が偽ることになる（保存されるのは住所だけ）。
+   */
+  picks?: "point" | "address" | "both";
 }) {
   const [open, setOpen] = useState(true);
   // 開いたときの中心。呼び出し側の指定・登録済みの場所の座標があればそこから始める。
@@ -296,11 +328,9 @@ export function PlaceMapDialog({
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{onPicked ? "地点を選び直す" : "地図から場所を登録"}</DialogTitle>
+          <DialogTitle>{onPicked ? PICK_TITLES[picks] : "地図から場所を登録"}</DialogTitle>
           <DialogDescription>
-            {onPicked
-              ? "中央のピンの位置がこの場所の地点になります。"
-              : "中央のピンの位置が登録する地点になります。"}
+            {onPicked ? PICK_DESCRIPTIONS[picks] : "中央のピンの位置が登録する地点になります。"}
           </DialogDescription>
         </DialogHeader>
 
@@ -371,7 +401,7 @@ export function PlaceMapDialog({
             // 地点を返すだけなので通信しない。オフラインでも押せる（保存は呼び出し側の操作）。
             <Button onClick={pick}>
               <MapPin className="size-4" />
-              この地点にする
+              {PICK_ACTIONS[picks]}
             </Button>
           ) : (
             <Button disabled={registering || offline || !name.trim()} onClick={register}>
