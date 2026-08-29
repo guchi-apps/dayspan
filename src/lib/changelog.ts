@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.13.1",
+    date: "2026-08-30",
+    changes: [
+      "場所を編集する際に開く地図で、登録済みの住所を選んだのに地図がまったく関係ない海上の位置へ動いてしまう不具合を修正しました。あわせて、座標が登録されていない場所を地図で開いたときに、より正確な位置から地図が始まるよう改善しました。",
+    ],
+  },
+  {
     version: "2.13.0",
     date: "2026-08-30",
     changes: [

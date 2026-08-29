@@ -56,9 +56,39 @@ pnpm dev             # http://localhost:3000
 
 Googleログインを通すには、共有Supabaseプロジェクトの Redirect URLs に `http://localhost:3000/auth/callback` を登録し、`ALLOWED_GOOGLE_EMAILS` に自分のGoogleアカウントを設定しておく必要があります。
 
+### 本体チェックアウトの `.env.local` は worktree の前提
+
+**Issueごとのworktree・確認環境へ配られる `.env.local` の元は、本体チェックアウト（`~/apps/dayspan`）の `.env.local` です。** `scripts/start-issue.sh` と issue-deck の `supply_env_files` はどちらも本体側のファイルをコピーする作りで、本体に無ければworktreeへは何も配りません。
+
+配られないまま起動すると、`src/proxy.ts` の `updateSession()` が毎リクエストで `createServerClient()` を呼ぶため、`/login` を含む**全ページが500**になります（`Your project's URL and Key are required to create a Supabase client!`）。画面には出ず、原因が読めるのはサーバーログだけです。
+
+サブPC（Ubuntu Server・SSH越し）では、本体チェックアウトに一度だけ次を行っておきます。以後のworktreeと確認環境へは自動で配られます。
+
+```bash
+cd ~/apps/dayspan
+pnpm env:init        # .env.local.example を .env.local へコピー
+
+# 値は1Passwordから入れる（開発用のSupabaseプロジェクトを使う。本番の値は入れない）
+u() { bash scripts/update-env-file.sh .env.local "$1" "$2"; }
+u NEXT_PUBLIC_SUPABASE_URL "$(op read 'op://apps/Supabase/personal-apps-dev/dev-project-url')"
+u NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$(op read 'op://apps/Supabase/personal-apps-dev/dev-publishable-key')"
+u ALLOWED_GOOGLE_EMAILS "$(op read 'op://apps/dayspan/allowed-google-emails')"
+u TOKEN_ENCRYPTION_KEY "$(openssl rand -base64 32)"   # ローカル専用。本番の鍵は持ち込まない
+u INTERNAL_API_KEY "$(openssl rand -hex 32)"          # 同上
+chmod 600 .env.local
+
+bash scripts/setup-db.sh   # ローカルMariaDBにDB・ユーザーを作成（sudo mysql が通ること）
+```
+
+本体には `node_modules` を置いていないため、マイグレーションはworktree側で `pnpm exec prisma migrate deploy` を実行します（DBは本体・worktreeで共通の `app_dayspan`）。
+
+`GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` は開発用のOAuthクライアントで1Passwordには無く、空のままで構いません。空だとカレンダー連携の接続だけができず、画面は開きます。VAPID鍵・trainrouteのトークンも同様に任意です。
+
+すでに作成済みのworktreeには、`scripts/start-issue.sh <issue番号>`（または issue-deck の「ローカルで開始」）をもう一度通すと配られます。手で置く場合は本体の `.env.local` をコピーし、`PORT` を `6000 + Issue番号` に直します。
+
 ### スマートフォンからの確認
 
-`pnpm dev` を実行すると、`scripts/setup-lan-access.sh` がWindows側のポートフォワーディングとファイアウォール許可を設定し（UACダイアログが出るので許可する）、アクセスURLを表示します。
+`pnpm dev` を実行すると、`scripts/setup-lan-access.sh` がWindows側のポートフォワーディングとファイアウォール許可を設定し（UACダイアログが出るので許可する）、アクセスURLを表示します。WSL以外（サブPCのUbuntu Serverなど）では `powershell.exe` が無いため何もせず、devサーバーの起動だけが続きます。
 
 ```
 LAN経由でのアクセスURL（同一LAN上の別端末から）:

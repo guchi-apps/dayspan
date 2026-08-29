@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 
 import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
-import { searchPlace } from "@/services/geocoding/nominatim";
+import { parsePointParams } from "@/lib/coordinates";
 import { resolvePointAddress } from "@/services/geocoding/resolve-point";
+import { resolveTextPlace } from "@/services/geocoding/resolve-search";
 
 /**
  * 地図から場所を登録するときの住所引き（docs/spec.md §9）。
@@ -18,17 +19,17 @@ export async function GET(request: Request) {
 
   const params = new URL(request.url).searchParams;
   const query = params.get("q")?.trim();
-  const lat = Number(params.get("lat"));
-  const lon = Number(params.get("lon"));
-  const hasPoint = Number.isFinite(lat) && Number.isFinite(lon);
+  const point = parsePointParams(params);
 
-  if (!query && !hasPoint) {
+  if (!query && !point) {
     return NextResponse.json({ error: "q or lat/lon is required" }, { status: 400 });
   }
 
   try {
     // 地点が来ていればそちらを優先する。地名より確かな指定であるため。
-    const place = hasPoint ? await resolvePointAddress(lat, lon) : await searchPlace(query!);
+    const place = point
+      ? await resolvePointAddress(point.lat, point.lng)
+      : await resolveTextPlace(query!);
     return NextResponse.json({ place });
   } catch (error) {
     return externalApiError("osm", "住所の取得", error);

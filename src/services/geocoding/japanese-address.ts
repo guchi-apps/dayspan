@@ -94,3 +94,45 @@ export function composeJapaneseAddress(parts: JapaneseAddressParts): string | nu
   // （中桜塚3-1-1）。「渋谷二丁目」のように単位まで入っている形は、そのまま続ける。
   return chome && isNumericChome(chome) ? `${result}-${banchi}` : result + banchi;
 }
+
+/** 丁目に使う漢数字。日本の住所で丁目が99を超えることはない。 */
+const KANJI_DIGITS = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+
+/** 「3」→「三」、「12」→「十二」。読めない値はnull。 */
+function toKanjiNumber(value: string): string | null {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1 || number > 99) return null;
+  if (number < 10) return KANJI_DIGITS[number];
+
+  const tens = Math.floor(number / 10);
+  const ones = number % 10;
+  return `${tens > 1 ? KANJI_DIGITS[tens] : ""}十${KANJI_DIGITS[ones]}`;
+}
+
+/**
+ * 番地を落として丁目までの住所にする（`composeJapaneseAddress()` の逆向き）。落とせなければnull。
+ *
+ * Nominatimの地名検索は、番地の入った日本の住所を引けない（`東京都渋谷区渋谷二丁目21-1`・
+ * `大阪府豊中市中桜塚3-1-1` はいずれも該当なし。実測）。丁目までなら引けるため、
+ * 完全な住所で見つからなかったときの予備にする。地図の中心を決めるだけなので、
+ * 丁目の中心に立てば登録されている場所は画面の中に入る。
+ *
+ * 数字だけの丁目（`中桜塚3-1-1`）は漢数字へ直す。`中桜塚3` のまま引くとNominatimは
+ * 一丁目を返し、別の丁目が中心になる（実測）。
+ */
+export function broadenJapaneseAddress(address: string): string | null {
+  const value = address.trim();
+
+  // 「…二丁目21-1」。丁目まで書かれていれば、そこから後ろを落とすだけでよい。
+  const chome = value.match(/^(.*丁目)\d+(?:-\d+)*$/);
+  if (chome) return chome[1];
+
+  // 「…中桜塚3-1-1」。先頭の数字が丁目で、残りが番地。丁目は漢数字へ直す。
+  const numeric = value.match(/^(.*[^0-9-])(\d+)(?:-\d+)+$/);
+  if (numeric) {
+    const kanji = toKanjiNumber(numeric[2]);
+    return kanji ? `${numeric[1]}${kanji}丁目` : null;
+  }
+
+  return null;
+}

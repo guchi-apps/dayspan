@@ -119,7 +119,11 @@ prepare_issue() {
     if [[ -f "$ROOT/.env.local" ]]; then
       cp "$ROOT/.env.local" "$WORKTREE_DIR/.env.local"
     else
+      # 配られないまま起動すると、proxyがSupabaseクライアントを作れず/loginを含む全ページが
+      # 500になる。理由は画面に出ずサーバーログにしか残らないため、ここで対処法まで書く（#467）。
       echo "警告: $ROOT/.env.local が無いため .env.local をコピーしませんでした。" >&2
+      echo "      このまま pnpm dev すると Supabase の設定が無く、/login を含む全ページが500になります。" >&2
+      echo "      本体チェックアウトに .env.local を用意してください（README「本体チェックアウトの .env.local は worktree の前提」）。" >&2
     fi
   fi
 
