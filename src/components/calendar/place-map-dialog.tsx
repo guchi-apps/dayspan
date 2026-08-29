@@ -22,6 +22,7 @@ import {
   parseCoordinates,
   type LatLng,
 } from "@/lib/coordinates";
+import { resolveMapStart, type MapStart } from "@/lib/place-map-start";
 import type { PlaceItem } from "@/services/notion/places";
 
 import { readErrorMessage } from "./response-error";
@@ -100,6 +101,7 @@ export function PlaceMapDialog({
   query,
   places,
   initialCenter = null,
+  lookupText,
   onCancel,
   onRegistered,
   onPicked,
@@ -107,7 +109,10 @@ export function PlaceMapDialog({
 }: {
   /** 場所欄に入力されている文字列。名前の初期値と、開いたときの中心を決める手掛かりにする。 */
   query: string;
-  /** 登録済みの場所。同じ名前のものに座標があれば、そこを中心にして開く。 */
+  /**
+   * 登録済みの場所。この中の1件に当たれば、その座標（無ければ住所の地点）を中心にして開く。
+   * 候補から選んだあとの場所欄には `名前 住所` が入るため、照合は `matchPlaceByText` で行う。
+   */
   places: PlaceItem[];
   /**
    * 開いたときの中心を呼び出し側で決める（場所の編集画面。docs/spec.md §9）。
@@ -118,6 +123,13 @@ export function PlaceMapDialog({
    * 地名の検索も現在地の取得も行わない（往復もそのぶん減る）。
    */
   initialCenter?: LatLng | null;
+  /**
+   * 中心を引くための文字列。名前の初期値（`query`）と分けたいときに渡す（場所の編集画面）。
+   *
+   * 編集画面の名前欄に入っているのは名前だけで、「自宅」「本社」のような値からは地点が引けない。
+   * 地点の手掛かりは住所の側にあるため、そちらを渡して中心を決める（issue #464）。
+   */
+  lookupText?: string;
   onCancel: () => void;
   /** 登録できたとき。場所欄へ入れるのは呼び出し側の役目。 */
   onRegistered: (place: PlaceItem) => void;
@@ -138,15 +150,14 @@ export function PlaceMapDialog({
   picks?: "point" | "address" | "both";
 }) {
   const [open, setOpen] = useState(true);
-  // 開いたときの中心。呼び出し側の指定・登録済みの場所の座標があればそこから始める。
-  // 残りの手掛かり（入力中の地名・現在地）は取得に往復が要るため、下のeffectで置き換える。
-  const [center, setCenter] = useState<LatLng>(() => {
-    const typed = query.trim();
-    const known = typed
-      ? places.find((place) => place.name === typed && place.coordinates)
-      : undefined;
-    return initialCenter ?? known?.coordinates ?? readLastCenter() ?? FALLBACK_CENTER;
-  });
+  // 開いたときの始まり方（`resolveMapStart`）。開いた時点の値だけを見るため1回だけ求める。
+  // 中心が決まらないときの手掛かり（地名・現在地）は取得に往復が要るため、下のeffectで置き換える。
+  const [start] = useState<MapStart>(() =>
+    resolveMapStart(lookupText ?? query, places, initialCenter),
+  );
+  const [center, setCenter] = useState<LatLng>(
+    () => start.center ?? readLastCenter() ?? FALLBACK_CENTER,
+  );
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [name, setName] = useState(query.trim());
   // 打った文字列は利用者が決めた名前。地図から取れた施設名で上書きしない。
@@ -200,28 +211,22 @@ export function PlaceMapDialog({
     );
   };
 
-  // 座標を持つ場所が当たらなかったときの中心。入力中の地名があればその地点、無ければ現在地。
+  // 中心が決まらなかったときの地点。引く文字列があればその地点、無ければ現在地。
   useEffect(() => {
     let cancelled = false;
 
     const resolve = async () => {
-      // 呼び出し側が中心を決めているときは、そこから動かさない。
-      if (initialCenter) return;
+      // 呼び出し側の指定・登録済みの座標はすでに初期値に入っている。そこから動かさない。
+      if (start.center) return;
 
-      const typed = query.trim();
-      const known = typed
-        ? places.find((place) => place.name === typed && place.coordinates)
-        : undefined;
-      // 登録済みの座標はすでに初期値に入っている。
-      if (known?.coordinates) return;
-
-      if (!typed) {
+      // 手掛かりが無いのは場所欄が空のときだけ。現在地から始める。
+      if (!start.search) {
         locate();
         return;
       }
 
       try {
-        const response = await fetch(`/api/places/geocode?q=${encodeURIComponent(typed)}`);
+        const response = await fetch(`/api/places/geocode?q=${encodeURIComponent(start.search)}`);
         if (!response.ok) return;
         const body = (await response.json()) as { place: { lat: number; lng: number } | null };
         if (cancelled || !body.place) return;

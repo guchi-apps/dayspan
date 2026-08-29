@@ -7,7 +7,7 @@ import { ArrowUpDown, Eye, EyeOff, Plus, RefreshCw, ShoppingCart } from "lucide-
 
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { AppMenuButton } from "@/components/nav/app-drawer";
-import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
+import { BottomNav } from "@/components/nav/main-nav";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -154,14 +154,14 @@ export function ShoppingScreen({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
-        {/* 狭い画面では左上をメニューにする（issue #328）。アプリのアイコンはPCだけ。 */}
-        <AppMenuButton />
-        <div className="hidden shrink-0 items-center gap-1 font-semibold md:flex">
+        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
+        <AppMenuButton current="shopping" activityRunning={activityRunning} />
+        {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
+            狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
+        <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
           <ShoppingCart className="size-5" />
-          <span className="hidden lg:inline">DaySpan</span>
+          <span>買い物</span>
         </div>
-
-        <HeaderNav current="shopping" activityRunning={activityRunning} />
 
         <span className="flex-1" />
 

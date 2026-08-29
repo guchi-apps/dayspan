@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useOffline } from "next/offline";
 import {
   Suspense,
@@ -14,18 +13,15 @@ import {
   useTransition,
 } from "react";
 import {
-  Briefcase,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  MapPin,
   Plus,
   RefreshCw,
-  Settings,
 } from "lucide-react";
 
 import { AppMenuButton } from "@/components/nav/app-drawer";
-import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
+import { BottomNav } from "@/components/nav/main-nav";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -662,26 +658,25 @@ export function CalendarShell({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        {/* 狭い画面では左上をメニューにする（issue #328）。どの画面でも先頭の位置が揃う。 */}
-        <AppMenuButton />
+        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
+        <AppMenuButton current="calendar" activityRunning={initialRunningActivity !== null} />
 
         {/*
           アイコンはPCだけに出す。他の画面（タスク・日付リマインド）も同じ位置にアイコンがあり、
           カレンダーだけ日付から始まると、同じアプリの中で先頭の位置が揃わないため。
-          アプリ名は幅の広いときだけ。カレンダーアイコンをクリックすると今日の日付に飛ぶ。
-          狭い画面で今日へ戻る操作は、下部ナビの「カレンダー」が同じことをする（issue #175）。
+          カレンダーアイコンをクリックすると今日の日付に飛ぶ。狭い画面で今日へ戻る操作は、
+          下部ナビの「カレンダー」が同じことをする（issue #175）。
+          他の画面と違って画面名を添えないのは、この直後の年月の見出しがその役目を持つため
+          （「カレンダー 2026年 8月」と並べても読める情報が増えない）。
         */}
         <Button
           variant="ghost"
           onClick={goToday}
-          className="hidden shrink-0 gap-1 px-2 py-1.5 font-semibold md:flex"
+          className="hidden shrink-0 px-2 py-1.5 font-semibold md:flex"
           aria-label="今日に飛ぶ"
         >
           <CalendarDays className="size-5" />
-          <span className="hidden lg:inline">DaySpan</span>
         </Button>
-
-        <HeaderNav current="calendar" activityRunning={initialRunningActivity !== null} />
 
         {/* スマートフォンはスワイプで移動できるため、年月の表示幅を優先する。 */}
         <div className="hidden items-center md:flex">
@@ -793,24 +788,8 @@ export function CalendarShell({
         >
           <RefreshCw className="size-5" />
         </Button>
-        {/* 勤務（docs/spec.md §34）。スマートフォンはヘッダー左上のメニューから入るが、
-            PCはドロワーを持たないため、設定と同じ経路でここに置く。 */}
-        <Button variant="ghost" size="icon-sm" asChild aria-label="勤務" className="hidden md:inline-flex">
-          <Link href="/work">
-            <Briefcase className="size-4" />
-          </Link>
-        </Button>
-        {/* 場所（docs/spec.md §9）。勤務・設定とまったく同じ経路に並べれば、探す場所が増えない。 */}
-        <Button variant="ghost" size="icon-sm" asChild aria-label="場所" className="hidden md:inline-flex">
-          <Link href="/places">
-            <MapPin className="size-4" />
-          </Link>
-        </Button>
-        <Button variant="ghost" size="icon-sm" asChild aria-label="設定" className="hidden md:inline-flex">
-          <Link href="/settings">
-            <Settings className="size-4" />
-          </Link>
-        </Button>
+        {/* 勤務・場所・設定はヘッダーに置かない（issue #463）。どの画面幅でもドロワーが開くように
+            なったため、この帯に3つ並べる理由が無くなった（docs/spec.md §4・§9・§34）。 */}
       </header>
 
       <LinearProgress active={pending || windowLoading} />
