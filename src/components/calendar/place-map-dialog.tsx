@@ -44,14 +44,11 @@ const FALLBACK_CENTER: LatLng = { lat: 35.681236, lng: 139.767125 };
 /** 前回選んだ地点。次に開くときの中心に使う。 */
 const LAST_CENTER_KEY = "dayspan:place-map-center";
 
-/** 地図が止まってから住所を調べるまでの待ち。動かしている間はNominatimを呼ばない。 */
+/** 地図が止まってから住所を調べるまでの待ち。動かしている間は取得元を呼ばない。 */
 const LOOKUP_DELAY_MS = 700;
 
-type AddressState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "found"; address: string }
-  | { status: "none" };
+/** 地図が止まったあとの住所引きの様子。欄の下の補助文だけがこれを見る。 */
+type LookupState = "idle" | "loading" | "found" | "none";
 
 function readLastCenter(): LatLng | null {
   try {
@@ -76,17 +73,51 @@ function writeLastCenter(center: LatLng) {
  */
 export type PickedPoint = { coordinates: LatLng; address: string };
 
+/**
+ * 選んだ地点から呼び出し側が保存するもの。地点を保存できない場所DB（座標のプロパティが無い）から
+ * 開いても「地点になります」と出していると、押した先で何が変わるのかを画面が偽ることになる。
+ */
+const PICK_TITLES = {
+  point: "地点を選び直す",
+  address: "住所を地図から選ぶ",
+  both: "住所と地点を選び直す",
+} as const;
+
+const PICK_DESCRIPTIONS = {
+  point: "中央のピンの位置がこの場所の地点になります。",
+  address:
+    "中央のピンの位置の住所がこの場所の住所になります。場所DBに座標のプロパティが無いため、地点は保存されません。",
+  both: "中央のピンの位置がこの場所の住所と地点になります。",
+} as const;
+
+const PICK_ACTIONS = {
+  point: "この地点にする",
+  address: "この住所にする",
+  both: "この地点にする",
+} as const;
+
 export function PlaceMapDialog({
   query,
   places,
+  initialCenter = null,
   onCancel,
   onRegistered,
   onPicked,
+  picks = "point",
 }: {
   /** 場所欄に入力されている文字列。名前の初期値と、開いたときの中心を決める手掛かりにする。 */
   query: string;
   /** 登録済みの場所。同じ名前のものに座標があれば、そこを中心にして開く。 */
   places: PlaceItem[];
+  /**
+   * 開いたときの中心を呼び出し側で決める（場所の編集画面。docs/spec.md §9）。
+   *
+   * すでに地点を持っている場所を選び直す場面では、始める位置はその地点で決まっている。
+   * 名前から引き直すと、名前を書き換えている途中の文字列で別の地点が中心になり、
+   * そのまま「この地点にする」を押した操作が座標を黙って動かす。渡されたときは
+   * 地名の検索も現在地の取得も行わない（往復もそのぶん減る）。
+   */
+  initialCenter?: LatLng | null;
   onCancel: () => void;
   /** 登録できたとき。場所欄へ入れるのは呼び出し側の役目。 */
   onRegistered: (place: PlaceItem) => void;
@@ -97,22 +128,35 @@ export function PlaceMapDialog({
    * Notionへの書き込みをここへ持たせると、書き込みの経路が2つに分かれてしまう。
    */
   onPicked?: (picked: PickedPoint) => void;
+  /**
+   * `onPicked` で呼び出し側が実際に受け取って**保存するもの**（既定は地点）。
+   *
+   * 場所DBの構成によっては住所か座標のどちらかのプロパティが無く、選んだ地点がそのまま
+   * 保存されるとは限らない。座標を持たないDBから開いても「地点になります」「この地点にする」と
+   * 出していると、押した先で何が変わるのかを画面が偽ることになる（保存されるのは住所だけ）。
+   */
+  picks?: "point" | "address" | "both";
 }) {
   const [open, setOpen] = useState(true);
-  // 開いたときの中心。登録済みの場所に座標があればそこから始める。
+  // 開いたときの中心。呼び出し側の指定・登録済みの場所の座標があればそこから始める。
   // 残りの手掛かり（入力中の地名・現在地）は取得に往復が要るため、下のeffectで置き換える。
   const [center, setCenter] = useState<LatLng>(() => {
     const typed = query.trim();
     const known = typed
       ? places.find((place) => place.name === typed && place.coordinates)
       : undefined;
-    return known?.coordinates ?? readLastCenter() ?? FALLBACK_CENTER;
+    return initialCenter ?? known?.coordinates ?? readLastCenter() ?? FALLBACK_CENTER;
   });
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [name, setName] = useState(query.trim());
   // 打った文字列は利用者が決めた名前。地図から取れた施設名で上書きしない。
   const [nameTouched, setNameTouched] = useState(query.trim().length > 0);
-  const [address, setAddress] = useState<AddressState>({ status: "idle" });
+  // 住所は手で直せる（issue #453）。OSMに番地が入っていない地点では、どの取得元でも
+  // 丁目までしか出せないため、利用者が番地を書き足せる逃げ道を残す。
+  const [address, setAddress] = useState("");
+  // 直したあとは、地図を動かしても上書きしない（名前欄と同じ扱い・同じ理由）。
+  const [addressTouched, setAddressTouched] = useState(false);
+  const [lookup, setLookup] = useState<LookupState>("idle");
   const [locating, setLocating] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,6 +205,9 @@ export function PlaceMapDialog({
     let cancelled = false;
 
     const resolve = async () => {
+      // 呼び出し側が中心を決めているときは、そこから動かさない。
+      if (initialCenter) return;
+
       const typed = query.trim();
       const known = typed
         ? places.find((place) => place.name === typed && place.coordinates)
@@ -199,39 +246,39 @@ export function PlaceMapDialog({
 
     const timer = setTimeout(async () => {
       lookedUpRef.current = center;
-      setAddress({ status: "loading" });
+      setLookup("loading");
       try {
         const response = await fetch(
           `/api/places/geocode?lat=${center.lat}&lon=${center.lng}`,
         );
         if (!response.ok) {
-          setAddress({ status: "none" });
+          setLookup("none");
           return;
         }
         const body = (await response.json()) as {
           place: { name: string | null; address: string | null } | null;
         };
-        setAddress(
-          body.place?.address ? { status: "found", address: body.place.address } : { status: "none" },
-        );
-        // 名前をまだ触っていないときだけ、地図から取れた施設名を初期値に入れる。
-        const found = body.place?.name;
-        if (found && !nameTouched) setName(found);
+        const found = body.place?.address;
+        setLookup(found ? "found" : "none");
+        // 名前・住所をまだ触っていないときだけ、地図から取れた値を初期値に入れる。
+        if (found && !addressTouched) setAddress(found);
+        const foundName = body.place?.name;
+        if (foundName && !nameTouched) setName(foundName);
       } catch {
-        setAddress({ status: "none" });
+        setLookup("none");
       }
     }, LOOKUP_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [center, nameTouched]);
+  }, [center, nameTouched, addressTouched]);
 
   /** 地点だけを返す（編集の経路）。Notionへは呼び出し側が書くため、ここでは通信しない。 */
   const pick = () => {
     if (!onPicked) return;
     const picked: PickedPoint = {
       coordinates: center,
-      // 住所が取れなかったときは緯度経度を住所にする（登録の経路と同じ扱い）。
-      address: address.status === "found" ? address.address : formatCoordinates(center),
+      // 住所が取れず、手でも入れられていないときは緯度経度を住所にする（登録の経路と同じ扱い）。
+      address: address.trim() || formatCoordinates(center),
     };
     writeLastCenter(center);
     setOpen(false);
@@ -259,7 +306,7 @@ export function PlaceMapDialog({
         body: JSON.stringify({
           name: trimmed,
           // 住所が取れなかったときは緯度経度を住所として入れる。数字のままでも地図は引ける。
-          address: address.status === "found" ? address.address : formatCoordinates(center),
+          address: address.trim() || formatCoordinates(center),
           coordinates: formatCoordinates(center),
         }),
       });
@@ -283,11 +330,9 @@ export function PlaceMapDialog({
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{onPicked ? "地点を選び直す" : "地図から場所を登録"}</DialogTitle>
+          <DialogTitle>{onPicked ? PICK_TITLES[picks] : "地図から場所を登録"}</DialogTitle>
           <DialogDescription>
-            {onPicked
-              ? "中央のピンの位置がこの場所の地点になります。"
-              : "中央のピンの位置が登録する地点になります。"}
+            {onPicked ? PICK_DESCRIPTIONS[picks] : "中央のピンの位置が登録する地点になります。"}
           </DialogDescription>
         </DialogHeader>
 
@@ -302,8 +347,21 @@ export function PlaceMapDialog({
         />
 
         <div className="flex flex-col gap-1">
+          <Input
+            id="place-map-address"
+            label="住所"
+            value={address}
+            onChange={(event) => {
+              setAddress(event.target.value);
+              setAddressTouched(true);
+            }}
+            onClear={() => {
+              setAddress("");
+              setAddressTouched(true);
+            }}
+          />
           <div className="flex items-start gap-2 text-on-surface-variant">
-            {address.status === "loading" ? (
+            {lookup === "loading" ? (
               <>
                 <span
                   aria-hidden="true"
@@ -315,10 +373,10 @@ export function PlaceMapDialog({
               <>
                 <MapPin className="mt-0.5 size-4 shrink-0" />
                 <span className="type-body-small">
-                  {address.status === "found"
-                    ? address.address
-                    : address.status === "none"
-                      ? "住所は分かりませんでした。緯度経度で登録します。"
+                  {lookup === "found"
+                    ? "番地まで出ていなければ書き足せます。"
+                    : lookup === "none"
+                      ? "住所は分かりませんでした。手で入れるか、空のままなら緯度経度で登録します。"
                       : "地図を動かすと住所を調べます。"}
                 </span>
               </>
@@ -358,7 +416,7 @@ export function PlaceMapDialog({
             // 地点を返すだけなので通信しない。オフラインでも押せる（保存は呼び出し側の操作）。
             <Button onClick={pick}>
               <MapPin className="size-4" />
-              この地点にする
+              {PICK_ACTIONS[picks]}
             </Button>
           ) : (
             <Button disabled={registering || offline || !name.trim()} onClick={register}>

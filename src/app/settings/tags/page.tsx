@@ -4,7 +4,7 @@ import { SettingsShell } from "@/components/settings/settings-shell";
 import { TagSection, type TagSectionState } from "@/components/settings/tag-section";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { loadTagCatalog } from "@/services/notion/tag-options";
+import { loadTagCatalog, loadTagOptions } from "@/services/notion/tag-options";
 import { workCapabilities, workTripPlaces } from "@/services/notion/work-logs";
 
 /** NotionのページURL。IDのハイフンを外した形がそのままURLになる。 */
@@ -19,7 +19,13 @@ export default async function TagSettingsPage() {
   const connection = await db.notionConnection.findUnique({ where: { userId: user.id } });
   if (!connection) redirect("/settings/notion");
 
-  const catalog = await loadTagCatalog(connection);
+  // 場所のタグは loadTagCatalog に含めない。あれはカレンダー・タスク・日付リマインドの
+  // 各ページも呼んでおり、そこで使わない選択肢のためにNotionへの往復を増やさないため
+  // （docs/spec.md §20）。この画面だけが1種類ぶんを別に読む。
+  const [catalog, placeOptions] = await Promise.all([
+    loadTagCatalog(connection),
+    loadTagOptions(connection, "place"),
+  ]);
 
   const sections: TagSectionState[] = [
     {
@@ -65,12 +71,22 @@ export default async function TagSettingsPage() {
         "買い物リストDBにカテゴリ（セレクト）のプロパティがありません。Notion側で追加してから、設定のNotion画面で買い物リストDBを選び直してください。",
       databaseUrl: notionUrl(connection.shoppingDatabaseId),
     },
+    {
+      kind: "place",
+      title: "場所のタグ",
+      description:
+        "登録した場所に付けられるタグです。場所の編集画面では、ここに並んだものから選べます。",
+      options: placeOptions,
+      missingMessage:
+        "場所DBにタグ（マルチセレクト）のプロパティがありません。Notion側で追加してから、設定のNotion画面で場所DBを選び直してください。",
+      databaseUrl: notionUrl(connection.placeDatabaseId),
+    },
   ];
 
   return (
     <SettingsShell
       title="タグ"
-      description="タスクのタグ・日付リマインドの種類・勤務場所・買い物のカテゴリを、色つきで登録しておけます。"
+      description="タスクのタグ・日付リマインドの種類・勤務場所・買い物のカテゴリ・場所のタグを、色つきで登録しておけます。"
       backHref="/settings"
       backLabel="設定"
     >

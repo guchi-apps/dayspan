@@ -17,11 +17,11 @@ import {
 } from "@/services/notion/tag-options";
 import { workTripPlaces } from "@/services/notion/work-logs";
 
-// タスクのタグ・日付リマインドの種類・勤務場所・買い物のカテゴリの選択肢を扱う。
+// タスクのタグ・日付リマインドの種類・勤務場所・買い物のカテゴリ・場所のタグの選択肢を扱う。
 // 選択肢はNotion側のプロパティ定義が一次情報源のため、DaySpanのDBには保存しない。
 // 色だけはNotion APIが既存の選択肢への変更を受け付けないため、追加のときにしか選べない。
 
-const TAG_KINDS: TagKind[] = ["task", "reminder", "work", "shopping"];
+const TAG_KINDS: TagKind[] = ["task", "reminder", "work", "shopping", "place"];
 
 function isTagKind(value: unknown): value is TagKind {
   return typeof value === "string" && (TAG_KINDS as string[]).includes(value);
@@ -41,6 +41,7 @@ const TAG_PROPERTY_MISSING_MESSAGES: Record<TagKind, string> = {
   reminder: "日付リマインドDBに種類（セレクト）のプロパティがありません。",
   work: "勤務記録DBに勤務場所（セレクト）のプロパティがありません。",
   shopping: "買い物リストDBにカテゴリ（セレクト）のプロパティがありません。",
+  place: "場所DBにタグ（マルチセレクト）のプロパティがありません。",
 };
 
 /** どの操作もNotionの現状を取り直して書き戻すため、前準備は同じ。 */

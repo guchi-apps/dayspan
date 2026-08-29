@@ -17,6 +17,13 @@ export type PlaceItem = {
   tags: string[];
   /** 地図から登録したときの地点。地図を開き直すときの中心に使う。 */
   coordinates: LatLng | null;
+  /**
+   * 最寄り駅。Yahoo!乗換案内をこの駅名で開く（docs/spec.md §29）。
+   *
+   * 座標より先に見る。座標だけを渡すドアtoドアの探索では、Yahoo!が選ぶ乗り降りの駅が
+   * 地点のわずかなずれで変わる。駅名を入れておけば、いつ開いても同じ駅から探せる。
+   */
+  station: string | null;
 };
 
 type PropertyValue = {
@@ -40,6 +47,7 @@ function normalize(page: Page, map: PlacePropertyMap): PlaceItem | null {
     address: text(get("address")?.rich_text) || null,
     tags: get("tags")?.multi_select?.map((option) => option.name ?? "").filter(Boolean) ?? [],
     coordinates: parseCoordinates(text(get("coordinates")?.rich_text)),
+    station: text(get("station")?.rich_text) || null,
   };
 }
 
@@ -113,7 +121,12 @@ const richText = (content: string) => ({ rich_text: [{ type: "text", text: { con
  */
 export async function createPlace(
   connection: NotionConnection,
-  input: { name: string; address?: string | null; coordinates?: LatLng | null },
+  input: {
+    name: string;
+    address?: string | null;
+    coordinates?: LatLng | null;
+    station?: string | null;
+  },
 ): Promise<PlaceItem> {
   if (!connection.placeDataSourceId) throw new Error("Place data source is not configured");
   const map = (connection.placePropertyMap as PlacePropertyMap | null) ?? {};
@@ -130,6 +143,9 @@ export async function createPlace(
     if (map.coordinates && input.coordinates && !existing.coordinates) {
       filled[map.coordinates] = richText(formatCoordinates(input.coordinates));
     }
+    if (map.station && input.station && !existing.station) {
+      filled[map.station] = richText(input.station);
+    }
     if (Object.keys(filled).length === 0) return existing;
 
     await notion.pages.update({ page_id: existing.id, properties: filled as never });
@@ -137,6 +153,7 @@ export async function createPlace(
       ...existing,
       address: existing.address ?? input.address ?? null,
       coordinates: existing.coordinates ?? input.coordinates ?? null,
+      station: existing.station ?? input.station ?? null,
     };
   }
 
@@ -147,6 +164,7 @@ export async function createPlace(
   if (map.coordinates && input.coordinates) {
     properties[map.coordinates] = richText(formatCoordinates(input.coordinates));
   }
+  if (map.station && input.station) properties[map.station] = richText(input.station);
 
   const page = await notion.pages.create({
     parent: { type: "data_source_id", data_source_id: connection.placeDataSourceId },
@@ -159,6 +177,7 @@ export async function createPlace(
     address: input.address ?? null,
     tags: [],
     coordinates: input.coordinates ?? null,
+    station: input.station ?? null,
   };
 }
 
@@ -228,6 +247,16 @@ export type PlaceWriteInput = {
   address?: string | null;
   /** null は「地点を消す」、項目ごと渡さないのは「触らない」。 */
   coordinates?: LatLng | null;
+  /** 空文字・null は「最寄り駅を消す」、項目ごと渡さないのは「触らない」（住所と同じ）。 */
+  station?: string | null;
+  /**
+   * 付けるタグの名前。渡した配列でそのまま置き換え、空配列は「全部外す」。
+   * 項目ごと渡さないのは「触らない」（住所・座標と同じ）。
+   *
+   * `null` を持たないのは、タグが multi_select で値を必ず読めるため。住所・座標のように
+   * 「画面に出ていない値がNotion側に入っている」ことが起きない。
+   */
+  tags?: string[];
 };
 
 /**
@@ -263,14 +292,22 @@ export async function updatePlace(
   };
   // 空にしたときは rich_text を空配列で送る。省くと Notion 側の値がそのまま残る。
   const address = input.address?.trim() || null;
+  const station = input.station?.trim() || null;
   const writeAddress = Boolean(map.address) && "address" in input;
   const writeCoordinates = Boolean(map.coordinates) && "coordinates" in input;
+  const writeStation = Boolean(map.station) && "station" in input;
+  const writeTags = Boolean(map.tags) && "tags" in input;
+  const tags = input.tags ?? [];
   if (writeAddress) properties[map.address!] = address ? richText(address) : { rich_text: [] };
+  if (writeStation) properties[map.station!] = station ? richText(station) : { rich_text: [] };
   if (writeCoordinates) {
     properties[map.coordinates!] = input.coordinates
       ? richText(formatCoordinates(input.coordinates))
       : { rich_text: [] };
   }
+  // 登録済みに無い名前を渡すとNotionが選択肢を足す（タスクのタグと同じ）。
+  // 入力の途中で思いついたタグを、設定画面へ回らずにその場で付けられるようにするため。
+  if (writeTags) properties[map.tags!] = { multi_select: tags.map((name) => ({ name })) };
 
   await notion.pages.update({ page_id: placeId, properties: properties as never });
 
@@ -280,8 +317,9 @@ export async function updatePlace(
     name,
     // 書いていない項目は、いまNotionにある値をそのまま残す。
     address: writeAddress ? address : (before?.address ?? null),
-    tags: before?.tags ?? [],
+    tags: writeTags ? tags : (before?.tags ?? []),
     coordinates: writeCoordinates ? (input.coordinates ?? null) : (before?.coordinates ?? null),
+    station: writeStation ? station : (before?.station ?? null),
   };
 }
 
