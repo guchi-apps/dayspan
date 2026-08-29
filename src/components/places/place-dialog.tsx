@@ -128,11 +128,17 @@ export function PlaceDialog({
         地図は登録せず、選んだ地点と住所だけを返してもらう。ここで住所も一緒に置き換えるのは、
         座標があるとき地図・Yahoo!乗換案内は座標のほうを先に見るため。住所だけ直して座標が
         前のまま残ると、画面に出ている文字列と実際に開く地点が食い違う。
+
+        中心は `initialCenter` で明示する。名前から引き直させると、すでに地点を持っている
+        場所を編集しているのに別の地点にピンが立ち、そのまま押した操作が座標を黙って動かす。
+        渡すのは保存前の値（`coordinates`）。選び直したあとに開き直すと元の地点へ戻る、
+        という動きにしないため。外したあとは地点そのものが無いので、従来どおり名前から引く。
       */}
       {mapOpen && (
         <PlaceMapDialog
           query={name}
           places={[]}
+          initialCenter={coordinates}
           onCancel={() => setMapOpen(false)}
           onRegistered={() => setMapOpen(false)}
           onPicked={(picked) => {
@@ -165,13 +171,60 @@ export function PlaceDialog({
             onClear={() => setName("")}
           />
 
-          {capabilities.address && (
-            <Input
-              label="住所"
-              value={address}
-              onChange={(event) => setAddress(event.target.value)}
-              onClear={() => setAddress("")}
-            />
+          {/*
+            住所と地点は1つの区画にまとめ、地図の入口を住所の欄の直下へ置く（issue #452）。
+            この2つは常に組で置き換わるため、押す先も1つでよい。地図ボタンを地点の側にだけ
+            置いていたときは、住所を直しに来た操作からは別の欄の付属物にしか見えず、
+            座標のプロパティを持たない場所DBでは地図への入口が画面から丸ごと消えていた。
+          */}
+          {(capabilities.address || capabilities.coordinates) && (
+            <div className="flex flex-col gap-2">
+              {capabilities.address && (
+                <Input
+                  label="住所"
+                  value={address}
+                  onChange={(event) => setAddress(event.target.value)}
+                  onClear={() => setAddress("")}
+                />
+              )}
+
+              <div className="flex items-center gap-2">
+                {capabilities.coordinates && (
+                  <>
+                    <span className="type-body-small shrink-0 text-on-surface-variant">地点</span>
+                    <span className="type-body-small min-w-0 flex-1 truncate font-mono text-on-surface-variant">
+                      {coordinates ? formatCoordinates(coordinates) : "地点なし"}
+                    </span>
+                    {coordinates && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setCoordinates(null);
+                          setCoordinatesTouched(true);
+                        }}
+                      >
+                        <X className="size-4" />
+                        外す
+                      </Button>
+                    )}
+                  </>
+                )}
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => setMapOpen(true)}>
+                  <MapPin className="size-4" />
+                  地図で選ぶ
+                </Button>
+              </div>
+
+              <p className="type-body-small text-on-surface-variant">
+                {capabilities.address && capabilities.coordinates
+                  ? "地図で選ぶと、住所と地点をその地点のものに置き換えます。地点があると、この場所を開くときに地図とYahoo!乗換案内がその座標を使います。"
+                  : capabilities.address
+                    ? "地図で選ぶと、その地点の住所が入ります。場所DBに座標のプロパティが無いため、地点は保存されません。"
+                    : "地図で選ぶと、この場所の地点を置き換えます。地点があると、この場所を開くときに地図とYahoo!乗換案内がその座標を使います。"}
+              </p>
+            </div>
           )}
 
           {/*
@@ -184,38 +237,6 @@ export function PlaceDialog({
               <TagPicker label="タグ" options={tagOptions} value={tags} multiple onChange={setTags} />
               <p className="type-body-small text-on-surface-variant">
                 色・並び順・名前の変更は「設定 ▸ タグ」の「場所のタグ」から行えます。
-              </p>
-            </div>
-          )}
-
-          {capabilities.coordinates && (
-            <div className="flex flex-col gap-2">
-              <span className="type-label-large text-on-surface-variant">地点</span>
-              <div className="flex items-center gap-2">
-                <span className="type-body-small min-w-0 flex-1 truncate font-mono text-on-surface-variant">
-                  {coordinates ? formatCoordinates(coordinates) : "地点なし"}
-                </span>
-                {coordinates && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                      setCoordinates(null);
-                      setCoordinatesTouched(true);
-                    }}
-                  >
-                    <X className="size-4" />
-                    外す
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" disabled={busy} onClick={() => setMapOpen(true)}>
-                  <MapPin className="size-4" />
-                  地図
-                </Button>
-              </div>
-              <p className="type-body-small text-on-surface-variant">
-                地点があると、この場所を開くときに地図とYahoo!乗換案内がその座標を使います。
               </p>
             </div>
           )}
