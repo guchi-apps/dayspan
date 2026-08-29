@@ -10,7 +10,10 @@
  * 座標も同じ場所DBから引く。
  */
 
+import type { PlaceItem } from "@/services/notion/places";
+
 import type { LatLng } from "./coordinates";
+import { matchPlaceByText, splitNameAndAddress } from "./place-text";
 
 const SEARCH = "https://transit.yahoo.co.jp/search/result";
 
@@ -26,6 +29,38 @@ export type YahooTransitPlace = {
   query: string;
   coordinates: LatLng | null;
 };
+
+/**
+ * 場所欄の値から、Yahoo!へ渡す1地点を決める（docs/spec.md §29）。
+ *
+ * **`名前 住所` の文字列を丸ごと渡してはいけない。** 場所欄には候補から選ぶとこの形が入るが、
+ * Yahoo!はこの文字列から地点を引けず、**日時指定ごと捨てて検索画面（乗換案内トップの
+ * 入力フォーム）を返す**（`cmd=4011`。カンマ区切りの `名前, 住所` は `cmd=4001`。issue #458）。
+ * 住所だけ・駅名だけなら引ける。
+ *
+ * 見る順は 場所DB（最寄り駅 → 座標 → 住所）→ 分けた住所 → 丸ごと。
+ * 座標は画面が持っている場所DBから引く（サーバー側で引き直すと、押すたびにNotionの
+ * 全件取得が増える）。
+ */
+export function resolveYahooPlace(text: string, places: PlaceItem[]): YahooTransitPlace | null {
+  const value = text.trim();
+  if (!value) return null;
+
+  // 住所が古くなって完全一致が外れた値も、名前の前方一致で元の1件へ戻る（matchPlaceByText）。
+  const place = matchPlaceByText(value, places);
+  if (place) {
+    // 最寄り駅があるときは座標を添えない。座標があるとYahoo!はそちらで探索し、
+    // 駅名は表示名にしかならないため、入れた駅から探せなくなる。
+    if (place.station) return { name: place.station, query: place.station, coordinates: null };
+    return { name: place.name, query: place.address ?? place.name, coordinates: place.coordinates };
+  }
+
+  // 場所DBに1件も当たらない値（他アプリで作られた予定の場所欄など）は、住所だけを渡す。
+  const split = splitNameAndAddress(value);
+  if (!split) return { name: value, query: value, coordinates: null };
+
+  return { name: split.name, query: split.address, coordinates: null };
+}
 
 /** 検索の基準。どちらの時刻を指定して探すか。 */
 export type YahooTransitBasis = "depart" | "arrive";

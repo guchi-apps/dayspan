@@ -1,22 +1,54 @@
 /**
- * 場所欄の文字列（`名前 住所`）を、名前と住所に分ける（docs/spec.md §29）。
+ * 場所欄の文字列（`名前 住所`）を読み解く（docs/spec.md §9・§29）。
  *
- * 場所の候補から選んだあとの欄には `名前 住所` が入る（`toLocationText`）。この形のまま
- * Yahoo!乗換案内へ渡すと地点が引けず、**日時指定ごと捨てられて検索画面が出る**
- * （`cmd=4011`。カンマ区切りの `名前, 住所` も同じ）。住所だけ・名前だけなら引けるため、
- * 渡す前に分ける。
+ * 予定・移動の場所欄はただの文字列で保存され、DaySpanは**名前で場所を引いている**。
+ * 候補から選んだあとの欄には `名前 住所` が入る（`toLocationText`）ため、その形から
+ * 元の1件へ戻す・名前と住所へ分ける規則をここに集める。
  *
- * 祝日（`japanese-holidays.ts`）と同じく、外部に取りにいかず自前の表で判定する。
- * 分けるためだけに依存を増やさない。
- *
- * 住所の**組み立て**（Nominatim・Overpassの部品から1本の文字列にする）は
- * `services/geocoding/japanese-address.ts` の側にある。あちらはサーバー側の取得の話で、
- * ここは画面が持っている文字列を読み解く話。
+ * 画面（`location-input.tsx` / `travel-form.tsx`）とサーバーの両方から使えるよう、
+ * Reactに依らない素の関数として置く。住所の**組み立て**（Nominatim・Overpassの部品から
+ * 1本の文字列にする）は `services/geocoding/japanese-address.ts` の側にある。あちらは
+ * サーバー側の取得の話で、ここは手元にある文字列を読み解く話。
  */
+
+import type { PlaceItem } from "@/services/notion/places";
+
+/** 場所欄へ入れる文字列。住所があれば添える。Google Calendar側で地図が引けるようにするため。 */
+export function toLocationText(name: string, address: string | null): string {
+  return address ? `${name} ${address}` : name;
+}
+
+/**
+ * 場所欄の値に合う場所DBの1件。無ければ null。
+ *
+ * 見る順は「完全一致（名前だけ／`名前 住所`）→ 名前で始まっている」。
+ *
+ * **前方一致まで見るのは、住所の側が古くなるため。** 欄に入るのは選んだ時点の文字列で、
+ * あとからNotionで住所を直す（`/places` の編集・地図から選び直す）と完全一致は外れる。
+ * 名前は重複を断っている（`PlaceNameTakenError`）ので、名前が決まれば1件に決まる。
+ * 区切りの空白まで含めて見るのは、`自宅` が `自宅近くのカフェ …` に当たらないようにするため。
+ * 同じ名前で始まる場所が複数あるとき（`本社` と `本社 別館`）は長いほうを採る。
+ */
+export function matchPlaceByText(text: string, places: PlaceItem[]): PlaceItem | null {
+  const query = text.trim();
+  if (!query) return null;
+
+  const exact = places.find(
+    (item) => item.name === query || toLocationText(item.name, item.address) === query,
+  );
+  if (exact) return exact;
+
+  let matched: PlaceItem | null = null;
+  for (const item of places) {
+    if (!query.startsWith(`${item.name} `)) continue;
+    if (!matched || item.name.length > matched.name.length) matched = item;
+  }
+  return matched;
+}
 
 /**
  * 都道府県名。`[都道府県]` の1文字で探すと「京都市」「県民ホール」に当たるため、名前で持つ。
- * 長いほうが先に当たるよう、`京都府` と `京都` のような包含関係は起きない（すべて接尾辞付き）。
+ * 祝日（`japanese-holidays.ts`）と同じく、外部に取りにいかず自前の表で判定する。
  */
 const PREFECTURES = [
   "北海道",
@@ -74,9 +106,13 @@ const SEPARATORS = /[\s、,]+$/;
 /**
  * `名前 住所` を分ける。住所の始まりが読めなければ null（分けずにそのまま使う）。
  *
- * 住所の始まりは**先頭以外に現れる最初の都道府県名**とする。先頭を飛ばすのは、
- * `東京都新宿区…` のような住所そのものを名前と住所に割らないため。名前側に都道府県を
- * 含む値（`東京都庁 東京都新宿区…`）でも、2つ目の `東京都` で正しく切れる。
+ * 住所の始まりは**先頭以外に現れる最後の都道府県名**とする。先頭を飛ばすのは、
+ * `東京都新宿区…` のような住所そのものを名前と住所に割らないため。
+ *
+ * **最初ではなく最後を採る。** 名前の側に都道府県を含む値（`カフェ大阪府庁前 大阪府大阪市…`）で
+ * 最初を採ると、名前の中の `大阪府` で切れて住所側が `庁前 大阪府大阪市…` という `名前 住所` の
+ * 塊のまま残り、分ける前と同じ失敗に戻る。住所に都道府県が2回現れることは無いので、
+ * 最後を採れば住所側は必ず都道府県から始まる。
  *
  * 英語の住所や `梅田スカイビル` のような施設名だけの値は null になるが、どちらも
  * Yahoo!がそのまま引けることを確かめている（docs/spec.md §29）。
@@ -87,8 +123,8 @@ export function splitNameAndAddress(text: string): { name: string; address: stri
 
   let at = -1;
   for (const prefecture of PREFECTURES) {
-    const index = value.indexOf(prefecture, 1);
-    if (index > 0 && (at === -1 || index < at)) at = index;
+    const index = value.lastIndexOf(prefecture);
+    if (index > at) at = index;
   }
   if (at <= 0) return null;
 
