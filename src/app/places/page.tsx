@@ -50,11 +50,13 @@ export default async function PlacesPage() {
     <PlacesScreen
       places={places}
       loadError={loadError}
-      // 場所DBの構成によっては住所・タグ・座標の置き場所そのものが無い。持っていない欄は出さない。
+      // 場所DBの構成によっては住所・タグ・座標・最寄り駅の置き場所そのものが無い。
+      // 持っていない欄は出さない。
       capabilities={{
         address: Boolean(map.address),
         tags: Boolean(map.tags),
         coordinates: Boolean(map.coordinates),
+        station: Boolean(map.station),
       }}
       tagOptions={tagOptions ?? []}
     />

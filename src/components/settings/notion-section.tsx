@@ -18,6 +18,7 @@ import {
 } from "@/services/notion/task-database";
 import {
   PLACE_FIELD_REQUIREMENTS,
+  type PlaceOptionalField,
   type PlacePropertyMap,
 } from "@/services/notion/place-database";
 import {
@@ -217,23 +218,27 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
   };
 
   /**
-   * 使用中の場所DBへ「座標」プロパティを足す。
-   * 地図からの登録より前に作ったDBには置き場所が無く、Notion側で何という名前・どの型で
-   * 足せばよいかは画面のどこにも出ていないため、ここから実行できるようにする。
+   * 使用中の場所DBへ、あとから増えた任意のプロパティ（座標・最寄り駅）を足す。
+   * それより前に作ったDBには置き場所が無く、Notion側で何という名前・どの型で足せばよいかは
+   * 画面のどこにも出ていないため、ここから実行できるようにする。
    */
-  const addPlaceCoordinates = async () => {
+  const addPlaceProperty = async (field: PlaceOptionalField, label: string) => {
     setBusy(true);
     setMessage(null);
     try {
-      const response = await fetch("/api/notion/place-database/coordinates", { method: "POST" });
+      const response = await fetch("/api/notion/place-database/property", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field }),
+      });
       if (!response.ok) {
         setMessage({
-          text: await errorText(response, "座標プロパティを追加できませんでした。"),
+          text: await errorText(response, `「${label}」プロパティを追加できませんでした。`),
           tone: "error",
         });
         return;
       }
-      setMessage({ text: "場所DBに「座標」プロパティを追加しました。", tone: "ok" });
+      setMessage({ text: `場所DBに「${label}」プロパティを追加しました。`, tone: "ok" });
       startTransition(() => router.refresh());
     } finally {
       setBusy(false);
@@ -550,7 +555,8 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
               <span className="text-sm font-medium">場所DBを選択</span>
               <p className="text-xs text-muted-foreground">
                 よく行く場所を管理します。予定・移動の「場所」欄に入力候補として出ます。
-                名前が必要で、住所・タグ・座標は任意です。座標は地図から登録したときの地点が入ります。
+                名前が必要で、住所・タグ・座標・最寄り駅は任意です。座標は地図から登録したときの
+                地点が、最寄り駅は電車の移動でYahoo!乗換案内を開く駅名が入ります。
               </p>
               {state.placeDataSourceId && (
                 <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
@@ -572,9 +578,31 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                         座標のプロパティがありません。足すと、地図から登録した場所を次に開くとき
                         その地点から始められます。無いままでも登録はできます。
                       </p>
-                      <Button variant="outline" size="sm" disabled={disabled} onClick={addPlaceCoordinates}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={() => addPlaceProperty("coordinates", "座標")}
+                      >
                         <Plus className="size-4" />
                         座標プロパティを追加
+                      </Button>
+                    </div>
+                  )}
+                  {!state.placePropertyMap?.station && (
+                    <div className="flex flex-col items-start gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        最寄り駅のプロパティがありません。足すと、電車の移動でYahoo!乗換案内を
+                        その駅から探せます。無いままでも登録はできます（地点か住所で探します）。
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={() => addPlaceProperty("station", "最寄り駅")}
+                      >
+                        <Plus className="size-4" />
+                        最寄り駅プロパティを追加
                       </Button>
                     </div>
                   )}

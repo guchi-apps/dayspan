@@ -12,10 +12,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { TravelEstimate } from "@/lib/ai-travel-estimate";
 import {
+  resolveYahooPlace,
   resolveYahooTransitBasis,
   yahooTransitLink,
   type YahooTransitBasis,
-  type YahooTransitPlace,
 } from "@/lib/yahoo-transit-link";
 import {
   parseYahooTransitRoute,
@@ -23,7 +23,7 @@ import {
   yahooRouteSummary,
 } from "@/lib/yahoo-transit-route";
 import type { TransitQuota } from "@/lib/transit-quota";
-import type { PlaceCatalog, PlaceItem } from "@/services/notion/places";
+import type { PlaceCatalog } from "@/services/notion/places";
 import {
   TRAVEL_MODES,
   TRAVEL_MODE_LABELS,
@@ -36,7 +36,7 @@ import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { ItemFormActions } from "./item-form-actions";
-import { findPlace, LocationInput, placeCoordinates, withPlaceAddress } from "./location-input";
+import { LocationInput, placeCoordinates, withPlaceAddress } from "./location-input";
 import { readErrorMessage } from "./response-error";
 import {
   estimateNote,
@@ -182,12 +182,12 @@ export function TravelForm({
   /**
    * Yahoo!乗換案内を開くURL（docs/spec.md §29）。
    *
-   * 座標は場所DBから引く。サーバー側で引き直すと、押すたびにNotionの全件取得が増える
-   * （経路検索へ座標を渡しているのと同じ理由）。座標が無い場所は住所を検索語にする。
+   * 発着地は場所DBから引く（最寄り駅 → 座標 → 住所の順。`resolveYahooPlace`）。サーバー側で
+   * 引き直すと、押すたびにNotionの全件取得が増える（経路検索へ座標を渡しているのと同じ理由）。
    */
   const yahooUrl = yahooTransitLink({
-    origin: toYahooPlace(origin, placeCatalog.places),
-    destination: toYahooPlace(destination, placeCatalog.places),
+    origin: resolveYahooPlace(origin, placeCatalog.places),
+    destination: resolveYahooPlace(destination, placeCatalog.places),
     departAt,
     arriveAt,
     basis: searchBasis,
@@ -663,22 +663,6 @@ export function TravelForm({
       )}
     </>
   );
-}
-
-/**
- * Yahoo!乗換案内へ渡す1地点。場所欄の値から名前・住所・座標へ戻す。
- *
- * 欄には `名前 住所` が入っていることがあり（候補から選んだとき）、その文字列のままでは
- * Yahoo!側で地点が引けない。座標があればそれで探索させ、無ければ住所を検索語にする。
- */
-function toYahooPlace(text: string, places: PlaceItem[]): YahooTransitPlace | null {
-  const value = text.trim();
-  if (!value) return null;
-
-  const place = findPlace(value, places);
-  if (!place) return { name: value, query: value, coordinates: null };
-
-  return { name: place.name, query: place.address ?? place.name, coordinates: place.coordinates };
 }
 
 /**

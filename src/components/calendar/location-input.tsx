@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { PlaceSuggestion } from "@/lib/ai-place-suggest";
 import type { LatLng } from "@/lib/coordinates";
+import { toLocationText } from "@/lib/place-text";
 import type { PlaceItem } from "@/services/notion/places";
 
 import { PlaceMapDialog } from "./place-map-dialog";
@@ -348,11 +349,6 @@ function CandidateButton({
   );
 }
 
-/** 場所欄へ入れる文字列。住所があれば添える。Google Calendar側で地図が引けるようにするため。 */
-function toLocationText(name: string, address: string | null): string {
-  return address ? `${name} ${address}` : name;
-}
-
 /**
  * 登録済みの場所と同じ名前なら住所を添えた文字列にする。
  *
@@ -380,23 +376,6 @@ export function placeCoordinates(text: string, places: PlaceItem[]): LatLng | nu
   const query = text.trim();
   if (!query) return null;
   return places.find((item) => item.coordinates && item.name === query)?.coordinates ?? null;
-}
-
-/**
- * 場所欄の値に合う場所DBの1件。無ければ null。
- *
- * 候補から選んだあとの欄には `名前 住所` が入る（`toLocationText`）。名前だけの一致を見る
- * `withPlaceAddress` / `placeCoordinates` はこの形に当たらないため、住所を添えた形も見る。
- * 名前・住所・座標を別々に要る呼び出し元（Yahoo!乗換案内のURL。docs/spec.md §29）が
- * 元の1件へ戻れるようにするために置く。
- */
-export function findPlace(text: string, places: PlaceItem[]): PlaceItem | null {
-  const query = text.trim();
-  if (!query) return null;
-  return (
-    places.find((item) => item.name === query || toLocationText(item.name, item.address) === query) ??
-    null
-  );
 }
 
 /**

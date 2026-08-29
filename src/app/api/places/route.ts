@@ -19,6 +19,8 @@ export async function POST(request: Request) {
     address?: string | null;
     /** 地図から登録したときの地点。`"35.658034,139.701636"` の形で受ける。 */
     coordinates?: string | null;
+    /** 最寄り駅。Yahoo!乗換案内をこの駅名で開く（docs/spec.md §29）。 */
+    station?: string | null;
   };
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -28,6 +30,7 @@ export async function POST(request: Request) {
       name,
       address: body.address?.trim() || null,
       coordinates: parseCoordinates(body.coordinates),
+      station: body.station?.trim() || null,
     });
     return NextResponse.json(place);
   } catch (error) {

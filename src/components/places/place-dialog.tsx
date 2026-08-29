@@ -16,8 +16,13 @@ import { formatCoordinates, type LatLng } from "@/lib/coordinates";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TagOption } from "@/services/notion/tag-options";
 
-/** 場所DBの構成によって、住所・タグ・座標の置き場所そのものが無いことがある。 */
-export type PlaceCapabilities = { address: boolean; tags: boolean; coordinates: boolean };
+/** 場所DBの構成によって、住所・タグ・座標・最寄り駅の置き場所そのものが無いことがある。 */
+export type PlaceCapabilities = {
+  address: boolean;
+  tags: boolean;
+  coordinates: boolean;
+  station: boolean;
+};
 
 /**
  * 登録済みの場所の編集（docs/spec.md §9）。
@@ -48,6 +53,7 @@ export function PlaceDialog({
 
   const [name, setName] = useState(place.name);
   const [address, setAddress] = useState(place.address ?? "");
+  const [station, setStation] = useState(place.station ?? "");
   const [tags, setTags] = useState<string[]>(place.tags);
   const [coordinates, setCoordinates] = useState<LatLng | null>(place.coordinates);
   const [mapOpen, setMapOpen] = useState(false);
@@ -108,6 +114,7 @@ export function PlaceDialog({
         body: JSON.stringify({
           name: trimmed,
           ...(capabilities.address ? { address: address.trim() || null } : {}),
+          ...(capabilities.station ? { station: station.trim() || null } : {}),
           ...(capabilities.tags ? { tags } : {}),
           ...(capabilities.coordinates && (coordinatesTouched || place.coordinates)
             ? { coordinates: coordinates ? formatCoordinates(coordinates) : null }
@@ -163,7 +170,7 @@ export function PlaceDialog({
         <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
           <DialogTitle>場所を編集</DialogTitle>
           <DialogDescription className="sr-only">
-            名前・住所・タグ・地点を変更するか、この場所を削除します。
+            名前・住所・地点・最寄り駅・タグを変更するか、この場所を削除します。
           </DialogDescription>
 
           {error && (
@@ -232,6 +239,25 @@ export function PlaceDialog({
                   : capabilities.address
                     ? "地図で選ぶと、その地点の住所が入ります。場所DBに座標のプロパティが無いため、地点は保存されません。"
                     : "地図で選ぶと、この場所の地点を置き換えます。地点があると、この場所を開くときに地図とYahoo!乗換案内がその座標を使います。"}
+              </p>
+            </div>
+          )}
+
+          {/*
+            最寄り駅は住所・地点とは別の区画に置く。あの2つは常に組で置き換わるもので、
+            駅名はそこへ混ぜると地図で選び直したときに一緒に入れ替わるように読める。
+            実際には駅名だけが Yahoo!乗換案内 の発着地になり、地図とは関係が無い。
+          */}
+          {capabilities.station && (
+            <div className="flex flex-col gap-1">
+              <Input
+                label="最寄り駅"
+                value={station}
+                onChange={(event) => setStation(event.target.value)}
+                onClear={() => setStation("")}
+              />
+              <p className="type-body-small text-on-surface-variant">
+                入れておくと、電車の移動でYahoo!乗換案内をこの駅から探します。空のときは地点（無ければ住所）で探します。
               </p>
             </div>
           )}

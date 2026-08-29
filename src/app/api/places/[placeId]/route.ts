@@ -40,7 +40,7 @@ function readTags(value: unknown): string[] {
 /**
  * 登録済みの場所を書き換える（docs/spec.md §9）。
  *
- * 本文は書き換えたあとの姿を表す。`address` / `coordinates` は `null` で「消す」、
+ * 本文は書き換えたあとの姿を表す。`address` / `coordinates` / `station` は `null` で「消す」、
  * **項目ごと渡さないと「触らない」**になる。読めない値が入っている欄を、開いて保存した
  * だけで消さないようにするため。`tags` も同じで、渡した配列で置き換え、空配列は
  * 「全部外す」、項目ごと渡さないのは「触らない」。
@@ -61,6 +61,8 @@ export async function PATCH(
     address?: string | null;
     /** `"35.658034,139.701636"` の形。読めない値・null は「地点なし」として扱う。 */
     coordinates?: string | null;
+    /** 最寄り駅。空文字・null は「消す」、項目ごと渡さないのは「触らない」（住所と同じ）。 */
+    station?: string | null;
     /** 付けるタグの名前。登録済みに無い名前はNotionが選択肢として足す。 */
     tags?: unknown;
   };
@@ -73,6 +75,7 @@ export async function PATCH(
       name,
       ...("address" in body ? { address: body.address?.trim() || null } : {}),
       ...("coordinates" in body ? { coordinates: parseCoordinates(body.coordinates) } : {}),
+      ...("station" in body ? { station: body.station?.trim() || null } : {}),
       ...("tags" in body ? { tags: readTags(body.tags) } : {}),
     });
     return NextResponse.json(place);

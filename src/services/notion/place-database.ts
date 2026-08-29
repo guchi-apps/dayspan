@@ -3,7 +3,7 @@ import type { Client } from "@notionhq/client";
 // よく行く場所のデータソース。予定の「場所」欄の入力候補として読む（docs/spec.md §9）。
 // タスク・日付リマインドと同じく、一次情報源はNotion側でDaySpanには保存しない。
 
-export type PlaceField = "name" | "address" | "tags" | "coordinates";
+export type PlaceField = "name" | "address" | "tags" | "coordinates" | "station";
 export type PlacePropertyMap = Partial<Record<PlaceField, string>>;
 
 type PropertyConfig = { id: string; name: string; type: string };
@@ -16,7 +16,7 @@ type Requirement = {
   /**
    * 名前が当たったときだけ対応付ける項目。
    * 型だけで空いているプロパティへ割り当てると、住所と同じ `rich_text` を持つ
-   * 「メモ」のような無関係な欄へ書き込んでしまうため、座標はこちらで扱う。
+   * 「メモ」のような無関係な欄へ書き込んでしまうため、座標・最寄り駅はこちらで扱う。
    */
   hintOnly?: boolean;
 };
@@ -31,6 +31,14 @@ export const PLACE_FIELD_REQUIREMENTS: Requirement[] = [
     types: ["rich_text"],
     required: false,
     hints: ["座標", "緯度", "経度", "coordinate", "latlng", "geo"],
+    hintOnly: true,
+  },
+  {
+    field: "station",
+    label: "最寄り駅",
+    types: ["rich_text"],
+    required: false,
+    hints: ["最寄り駅", "最寄駅", "最寄", "駅", "station"],
     hintOnly: true,
   },
 ];
@@ -104,6 +112,7 @@ export const PLACE_DATABASE_TEMPLATE = {
   address: "住所",
   tags: "タグ",
   coordinates: "座標",
+  station: "最寄り駅",
 } as const satisfies Required<Record<PlaceField, string>>;
 
 /**
@@ -125,6 +134,8 @@ export async function createPlaceDatabase(
         [PLACE_DATABASE_TEMPLATE.tags]: { multi_select: {} },
         // 地図から登録したときの緯度経度。`35.658034,139.701636` の形で入れる。
         [PLACE_DATABASE_TEMPLATE.coordinates]: { rich_text: {} },
+        // Yahoo!乗換案内をこの駅名で開く（docs/spec.md §29）。
+        [PLACE_DATABASE_TEMPLATE.station]: { rich_text: {} },
       },
     },
   });
@@ -141,30 +152,38 @@ export async function createPlaceDatabase(
   };
 }
 
+/** あとから足せる任意の項目。どちらも `rich_text` で、名前が当たったときだけ対応付ける。 */
+export type PlaceOptionalField = "coordinates" | "station";
+
+export const PLACE_OPTIONAL_FIELDS: PlaceOptionalField[] = ["coordinates", "station"];
+
+export const isPlaceOptionalField = (value: unknown): value is PlaceOptionalField =>
+  typeof value === "string" && (PLACE_OPTIONAL_FIELDS as string[]).includes(value);
+
 /**
- * すでに使っている場所DBへ「座標」プロパティを足す。
+ * すでに使っている場所DBへ、あとから増えた任意のプロパティ（座標・最寄り駅）を足す。
  *
- * 地図からの登録（docs/spec.md §9）より前に作った場所DBには座標の置き場所が無い。
- * Notion側で手で足してDBを選び直させると、どの型で何という名前にすればよいのかが
- * 画面のどこにも出ていないため、設定画面から実行できるようにする。
+ * 地図からの登録（docs/spec.md §9）・Yahoo!乗換案内を駅名で開く仕組み（§29）より前に作った
+ * 場所DBには置き場所が無い。Notion側で手で足してDBを選び直させると、どの型で何という名前に
+ * すればよいのかが画面のどこにも出ていないため、設定画面から実行できるようにする。
  *
- * すでに同じ名前のプロパティがあるときは作らない。型が違っていても作り直さないのは、
- * 利用者が別の用途で使っている欄を黙って壊さないため。
+ * すでに同じ名前のプロパティがあるときは作らない（対応付けだけ取り直す）。型が違っていても
+ * 作り直さないのは、利用者が別の用途で使っている欄を黙って壊さないため。
  */
-export async function addPlaceCoordinatesProperty(
+export async function addPlaceTextProperty(
   notion: Client,
   dataSourceId: string,
+  field: PlaceOptionalField,
 ): Promise<PlaceValidation & { title: string; databaseId: string | null }> {
+  const name = PLACE_DATABASE_TEMPLATE[field];
   const source = await notion.dataSources.retrieve({ data_source_id: dataSourceId });
   const properties = source.properties as Record<string, PropertyConfig>;
-  const existing = Object.values(properties).find(
-    (property) => property.name === PLACE_DATABASE_TEMPLATE.coordinates,
-  );
+  const existing = Object.values(properties).find((property) => property.name === name);
 
   if (!existing) {
     await notion.dataSources.update({
       data_source_id: dataSourceId,
-      properties: { [PLACE_DATABASE_TEMPLATE.coordinates]: { rich_text: {} } } as never,
+      properties: { [name]: { rich_text: {} } } as never,
     });
   }
 
