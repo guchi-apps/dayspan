@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { TravelEstimate } from "@/lib/ai-travel-estimate";
+import { splitNameAndAddress } from "@/lib/japanese-address";
 import {
   resolveYahooTransitBasis,
   yahooTransitLink,
@@ -666,18 +667,42 @@ export function TravelForm({
 }
 
 /**
- * Yahoo!乗換案内へ渡す1地点。場所欄の値から名前・住所・座標へ戻す。
+ * Yahoo!乗換案内へ渡す1地点。場所欄の値から駅名・住所・座標へ戻す（docs/spec.md §29）。
  *
- * 欄には `名前 住所` が入っていることがあり（候補から選んだとき）、その文字列のままでは
- * Yahoo!側で地点が引けない。座標があればそれで探索させ、無ければ住所を検索語にする。
+ * **`名前 住所` のまま渡してはいけない。** 欄には候補から選ぶとこの形が入る
+ * （`toLocationText`）が、Yahoo!はこの文字列から地点を引けず、**日時指定ごと捨てて
+ * 検索画面を返す**（`cmd=4011`。issue #458）。住所だけ・駅名だけなら引ける。
+ *
+ * 見る順は 最寄り駅 → 座標 → 住所 → 名前。最寄り駅を先に見るのは、座標だけを渡す
+ * ドアtoドアの探索では乗り降りの駅が地点のわずかなずれで変わるため。駅名が入っていれば、
+ * いつ開いても同じ駅から探せる。
  */
 function toYahooPlace(text: string, places: PlaceItem[]): YahooTransitPlace | null {
   const value = text.trim();
   if (!value) return null;
 
-  const place = findPlace(value, places);
-  if (!place) return { name: value, query: value, coordinates: null };
+  const exact = findPlace(value, places);
+  if (exact) return fromPlace(exact);
 
+  // 場所DBに当たらないときは `名前 住所` を分ける。分けた名前で引き直すのは、住所を
+  // 直したあとの古い文字列でも名前で1件に決まるため（同名の場所は登録の時点で断っている）。
+  const split = splitNameAndAddress(value);
+  if (!split) return { name: value, query: value, coordinates: null };
+
+  const byName = findPlace(split.name, places);
+  if (byName) return fromPlace(byName);
+
+  return { name: split.name, query: split.address, coordinates: null };
+}
+
+/**
+ * 場所DBの1件から、Yahoo!へ渡す形へ。
+ *
+ * 最寄り駅があるときは座標を添えない。座標があるとYahoo!はそちらで探索し、駅名は
+ * 表示名にしかならないため、入れた駅から探せなくなる。
+ */
+function fromPlace(place: PlaceItem): YahooTransitPlace {
+  if (place.station) return { name: place.station, query: place.station, coordinates: null };
   return { name: place.name, query: place.address ?? place.name, coordinates: place.coordinates };
 }
 

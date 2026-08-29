@@ -55,7 +55,7 @@ export function PlacesScreen({
     const needle = query.trim().toLowerCase();
     if (!needle) return places;
     return places.filter((place) =>
-      [place.name, place.address ?? "", ...place.tags]
+      [place.name, place.address ?? "", place.station ?? "", ...place.tags]
         .join(" ")
         .toLowerCase()
         .includes(needle),
@@ -147,8 +147,12 @@ export function PlacesScreen({
               >
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="type-body-large truncate">{place.name}</span>
+                  {/* 最寄り駅は電車の移動でそのまま発着地になる。住所と同じ行へ添えて、
+                      どの駅から探されるのかを一覧から読めるようにする。 */}
                   <span className="type-body-small truncate text-on-surface-variant">
-                    {place.address ?? "住所なし"}
+                    {place.station
+                      ? `${place.address ?? "住所なし"} ・ ${place.station}`
+                      : (place.address ?? "住所なし")}
                   </span>
                 </div>
 
