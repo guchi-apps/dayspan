@@ -16,7 +16,7 @@ import {
 import { toReminderDraft } from "@/components/calendar/reminder-form";
 import { ReminderDetailDialog } from "@/components/calendar/reminder-detail-dialog";
 import { AppMenuButton } from "@/components/nav/app-drawer";
-import { BottomNav, HeaderNav } from "@/components/nav/main-nav";
+import { BottomNav } from "@/components/nav/main-nav";
 import { TagChip } from "@/components/tags/tag-chip";
 import { tagColorOf } from "@/components/tags/tag-color";
 import { OfflineNotice } from "@/components/offline/offline-notice";
@@ -135,13 +135,14 @@ export function ReminderList({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        {/* 狭い画面では左上をメニューにする（issue #328）。アプリのアイコンはPCだけ。 */}
-        <AppMenuButton />
-        <div className="hidden shrink-0 items-center gap-1 font-semibold md:flex">
+        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
+        <AppMenuButton current="reminders" activityRunning={activityRunning} />
+        {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
+            狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
+        <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
           <BellRing className="size-5" />
-          <span className="hidden lg:inline">DaySpan</span>
+          <span>日付</span>
         </div>
-        <HeaderNav current="reminders" activityRunning={activityRunning} />
         <span className="flex-1" />
         <Button variant="ghost" size="icon" aria-label="再取得" disabled={pending || offline} onClick={() => startTransition(() => router.refresh())}><RefreshCw className="size-4" /></Button>
       </header>
