@@ -9,6 +9,8 @@
  * ためのもので、これが無いと登録できないという性質のものではない。
  */
 
+import { composeJapaneseAddress, type JapaneseAddressParts } from "./japanese-address";
+
 const NOMINATIM_API = "https://nominatim.openstreetmap.org";
 
 /** 呼び出し元を名乗る。Nominatimの利用規約が求めており、名乗らないと遮断されうる。 */
@@ -22,6 +24,14 @@ export type GeocodedPlace = {
   name: string | null;
   /** 組み立てた住所。読めなければnull。 */
   address: string | null;
+  /**
+   * 日本の地点のときだけ、住所の部品をそのまま添える。
+   *
+   * Nominatimは街区符号を落とすため、番地まで出すにはOverpassの生タグと突き合わせる
+   * （`resolve-point.ts`）。そのとき、Overpass側に欠けている都道府県・市区町村を
+   * ここから補う。日本以外はnull（組み立ての順番が国ごとに違い、部品では扱えない）。
+   */
+  japanese: JapaneseAddressParts | null;
   lat: number;
   lng: number;
 };
@@ -54,40 +64,33 @@ function prefectureOf(address: NominatimAddress, displayName: string | undefined
 }
 
 /**
- * 日本の住所として読める順に組み立てる。
+ * Nominatimの `address` を住所の部品へ移す。組み立ては `composeJapaneseAddress()` が行う。
  *
- * `display_name` をそのまま使わないのは、細かい方から国まで逆順にカンマで並ぶため
- * （「南改札, 玉川通り, 渋谷二丁目, …, 日本」）。予定表の場所欄に入れて読める形にならない。
+ * `house_number` をそのまま渡すのは、Nominatimが街区符号を落とすため
+ * 「21-1」の形で入っていることがあるから。街区符号の無い裸の号は組み立て側で落とす。
  */
-function buildJapaneseAddress(address: NominatimAddress, displayName: string | undefined): string | null {
-  const ordered = [
-    prefectureOf(address, displayName),
-    address.city ?? address.town ?? address.village ?? address.county,
-    address.city_district,
-    address.suburb,
-    address.neighbourhood,
-    address.quarter,
-    address.block,
-    address.house_number,
-  ];
+function japanesePartsOf(place: NominatimPlace): JapaneseAddressParts {
+  const address = place.address ?? {};
 
-  let result = "";
-  for (const part of ordered) {
-    const value = part?.trim();
-    // 「渋谷二丁目」を入れたあとの「渋谷」のように、広い側の名前が既に含まれることがある。
-    // そのまま繋ぐと同じ地名が二重に並ぶため、すでに出ている文字列は飛ばす。
-    if (!value || result.includes(value)) continue;
-    result += value;
-  }
+  return {
+    province: prefectureOf(address, place.display_name),
+    city: address.city ?? address.town ?? address.village ?? address.county,
+    district: address.city_district,
+    suburb: address.suburb,
+    quarter: address.quarter,
+    neighbourhood: address.neighbourhood,
+    houseNumber: address.house_number,
+  };
+}
 
-  return result || null;
+function isJapan(place: NominatimPlace): boolean {
+  return place.address?.country_code === "jp";
 }
 
 function toAddress(place: NominatimPlace): string | null {
-  const address = place.address;
-  if (!address) return place.display_name?.trim() || null;
+  if (!place.address) return place.display_name?.trim() || null;
 
-  if (address.country_code === "jp") return buildJapaneseAddress(address, place.display_name);
+  if (isJapan(place)) return composeJapaneseAddress(japanesePartsOf(place));
 
   // 日本以外は組み立ての順番が国ごとに違う。Nominatimの表記をそのまま使う。
   return place.display_name?.trim() || null;
@@ -122,11 +125,12 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Geocoded
   })) as NominatimPlace & { error?: string };
 
   // 海上など該当が無い地点では error だけが返る。失敗ではないので、名前も住所も無い形で返す。
-  if (json.error || !json.address) return { name: null, address: null, lat, lng };
+  if (json.error || !json.address) return { name: null, address: null, japanese: null, lat, lng };
 
   return {
     name: json.name?.trim() || null,
     address: toAddress(json),
+    japanese: isJapan(json) ? japanesePartsOf(json) : null,
     lat,
     lng,
   };
@@ -147,5 +151,11 @@ export async function searchPlace(query: string): Promise<GeocodedPlace | null> 
   const lng = Number(first.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
-  return { name: first.name?.trim() || null, address: toAddress(first), lat, lng };
+  return {
+    name: first.name?.trim() || null,
+    address: toAddress(first),
+    japanese: isJapan(first) ? japanesePartsOf(first) : null,
+    lat,
+    lng,
+  };
 }
