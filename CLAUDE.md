@@ -491,6 +491,13 @@ worktree作成・`.env.local` のコピー・ポート割り当て・`pnpm insta
 実装エージェント用のClaude Codeセッションを起動する（プロンプトは `scripts/prompts/implementation-agent.md`）。
 Windows側からは `scripts/start-issue.ps1` を使う。
 
+**`.env.local` のコピー元は本体チェックアウト（`~/apps/dayspan`）の `.env.local` で、本体に無ければ
+worktreeへは何も配られない**（issue-deck の `supply_env_files` も同じ作り）。配られないまま起動すると
+`src/proxy.ts` の `updateSession()` が毎リクエストで `createServerClient()` に落ち、`/login` を含む
+全ページが500になる。画面には理由が出ずサーバーログにしか残らないため、確認環境が開かないときは
+まず本体の `.env.local` の有無を見る（issue #467）。用意の手順は README「本体チェックアウトの
+`.env.local` は worktree の前提」にある。
+
 ローカルセッションで進めるIssueには `11.local` を付け、無人実行と二重に走らないようにする。
 
 ## ワークフローの構成
