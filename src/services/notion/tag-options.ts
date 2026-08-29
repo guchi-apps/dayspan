@@ -2,13 +2,14 @@ import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
 import { createNotionClient } from "./client";
+import type { PlacePropertyMap } from "./place-database";
 import type { ReminderPropertyMap } from "./reminder-database";
 import type { ShoppingPropertyMap } from "./shopping-database";
 import type { PropertyMap } from "./task-database";
 import type { WorkPropertyMap } from "./work-database";
 
-// タスクのタグ（multi_select）と、日付リマインドの種類・勤務場所・買い物のカテゴリ（select）の
-// 選択肢を扱う。
+// タスクのタグ・場所のタグ（multi_select）と、日付リマインドの種類・勤務場所・
+// 買い物のカテゴリ（select）の選択肢を扱う。
 //
 // 選択肢そのものはNotion側のプロパティ定義が一次情報源で、DaySpanのDBには持たない
 // （docs/spec.md §19）。DaySpanからできるのは追加・削除・改名・並び替えまで。
@@ -59,13 +60,21 @@ export type TagOption = {
 };
 
 /**
- * タグを置いているプロパティの種別。タスクは複数選択、それ以外は単一選択。
+ * タグを置いているプロパティの種別。タスクと場所は複数選択、それ以外は単一選択。
  *
- * 勤務場所（docs/spec.md §34）と買い物のカテゴリ（§36）をここへ含めるのは、選択肢と色が
- * Notionのプロパティ定義そのもので、追加・削除・改名・並び替えの手順もタグとまったく同じため。
- * 別の経路を作ると、同じ操作が2か所に増える。
+ * 勤務場所（docs/spec.md §34）・買い物のカテゴリ（§36）・場所のタグ（§9）をここへ含めるのは、
+ * 選択肢と色がNotionのプロパティ定義そのもので、追加・削除・改名・並び替えの手順も
+ * タグとまったく同じため。別の経路を作ると、同じ操作が2か所に増える。
  */
-export type TagKind = "task" | "reminder" | "work" | "shopping";
+export type TagKind = "task" | "reminder" | "work" | "shopping" | "place";
+
+/**
+ * 複数選択（multi_select）で持っている種別。書き戻すときの構成がここだけ違う。
+ *
+ * 1つのタスク・1つの場所には複数のタグが付く。日付リマインドの種類・勤務場所・
+ * 買い物のカテゴリは1件につき1つ（select）。
+ */
+const MULTI_SELECT_KINDS: ReadonlySet<TagKind> = new Set<TagKind>(["task", "place"]);
 
 /**
  * 登録済みのタグ・種類。
@@ -113,6 +122,12 @@ export function tagLocation(connection: NotionConnection, kind: TagKind): TagLoc
     const propertyName = (connection.shoppingPropertyMap as ShoppingPropertyMap | null)?.category;
     if (!connection.shoppingDataSourceId || !propertyName) return null;
     return { dataSourceId: connection.shoppingDataSourceId, propertyName };
+  }
+
+  if (kind === "place") {
+    const propertyName = (connection.placePropertyMap as PlacePropertyMap | null)?.tags;
+    if (!connection.placeDataSourceId || !propertyName) return null;
+    return { dataSourceId: connection.placeDataSourceId, propertyName };
   }
 
   const propertyName = (connection.reminderPropertyMap as ReminderPropertyMap | null)?.category;
@@ -213,7 +228,9 @@ async function writeOptions(
   kind: TagKind,
   options: Array<{ id: string } | { id: string; name: string } | { name: string; color: TagColor }>,
 ): Promise<void> {
-  const config = kind === "task" ? { multi_select: { options } } : { select: { options } };
+  const config = MULTI_SELECT_KINDS.has(kind)
+    ? { multi_select: { options } }
+    : { select: { options } };
 
   await notion.dataSources.update({
     data_source_id: dataSourceId,
