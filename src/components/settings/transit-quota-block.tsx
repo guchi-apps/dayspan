@@ -86,20 +86,24 @@ function QuotaRow({ quota, timeZone }: { quota: TransitQuota; timeZone: string }
       )}
 
       {/* 使い切ったことより、代わりに何が起きるかを書く。移動そのものはいつでも作れて、
-          所要時間の出どころが変わるだけ、というのが利用者にとっての違いのため。 */}
+          所要時間の出どころが変わるだけ、というのが利用者にとっての違いのため。
+          DaySpanはこの枠を消費しなくなったので（下記）、電車の所要時間には影響しない。 */}
       {exhausted && (
         <p className="type-body-small rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
           枠を使い切りました。
           {resetDate ? `${resetDate}まで` : "リセットされるまで"}
-          は、電車の所要時間もAIの目安になります。
+          は、この経路検索を使う他のアプリが所要時間を調べられません。
         </p>
       )}
 
+      {/* **DaySpanはこの枠を使わない。** 電車の所要時間はYahoo!乗換案内から取り込む形へ
+          変えたため（docs/spec.md §29）、ここに出るのは同じ窓口を使う他のアプリの消費。
+          数字だけを出すと、DaySpanで移動を作るたびに減っていくものだと読める。 */}
       <p className="type-body-small text-on-surface-variant">
-        電車の所要時間を実際のダイヤから調べたときに1回使います。
+        DaySpanの電車の所要時間はYahoo!乗換案内から入れるため、この枠は使いません。
         {quota.source === "local"
           ? "trainrouteが自分の呼び出しを数えた概算のため、他のアプリからの分は含みません。"
-          : "数えているのはtrainrouteで、他のアプリからの分も含みます。"}
+          : "数えているのはtrainrouteで、AIDEなど他のアプリからの分も含みます。"}
         {updatedAt && `経路検索をしたときに更新されます（最終更新 ${updatedAt}）。`}
       </p>
     </div>
