@@ -44,14 +44,11 @@ const FALLBACK_CENTER: LatLng = { lat: 35.681236, lng: 139.767125 };
 /** 前回選んだ地点。次に開くときの中心に使う。 */
 const LAST_CENTER_KEY = "dayspan:place-map-center";
 
-/** 地図が止まってから住所を調べるまでの待ち。動かしている間はNominatimを呼ばない。 */
+/** 地図が止まってから住所を調べるまでの待ち。動かしている間は取得元を呼ばない。 */
 const LOOKUP_DELAY_MS = 700;
 
-type AddressState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "found"; address: string }
-  | { status: "none" };
+/** 地図が止まったあとの住所引きの様子。欄の下の補助文だけがこれを見る。 */
+type LookupState = "idle" | "loading" | "found" | "none";
 
 function readLastCenter(): LatLng | null {
   try {
@@ -112,7 +109,12 @@ export function PlaceMapDialog({
   const [name, setName] = useState(query.trim());
   // 打った文字列は利用者が決めた名前。地図から取れた施設名で上書きしない。
   const [nameTouched, setNameTouched] = useState(query.trim().length > 0);
-  const [address, setAddress] = useState<AddressState>({ status: "idle" });
+  // 住所は手で直せる（issue #453）。OSMに番地が入っていない地点では、どの取得元でも
+  // 丁目までしか出せないため、利用者が番地を書き足せる逃げ道を残す。
+  const [address, setAddress] = useState("");
+  // 直したあとは、地図を動かしても上書きしない（名前欄と同じ扱い・同じ理由）。
+  const [addressTouched, setAddressTouched] = useState(false);
+  const [lookup, setLookup] = useState<LookupState>("idle");
   const [locating, setLocating] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -199,39 +201,39 @@ export function PlaceMapDialog({
 
     const timer = setTimeout(async () => {
       lookedUpRef.current = center;
-      setAddress({ status: "loading" });
+      setLookup("loading");
       try {
         const response = await fetch(
           `/api/places/geocode?lat=${center.lat}&lon=${center.lng}`,
         );
         if (!response.ok) {
-          setAddress({ status: "none" });
+          setLookup("none");
           return;
         }
         const body = (await response.json()) as {
           place: { name: string | null; address: string | null } | null;
         };
-        setAddress(
-          body.place?.address ? { status: "found", address: body.place.address } : { status: "none" },
-        );
-        // 名前をまだ触っていないときだけ、地図から取れた施設名を初期値に入れる。
-        const found = body.place?.name;
-        if (found && !nameTouched) setName(found);
+        const found = body.place?.address;
+        setLookup(found ? "found" : "none");
+        // 名前・住所をまだ触っていないときだけ、地図から取れた値を初期値に入れる。
+        if (found && !addressTouched) setAddress(found);
+        const foundName = body.place?.name;
+        if (foundName && !nameTouched) setName(foundName);
       } catch {
-        setAddress({ status: "none" });
+        setLookup("none");
       }
     }, LOOKUP_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [center, nameTouched]);
+  }, [center, nameTouched, addressTouched]);
 
   /** 地点だけを返す（編集の経路）。Notionへは呼び出し側が書くため、ここでは通信しない。 */
   const pick = () => {
     if (!onPicked) return;
     const picked: PickedPoint = {
       coordinates: center,
-      // 住所が取れなかったときは緯度経度を住所にする（登録の経路と同じ扱い）。
-      address: address.status === "found" ? address.address : formatCoordinates(center),
+      // 住所が取れず、手でも入れられていないときは緯度経度を住所にする（登録の経路と同じ扱い）。
+      address: address.trim() || formatCoordinates(center),
     };
     writeLastCenter(center);
     setOpen(false);
@@ -259,7 +261,7 @@ export function PlaceMapDialog({
         body: JSON.stringify({
           name: trimmed,
           // 住所が取れなかったときは緯度経度を住所として入れる。数字のままでも地図は引ける。
-          address: address.status === "found" ? address.address : formatCoordinates(center),
+          address: address.trim() || formatCoordinates(center),
           coordinates: formatCoordinates(center),
         }),
       });
@@ -302,8 +304,21 @@ export function PlaceMapDialog({
         />
 
         <div className="flex flex-col gap-1">
+          <Input
+            id="place-map-address"
+            label="住所"
+            value={address}
+            onChange={(event) => {
+              setAddress(event.target.value);
+              setAddressTouched(true);
+            }}
+            onClear={() => {
+              setAddress("");
+              setAddressTouched(true);
+            }}
+          />
           <div className="flex items-start gap-2 text-on-surface-variant">
-            {address.status === "loading" ? (
+            {lookup === "loading" ? (
               <>
                 <span
                   aria-hidden="true"
@@ -315,10 +330,10 @@ export function PlaceMapDialog({
               <>
                 <MapPin className="mt-0.5 size-4 shrink-0" />
                 <span className="type-body-small">
-                  {address.status === "found"
-                    ? address.address
-                    : address.status === "none"
-                      ? "住所は分かりませんでした。緯度経度で登録します。"
+                  {lookup === "found"
+                    ? "番地まで出ていなければ書き足せます。"
+                    : lookup === "none"
+                      ? "住所は分かりませんでした。手で入れるか、空のままなら緯度経度で登録します。"
                       : "地図を動かすと住所を調べます。"}
                 </span>
               </>
