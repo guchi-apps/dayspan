@@ -17,12 +17,15 @@ export function SettingsShell({
   description,
   backHref,
   backLabel,
+  actions,
   children,
 }: {
   title: string;
   description?: string;
   backHref: string;
   backLabel: string;
+  /** 見出しの右へ置く操作（場所の「＋」など）。持たない画面がほとんどなので任意にする。 */
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -35,6 +38,7 @@ export function SettingsShell({
           </Link>
         </Button>
         <h1 className="type-title-large min-w-0 flex-1 truncate px-1">{title}</h1>
+        {actions}
       </header>
 
       <OfflineNotice />

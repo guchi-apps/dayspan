@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Briefcase, ChevronRight, History, Menu, Settings } from "lucide-react";
+import { Briefcase, ChevronRight, History, MapPin, Menu, Settings } from "lucide-react";
 
 import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,14 @@ export function AppMenuButton({ className }: { className?: string }) {
             label="勤務"
             badge={workTodoCount && workTodoCount > 0 ? workTodoCount : null}
             onClick={handleClick("/work")}
+          />
+          {/* 場所（docs/spec.md §9）。登録した地点を直す・消すための画面で、毎日押すものでは
+              ないため下部ナビの5枠には入れない（設定を下部ナビから外したのと同じ理由）。 */}
+          <DrawerItem
+            href="/places"
+            icon={MapPin}
+            label="場所"
+            onClick={handleClick("/places")}
           />
           <DrawerItem
             href="/settings"
