@@ -70,11 +70,18 @@ function writeLastCenter(center: LatLng) {
   }
 }
 
+/**
+ * 保存せずに返すときの中身。住所と地点は必ず組で渡す（片方だけ直すと食い違うため）。
+ * 住所が分からない地点では、登録のときと同じく緯度経度を住所として返す。
+ */
+export type PickedPoint = { coordinates: LatLng; address: string };
+
 export function PlaceMapDialog({
   query,
   places,
   onCancel,
   onRegistered,
+  onPicked,
 }: {
   /** 場所欄に入力されている文字列。名前の初期値と、開いたときの中心を決める手掛かりにする。 */
   query: string;
@@ -83,6 +90,13 @@ export function PlaceMapDialog({
   onCancel: () => void;
   /** 登録できたとき。場所欄へ入れるのは呼び出し側の役目。 */
   onRegistered: (place: PlaceItem) => void;
+  /**
+   * 渡すと**登録せず**、選んだ地点と住所だけを返す（場所の編集画面。docs/spec.md §9）。
+   *
+   * すでにある場所の地点を選び直す場面では、名前も登録先も決まっている。名前の欄と
+   * Notionへの書き込みをここへ持たせると、書き込みの経路が2つに分かれてしまう。
+   */
+  onPicked?: (picked: PickedPoint) => void;
 }) {
   const [open, setOpen] = useState(true);
   // 開いたときの中心。登録済みの場所に座標があればそこから始める。
@@ -211,6 +225,19 @@ export function PlaceMapDialog({
     return () => clearTimeout(timer);
   }, [center, nameTouched]);
 
+  /** 地点だけを返す（編集の経路）。Notionへは呼び出し側が書くため、ここでは通信しない。 */
+  const pick = () => {
+    if (!onPicked) return;
+    const picked: PickedPoint = {
+      coordinates: center,
+      // 住所が取れなかったときは緯度経度を住所にする（登録の経路と同じ扱い）。
+      address: address.status === "found" ? address.address : formatCoordinates(center),
+    };
+    writeLastCenter(center);
+    setOpen(false);
+    setTimeout(() => onPicked(picked), 150);
+  };
+
   const register = async () => {
     if (offline) {
       setError(OFFLINE_WRITE_MESSAGE);
@@ -256,8 +283,12 @@ export function PlaceMapDialog({
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>地図から場所を登録</DialogTitle>
-          <DialogDescription>中央のピンの位置が登録する地点になります。</DialogDescription>
+          <DialogTitle>{onPicked ? "地点を選び直す" : "地図から場所を登録"}</DialogTitle>
+          <DialogDescription>
+            {onPicked
+              ? "中央のピンの位置がこの場所の地点になります。"
+              : "中央のピンの位置が登録する地点になります。"}
+          </DialogDescription>
         </DialogHeader>
 
         <TileMap
@@ -298,18 +329,23 @@ export function PlaceMapDialog({
           </span>
         </div>
 
-        <Input
-          id="place-map-name"
-          label="名前"
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            setNameTouched(true);
-          }}
-        />
-        <p className="type-body-small text-on-surface-variant">
-          この名前で場所DBへ登録し、場所欄に「名前 住所」の形で入ります。
-        </p>
+        {/* 地点を選び直すだけの経路では、名前も登録先も呼び出し側で決まっている。 */}
+        {!onPicked && (
+          <>
+            <Input
+              id="place-map-name"
+              label="名前"
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                setNameTouched(true);
+              }}
+            />
+            <p className="type-body-small text-on-surface-variant">
+              この名前で場所DBへ登録し、場所欄に「名前 住所」の形で入ります。
+            </p>
+          </>
+        )}
 
         {notice && <p className="type-body-small text-on-surface-variant">{notice}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
@@ -318,10 +354,18 @@ export function PlaceMapDialog({
           <Button variant="ghost" disabled={registering} onClick={close}>
             キャンセル
           </Button>
-          <Button disabled={registering || offline || !name.trim()} onClick={register}>
-            <Plus className="size-4" />
-            {registering ? "登録しています…" : "登録して使う"}
-          </Button>
+          {onPicked ? (
+            // 地点を返すだけなので通信しない。オフラインでも押せる（保存は呼び出し側の操作）。
+            <Button onClick={pick}>
+              <MapPin className="size-4" />
+              この地点にする
+            </Button>
+          ) : (
+            <Button disabled={registering || offline || !name.trim()} onClick={register}>
+              <Plus className="size-4" />
+              {registering ? "登録しています…" : "登録して使う"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

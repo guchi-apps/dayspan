@@ -1,3 +1,4 @@
+import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
 import { formatCoordinates, parseCoordinates, type LatLng } from "@/lib/coordinates";
@@ -43,33 +44,46 @@ function normalize(page: Page, map: PlacePropertyMap): PlaceItem | null {
 }
 
 /**
- * 登録済みの場所を取得する。
+ * 登録済みの場所を取得する。**取得に失敗したらそのまま投げる。**
+ *
+ * 場所の一覧・編集画面（docs/spec.md §9）では「1件も登録が無い」と「取得できなかった」を
+ * 区別する必要がある。空で返すと、Notionが落ちている日に「まだ1件も登録していない」画面が
+ * 出て、直したい場所が消えたように見えるため。
+ *
+ * 予定の入力候補として読むだけの経路は loadPlaces（下）を使う。
+ */
+export async function listPlaces(connection: NotionConnection | null): Promise<PlaceItem[]> {
+  if (!connection?.placeDataSourceId) return [];
+  const map = (connection.placePropertyMap as PlacePropertyMap | null) ?? {};
+  if (!map.name) return [];
+
+  const notion = createNotionClient(connection);
+  const pages: Page[] = [];
+  let cursor: string | undefined;
+  do {
+    const response = await notion.dataSources.query({
+      data_source_id: connection.placeDataSourceId,
+      page_size: 100,
+      ...(cursor ? { start_cursor: cursor } : {}),
+    });
+    for (const result of response.results) {
+      if (result.object === "page" && "properties" in result) pages.push(result as Page);
+    }
+    cursor = response.has_more && response.next_cursor ? response.next_cursor : undefined;
+  } while (cursor);
+
+  return pages.map((page) => normalize(page, map)).filter((item): item is PlaceItem => item !== null);
+}
+
+/**
+ * 入力候補としての場所を取得する。
  *
  * 取得に失敗しても画面は開けるようにする。場所は入力の候補であって、予定を読むために
  * 要るものではないため、失敗は空として扱う（tag-options.ts と同じ考え方）。
  */
 export async function loadPlaces(connection: NotionConnection | null): Promise<PlaceItem[]> {
-  if (!connection?.placeDataSourceId) return [];
-  const map = (connection.placePropertyMap as PlacePropertyMap | null) ?? {};
-  if (!map.name) return [];
-
   try {
-    const notion = createNotionClient(connection);
-    const pages: Page[] = [];
-    let cursor: string | undefined;
-    do {
-      const response = await notion.dataSources.query({
-        data_source_id: connection.placeDataSourceId,
-        page_size: 100,
-        ...(cursor ? { start_cursor: cursor } : {}),
-      });
-      for (const result of response.results) {
-        if (result.object === "page" && "properties" in result) pages.push(result as Page);
-      }
-      cursor = response.has_more && response.next_cursor ? response.next_cursor : undefined;
-    } while (cursor);
-
-    return pages.map((page) => normalize(page, map)).filter((item): item is PlaceItem => item !== null);
+    return await listPlaces(connection);
   } catch {
     return [];
   }
@@ -146,4 +160,139 @@ export async function createPlace(
     tags: [],
     coordinates: input.coordinates ?? null,
   };
+}
+
+/**
+ * 場所DB以外のページへの書き込みを断るときの合図。
+ *
+ * ページIDだけを受け取って書き換える経路なので、渡されたIDがどのDBのものかは
+ * 呼び出し側の言い分でしか分からない。日付リマインドがゴミの日DBを守っているのと
+ * 同じ形で、サービス層で確かめる（reminders.ts の ReminderNotEditableError）。
+ */
+export class PlaceNotEditableError extends Error {
+  constructor() {
+    super("This page is not in the place data source");
+    this.name = "PlaceNotEditableError";
+  }
+}
+
+/**
+ * すでに同じ名前の場所があるときの合図。
+ *
+ * 予定・移動の場所欄はただの文字列で保存され、DaySpanは**名前で場所を引いている**
+ * （location-input.ts の findPlace / placeCoordinates、Yahoo!乗換案内の発着地）。
+ * 同名が2件あるとどちらを指すのか決まらないため、改名の時点で断る。
+ */
+export class PlaceNameTakenError extends Error {
+  constructor(readonly placeName: string) {
+    super(`Place name already exists: ${placeName}`);
+    this.name = "PlaceNameTakenError";
+  }
+}
+
+/** NotionのIDはハイフン付き・無しのどちらの表記でも同じものを指す。比較の前に揃える。 */
+const sameId = (a: string | null, b: string | null) =>
+  a !== null && b !== null && a.replaceAll("-", "").toLowerCase() === b.replaceAll("-", "").toLowerCase();
+
+/**
+ * 対象ページが場所DBのものか確かめる。
+ *
+ * UIで入口を隠すだけだと、DaySpanのAPIや将来のMCPから直接呼ばれた要求が素通りする。
+ * 経路によらず同じ結果になるここで断る（docs/spec.md §22）。
+ * 代償として更新・削除のたびにNotionへの往復が1回増える。読み取り側は増えない。
+ */
+async function assertPlacePage(
+  notion: Client,
+  connection: NotionConnection,
+  placeId: string,
+): Promise<void> {
+  if (!connection.placeDataSourceId) throw new PlaceNotEditableError();
+
+  const page = await notion.pages.retrieve({ page_id: placeId });
+  const parent = "parent" in page ? page.parent : null;
+  const dataSourceId = parent?.type === "data_source_id" ? parent.data_source_id : null;
+
+  if (!sameId(dataSourceId, connection.placeDataSourceId)) throw new PlaceNotEditableError();
+}
+
+/**
+ * 書き換えたあとの姿。
+ *
+ * 住所・地点は**項目そのものが無い**ことに意味がある。`null` は「消す」で、項目を渡さない
+ * ことは「触らない」を表す。同じにすると、DaySpanが読めない値（座標の欄に手で書かれた
+ * `梅田駅の北側` のような文字列）が入っている場所を開いて保存しただけで、その文字が消える。
+ */
+export type PlaceWriteInput = {
+  name: string;
+  /** 空文字・null は「住所を消す」、項目ごと渡さないのは「触らない」。 */
+  address?: string | null;
+  /** null は「地点を消す」、項目ごと渡さないのは「触らない」。 */
+  coordinates?: LatLng | null;
+};
+
+/**
+ * 場所を1件書き換える（docs/spec.md §9）。
+ *
+ * 住所と座標は同時に受ける。座標があるときは地図もYahoo!乗換案内も座標のほうを先に見るため、
+ * 住所だけを直して座標が前のまま残ると、画面に出ている文字列と実際に開く地点が食い違う。
+ *
+ * 対応付けの無いプロパティ（住所・座標を持たない場所DB）へは書かない。持っていない欄を
+ * 作りにいくと、利用者が意図して外している構成を勝手に戻すことになる。
+ */
+export async function updatePlace(
+  connection: NotionConnection,
+  placeId: string,
+  input: PlaceWriteInput,
+): Promise<PlaceItem> {
+  const map = (connection.placePropertyMap as PlacePropertyMap | null) ?? {};
+  if (!map.name) throw new Error("Place name property is not configured");
+
+  const notion = createNotionClient(connection);
+  await assertPlacePage(notion, connection, placeId);
+
+  const name = input.name.trim();
+  if (!name) throw new Error("Place name is required");
+
+  // 自分以外に同じ名前があれば断る。名前で引いている経路が壊れるため。
+  const places = await listPlaces(connection);
+  const duplicated = places.find((place) => place.name === name && !sameId(place.id, placeId));
+  if (duplicated) throw new PlaceNameTakenError(name);
+
+  const properties: Record<string, unknown> = {
+    [map.name]: { title: [{ type: "text", text: { content: name } }] },
+  };
+  // 空にしたときは rich_text を空配列で送る。省くと Notion 側の値がそのまま残る。
+  const address = input.address?.trim() || null;
+  const writeAddress = Boolean(map.address) && "address" in input;
+  const writeCoordinates = Boolean(map.coordinates) && "coordinates" in input;
+  if (writeAddress) properties[map.address!] = address ? richText(address) : { rich_text: [] };
+  if (writeCoordinates) {
+    properties[map.coordinates!] = input.coordinates
+      ? richText(formatCoordinates(input.coordinates))
+      : { rich_text: [] };
+  }
+
+  await notion.pages.update({ page_id: placeId, properties: properties as never });
+
+  const before = places.find((place) => sameId(place.id, placeId));
+  return {
+    id: placeId,
+    name,
+    // 書いていない項目は、いまNotionにある値をそのまま残す。
+    address: writeAddress ? address : (before?.address ?? null),
+    tags: before?.tags ?? [],
+    coordinates: writeCoordinates ? (input.coordinates ?? null) : (before?.coordinates ?? null),
+  };
+}
+
+/**
+ * 場所を1件消す。Notionのゴミ箱へ移すだけなので、間違えてもNotion側で戻せる。
+ *
+ * すでに予定・移動の場所欄へ入っている文字列は消えない（あれはただの文字列で、
+ * 場所DBを指してはいない）。次から入力の候補に出なくなるだけ。
+ */
+export async function deletePlace(connection: NotionConnection, placeId: string): Promise<void> {
+  const notion = createNotionClient(connection);
+  await assertPlacePage(notion, connection, placeId);
+  await notion.pages.update({ page_id: placeId, in_trash: true });
 }
