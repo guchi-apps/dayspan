@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.13.2",
+    date: "2026-08-30",
+    changes: [
+      "今回のリリースは、開発時のチェック体制を強化する内部的な改善のみです。アプリの画面や操作方法に変更はありません。",
+    ],
+  },
+  {
     version: "2.13.1",
     date: "2026-08-30",
     changes: [
