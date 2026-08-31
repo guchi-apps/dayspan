@@ -21,6 +21,8 @@ import {
   parseYahooTransitRoute,
   yahooRouteFields,
   yahooRouteSummary,
+  yahooSearchedDateKey,
+  yahooStationName,
 } from "@/lib/yahoo-transit-route";
 import type { TransitQuota } from "@/lib/transit-quota";
 import type { PlaceCatalog } from "@/services/notion/places";
@@ -185,13 +187,18 @@ export function TravelForm({
    * 発着地は場所DBから引く（最寄り駅 → 座標 → 住所の順。`resolveYahooPlace`）。サーバー側で
    * 引き直すと、押すたびにNotionの全件取得が増える（経路検索へ座標を渡しているのと同じ理由）。
    */
+  const yahooOrigin = resolveYahooPlace(origin, placeCatalog.places);
+  const yahooDestination = resolveYahooPlace(destination, placeCatalog.places);
   const yahooUrl = yahooTransitLink({
-    origin: resolveYahooPlace(origin, placeCatalog.places),
-    destination: resolveYahooPlace(destination, placeCatalog.places),
+    origin: yahooOrigin,
+    destination: yahooDestination,
     departAt,
     arriveAt,
     basis: searchBasis,
   });
+  // 地点が両方揃っているときだけ、基準チップに意味を持つ。地点未指定のときは
+  // 地点未指定のトップページを開くだけで、日時パラメータを受け取らないため。
+  const yahooHasPlaces = Boolean(yahooOrigin && yahooDestination);
 
   /**
    * 実際に開く基準。選んだ側の時刻が空なら、もう一方へ落ちる（`resolveYahooTransitBasis`）。
@@ -202,24 +209,36 @@ export function TravelForm({
   /**
    * コピーされた経路を取り込む。読めなければ何も書き換えない。
    *
-   * **日付は動かさない。** 入れるのは時刻だけで、日は入力欄（＝紐づく予定の日）のまま。
-   * Yahoo!側で「今から」検索した結果をそのまま入れると、来週の予定の移動が今日へ飛び、
+   * **日付は基本的に動かさない。** 入れるのは時刻だけで、日は入力欄（＝紐づく予定の日）の
+   * まま。Yahoo!側で「今から」検索した結果をそのまま入れると、来週の予定の移動が今日へ飛び、
    * カレンダーを閉じたあとでは気付けない。検索日が違っていたことは報せに添える。
+   *
+   * **例外は、予定に紐づかない新規の移動（`standalone`）だけ。** 動いて困る予定の日が
+   * そもそも無いため、検索した日をそのまま移動の日として採用する（issue #490）。
+   *
+   * **出発地・目的地欄が空のときは、読み取れた乗車駅・降車駅で埋める。** メモと同じく、
+   * 空のときだけ入れ、書いた・選んだ値は上書きしない。
    */
   const applyYahooRoute = (text: string): boolean => {
     const route = parseYahooTransitRoute(text);
     if (!route) return false;
 
-    // 基準は入力欄の出発日。Yahoo!側が検索した日では上書きしない。
-    const baseDate = (departAt || arriveAt).slice(0, 10);
+    // 予定に紐づかない新規の移動だけ、検索した日を採用する。編集中の移動・予定から
+    // 作った移動では、これまでどおり入力欄の日付のまま動かさない（動いて困る予定の日が
+    // 無いのは、紐づかない新規の移動だけのため）。
+    const standalone = !editing && !draft.linkedEvent;
+    const searchedDate = standalone ? yahooSearchedDateKey(route) : null;
+    const baseDate = searchedDate ?? (departAt || arriveAt).slice(0, 10);
     const fields = yahooRouteFields(route, baseDate);
     if (!fields) return false;
 
     setDepartAt(fields.departAt);
     setArriveAt(fields.arriveAt);
     setEstimateSource("YAHOO");
-    // メモは利用者が書くもの。空のときだけ経路の要約を入れ、書いたものは上書きしない。
+    // メモ・出発地・目的地は、利用者が書いた/選んだ値を上書きしない。空のときだけ埋める。
     if (!note.trim()) setNote(yahooRouteSummary(route));
+    if (!origin.trim() && route.fromStation) setOrigin(yahooStationName(route.fromStation));
+    if (!destination.trim() && route.toStation) setDestination(yahooStationName(route.toStation));
 
     setPasteOpen(false);
     setPasteText("");
@@ -462,7 +481,7 @@ export function TravelForm({
                 `activeBasis`（空の側は落ちる）で出し、空のほうのチップは押せなくする。
                 リンクを出さないとき（オフライン・地点が揃っていない・時刻が無い）は、
                 選んでも行き先が無いためチップごと出さない。 */}
-            {yahooUrl && !offline && activeBasis && (
+            {yahooHasPlaces && !offline && activeBasis && (
               <div
                 role="group"
                 aria-label="Yahoo!乗換案内で探す基準"
@@ -500,8 +519,9 @@ export function TravelForm({
             <div className="flex flex-wrap gap-2">
               {/* 素の <a> にするのは、iOSがUniversal Linkでアプリを開けるようにするため。
                   スクリプトから開くと、アプリが入っていてもブラウザへ落ちることがある。
-                  オフライン中は出さない（開いた先が読めない。予定の場所のリンクと同じ扱い）。 */}
-              {yahooUrl && !offline && (
+                  オフライン中は出さない（開いた先が読めない。予定の場所のリンクと同じ扱い）。
+                  地点が未入力でも、地点未指定のトップページ（`yahooUrl`）を開けるため常に出す。 */}
+              {!offline && (
                 <Button asChild variant="outline" size="sm" className="w-fit">
                   <a href={yahooUrl} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="size-4" />

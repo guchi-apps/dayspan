@@ -224,3 +224,28 @@ function nextDay(dateKey: string): string {
   const [year, month, day] = dateKey.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 }
+
+/**
+ * 検索した日を入力欄の日付キー（`YYYY-MM-DD`）にする。読めていなければ null。
+ *
+ * **予定に紐づかない新規の移動でだけ使う（呼び出し元の判断）。** 紐づく移動では
+ * 「日付は動かさない」原則（`yahooRouteFields()`）のまま、入力欄の日付を基準にし続ける。
+ */
+export function yahooSearchedDateKey(route: YahooTransitRoute): string | null {
+  const searched = route.searchedDate;
+  if (!searched) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${searched.year}-${pad(searched.month)}-${pad(searched.day)}`;
+}
+
+/**
+ * 出発地・目的地欄へそのまま入れるための駅名。
+ *
+ * `readStations()` が返す駅名には、同名駅を区別する `(都道府県)` の注記が付くことがある
+ * （例: `草津(滋賀県)`）。メモの要約ではこの注記ごと見せたいが、出発地・目的地欄に入れると
+ * `splitNameAndAddress()`（`place-text.ts`）が丸括弧の中の都道府県名を住所の一部と誤認し、
+ * 次にYahoo!乗換案内を開くときの地点解決が崩れる。欄に入れる用途だけ、末尾の注記を落とす。
+ */
+export function yahooStationName(station: string): string {
+  return station.replace(/[（(][^（）()]*[）)]\s*$/, "").trim();
+}
