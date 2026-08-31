@@ -29,6 +29,18 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.13.4",
+    date: "2026-09-01",
+    changes: [
+      "ログイン完了後にカレンダーが以前見ていた月のまま表示され続ける不具合を修正しました。ログイン直後は常に今日を含む月から表示されます。",
+    ],
+    usage: [
+      "ログアウトした状態でDaySpanを開き、Googleでログインする",
+      "ログイン完了後、カレンダー画面が自動的に表示される",
+      "以前見ていた月ではなく、今日を含む月が表示されていれば修正が効いている",
+    ],
+  },
+  {
     version: "2.13.2",
     date: "2026-08-30",
     changes: [
