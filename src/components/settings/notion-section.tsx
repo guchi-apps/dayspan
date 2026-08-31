@@ -635,6 +635,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
               <p className="text-xs text-muted-foreground">
                 myroomが書き出すゴミの収集日をカレンダーに表示します。DaySpanからは読むだけで、
                 編集・削除はできません（myroomが毎日書き直すため）。タイトルと日付が必要です。
+                日付に時刻が入っていれば、終日ではなくその時刻の位置に表示します。
               </p>
               {state.garbageDataSourceId && (
                 <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
