@@ -27,6 +27,13 @@
  * ↓ 21:24〜21:46
  * ↓ ＪＲ京都線 姫路行
  * ■高槻
+ *
+ * [Yahoo!乗換案内]
+ * ↓ アプリのダウンロードはこちらから
+ * https://transit.yahoo.co.jp/smartphone/app/
+ *
+ * ※定期代やチケット設定が含まれた検索結果は個人の設定に依存するため、上記の文面やリンク先の
+ * 経路・料金が、送信元と受取先で一致しない場合がございますのでご注意ください。
  * ```
  */
 
@@ -74,8 +81,10 @@ const TRANSFERS = /乗換\s*(\d+)\s*回/;
 export function parseYahooTransitRoute(text: string): YahooTransitRoute | null {
   if (!text.trim()) return null;
 
-  // アプリの案内文・注意書きは経路ではない。ここから下に時刻が混ざっていても拾わない。
-  const body = text.split(/\[Yahoo!乗換案内\]|^※/m)[0];
+  // アプリの案内文・注意書きは経路ではない。ここから下は拾わない。
+  // 行頭が「※」の行（運賃欄の注記など）だけでは区切らない。経路詳細の途中にも現れうるため、
+  // そこで区切ると乗換回数・駅名・路線名まで消えてしまう（issue #491）。
+  const body = text.split(/\[Yahoo!乗換案内\]/)[0];
   const lines = body
     .split(/\r?\n/)
     .map((line) => line.trim())
