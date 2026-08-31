@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { isAllowedEmail } from "@/lib/allowed-users";
+import { CALENDAR_VIEW_COOKIE } from "@/lib/calendar-view-memory";
 import { db } from "@/lib/db";
 import { resolveInternalPath } from "@/lib/home-path";
 import { getRequestOrigin } from "@/lib/request-origin";
@@ -50,5 +51,12 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return NextResponse.redirect(`${origin}${next}`);
+  const response = NextResponse.redirect(`${origin}${next}`);
+
+  // ログインを求められた＝セッションが途切れた体験。ブラウジングコンテキスト自体は
+  // 変わらないため起動判定（resetCalendarMemoryOnLaunch）には掛からず、以前見ていた
+  // 月の記憶がそのまま残ってしまう（issue #486）。ログイン成功時も起動時と同様に捨てる。
+  response.cookies.delete(CALENDAR_VIEW_COOKIE);
+
+  return response;
 }
