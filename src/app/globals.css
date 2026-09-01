@@ -27,8 +27,9 @@
   --color-tertiary-container: var(--md-tertiary-container);
   --color-on-tertiary-container: var(--md-on-tertiary-container);
 
-  /* 移動（docs/spec.md §29）。予定の色は利用者がGoogle側で選んだものが入るため、
-     どの色とも重ならない役割色として、案内標識に近い青緑を1色だけ足す。
+  /* 移動（docs/spec.md §29, issue #492）。移動の背景はGoogle側の書き出し先カレンダーの
+     色を使うため、このロールは背景の塗りには使わない。予定と形が同じでも見分けが付くよう、
+     左端の縦線・斜め縞・矢印だけに充てる、どの色とも重ならない役割色として青緑を1色足している。
      ロール名だけ書いて `--color-travel` を出さないと、Tailwind v4 は `bg-travel` を
      未定義のユーティリティとして黙って捨てる（issue #171 と同じ落とし穴）。 */
   --color-travel: var(--md-travel);
