@@ -229,6 +229,12 @@ export type TravelItem = {
   returnLeg: boolean;
   /** Googleへ書き出せているか。未設定・失敗のときは画面で理由を示す。 */
   exported: boolean;
+  /**
+   * 書き出し先Googleカレンダーの色（issue #492）。背景の塗りに使う。
+   * 未書き出し・書き出し失敗、または書き出し先が「使用」オフになっている場合は null で、
+   * eventColors(null) の既定色（FALLBACK）に落ちる。
+   */
+  color: string | null;
 };
 
 export type CalendarItem = CalendarEventItem | TaskItem | ReminderItem | TravelItem;
