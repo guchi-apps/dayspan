@@ -35,6 +35,9 @@
  * ※定期代やチケット設定が含まれた検索結果は個人の設定に依存するため、上記の文面やリンク先の
  * 経路・料金が、送信元と受取先で一致しない場合がございますのでご注意ください。
  * ```
+ *
+ * メモへ入れるのは、この `[Yahoo!乗換案内]` より前の部分をそのまま（`noteText`）。
+ * 要約への作り替えはしない（issue #498）。
  */
 
 export type YahooTransitRoute = {
@@ -51,8 +54,13 @@ export type YahooTransitRoute = {
   transitCount: number | null;
   fromStation: string | null;
   toStation: string | null;
-  /** 利用する路線名（「ＪＲ琵琶湖線 姫路行」）。 */
-  lines: string[];
+  /**
+   * メモへそのまま入れる経路の生テキスト。貼り付けた文字列からアプリの案内文・注意書き
+   * （`[Yahoo!乗換案内]` 以降）だけを取り除き、それ以外は要約せずそのまま使う（issue #498）。
+   * 所要時間・運賃・距離・号車/番線・運賃内訳・共有URL・乗換駅名などを、要約への作り替えで
+   * 落とさないため。
+   */
+  noteText: string;
 };
 
 /**
@@ -74,9 +82,11 @@ const TRANSFERS = /乗換\s*(\d+)\s*回/;
 /**
  * 経路のテキストを読む。読めなければ null（呼び出し元は何も書き換えない）。
  *
- * **必須なのは発着時刻だけ。** ほかの項目はメモの要約と取り込み結果の表示に使うだけで、
- * 欠けても取り込みそのものは成り立つ。Yahoo!側の文面が変わったときに、
- * 1項目の欠けで時刻まで失わないようにするため（trainrouteの応答の読み方と同じ扱い）。
+ * **必須なのは発着時刻だけ。** 日付・所要時間・乗換回数・駅名は、読めれば取り込み結果の
+ * 表示・出発地目的地欄に使うだけで、欠けても取り込みそのものは成り立つ。Yahoo!側の文面が
+ * 変わったときに、1項目の欠けで時刻まで失わないようにするため（trainrouteの応答の
+ * 読み方と同じ扱い）。`noteText` はこれらと違い、案内文を切り落とすだけで他の項目の
+ * 読み取り結果に依存しないため、発着時刻さえ読めれば常に入る。
  */
 export function parseYahooTransitRoute(text: string): YahooTransitRoute | null {
   if (!text.trim()) return null;
@@ -103,7 +113,7 @@ export function parseYahooTransitRoute(text: string): YahooTransitRoute | null {
     transitCount: readTransfers(body),
     fromStation: stations.at(0) ?? null,
     toStation: stations.length > 1 ? (stations.at(-1) ?? null) : null,
-    lines: readLines(lines),
+    noteText: body.trim(),
   };
 }
 
@@ -174,39 +184,6 @@ function readStations(lines: string[]): string[] {
 }
 
 /**
- * 利用する路線名。`↓` で始まる行のうち、時刻でも番線でもないもの。
- *
- * 徒歩（「↓ 徒歩2分」）も路線として扱う。乗換の間に歩く区間があること自体が、
- * 経路を見分ける手掛かりになるため。
- */
-function readLines(lines: string[]): string[] {
-  return lines
-    .filter((line) => line.startsWith("↓"))
-    .map((line) => line.replace(/^↓\s*/, "").trim())
-    .filter((line) => line !== "" && !/\d{1,2}:\d{2}/.test(line) && !line.includes("番線"));
-}
-
-/**
- * メモへ残す経路の要約。
- *
- * 運賃と距離は入れない。移動の項目に運賃は無く、経路検索の候補でも
- * 「選ぶ手掛かりとして出すだけで保存しない」としている（docs/spec.md §29）。
- */
-export function yahooRouteSummary(route: YahooTransitRoute): string {
-  const head =
-    route.fromStation && route.toStation
-      ? `${route.fromStation} ${route.departTime} → ${route.toStation} ${route.arriveTime}`
-      : `${route.departTime} → ${route.arriveTime}`;
-
-  const detail = [...route.lines];
-  if (route.transitCount !== null) {
-    detail.push(route.transitCount > 0 ? `乗換${route.transitCount}回` : "乗換なし");
-  }
-
-  return detail.length > 0 ? `${head}\n${detail.join(" ／ ")}` : head;
-}
-
-/**
  * 読み取った経路を入力欄の値（`YYYY-MM-DDTHH:mm`）にする。
  *
  * **日付は動かさない。** 基準は入力欄の出発日で、Yahoo!側が検索した日は使わない。
@@ -251,9 +228,9 @@ export function yahooSearchedDateKey(route: YahooTransitRoute): string | null {
  * 出発地・目的地欄へそのまま入れるための駅名。
  *
  * `readStations()` が返す駅名には、同名駅を区別する `(都道府県)` の注記が付くことがある
- * （例: `草津(滋賀県)`）。メモの要約ではこの注記ごと見せたいが、出発地・目的地欄に入れると
- * `splitNameAndAddress()`（`place-text.ts`）が丸括弧の中の都道府県名を住所の一部と誤認し、
- * 次にYahoo!乗換案内を開くときの地点解決が崩れる。欄に入れる用途だけ、末尾の注記を落とす。
+ * （例: `草津(滋賀県)`）。メモ（`noteText`）にはこの注記ごと残したいが、出発地・目的地欄に
+ * 入れると `splitNameAndAddress()`（`place-text.ts`）が丸括弧の中の都道府県名を住所の一部と
+ * 誤認し、次にYahoo!乗換案内を開くときの地点解決が崩れる。欄に入れる用途だけ、末尾の注記を落とす。
  */
 export function yahooStationName(station: string): string {
   return station.replace(/[（(][^（）()]*[）)]\s*$/, "").trim();
