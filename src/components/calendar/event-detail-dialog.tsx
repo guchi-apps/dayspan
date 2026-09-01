@@ -265,17 +265,22 @@ export function EventDetailDialog({
             <div className="flex flex-col gap-1.5">
               {linkedTravels.map((travel) => {
                 // 背景は書き出し先カレンダーの色を使う（issue #492）。時間グリッドの
-                // TravelBlockと同じ考え方で、縦線・矢印は固定の専用色のまま残す。
+                // TravelBlockと同じ考え方で、塗り・枠線は予定と同じにし、移動だと分かるのは
+                // 矢印だけにする（issue #502）。
                 const colors = eventColors(travel.color);
                 return (
                   <button
                     key={travel.id}
                     type="button"
                     onClick={() => openTravel(travel)}
-                    className="flex items-center gap-2 rounded-md border border-l-[3px] border-travel/40 border-l-travel px-2.5 py-1.5 text-left text-xs"
-                    style={{ backgroundColor: colors.background, color: colors.foreground }}
+                    className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs"
+                    style={{
+                      backgroundColor: colors.background,
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                    }}
                   >
-                    <TravelMark className="size-3 shrink-0 text-travel" />
+                    <TravelMark className="size-3 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">
                       {travel.title}
                       <span className="opacity-75">（{travelSummary(travel)}）</span>
