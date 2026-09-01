@@ -88,7 +88,15 @@ export async function loadCalendarData(
   const exportedEventIds = new Set(
     travelPlans.map((plan) => plan.googleEventId).filter((id): id is string => Boolean(id)),
   );
-  const travels: TravelItem[] = travelPlans.map(toTravelItem);
+
+  // 移動の背景色は、書き出し先カレンダーの色をそのまま使う（issue #492）。
+  // Googleへまだ書き出せていない・書き出しに失敗した移動、または書き出し先が「使用」から
+  // 外れたカレンダーを指している場合は色が引けず null のままになり、
+  // eventColors(null) の既定色へ落ちる。
+  const calendarColorById = new Map(events.calendars.map((c) => [c.calendarId, c.color]));
+  const travels: TravelItem[] = travelPlans.map((plan) =>
+    toTravelItem(plan, plan.googleCalendarId ? (calendarColorById.get(plan.googleCalendarId) ?? null) : null),
+  );
 
   // 紐づけの解決とずれの判定はここで済ませる（docs/spec.md §31）。月表示は1度の描画で
   // 全てのタスクを何度も見るため、描くたびに判定すると同じ計算がその回数ぶん積み上がる。

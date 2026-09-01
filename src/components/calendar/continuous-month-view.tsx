@@ -23,7 +23,7 @@ import type {
 import type { TagOption } from "@/services/notion/tag-options";
 import type { WorkRecordItem } from "@/types/work";
 
-import { eventColors } from "./calendar-color";
+import { eventAccent, eventColors } from "./calendar-color";
 import { dayTone, weekdayOnlyTone } from "./day-tone";
 import {
   isAllDayItem,
@@ -909,6 +909,8 @@ function TaskChip({
  * 月表示で1日に置ける件数は限られている。移動は予定に1件ずつ付くため、予定と同じように
  * 塗った帯にすると、その日に何があるかを読む前に枠が埋まる。出発地まで出さないのも同じ理由で、
  * 「どこへ向かうか」が分かれば予定と結び付けられる。
+ *
+ * 輪郭の色は書き出し先カレンダーの色を使う（issue #492）。矢印は固定の専用色のまま残す。
  */
 function TravelChip({
   travel,
@@ -921,11 +923,14 @@ function TravelChip({
   continuesBefore: boolean;
   onOpen: () => void;
 }) {
+  const accent = eventAccent(travel.color);
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border border-travel/50 bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
+      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
+      style={{ borderColor: `color-mix(in srgb, ${accent} 50%, transparent)` }}
       title={`${travel.title}（${utils.formatTime(travel.start)}発）`}
     >
       <TravelMark className="size-2 text-travel" />

@@ -61,7 +61,15 @@ export type TravelSaveResult = {
   exports: TravelExportResult[];
 };
 
-export function toTravelItem(plan: TravelPlan): TravelItem {
+/**
+ * 移動をカレンダー画面向けの形へ直す。
+ *
+ * `color`は書き出し先カレンダーの色（issue #492）。呼び出し元（`createTravel`/`updateTravel`）が
+ * 省略しているのは、その戻り値（`TravelSaveResult.travels`）が画面では実際には読まれていないため。
+ * 保存後は `onSaved()` 経由で `loadCalendarData()` が触れた期間を取り直し、そちらで
+ * `WritableCalendar[]` と突き合わせて色を解決する（`src/services/calendar/load.ts`）。
+ */
+export function toTravelItem(plan: TravelPlan, color: string | null = null): TravelItem {
   return {
     kind: "travel",
     id: plan.id,
@@ -77,6 +85,7 @@ export function toTravelItem(plan: TravelPlan): TravelItem {
     linkedEventId: plan.linkedEventId,
     returnLeg: plan.returnLeg,
     exported: Boolean(plan.googleEventId),
+    color,
   };
 }
 

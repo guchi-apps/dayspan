@@ -29,6 +29,7 @@ import { mapLink } from "@/lib/map-link";
 import type { PlaceItem } from "@/services/notion/places";
 import { TRAVEL_MODE_LABELS, type CalendarEventItem, type TravelItem } from "@/types/calendar";
 
+import { eventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { placeCoordinates } from "./location-input";
 import { TaskStageMark } from "./task-stage-mark";
@@ -262,21 +263,27 @@ export function EventDetailDialog({
           */}
           {linkedTravels && linkedTravels.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              {linkedTravels.map((travel) => (
-                <button
-                  key={travel.id}
-                  type="button"
-                  onClick={() => openTravel(travel)}
-                  className="flex items-center gap-2 rounded-md border border-l-[3px] border-travel/40 border-l-travel bg-travel-container/60 px-2.5 py-1.5 text-left text-xs text-on-travel-container"
-                >
-                  <TravelMark className="size-3 shrink-0 text-travel" />
-                  <span className="min-w-0 flex-1 truncate">
-                    {travel.title}
-                    <span className="opacity-75">（{travelSummary(travel)}）</span>
-                  </span>
-                  <ChevronRight className="size-4 shrink-0 opacity-70" />
-                </button>
-              ))}
+              {linkedTravels.map((travel) => {
+                // 背景は書き出し先カレンダーの色を使う（issue #492）。時間グリッドの
+                // TravelBlockと同じ考え方で、縦線・矢印は固定の専用色のまま残す。
+                const colors = eventColors(travel.color);
+                return (
+                  <button
+                    key={travel.id}
+                    type="button"
+                    onClick={() => openTravel(travel)}
+                    className="flex items-center gap-2 rounded-md border border-l-[3px] border-travel/40 border-l-travel px-2.5 py-1.5 text-left text-xs"
+                    style={{ backgroundColor: colors.background, color: colors.foreground }}
+                  >
+                    <TravelMark className="size-3 shrink-0 text-travel" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {travel.title}
+                      <span className="opacity-75">（{travelSummary(travel)}）</span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 opacity-70" />
+                  </button>
+                );
+              })}
             </div>
           )}
 
