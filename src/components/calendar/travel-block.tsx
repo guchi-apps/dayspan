@@ -10,17 +10,17 @@ import { TravelMark } from "./travel-mark";
 /**
  * 時間グリッドに置く移動の帯（docs/spec.md §29）。
  *
- * 予定と同じ幅で置き、左端の縦線・進行方向の斜め縞・矢印で見分ける。形を予定に寄せるのは、
- * 移動もその時間を実際に占有するため。
+ * 塗り・枠線・角丸は通常の予定とまったく同じにする（issue #502）。背景は書き出し先カレンダーの
+ * 色（`travel.color`）を予定と同じ`eventColors()`で解決して使う（issue #492）。
  *
- * 背景は書き出し先カレンダーの色（`travel.color`）を予定と同じ`eventColors()`で塗る
- * （issue #492）。以前は固定の専用色（青緑）で塗っており、同じGoogleカレンダーに
- * 保存されているのに予定と色が違って見えていた。縦線・矢印は固定の専用色のまま残し、
- * 背景が予定に近い色になっても形で見分けられるようにする（色だけで分けると、Google側で
- * 青系の色を選んだカレンダーの予定と見分けが付かなくなるため）。
+ * 以前は、背景を予定と同じ色に揃えた代わりに左端の縦線・進行方向の斜め縞を固定の専用色（青緑）で
+ * 重ね、形で予定と見分けられるようにしていた。ただし同じ「移動」カレンダーへ普通の予定として
+ * 保存したものにはその縞が付かず、同じ場所へ同じつもりで入れたものが2通りの見た目で並んでいた。
+ * 入力経路の違いを画面で区別する必要は無いため、縞と縦線をやめて予定と同じ塗りへ戻した。
  *
- * 斜め縞は流さない。空き時間を引いている最中の枠（SlotRangeBlock）が流れる縞で
- * 「いま押さえているところ」を示しており、動きの有無でその2つを分けている。
+ * 移動だと分かるのはタイトル頭の矢印（`TravelMark`）だけになる。矢印は固定の専用色にせず
+ * 文字色（`eventColors()`が背景の明るさから選んだ色）に乗せる。青緑のままだと、ブルーベリーの
+ * ような濃い色のカレンダーで矢印だけが背景に沈み、移動だと分かる手掛かりが何も残らないため。
  */
 export function TravelBlock({
   travel,
@@ -54,7 +54,7 @@ export function TravelBlock({
       type="button"
       onClick={onOpen}
       className={cn(
-        "absolute right-0 flex flex-col overflow-hidden rounded-item border border-l-[3px] border-travel/40 border-l-travel",
+        "absolute right-0 flex flex-col overflow-hidden rounded-item border",
         "px-1.5 py-0.5 text-left text-[10px] leading-tight",
       )}
       style={{
@@ -63,14 +63,12 @@ export function TravelBlock({
         height,
         backgroundColor: colors.background,
         color: colors.foreground,
-        // 進行方向の斜め縞。塗りだけだと、淡い色の予定と面として見分けにくい。
-        backgroundImage:
-          "repeating-linear-gradient(135deg, rgba(0,0,0,.05) 0 6px, transparent 6px 12px)",
+        borderColor: colors.border,
       }}
       title={`${timeText} ${travel.title}（${modeLabel} ${minutes}分）`}
     >
       <span className="clip-nowrap flex shrink-0 items-center gap-1 font-semibold">
-        <TravelMark className="size-2 text-travel" />
+        <TravelMark className="size-2" />
         <span className="clip-nowrap">{travel.title}</span>
       </span>
       {textLines > 1 && (
