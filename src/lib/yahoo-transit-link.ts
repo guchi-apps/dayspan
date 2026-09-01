@@ -102,15 +102,25 @@ export function resolveYahooTransitBasis(input: YahooTransitBasisInput): YahooTr
 }
 
 /**
- * 検索URL。出発地・目的地が揃っていなければ null（リンクにしない）。
+ * 出発地・目的地のどちらかが決まっていないときに開く、地点未指定のトップページ。
+ *
+ * 日時や場所を決める前からYahoo!乗換案内を開けるようにするため（issue #490）。
+ * 片方だけ指定した状態で検索URLを組み立てても、Yahoo!側は地点を引けず日時指定ごと
+ * トップページへ落とす（`applyPlace` のコメントにある `名前 住所` 丸ごと渡し失敗と同じ挙動。
+ * 実地確認済み）ので、揃わない間は特別扱いを増やさずこの1つに統一する。
+ */
+export const YAHOO_TRANSIT_TOP_URL = "https://transit.yahoo.co.jp/";
+
+/**
+ * 検索URL。出発地・目的地が揃っていなければ地点未指定のトップページ（`YAHOO_TRANSIT_TOP_URL`）。
  *
  * 基準の既定は到着時刻。移動は「予定の開始までに着く」ために作るため（§29）。出発時刻を
  * 指定して探したいときは、画面のチップで基準を切り替える。
  */
-export function yahooTransitLink(input: YahooTransitLinkInput): string | null {
+export function yahooTransitLink(input: YahooTransitLinkInput): string {
   const origin = input.origin;
   const destination = input.destination;
-  if (!origin || !destination) return null;
+  if (!origin || !destination) return YAHOO_TRANSIT_TOP_URL;
 
   const params = new URLSearchParams();
   applyPlace(params, "from", "flatlon", origin);
