@@ -20,7 +20,6 @@ import {
 import {
   parseYahooTransitRoute,
   yahooRouteFields,
-  yahooRouteSummary,
   yahooSearchedDateKey,
   yahooStationName,
 } from "@/lib/yahoo-transit-route";
@@ -216,8 +215,11 @@ export function TravelForm({
    * **例外は、予定に紐づかない新規の移動（`standalone`）だけ。** 動いて困る予定の日が
    * そもそも無いため、検索した日をそのまま移動の日として採用する（issue #490）。
    *
-   * **出発地・目的地欄が空のときは、読み取れた乗車駅・降車駅で埋める。** メモと同じく、
-   * 空のときだけ入れ、書いた・選んだ値は上書きしない。
+   * **出発地・目的地欄は、貼り付けるたびに読み取れた乗車駅・降車駅で上書きする。** 新規の
+   * 移動では設定の既定の出発地（例:「自宅…」）が最初から入っており、「欄が空のときだけ」
+   * では実質発火しない。貼り付けは実際に選んだ経路という意思表示なので、既定値やそれまでの
+   * 値より優先してよい（issue #498）。メモは自由記述の可能性があるため、従来どおり
+   * 空のときだけ入れる。
    */
   const applyYahooRoute = (text: string): boolean => {
     const route = parseYahooTransitRoute(text);
@@ -235,10 +237,11 @@ export function TravelForm({
     setDepartAt(fields.departAt);
     setArriveAt(fields.arriveAt);
     setEstimateSource("YAHOO");
-    // メモ・出発地・目的地は、利用者が書いた/選んだ値を上書きしない。空のときだけ埋める。
-    if (!note.trim()) setNote(yahooRouteSummary(route));
-    if (!origin.trim() && route.fromStation) setOrigin(yahooStationName(route.fromStation));
-    if (!destination.trim() && route.toStation) setDestination(yahooStationName(route.toStation));
+    // メモは利用者が書いた値を上書きしない（空のときだけ埋める）。出発地・目的地は
+    // 貼り付けた経路の実際の乗車駅・降車駅なので、既定値やそれまでの値によらず常に上書きする。
+    if (!note.trim()) setNote(route.noteText);
+    if (route.fromStation) setOrigin(yahooStationName(route.fromStation));
+    if (route.toStation) setDestination(yahooStationName(route.toStation));
 
     setPasteOpen(false);
     setPasteText("");
