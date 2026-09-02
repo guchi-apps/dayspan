@@ -199,6 +199,11 @@ export function WorkScreen({
 
   const openDay = (dateKey: string) => {
     const existing = records.find((record) => coversDate(record, dateKey));
+    // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも休業タブへは寄せない）。
+    // 会社休業日は「会社が決めた休み」で期間で1件のもの（docs/spec.md §34）。土日を1日ずつ
+    // 会社休業日として登録すると、月の集計（`Tally()`）で本来のお盆・年末年始の休業日数と
+    // 混ざって読めなくなる。休みとして明示的に記録したいときは、従来どおり「休業を追加」または
+    // このダイアログの中でタブを切り替えて登録する。
     setDraft(
       existing
         ? { mode: "edit", record: existing }
@@ -232,20 +237,6 @@ export function WorkScreen({
       <OfflineNotice />
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-          <div className="flex items-center justify-between gap-2">
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`/work?month=${shiftMonth(monthKey, -1)}`} aria-label="前の月">
-                <ChevronLeft className="size-4" />
-              </Link>
-            </Button>
-            <span className="type-title-medium tabular-nums">{monthLabel}</span>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`/work?month=${shiftMonth(monthKey, 1)}`} aria-label="次の月">
-                <ChevronRight className="size-4" />
-              </Link>
-            </Button>
-          </div>
-
           {/* 書き込みの失敗を先に出す。押した操作の結果のほうが、開いた時点の取得の失敗より新しい。 */}
           {(error ?? loadError) && (
             <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container">
@@ -325,9 +316,24 @@ export function WorkScreen({
             </section>
           )}
 
-          {/* この月の勤務場所。今日のぶんだけは選択肢を並べ、1押しで決められるようにする。 */}
+          {/* この月の勤務場所。今日のぶんだけは選択肢を並べ、1押しで決められるようにする。
+              月切替はここへ添える（issue #510）。出張・年休の区画は月に限定されない情報のため、
+              月切替をヘッダー直下に置くとそれらの区画にも効くように見えてしまう。月ごとの内容の
+              直前に置くことで、上（出張・年休）と下（この月の勤務場所）の境目をはっきりさせる。 */}
           <section className="flex flex-col gap-3">
-            <h2 className="type-title-small">この月の勤務場所</h2>
+            <div className="flex items-center justify-between gap-2">
+              <Button variant="ghost" size="sm" asChild>
+                <Link href={`/work?month=${shiftMonth(monthKey, -1)}`} aria-label="前の月">
+                  <ChevronLeft className="size-4" />
+                </Link>
+              </Button>
+              <h2 className="type-title-small tabular-nums">{monthLabel}の勤務場所</h2>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href={`/work?month=${shiftMonth(monthKey, 1)}`} aria-label="次の月">
+                  <ChevronRight className="size-4" />
+                </Link>
+              </Button>
+            </div>
 
             {showsToday && (
               <Card>
@@ -341,6 +347,14 @@ export function WorkScreen({
                       )}
                     </span>
                   </div>
+
+                  {/* 登録が無い土日祝は自動的に「休み」として扱う（表示だけで、Notionへは書き込まない・
+                      docs/spec.md §34）。出社した場合は従来どおり下から勤務場所を選べる。 */}
+                  {!todayRecord && isAutoOffDay(todayKey) && (
+                    <p className="type-body-small text-on-surface-variant">
+                      土日祝は自動的に「休み」として扱われます。出社した場合は下から勤務場所を選んでください。
+                    </p>
+                  )}
 
                   {!todayEditableByChip && todayRecord ? (
                     <p className="type-body-medium">
@@ -403,57 +417,77 @@ export function WorkScreen({
                 {days.map((dateKey) => {
                   const record = records.find((item) => coversDate(item, dateKey));
                   const holiday = japaneseHolidayName(dateKey);
+                  // 手続きが残っている項目だけ。事後登録は終了日を過ぎるまで含まれないため、
+                  // 出張中にこの一覧からうっかり完了にできてしまうことはない。
+                  const todos = record ? workTodos(record, todayKey) : [];
                   return (
-                    <button
+                    <div
                       key={dateKey}
-                      type="button"
-                      onClick={() => openDay(dateKey)}
-                      className="flex w-full items-center gap-3 border-b border-outline-variant py-2.5 text-left last:border-b-0 hover:bg-on-surface/8"
+                      className="flex flex-col gap-1.5 border-b border-outline-variant py-2.5 last:border-b-0"
                     >
-                      <span
-                        className={cn(
-                          "type-body-small w-16 shrink-0 tabular-nums",
-                          dateClass(dateKey),
-                          dateKey === todayKey && "font-bold",
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => openDay(dateKey)}
+                        className="flex w-full items-center gap-3 text-left hover:bg-on-surface/8"
                       >
-                        {dayLabel(dateKey)}
-                      </span>
-                      {record ? (
                         <span
                           className={cn(
-                            "type-body-medium min-w-0 truncate",
-                            record.businessTrip && "font-bold text-travel",
-                            // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
-                            // 何の休みなのかは行の文字（「会社休業日」）が持っている。
-                            (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
+                            "type-body-small w-16 shrink-0 tabular-nums",
+                            dateClass(dateKey),
+                            dateKey === todayKey && "font-bold",
                           )}
                         >
-                          {recordLabel(record)}
+                          {dayLabel(dateKey)}
                         </span>
-                      ) : (
-                        <span className="type-body-medium text-outline">未登録</span>
+                        {record ? (
+                          <span
+                            className={cn(
+                              "type-body-medium min-w-0 truncate",
+                              record.businessTrip && "font-bold text-travel",
+                              // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
+                              // 何の休みなのかは行の文字（「会社休業日」）が持っている。
+                              (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
+                            )}
+                          >
+                            {recordLabel(record)}
+                          </span>
+                        ) : isAutoOffDay(dateKey) ? (
+                          // 登録が無い土日祝は自動的に「休み」として扱う（表示だけ、docs/spec.md §34）。
+                          <span className="type-body-medium text-on-surface-variant">休み</span>
+                        ) : (
+                          <span className="type-body-medium text-outline">未登録</span>
+                        )}
+                        {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
+                        {holiday && (
+                          <span className="type-label-small ml-auto min-w-0 truncate text-error">
+                            {holiday}
+                          </span>
+                        )}
+                      </button>
+                      {/* 残っている手続きをチェックボックスで区別する（issue #510）。事前申請・事後登録の
+                          どちらが残っているかが「未対応」の一括表記では読めなかったため。押すとその場で
+                          完了にでき、完了すると再取得でこの行から消える。出張は期間の全ての日に同じ
+                          記録が並ぶため、チェックボックスは開始日の行にだけ出す（同じ手続きに対する
+                          チェックボックスが日数ぶん重複しないように）。 */}
+                      {record && dateKey === record.startDate && todos.length > 0 && (
+                        <div className="flex flex-wrap gap-3 pl-[76px]">
+                          {todos.map((todo) => (
+                            <label
+                              key={todo}
+                              className="type-label-medium flex items-center gap-2 text-error"
+                            >
+                              <Checkbox
+                                className="border-error"
+                                disabled={busy || pending || offline}
+                                checked={false}
+                                onCheckedChange={() => toggleTodo(record, todo, true)}
+                              />
+                              {WORK_TODO_LABELS[todo]}
+                            </label>
+                          ))}
+                        </div>
                       )}
-                      {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
-                      {holiday && (
-                        <span className="type-label-small ml-auto min-w-0 truncate text-error">
-                          {holiday}
-                        </span>
-                      )}
-                      {/* 申請が残っている日は一覧からも分かるようにする。上の区画まで戻らずに気付ける。
-                          祝日の名前と並ぶ日は、名前の側を削って未対応の印を残す（印は2〜3文字で、
-                          削られると何が残っているのかが読めなくなる）。 */}
-                      {record && workTodos(record, todayKey).length > 0 && (
-                        <span
-                          className={cn(
-                            "type-label-small shrink-0 font-bold text-error",
-                            !holiday && "ml-auto",
-                          )}
-                        >
-                          {record.annualLeave ? "未申請" : "未対応"}
-                        </span>
-                      )}
-                    </button>
+                    </div>
                   );
                 })}
               </CardContent>
@@ -676,6 +710,18 @@ function weekdayOf(dateKey: string): number {
 
 function dayLabel(dateKey: string): string {
   return `${Number(dateKey.slice(8, 10))}(${WEEKDAYS[weekdayOf(dateKey)]})`;
+}
+
+/**
+ * 登録が無い日を自動的に「休み」として扱ってよいか（表示だけ、docs/spec.md §34）。
+ *
+ * 土曜・日曜・祝日が対象。`dateClass()` が日曜・祝日を同じ赤で示している理由（月曜の祝日が
+ * 平日と同じ色だと、入れ忘れなのかそもそも働いていない日なのか読めない）が、そのまま
+ * 「未登録」と「休み」のどちらを出すかにも当てはまるため、色分けと対象をそろえる。
+ */
+function isAutoOffDay(dateKey: string): boolean {
+  const day = weekdayOf(dateKey);
+  return day === 0 || day === 6 || japaneseHolidayName(dateKey) !== null;
 }
 
 /**
