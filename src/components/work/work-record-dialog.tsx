@@ -69,6 +69,7 @@ export function WorkRecordDialog({
   placeOptions,
   tripPlaces,
   capabilities,
+  todayKey,
   onClose,
   onSaved,
 }: {
@@ -77,6 +78,8 @@ export function WorkRecordDialog({
   /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
   tripPlaces: string[];
   capabilities: WorkCapabilities;
+  /** 事後登録が押せるかどうかの判定に使う（終了日を過ぎるまでは押せない。issue #509）。 */
+  todayKey: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -131,6 +134,9 @@ export function WorkRecordDialog({
   const businessTrip = kind === "trip";
   const isLeave = kind === "leave";
   const isHoliday = kind === "holiday";
+  // 事後登録は出張の翌日以降にしかできない。「終了日」欄の表示値と同じ式で判定する
+  // （既にtrueなら取り消して直せるようdisabledにしない・issue #509）。
+  const postRegisterDisabled = !postRegistered && !((endDate || startDate) < todayKey);
   // 半休の日は残り半日どこで働いたかも要る（勤怠の提出で使う）。全休の日は入る値が無い。
   const halfDay = isLeave && annualLeaveDays(annualLeave) < 1;
   // 期間を持てるのは出張・全休の年休・会社休業日。半休は単日に限る（半日ずつ2日ぶんという
@@ -434,18 +440,31 @@ export function WorkRecordDialog({
             {(["preApplied", "postRegistered"] as const).map((todo) => {
               const checked = todo === "preApplied" ? preApplied : postRegistered;
               const setChecked = todo === "preApplied" ? setPreApplied : setPostRegistered;
+              const todoDisabled = todo === "postRegistered" && postRegisterDisabled;
               return (
                 <label key={todo} className="flex items-center gap-3 py-1.5">
                   <Checkbox
                     checked={checked}
+                    disabled={todoDisabled}
                     onCheckedChange={(next) => setChecked(next === true)}
                   />
-                  <span className="type-body-medium">
+                  <span
+                    className={cn(
+                      "type-body-medium",
+                      todoDisabled && "text-on-surface-variant",
+                    )}
+                  >
                     {WORK_TODO_LABELS[todo]}を済ませた
                   </span>
                 </label>
               );
             })}
+            {/* 押せない理由が伝わるよう添える。押せないだけでは、いつ押せるようになるか分からない。 */}
+            {postRegisterDisabled && (
+              <p className="type-body-small pl-[30px] text-on-surface-variant">
+                出張終了後に登録できます
+              </p>
+            )}
           </div>
         )}
 

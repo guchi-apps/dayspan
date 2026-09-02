@@ -15,6 +15,7 @@ import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh"
 import { tagChipClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
 import { japaneseHolidayName } from "@/lib/japanese-holidays";
 import { cn } from "@/lib/utils";
@@ -26,9 +27,9 @@ import {
   formatDays,
   isTripPlace,
   openWorkRecords,
-  shownWorkTodos,
   WORK_TODO_LABELS,
   workTodos,
+  workTodoStates,
   type WorkCapabilities,
   type WorkRecordItem,
   type WorkTodo,
@@ -278,8 +279,7 @@ export function WorkScreen({
                       record={trip}
                       todayKey={todayKey}
                       todos={["preApplied", "postRegistered"]}
-                      tone="travel"
-                      disabled={busy || pending || offline}
+                      writeDisabled={busy || pending || offline}
                       onToggle={toggleTodo}
                       onOpen={() => setDraft({ mode: "edit", record: trip })}
                     />
@@ -315,8 +315,7 @@ export function WorkScreen({
                       record={leave}
                       todayKey={todayKey}
                       todos={["preApplied"]}
-                      tone="leave"
-                      disabled={busy || pending || offline}
+                      writeDisabled={busy || pending || offline}
                       onToggle={toggleTodo}
                       onOpen={() => setDraft({ mode: "edit", record: leave })}
                     />
@@ -534,6 +533,7 @@ export function WorkScreen({
           placeOptions={placeOptions}
           tripPlaces={tripPlaces}
           capabilities={capabilities}
+          todayKey={todayKey}
           onClose={() => setDraft(null)}
           onSaved={() => {
             setDraft(null);
@@ -549,15 +549,15 @@ export function WorkScreen({
  * 出張・年休1件ぶんの行。済み・未済はその場で切り替えられる。
  *
  * 出張と年休で作りを変えないのは、開く理由（まだ済ませていない手続きを片付ける）が同じで、
- * 別の形にすると同じことをするのに覚えることが2つに増えるため。違うのは色と、出せる
- * 手続きの数だけにする。
+ * 別の形にすると同じことをするのに覚えることが2つに増えるため。違うのは出せる手続きの数だけ。
+ *
+ * 日付をタイトルより上・左に置くのは、この行がまず「いつの記録か」を示すため（issue #509）。
  */
 function RecordRow({
   record,
   todayKey,
   todos: shown,
-  tone,
-  disabled,
+  writeDisabled,
   onToggle,
   onOpen,
 }: {
@@ -565,12 +565,12 @@ function RecordRow({
   todayKey: string;
   /** 出せる手続き。年休は事前申請だけ、出張は事前申請と事後登録。 */
   todos: WorkTodo[];
-  tone: "travel" | "leave";
-  disabled: boolean;
+  /** 書き込み中・オフライン中かどうか。項目単位の`disabled`（押せない手続き）とは別に持つ。 */
+  writeDisabled: boolean;
   onToggle: (record: WorkRecordItem, todo: WorkTodo, done: boolean) => void;
   onOpen: () => void;
 }) {
-  const chips = shownWorkTodos(record, todayKey, shown);
+  const states = workTodoStates(record, todayKey, shown);
   // 半休の日は残り半日どこで働いたかも持つ。行に出さないと、開かないと分からない。
   const sub =
     record.annualLeave && annualLeaveDays(record.annualLeave) < 1 && record.place
@@ -580,43 +580,46 @@ function RecordRow({
   // ここに並ぶのは手続きが残っている記録だけなので、枠は常に未対応の色にする。
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-error p-3">
-      <button type="button" onClick={onOpen} className="flex flex-col gap-0.5 text-left">
-        <span className="flex items-baseline gap-2">
-          <span className="type-body-large min-w-0 truncate font-bold">{record.title}</span>
-          <span className="type-body-small ml-auto shrink-0 tabular-nums text-on-surface-variant">
-            {spanLabel(record)}
-          </span>
+      <button type="button" onClick={onOpen} className="flex flex-col items-start gap-0.5 text-left">
+        <span className="type-body-small tabular-nums text-on-surface-variant">
+          {spanLabel(record)}
         </span>
+        <span className="type-body-large font-bold">{record.title}</span>
         {sub && <span className="type-body-small text-on-surface-variant">{sub}</span>}
       </button>
 
-      {chips.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {chips.map((todo) => {
-            const done = todo === "preApplied" ? record.preApplied : record.postRegistered;
-
-            return (
-              <button
-                key={todo}
-                type="button"
-                disabled={disabled}
-                aria-pressed={done}
-                onClick={() => onToggle(record, todo, !done)}
+      <div className="flex flex-col gap-1">
+        {states.map(({ todo, done, disabled: todoDisabled }) => {
+          // 押せるのに未対応なものだけを目立たせる。押せない項目（終了日前の事後登録）は
+          // 目立たせても押すものが増えないため、淡いままにする。
+          const needsAttention = !done && !todoDisabled;
+          return (
+            <label
+              key={todo}
+              className={cn(
+                "-mx-1 flex items-center gap-3 rounded-lg px-1 py-1.5 transition-colors",
+                needsAttention && "bg-error-container",
+                !todoDisabled && !writeDisabled && "cursor-pointer",
+              )}
+            >
+              <Checkbox
+                checked={done}
+                disabled={writeDisabled || todoDisabled}
+                onCheckedChange={(next) => onToggle(record, todo, next === true)}
+              />
+              <span
                 className={cn(
-                  "type-label-medium rounded-full border px-3 py-1.5 transition-colors disabled:opacity-38",
-                  done
-                    ? tone === "leave"
-                      ? "border-transparent bg-tertiary-container text-on-tertiary-container"
-                      : "border-transparent bg-travel-container text-on-travel-container"
-                    : "border-transparent bg-error-container font-bold text-on-error-container",
+                  "type-body-medium",
+                  needsAttention && "font-bold text-on-error-container",
+                  todoDisabled && "text-on-surface-variant",
                 )}
               >
-                {WORK_TODO_LABELS[todo]} {done ? "済" : "未"}
-              </button>
-            );
-          })}
-        </div>
-      )}
+                {WORK_TODO_LABELS[todo]}
+              </span>
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }
