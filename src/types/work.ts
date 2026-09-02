@@ -106,22 +106,32 @@ export function openWorkRecords(records: WorkRecordItem[], todayKey: string): Wo
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
 }
 
-/**
- * 行に出す手続き。いま押せるものと、済ませたものだけを残す。
- *
- * 事後登録は出張の翌日以降にするもので、終わるまで出しても押すものは増えない。済んだ手続きを
- * 残すのは、まだ他に未対応が残っている行で「何が済んでいるか」を同じ場所で確かめられるように
- * するため。最後の1つを済ませた記録は行ごと区画から消えるので、そこから戻すことはできない。
- * 戻すのは日別の一覧の行 → 入力ダイアログのチェック。
- */
-export function shownWorkTodos(
+/** 行に出すチェックボックス1件ぶんの状態。 */
+export type WorkTodoState = {
+  todo: WorkTodo;
+  done: boolean;
+  /**
+   * いま押せないか。
+   *
+   * 事後登録は出張の翌日以降にしかできないため、終了日を過ぎるまでは押せない状態のまま
+   * チェックボックスを残す（issue #509）。以前はチップごと非表示にしていたが、それだと
+   * 「事前申請は済んでいるが、この出張には事後登録も要る」ことが行から読めなかった。
+   * 既にtrueのものはdisabledにしない（取り消して直せるようにするため）。
+   */
+  disabled: boolean;
+};
+
+/** 行に出すチェックボックスの状態を組み立てる。表示するかどうかの絞り込みは行わない。 */
+export function workTodoStates(
   record: WorkRecordItem,
   todayKey: string,
   todos: WorkTodo[],
-): WorkTodo[] {
-  return todos.filter(
-    (todo) => todo !== "postRegistered" || record.postRegistered || record.endDate < todayKey,
-  );
+): WorkTodoState[] {
+  return todos.map((todo) => {
+    const done = todo === "preApplied" ? record.preApplied : record.postRegistered;
+    const disabled = todo === "postRegistered" && !done && !(record.endDate < todayKey);
+    return { todo, done, disabled };
+  });
 }
 
 /**
