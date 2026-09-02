@@ -64,16 +64,51 @@ gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPI
   - 実機確認をする場合は `http://<LAN IP>.sslip.io:3000/auth/callback`
 - Google プロバイダは既に有効化済みのものを使う。**カレンダーのスコープはここに追加しない**（他アプリのログインに影響するため。下記3で別クライアントを用意する）
 
-## 3. Google Cloud Console（DaySpan専用のOAuthクライアント）
+## 3. Google Cloud Console（DaySpan専用のGCPプロジェクト）
 
-Google Calendar API 用に、ログイン用とは別の OAuth 2.0 クライアントを本番用・開発用の2つ作成する。
+Google Calendar API 用に、ログイン用（Supabase Auth）とは別の OAuth 2.0 クライアントを本番用・開発用の2つ作成する。
 
-- Google Calendar API を有効化する
-- スコープは `https://www.googleapis.com/auth/calendar.events` と `https://www.googleapis.com/auth/calendar.readonly` に限定する（必要以上に広い権限を要求しない。仕様 §17）
-- 承認済みリダイレクトURI
-  - 本番: `https://dayspan.gucchii.com/api/google/callback`
-  - 開発: `http://localhost:3000/api/google/callback`
-- 本番用の認証情報のみ 1Password に登録し、開発用は `.env.local` に直接記載する
+**このクライアントは他アプリと共有しているGCPプロジェクトではなく、DaySpan専用のGCPプロジェクトへ置く。** 同意画面のスコープ一覧はプロジェクト単位で、OAuthクライアントを分けても分離できない（共有知識 `knowledge/common-gotchas.md`）。共有プロジェクトのまま審査へ出すと、他アプリが登録したスコープまで審査対象に入り、DaySpanの都合で他アプリの認可を止めうる。
+
+### 公開ステータスは「本番」にする
+
+公開ステータスが「テスト」の間、**リフレッシュトークンは7日で失効する**（[Google公式](https://developers.google.com/identity/protocols/oauth2)。例外は name / email / profile だけを要求する場合で、カレンダーのスコープは当たらない）。失効するとカレンダー画面に「認可が失効しました」と出て、設定画面から再接続するまで予定を取得できない（`GoogleReauthRequiredError`）。
+
+**7日失効の条件は「公開ステータスがテストであること」に紐づいており、審査が完了していることではない。** 「本番」へ切り替えた時点で解消するため、審査の結果を待つ間も7日ごとの再接続は要らない。審査を通す理由は、同意画面の「確認されていないアプリ」の警告を消すことと、未確認のまま本番で運用したときに掛かる**総計100ユーザーのハードキャップ**を外すことの2点。
+
+### 手順
+
+1. 新しいGCPプロジェクト（例: `dayspan`）を作成する
+2. Google Calendar API を有効化する
+3. Google Auth Platform（同意画面）を構成する
+   - ユーザーの種類: 外部
+   - アプリ名・ユーザーサポートメール・デベロッパーの連絡先
+   - スコープは `https://www.googleapis.com/auth/calendar.events` と `https://www.googleapis.com/auth/calendar.readonly` に限定する（必要以上に広い権限を要求しない。仕様 §17）
+4. OAuth 2.0 クライアント（ウェブアプリケーション）を本番用・開発用の2つ作成する
+   - 本番の承認済みリダイレクトURI: `https://dayspan.gucchii.com/api/google/callback`
+   - 開発の承認済みリダイレクトURI: `http://localhost:3000/api/google/callback`
+5. 公開ステータスを「本番」にする（**この時点で7日失効は解消する**）
+6. 審査を申請する（必要なものは下記）
+7. 本番用のクライアントID・シークレットを 1Password（`op://apps/dayspan/google-calendar-client-id` / `google-calendar-client-secret`）へ入れ、GitHub Secrets へ同期する
+
+   ```bash
+   gh workflow run sync-secrets.yml -f only=GOOGLE_CALENDAR_CLIENT_ID,GOOGLE_CALENDAR_CLIENT_SECRET
+   ```
+
+8. 開発用は 1Password へ登録せず、本体チェックアウトの `.env.local` に直接記載する（README「本体チェックアウトの `.env.local` は worktree の前提」）
+9. デプロイ後、設定画面から Google Calendar を**再接続する**。**旧クライアントで得たリフレッシュトークンは新クライアントでは使えない**ため、切り替えた直後は必ず1回の再接続が要る
+10. 共有プロジェクト側に残っている DaySpan 用のOAuthクライアントを削除する
+
+### 審査に必要なもの
+
+センシティブスコープ（カレンダー）を要求するため、ブランド確認に加えて次が要る。
+
+- **検証済みドメイン上のホームページ**。Search Console でドメイン（`gucchii.com`）の所有権を確認しておく
+- **プライバシーポリシーのURL**。ホームページと同意画面の**両方から**リンクする必要がある。**DaySpanには現状このページが無いため、審査を出す前に用意する**
+- **デモ動画**。OAuthの同意フローを含む、申請したアプリそのものの操作を端から端まで写したもの
+- **各スコープの正当性の説明**。より狭いスコープでは足りない理由を書く
+
+審査には数週間かかることがある。上記のとおり待っている間も「本番（未確認）」として動くため、7日ごとの再接続は発生しない。
 
 ## 4. Notion
 

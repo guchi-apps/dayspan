@@ -49,8 +49,10 @@ async function refreshAndStore(account: GoogleAccount): Promise<string> {
   try {
     tokens = await refreshAccessToken(decryptSecret(account.refreshToken));
   } catch (error) {
-    // Googleのテストユーザー向けリフレッシュトークンは7日で失効する。失効時はユーザーに
-    // 再接続してもらうしかないため、握りつぶさず呼び出し側へ伝える。
+    // リフレッシュトークンは、認可の取り消し・OAuthクライアントの入れ替え（GCPプロジェクトの
+    // 分離など）で失効する。同意画面の公開ステータスが「テスト」の間は7日でも失効するため、
+    // 本番にして運用する（docs/spec.md §17）。いずれもユーザーに再接続してもらうしかないので、
+    // 握りつぶさず呼び出し側へ伝える。
     throw new GoogleReauthRequiredError(
       error instanceof Error ? error.message : "リフレッシュに失敗しました",
     );

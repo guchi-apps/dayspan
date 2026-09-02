@@ -35,7 +35,7 @@ Google Calendar の予定、Notion のタスクと日付リマインドを、1�
 
 ### 認可の分離
 
-ログイン用の Google OAuth（Supabase Auth 側、他アプリと共有）と、Google Calendar API 用の OAuth（DaySpan 専用クライアント）を分けています。共有 Supabase / Google Cloud プロジェクトの同意画面にカレンダーのセンシティブスコープを追加せずに済ませるためです。カレンダー連携は設定画面から個別に接続し、リフレッシュトークンは AES-256-GCM で暗号化して DaySpan の DB に保存します。
+ログイン用の Google OAuth（Supabase Auth 側、他アプリと共有）と、Google Calendar API 用の OAuth（DaySpan 専用の GCP プロジェクトのクライアント）を分けています。共有 Supabase / Google Cloud プロジェクトの同意画面にカレンダーのセンシティブスコープを追加せずに済ませるためです。同意画面のスコープ一覧と審査はプロジェクト単位のため、カレンダー側は専用の GCP プロジェクトへ置き、公開ステータスを「本番」にして運用します（「テスト」のままだとリフレッシュトークンが7日で失効します。[docs/spec.md](docs/spec.md) §17・[docs/setup-checklist.md](docs/setup-checklist.md) §3）。カレンダー連携は設定画面から個別に接続し、リフレッシュトークンは AES-256-GCM で暗号化して DaySpan の DB に保存します。
 
 ### 他アプリからの参照
 

@@ -1,19 +1,19 @@
-import { BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
+import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
 
 /**
- * 日付リマインドの骨組み（issue #352）。
+ * 日付リマインドの骨組み（issue #352・#508）。
  *
- * この画面はNotionへ取りにいくため、下部ナビから移ったときの待ちがいちばん長い。
- * 独自の骨組みを持たせないと、根の loading.tsx（面とプログレスバーだけ）に落ちる。
+ * この画面はNotionへ取りにいくため、開いたときの待ちがいちばん長い。独自の骨組みを持たせないと、
+ * 根の loading.tsx（面とプログレスバーだけ）に落ちる。下部ナビの5枠から外れドロワーの
+ * 「そのほか」へ移ったため、枠は勤務・場所・設定と同じ「戻るボタン付き」の形にする
+ * （`BottomNavSkeleton` は出さない）。
  */
 export default function Loading() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="size-8 rounded-full" />
-        <SkeletonBlock className="h-6 w-28" />
-        <span className="flex-1" />
+      <div className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
         <SkeletonBlock className="h-8 w-20 rounded-full" />
+        <SkeletonBlock className="h-6 w-16" />
       </div>
 
       <div className="h-1 w-full overflow-hidden bg-secondary-container">
@@ -39,8 +39,6 @@ export default function Loading() {
           </div>
         ))}
       </div>
-
-      <BottomNavSkeleton />
     </div>
   );
 }
