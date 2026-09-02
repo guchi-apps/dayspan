@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { BellRing, ChevronDown, ChevronRight, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Plus, RefreshCw } from "lucide-react";
 
 import { ItemDialog, type ItemDrafts } from "@/components/calendar/item-dialog";
 import {
@@ -15,8 +16,6 @@ import {
 } from "@/components/calendar/item-layout";
 import { toReminderDraft } from "@/components/calendar/reminder-form";
 import { ReminderDetailDialog } from "@/components/calendar/reminder-detail-dialog";
-import { AppMenuButton } from "@/components/nav/app-drawer";
-import { BottomNav } from "@/components/nav/main-nav";
 import { TagChip } from "@/components/tags/tag-chip";
 import { tagColorOf } from "@/components/tags/tag-color";
 import { OfflineNotice } from "@/components/offline/offline-notice";
@@ -44,7 +43,6 @@ export function ReminderList({
   calendars = [],
   placeCatalog = { ready: false, places: [] },
   weekStartsOn = 0,
-  activityRunning = false,
 }: {
   reminders: ReminderItem[];
   /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
@@ -54,8 +52,6 @@ export function ReminderList({
   calendars?: WritableCalendar[];
   placeCatalog?: PlaceCatalog;
   weekStartsOn?: number;
-  /** 活動を記録中かどうか。ナビの記録の項目へ印を出すためだけに使う（docs/spec.md §27）。 */
-  activityRunning?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -134,22 +130,22 @@ export function ReminderList({
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
-        <AppMenuButton current="reminders" activityRunning={activityRunning} />
-        {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
-            狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
-        <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
-          <BellRing className="size-5" />
-          <span>日付</span>
-        </div>
-        <span className="flex-1" />
+      {/* 日付リマインドは下部ナビの5枠から外れ、ドロワーの「そのほか」に移った（issue #508）。
+          一度登録すれば数年触らないため、勤務・場所・設定と同じ「戻るボタン付き」の骨格にする。 */}
+      <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/activity">
+            <ArrowLeft className="size-4" />
+            記録
+          </Link>
+        </Button>
+        <h1 className="type-title-large min-w-0 flex-1 truncate px-1">日付</h1>
         <Button variant="ghost" size="icon" aria-label="再取得" disabled={pending || offline} onClick={() => startTransition(() => router.refresh())}><RefreshCw className="size-4" /></Button>
       </header>
       <LinearProgress active={pending} />
       <OfflineNotice />
       {loadError && <div className="bg-error-container/70 px-3 py-2 text-xs text-on-error-container">{loadError}</div>}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-6">
         {monthSections.map((section) => (
           <section key={section.key}>
             {section.showYear && (
@@ -216,15 +212,13 @@ export function ReminderList({
 
       <Button
         size="icon"
-        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
+        className="elevation-3 fixed right-4 bottom-[calc(1.5rem_+_env(safe-area-inset-bottom))] z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95"
         aria-label="日付リマインドを追加"
         disabled={offline}
         onClick={openAdd}
       >
         <Plus className="size-6" />
       </Button>
-
-      <BottomNav current="reminders" activityRunning={activityRunning} timeZone={timeZone} />
 
       {itemDialog && (
         <ItemDialog

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Briefcase } from "lucide-react";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
-import { SettingsShell } from "@/components/settings/settings-shell";
 import { WorkScreen } from "@/components/work/work-screen";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,9 +39,11 @@ export default async function WorkPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [connection, uiSetting] = await Promise.all([
+  const [connection, uiSetting, runningActivity] = await Promise.all([
     db.notionConnection.findUnique({ where: { userId: user.id } }),
     db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),
+    // ナビの記録の項目へ印を出すためだけに読む（docs/spec.md §27）。
+    db.runningActivity.findUnique({ where: { userId: user.id }, select: { id: true } }),
   ]);
 
   const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
@@ -88,6 +90,8 @@ export default async function WorkPage({
       loadError={loadError}
       tripPlaces={workTripPlaces(connection)}
       capabilities={workCapabilities(connection)}
+      activityRunning={runningActivity !== null}
+      timeZone={timeZone}
     />
   );
 }
@@ -95,7 +99,11 @@ export default async function WorkPage({
 /** 勤務記録DBが未設定のとき。何を用意すればここが使えるようになるのかまで出す。 */
 function ConnectPrompt() {
   return (
-    <SettingsShell title="勤務" backHref="/activity" backLabel="記録">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
+      <div className="flex items-center gap-2 text-xl font-semibold">
+        <Briefcase className="size-6 text-primary" />
+        勤務
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>勤務記録DBが設定されていません</CardTitle>
@@ -110,6 +118,6 @@ function ConnectPrompt() {
           </Button>
         </CardContent>
       </Card>
-    </SettingsShell>
+    </div>
   );
 }

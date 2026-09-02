@@ -4,13 +4,14 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { ChevronLeft, ChevronRight, CircleAlert, Plus } from "lucide-react";
+import { Briefcase, ChevronLeft, ChevronRight, CircleAlert, Plus } from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
-import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { AppMenuButton } from "@/components/nav/app-drawer";
+import { BottomNav } from "@/components/nav/main-nav";
+import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
-import { SettingsShell } from "@/components/settings/settings-shell";
 import { tagChipClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,6 +51,8 @@ export function WorkScreen({
   loadError = null,
   tripPlaces,
   capabilities,
+  activityRunning = false,
+  timeZone,
 }: {
   /** YYYY-MM */
   monthKey: string;
@@ -66,6 +69,10 @@ export function WorkScreen({
   /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
   tripPlaces: string[];
   capabilities: WorkCapabilities;
+  /** 活動を記録中かどうか。ナビの記録の項目へ印を出すためだけに使う（docs/spec.md §27）。 */
+  activityRunning?: boolean;
+  /** 下部ナビの「今日へ」に使うタイムゾーン（`UiSetting.timeZone`）。 */
+  timeZone: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -209,299 +216,317 @@ export function WorkScreen({
   const openLeaveCount = leaves.length;
 
   return (
-    <SettingsShell title="勤務" backHref="/activity" backLabel="記録">
-      <div className="flex items-center justify-between gap-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href={`/work?month=${shiftMonth(monthKey, -1)}`} aria-label="前の月">
-            <ChevronLeft className="size-4" />
-          </Link>
-        </Button>
-        <span className="type-title-medium tabular-nums">{monthLabel}</span>
-        <Button variant="ghost" size="sm" asChild>
-          <Link href={`/work?month=${shiftMonth(monthKey, 1)}`} aria-label="次の月">
-            <ChevronRight className="size-4" />
-          </Link>
-        </Button>
-      </div>
-
-      {/* 書き込みの失敗を先に出す。押した操作の結果のほうが、開いた時点の取得の失敗より新しい。 */}
-      {(error ?? loadError) && (
-        <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container">
-          {error ?? loadError}
-        </p>
-      )}
-
-      {/* 出張。残っている手続きだけを出す。事前申請・事後登録のプロパティが無いDBでは片付ける
-          手続きそのものが持てないため、区画ごと出さない。 */}
-      {capabilities.approval && (
-        <section className="flex flex-col gap-3">
-          <div className="flex items-baseline gap-2">
-            <h2 className="type-title-small">出張</h2>
-            {openTodos.length > 0 && (
-              <span className="type-label-medium flex items-center gap-1 text-error">
-                <CircleAlert className="size-3.5" />
-                未対応 {openTodos.length}件
-              </span>
-            )}
+    <div className="flex h-dvh flex-col">
+      <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
+        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
+        <AppMenuButton current="work" activityRunning={activityRunning} />
+        {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
+            狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
+        <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
+          <Briefcase className="size-5" />
+          <span>勤務</span>
+        </div>
+        <span className="flex-1" />
+      </header>
+      <OfflineNotice />
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
+          <div className="flex items-center justify-between gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/work?month=${shiftMonth(monthKey, -1)}`} aria-label="前の月">
+                <ChevronLeft className="size-4" />
+              </Link>
+            </Button>
+            <span className="type-title-medium tabular-nums">{monthLabel}</span>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/work?month=${shiftMonth(monthKey, 1)}`} aria-label="次の月">
+                <ChevronRight className="size-4" />
+              </Link>
+            </Button>
           </div>
 
-          {trips.length === 0 ? (
-            <p className="type-body-small text-on-surface-variant">
-              未対応の手続きはありません。
+          {/* 書き込みの失敗を先に出す。押した操作の結果のほうが、開いた時点の取得の失敗より新しい。 */}
+          {(error ?? loadError) && (
+            <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container">
+              {error ?? loadError}
             </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {trips.map((trip) => (
-                <RecordRow
-                  key={trip.id}
-                  record={trip}
-                  todayKey={todayKey}
-                  todos={["preApplied", "postRegistered"]}
-                  tone="travel"
-                  disabled={busy || pending || offline}
-                  onToggle={toggleTodo}
-                  onOpen={() => setDraft({ mode: "edit", record: trip })}
-                />
-              ))}
-            </div>
           )}
-        </section>
-      )}
 
-      {/* 年休。出張と同じ形にする。開く理由の多くは「まだ申請していないものを片付けること」で、
-          日別の一覧を上から探すのでは見つからないため。 */}
-      {capabilities.annualLeave && (
-        <section className="flex flex-col gap-3">
-          <div className="flex items-baseline gap-2">
-            <h2 className="type-title-small">年休</h2>
-            {openLeaveCount > 0 && (
-              <span className="type-label-medium flex items-center gap-1 text-error">
-                <CircleAlert className="size-3.5" />
-                未申請 {openLeaveCount}件
-              </span>
-            )}
-          </div>
-
-          {leaves.length === 0 ? (
-            <p className="type-body-small text-on-surface-variant">
-              未申請の年休はありません。
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {leaves.map((leave) => (
-                <RecordRow
-                  key={leave.id}
-                  record={leave}
-                  todayKey={todayKey}
-                  todos={["preApplied"]}
-                  tone="leave"
-                  disabled={busy || pending || offline}
-                  onToggle={toggleTodo}
-                  onOpen={() => setDraft({ mode: "edit", record: leave })}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* この月の勤務場所。今日のぶんだけは選択肢を並べ、1押しで決められるようにする。 */}
-      <section className="flex flex-col gap-3">
-        <h2 className="type-title-small">この月の勤務場所</h2>
-
-        {showsToday && (
-          <Card>
-            <CardContent className="flex flex-col gap-3">
+          {/* 出張。残っている手続きだけを出す。事前申請・事後登録のプロパティが無いDBでは片付ける
+              手続きそのものが持てないため、区画ごと出さない。 */}
+          {capabilities.approval && (
+            <section className="flex flex-col gap-3">
               <div className="flex items-baseline gap-2">
-                <span className="type-label-large">今日の勤務場所</span>
-                <span className={cn("type-body-small ml-auto tabular-nums", dateClass(todayKey))}>
-                  {dayLabel(todayKey)}
-                  {japaneseHolidayName(todayKey) && (
-                    <span className="ml-1">{japaneseHolidayName(todayKey)}</span>
-                  )}
-                </span>
+                <h2 className="type-title-small">出張</h2>
+                {openTodos.length > 0 && (
+                  <span className="type-label-medium flex items-center gap-1 text-error">
+                    <CircleAlert className="size-3.5" />
+                    未対応 {openTodos.length}件
+                  </span>
+                )}
               </div>
 
-              {!todayEditableByChip && todayRecord ? (
-                <p className="type-body-medium">
-                  {recordLabel(todayRecord)}
-                  <span className="type-body-small ml-2 text-on-surface-variant">
-                    直すときは下の日付の一覧から
-                  </span>
-                </p>
-              ) : placeOptions.length === 0 ? (
+              {trips.length === 0 ? (
                 <p className="type-body-small text-on-surface-variant">
-                  勤務場所の選択肢がありません。
-                  <Link href="/settings/tags" className="ml-1 underline">
-                    設定 ▸ タグ
-                  </Link>
-                  から追加してください。
+                  未対応の手続きはありません。
                 </p>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {placeOptions.map((option) => {
-                    const selected = todayRecord?.place === option.name;
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        disabled={busy || pending || offline}
-                        aria-pressed={selected}
-                        onClick={() => pickToday(option.name)}
-                        className={cn(
-                          "type-label-large rounded-full border px-4 py-2 transition-colors disabled:opacity-38",
-                          selected
-                            ? cn("border-transparent font-bold", tagChipClass(option.color))
-                            : "border-outline text-on-surface hover:bg-on-surface/8",
-                        )}
-                      >
-                        {option.name}
-                      </button>
-                    );
-                  })}
+                <div className="flex flex-col gap-2">
+                  {trips.map((trip) => (
+                    <RecordRow
+                      key={trip.id}
+                      record={trip}
+                      todayKey={todayKey}
+                      todos={["preApplied", "postRegistered"]}
+                      tone="travel"
+                      disabled={busy || pending || offline}
+                      onToggle={toggleTodo}
+                      onOpen={() => setDraft({ mode: "edit", record: trip })}
+                    />
+                  ))}
                 </div>
               )}
+            </section>
+          )}
 
-              {/* 場所から出張になったことは、押した本人にも見えている必要がある。
-                  手続きの行き先を上の出張ではなく日別の一覧にするのは、この経路で作られるのが
-                  単日の出張で、事前申請を済ませた時点で上の区画から消えるため（事後登録は
-                  終了日を過ぎるまで未対応に数えない）。日別の一覧はいつ押しても同じ所へ着く。 */}
-              {todayEditableByChip && todayRecord?.businessTrip && (
-                <p className="type-body-small text-travel">
-                  この場所は出張扱いです。
-                  {capabilities.approval && "事前申請・事後登録は下の日付の一覧から。"}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        <Tally records={records} days={days} />
-
-        <Card className="py-2">
-          <CardContent className="px-4">
-            {days.map((dateKey) => {
-              const record = records.find((item) => coversDate(item, dateKey));
-              const holiday = japaneseHolidayName(dateKey);
-              return (
-                <button
-                  key={dateKey}
-                  type="button"
-                  onClick={() => openDay(dateKey)}
-                  className="flex w-full items-center gap-3 border-b border-outline-variant py-2.5 text-left last:border-b-0 hover:bg-on-surface/8"
-                >
-                  <span
-                    className={cn(
-                      "type-body-small w-16 shrink-0 tabular-nums",
-                      dateClass(dateKey),
-                      dateKey === todayKey && "font-bold",
-                    )}
-                  >
-                    {dayLabel(dateKey)}
+          {/* 年休。出張と同じ形にする。開く理由の多くは「まだ申請していないものを片付けること」で、
+              日別の一覧を上から探すのでは見つからないため。 */}
+          {capabilities.annualLeave && (
+            <section className="flex flex-col gap-3">
+              <div className="flex items-baseline gap-2">
+                <h2 className="type-title-small">年休</h2>
+                {openLeaveCount > 0 && (
+                  <span className="type-label-medium flex items-center gap-1 text-error">
+                    <CircleAlert className="size-3.5" />
+                    未申請 {openLeaveCount}件
                   </span>
-                  {record ? (
-                    <span
-                      className={cn(
-                        "type-body-medium min-w-0 truncate",
-                        record.businessTrip && "font-bold text-travel",
-                        // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
-                        // 何の休みなのかは行の文字（「会社休業日」）が持っている。
-                        (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
-                      )}
-                    >
-                      {recordLabel(record)}
-                    </span>
-                  ) : (
-                    <span className="type-body-medium text-outline">未登録</span>
-                  )}
-                  {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
-                  {holiday && (
-                    <span className="type-label-small ml-auto min-w-0 truncate text-error">
-                      {holiday}
-                    </span>
-                  )}
-                  {/* 申請が残っている日は一覧からも分かるようにする。上の区画まで戻らずに気付ける。
-                      祝日の名前と並ぶ日は、名前の側を削って未対応の印を残す（印は2〜3文字で、
-                      削られると何が残っているのかが読めなくなる）。 */}
-                  {record && workTodos(record, todayKey).length > 0 && (
-                    <span
-                      className={cn(
-                        "type-label-small shrink-0 font-bold text-error",
-                        !holiday && "ml-auto",
-                      )}
-                    >
-                      {record.annualLeave ? "未申請" : "未対応"}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </CardContent>
-        </Card>
+                )}
+              </div>
 
-        {/* 出張・年休・会社休業日は先の日付に入れるものが多い。日別の一覧をスクロールして
-            押させるより、開いてから日付を選ばせるほうが短い。 */}
-        {(capabilities.businessTrip || capabilities.annualLeave || capabilities.companyHoliday) && (
-          <div
-            className={cn(
-              "grid grid-cols-1 gap-2",
-              [capabilities.businessTrip, capabilities.annualLeave, capabilities.companyHoliday]
-                .filter(Boolean).length >= 3
-                ? "sm:grid-cols-3"
-                : "sm:grid-cols-2",
+              {leaves.length === 0 ? (
+                <p className="type-body-small text-on-surface-variant">
+                  未申請の年休はありません。
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {leaves.map((leave) => (
+                    <RecordRow
+                      key={leave.id}
+                      record={leave}
+                      todayKey={todayKey}
+                      todos={["preApplied"]}
+                      tone="leave"
+                      disabled={busy || pending || offline}
+                      onToggle={toggleTodo}
+                      onOpen={() => setDraft({ mode: "edit", record: leave })}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* この月の勤務場所。今日のぶんだけは選択肢を並べ、1押しで決められるようにする。 */}
+          <section className="flex flex-col gap-3">
+            <h2 className="type-title-small">この月の勤務場所</h2>
+
+            {showsToday && (
+              <Card>
+                <CardContent className="flex flex-col gap-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="type-label-large">今日の勤務場所</span>
+                    <span className={cn("type-body-small ml-auto tabular-nums", dateClass(todayKey))}>
+                      {dayLabel(todayKey)}
+                      {japaneseHolidayName(todayKey) && (
+                        <span className="ml-1">{japaneseHolidayName(todayKey)}</span>
+                      )}
+                    </span>
+                  </div>
+
+                  {!todayEditableByChip && todayRecord ? (
+                    <p className="type-body-medium">
+                      {recordLabel(todayRecord)}
+                      <span className="type-body-small ml-2 text-on-surface-variant">
+                        直すときは下の日付の一覧から
+                      </span>
+                    </p>
+                  ) : placeOptions.length === 0 ? (
+                    <p className="type-body-small text-on-surface-variant">
+                      勤務場所の選択肢がありません。
+                      <Link href="/settings/tags" className="ml-1 underline">
+                        設定 ▸ タグ
+                      </Link>
+                      から追加してください。
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {placeOptions.map((option) => {
+                        const selected = todayRecord?.place === option.name;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            disabled={busy || pending || offline}
+                            aria-pressed={selected}
+                            onClick={() => pickToday(option.name)}
+                            className={cn(
+                              "type-label-large rounded-full border px-4 py-2 transition-colors disabled:opacity-38",
+                              selected
+                                ? cn("border-transparent font-bold", tagChipClass(option.color))
+                                : "border-outline text-on-surface hover:bg-on-surface/8",
+                            )}
+                          >
+                            {option.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* 場所から出張になったことは、押した本人にも見えている必要がある。
+                      手続きの行き先を上の出張ではなく日別の一覧にするのは、この経路で作られるのが
+                      単日の出張で、事前申請を済ませた時点で上の区画から消えるため（事後登録は
+                      終了日を過ぎるまで未対応に数えない）。日別の一覧はいつ押しても同じ所へ着く。 */}
+                  {todayEditableByChip && todayRecord?.businessTrip && (
+                    <p className="type-body-small text-travel">
+                      この場所は出張扱いです。
+                      {capabilities.approval && "事前申請・事後登録は下の日付の一覧から。"}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             )}
-          >
-            {capabilities.businessTrip && (
-              <Button
-                variant="outline"
-                disabled={offline}
-                onClick={() =>
-                  setDraft({
-                    mode: "create",
-                    startDate: defaultDate(monthKey, todayKey),
-                    kind: "trip",
-                  })
-                }
+
+            <Tally records={records} days={days} />
+
+            <Card className="py-2">
+              <CardContent className="px-4">
+                {days.map((dateKey) => {
+                  const record = records.find((item) => coversDate(item, dateKey));
+                  const holiday = japaneseHolidayName(dateKey);
+                  return (
+                    <button
+                      key={dateKey}
+                      type="button"
+                      onClick={() => openDay(dateKey)}
+                      className="flex w-full items-center gap-3 border-b border-outline-variant py-2.5 text-left last:border-b-0 hover:bg-on-surface/8"
+                    >
+                      <span
+                        className={cn(
+                          "type-body-small w-16 shrink-0 tabular-nums",
+                          dateClass(dateKey),
+                          dateKey === todayKey && "font-bold",
+                        )}
+                      >
+                        {dayLabel(dateKey)}
+                      </span>
+                      {record ? (
+                        <span
+                          className={cn(
+                            "type-body-medium min-w-0 truncate",
+                            record.businessTrip && "font-bold text-travel",
+                            // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
+                            // 何の休みなのかは行の文字（「会社休業日」）が持っている。
+                            (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
+                          )}
+                        >
+                          {recordLabel(record)}
+                        </span>
+                      ) : (
+                        <span className="type-body-medium text-outline">未登録</span>
+                      )}
+                      {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
+                      {holiday && (
+                        <span className="type-label-small ml-auto min-w-0 truncate text-error">
+                          {holiday}
+                        </span>
+                      )}
+                      {/* 申請が残っている日は一覧からも分かるようにする。上の区画まで戻らずに気付ける。
+                          祝日の名前と並ぶ日は、名前の側を削って未対応の印を残す（印は2〜3文字で、
+                          削られると何が残っているのかが読めなくなる）。 */}
+                      {record && workTodos(record, todayKey).length > 0 && (
+                        <span
+                          className={cn(
+                            "type-label-small shrink-0 font-bold text-error",
+                            !holiday && "ml-auto",
+                          )}
+                        >
+                          {record.annualLeave ? "未申請" : "未対応"}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </CardContent>
+            </Card>
+
+            {/* 出張・年休・会社休業日は先の日付に入れるものが多い。日別の一覧をスクロールして
+                押させるより、開いてから日付を選ばせるほうが短い。 */}
+            {(capabilities.businessTrip || capabilities.annualLeave || capabilities.companyHoliday) && (
+              <div
+                className={cn(
+                  "grid grid-cols-1 gap-2",
+                  [capabilities.businessTrip, capabilities.annualLeave, capabilities.companyHoliday]
+                    .filter(Boolean).length >= 3
+                    ? "sm:grid-cols-3"
+                    : "sm:grid-cols-2",
+                )}
               >
-                <Plus className="size-4" />
-                出張を追加
-              </Button>
+                {capabilities.businessTrip && (
+                  <Button
+                    variant="outline"
+                    disabled={offline}
+                    onClick={() =>
+                      setDraft({
+                        mode: "create",
+                        startDate: defaultDate(monthKey, todayKey),
+                        kind: "trip",
+                      })
+                    }
+                  >
+                    <Plus className="size-4" />
+                    出張を追加
+                  </Button>
+                )}
+                {capabilities.annualLeave && (
+                  <Button
+                    variant="outline"
+                    disabled={offline}
+                    onClick={() =>
+                      setDraft({
+                        mode: "create",
+                        startDate: defaultDate(monthKey, todayKey),
+                        kind: "leave",
+                      })
+                    }
+                  >
+                    <Plus className="size-4" />
+                    年休を追加
+                  </Button>
+                )}
+                {capabilities.companyHoliday && (
+                  <Button
+                    variant="outline"
+                    disabled={offline}
+                    onClick={() =>
+                      setDraft({
+                        mode: "create",
+                        startDate: defaultDate(monthKey, todayKey),
+                        kind: "holiday",
+                      })
+                    }
+                  >
+                    <Plus className="size-4" />
+                    休業を追加
+                  </Button>
+                )}
+              </div>
             )}
-            {capabilities.annualLeave && (
-              <Button
-                variant="outline"
-                disabled={offline}
-                onClick={() =>
-                  setDraft({
-                    mode: "create",
-                    startDate: defaultDate(monthKey, todayKey),
-                    kind: "leave",
-                  })
-                }
-              >
-                <Plus className="size-4" />
-                年休を追加
-              </Button>
-            )}
-            {capabilities.companyHoliday && (
-              <Button
-                variant="outline"
-                disabled={offline}
-                onClick={() =>
-                  setDraft({
-                    mode: "create",
-                    startDate: defaultDate(monthKey, todayKey),
-                    kind: "holiday",
-                  })
-                }
-              >
-                <Plus className="size-4" />
-                休業を追加
-              </Button>
-            )}
-          </div>
-        )}
-      </section>
+          </section>
+        </div>
+      </div>
+
+      <BottomNav current="work" activityRunning={activityRunning} timeZone={timeZone} />
 
       {draft && (
         <WorkRecordDialog
@@ -516,7 +541,7 @@ export function WorkScreen({
           }}
         />
       )}
-    </SettingsShell>
+    </div>
   );
 }
 
