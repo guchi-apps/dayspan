@@ -594,8 +594,9 @@ export function WorkScreen({
  * チェックボックスを2行目へ落とす。`flex-1`は`basis-0`なので、行き先が長いだけでは
  * 折り返さず先に省略記号が出る。
  *
- * 手続きのラベルを日別の一覧と同じ`type-label-medium`（12px）にするのは、同じ操作が同じ画面の
- * 中で14pxと12pxの2通りで出ていたため。
+ * 手続きのラベルを`type-label-medium`（12px）へ落とすのは、行き先と同じ行へ収めるための寸法。
+ * `type-body-medium`（14px）のままだとチップ側が202pxになり、幅360pxでは左に80pxが残らず
+ * 折り返してしまう（12pxなら186pxで、360pxでも1行に収まる）。
  */
 function RecordRow({
   record,
