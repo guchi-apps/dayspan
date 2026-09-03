@@ -586,6 +586,17 @@ export function WorkScreen({
  * 別の形にすると同じことをするのに覚えることが2つに増えるため。違うのは出せる手続きの数だけ。
  *
  * 日付をタイトルより上・左に置くのは、この行がまず「いつの記録か」を示すため（issue #509）。
+ *
+ * 行き先と手続きのチェックボックスは横1行に並べる（issue #519）。全幅の帯として縦に積むと
+ * 1枠が144pxになり、未対応が8件あるだけで区画がスマートフォン3画面ぶんになる。行き先の右は
+ * まるごと空いており、そこへ入れれば1枠は68pxで済む。行き先が入らないときは末尾を切る
+ * （押せば入力画面で全文が読める）。左に80px（行き先5文字ぶん）も残らない幅のときだけ
+ * チェックボックスを2行目へ落とす。`flex-1`は`basis-0`なので、行き先が長いだけでは
+ * 折り返さず先に省略記号が出る。
+ *
+ * 手続きのラベルを`type-label-medium`（12px）へ落とすのは、行き先と同じ行へ収めるための寸法。
+ * `type-body-medium`（14px）のままだとチップ側が202pxになり、幅360pxでは左に80pxが残らず
+ * 折り返してしまう（12pxなら186pxで、360pxでも1行に収まる）。
  */
 function RecordRow({
   record,
@@ -613,16 +624,23 @@ function RecordRow({
 
   // ここに並ぶのは手続きが残っている記録だけなので、枠は常に未対応の色にする。
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-error p-3">
-      <button type="button" onClick={onOpen} className="flex flex-col items-start gap-0.5 text-left">
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-error p-3">
+      {/* 日付・行き先。`min-w-20`を割る幅でだけチェックボックスが2行目へ落ちる。 */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-20 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left"
+      >
         <span className="type-body-small tabular-nums text-on-surface-variant">
           {spanLabel(record)}
         </span>
-        <span className="type-body-large font-bold">{record.title}</span>
-        {sub && <span className="type-body-small text-on-surface-variant">{sub}</span>}
+        <span className="type-body-large max-w-full truncate font-bold">{record.title}</span>
+        {sub && (
+          <span className="type-body-small max-w-full truncate text-on-surface-variant">{sub}</span>
+        )}
       </button>
 
-      <div className="flex flex-col gap-1">
+      <div className="flex shrink-0 items-center gap-1.5">
         {states.map(({ todo, done, disabled: todoDisabled }) => {
           // 押せるのに未対応なものだけを目立たせる。押せない項目（終了日前の事後登録）は
           // 目立たせても押すものが増えないため、淡いままにする。
@@ -631,7 +649,7 @@ function RecordRow({
             <label
               key={todo}
               className={cn(
-                "-mx-1 flex items-center gap-3 rounded-lg px-1 py-1.5 transition-colors",
+                "flex items-center gap-2 rounded-full px-2 py-1 transition-colors",
                 needsAttention && "bg-error-container",
                 !todoDisabled && !writeDisabled && "cursor-pointer",
               )}
@@ -643,7 +661,7 @@ function RecordRow({
               />
               <span
                 className={cn(
-                  "type-body-medium",
+                  "type-label-medium whitespace-nowrap",
                   needsAttention && "font-bold text-on-error-container",
                   todoDisabled && "text-on-surface-variant",
                 )}
