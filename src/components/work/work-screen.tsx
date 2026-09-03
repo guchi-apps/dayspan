@@ -292,6 +292,15 @@ export function WorkScreen({
                     未申請 {openLeaveCount}件
                   </span>
                 )}
+                {/* 年度の取得状況（docs/spec.md §34）。あちらは「あと何日使えるか」を見る画面で、
+                    この区画（残っている申請を片付ける）とは開く理由が違う。入口はここ1つにし、
+                    ドロワーには行を足さない。 */}
+                <Link
+                  href="/work/leave"
+                  className="type-label-medium ml-auto text-primary underline"
+                >
+                  年度の取得状況
+                </Link>
               </div>
 
               {leaves.length === 0 ? (
