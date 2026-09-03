@@ -399,11 +399,12 @@ export function WorkScreen({
                   {/* 場所から出張になったことは、押した本人にも見えている必要がある。
                       手続きの行き先を上の出張ではなく日別の一覧にするのは、この経路で作られるのが
                       単日の出張で、事前申請を済ませた時点で上の区画から消えるため（事後登録は
-                      終了日を過ぎるまで未対応に数えない）。日別の一覧はいつ押しても同じ所へ着く。 */}
+                      終了日を過ぎるまで未対応に数えない）。日別の一覧はいつ押しても同じ所へ着く。
+                      一覧の行からは印が読めるだけになったため（issue #521）、押して開くことまで書く。 */}
                   {todayEditableByChip && todayRecord?.businessTrip && (
                     <p className="type-body-small text-travel">
                       この場所は出張扱いです。
-                      {capabilities.approval && "事前申請・事後登録は下の日付の一覧から。"}
+                      {capabilities.approval && "事前申請・事後登録は下の日付の一覧の行を押して。"}
                     </p>
                   )}
                 </CardContent>
@@ -417,77 +418,74 @@ export function WorkScreen({
                 {days.map((dateKey) => {
                   const record = records.find((item) => coversDate(item, dateKey));
                   const holiday = japaneseHolidayName(dateKey);
-                  // 手続きが残っている項目だけ。事後登録は終了日を過ぎるまで含まれないため、
-                  // 出張中にこの一覧からうっかり完了にできてしまうことはない。
-                  const todos = record ? workTodos(record, todayKey) : [];
+                  // 未対応の手続き。事後登録は終了日を過ぎるまで含まれないため、まだできない
+                  // 手続きが未対応として並ぶことはない（判定は上の区画と同じ関数に任せる）。
+                  // 出張は期間の全ての日に同じ記録が並ぶため、印は開始日の行にだけ出す
+                  // （同じ手続きの印が日数ぶん縦に重複しないように・issue #521）。
+                  const marks =
+                    record && dateKey === record.startDate ? workTodos(record, todayKey) : [];
                   return (
-                    <div
+                    <button
                       key={dateKey}
-                      className="flex flex-col gap-1.5 border-b border-outline-variant py-2.5 last:border-b-0"
+                      type="button"
+                      onClick={() => openDay(dateKey)}
+                      className="flex w-full items-center gap-3 border-b border-outline-variant py-2.5 text-left last:border-b-0 hover:bg-on-surface/8"
                     >
-                      <button
-                        type="button"
-                        onClick={() => openDay(dateKey)}
-                        className="flex w-full items-center gap-3 text-left hover:bg-on-surface/8"
+                      <span
+                        className={cn(
+                          "type-body-small w-16 shrink-0 tabular-nums",
+                          dateClass(dateKey),
+                          dateKey === todayKey && "font-bold",
+                        )}
                       >
+                        {dayLabel(dateKey)}
+                      </span>
+                      {/* 項目名・祝日名・印は同じ行に並べる。項目名に `flex-1` を持たせて残りの幅を
+                          受け取らせ、印（`shrink-0`）を押し出さない。入れ子の箱にまとめると、その箱の
+                          ほうが縮んで印が枠からはみ出す。狭いときに切れるのは項目名と祝日名の末尾で、
+                          どちらも `truncate` で末尾から切れる。 */}
+                      {record ? (
                         <span
                           className={cn(
-                            "type-body-small w-16 shrink-0 tabular-nums",
-                            dateClass(dateKey),
-                            dateKey === todayKey && "font-bold",
+                            "type-body-medium min-w-0 flex-1 truncate",
+                            record.businessTrip && "font-bold text-travel",
+                            // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
+                            // 何の休みなのかは行の文字（「会社休業日」）が持っている。
+                            (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
                           )}
                         >
-                          {dayLabel(dateKey)}
+                          {recordLabel(record)}
                         </span>
-                        {record ? (
-                          <span
-                            className={cn(
-                              "type-body-medium min-w-0 truncate",
-                              record.businessTrip && "font-bold text-travel",
-                              // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
-                              // 何の休みなのかは行の文字（「会社休業日」）が持っている。
-                              (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
-                            )}
-                          >
-                            {recordLabel(record)}
-                          </span>
-                        ) : isAutoOffDay(dateKey) ? (
-                          // 登録が無い土日祝は自動的に「休み」として扱う（表示だけ、docs/spec.md §34）。
-                          <span className="type-body-medium text-on-surface-variant">休み</span>
-                        ) : (
-                          <span className="type-body-medium text-outline">未登録</span>
-                        )}
-                        {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
-                        {holiday && (
-                          <span className="type-label-small ml-auto min-w-0 truncate text-error">
-                            {holiday}
-                          </span>
-                        )}
-                      </button>
-                      {/* 残っている手続きをチェックボックスで区別する（issue #510）。事前申請・事後登録の
-                          どちらが残っているかが「未対応」の一括表記では読めなかったため。押すとその場で
-                          完了にでき、完了すると再取得でこの行から消える。出張は期間の全ての日に同じ
-                          記録が並ぶため、チェックボックスは開始日の行にだけ出す（同じ手続きに対する
-                          チェックボックスが日数ぶん重複しないように）。 */}
-                      {record && dateKey === record.startDate && todos.length > 0 && (
-                        <div className="flex flex-wrap gap-3 pl-[76px]">
-                          {todos.map((todo) => (
-                            <label
-                              key={todo}
-                              className="type-label-medium flex items-center gap-2 text-error"
-                            >
-                              <Checkbox
-                                className="border-error"
-                                disabled={busy || pending || offline}
-                                checked={false}
-                                onCheckedChange={() => toggleTodo(record, todo, true)}
-                              />
-                              {WORK_TODO_LABELS[todo]}
-                            </label>
-                          ))}
-                        </div>
+                      ) : isAutoOffDay(dateKey) ? (
+                        // 登録が無い土日祝は自動的に「休み」として扱う（表示だけ、docs/spec.md §34）。
+                        <span className="type-body-medium flex-1 text-on-surface-variant">休み</span>
+                      ) : (
+                        <span className="type-body-medium flex-1 text-outline">未登録</span>
                       )}
-                    </div>
+                      {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
+                      {holiday && (
+                        <span className="type-label-small min-w-0 truncate text-error">{holiday}</span>
+                      )}
+                      {/* 残っている手続きは印だけを出し、この行からは済ませられない（issue #521）。
+                          チェックボックスを置くと手続きが残る日だけ2行になり、日ごとの行の高さが
+                          揃わない。片付ける場所は上の出張・年休の区画と、行を押して開く入力
+                          ダイアログに寄せる。色だけに意味を持たせないよう、上の区画の
+                          「未対応 N件」と同じ印と読み上げ用の文字を添える。 */}
+                      {marks.length > 0 && (
+                        <span className="flex shrink-0 items-center gap-1">
+                          {marks.map((todo) => (
+                            <span
+                              key={todo}
+                              className="type-label-small flex items-center gap-0.5 rounded-full bg-error-container py-0.5 pl-1.5 pr-2 text-on-error-container"
+                            >
+                              <CircleAlert className="size-3" />
+                              <span className="sr-only">未対応の手続き: </span>
+                              {WORK_TODO_LABELS[todo]}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </button>
                   );
                 })}
               </CardContent>
