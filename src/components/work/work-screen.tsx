@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
 import { japaneseHolidayName } from "@/lib/japanese-holidays";
+import { isAutoOffDay, weekdayOf } from "@/lib/work-days";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
@@ -731,25 +732,8 @@ function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] })
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
-/** YYYY-MM-DD の曜日。UTCで組み立てて、実行環境のローカル時刻に依存させない。 */
-function weekdayOf(dateKey: string): number {
-  return new Date(`${dateKey}T00:00:00Z`).getUTCDay();
-}
-
 function dayLabel(dateKey: string): string {
   return `${Number(dateKey.slice(8, 10))}(${WEEKDAYS[weekdayOf(dateKey)]})`;
-}
-
-/**
- * 登録が無い日を自動的に「休み」として扱ってよいか（表示だけ、docs/spec.md §34）。
- *
- * 土曜・日曜・祝日が対象。`dateClass()` が日曜・祝日を同じ赤で示している理由（月曜の祝日が
- * 平日と同じ色だと、入れ忘れなのかそもそも働いていない日なのか読めない）が、そのまま
- * 「未登録」と「休み」のどちらを出すかにも当てはまるため、色分けと対象をそろえる。
- */
-function isAutoOffDay(dateKey: string): boolean {
-  const day = weekdayOf(dateKey);
-  return day === 0 || day === 6 || japaneseHolidayName(dateKey) !== null;
 }
 
 /**

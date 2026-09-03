@@ -1,3 +1,4 @@
+import { isAutoOffDay } from "@/lib/work-days";
 import { annualLeaveDays, type WorkRecordItem } from "@/types/work";
 
 /**
@@ -79,6 +80,25 @@ export function fiscalYearMonths(fiscalYear: number, startMonth: number): string
   });
 }
 
+/**
+ * その日が年休を消費するか（計画レビューG1の指摘）。
+ *
+ * 全休の年休は**期間で1件**として登録できる（docs/spec.md §34）。8/12(水)–8/16(日) を暦日で
+ * 5日と数えると、実際に減る3日と食い違い、この画面の主役である残り日数・消化ペース・年度末の
+ * 見込みがすべてその分ずれる。期間の中の土日祝はもともと働かない日なので、年休は消費しない。
+ *
+ * 一方で**単日の登録はその日を名指しで年休にしたもの**なので、土日祝でもそのまま数える。
+ * 土曜に出社する人が土曜の年休を入れることはありうる。ここで落とすと、一覧の行に「1日」と
+ * 出ているのに合計へ入らない、という食い違いになる。
+ *
+ * 「働く日かどうか」の判定は勤務の画面（登録が無い日を「休み」と出す）と同じ `isAutoOffDay()`。
+ * 画面に「休み」と出ている日が年休の日数には数えられている、という状態を作らないため。
+ */
+function consumesLeave(record: WorkRecordItem, dateKey: string): boolean {
+  if (record.startDate === record.endDate) return true;
+  return !isAutoOffDay(dateKey);
+}
+
 export type AnnualLeaveMonth = {
   /** YYYY-MM */
   monthKey: string;
@@ -124,6 +144,7 @@ export function summarizeAnnualLeave(
     const end = record.endDate < range.to ? record.endDate : range.to;
 
     for (let dateKey = start; dateKey <= end; dateKey = nextDateKey(dateKey)) {
+      if (!consumesLeave(record, dateKey)) continue;
       const monthKey = dateKey.slice(0, 7);
       const month = monthly.get(monthKey) ?? { monthKey, taken: 0, planned: 0 };
       if (dateKey <= todayKey) {
@@ -210,7 +231,12 @@ export function annualLeavePace({
   };
 }
 
-/** 一覧の1件が何日ぶんか。年度の外へはみ出したぶんは数えない（集計と同じ切り詰め方）。 */
+/**
+ * 一覧の1件が何日ぶんか。
+ *
+ * 年度の外へはみ出したぶんと、期間の中の土日祝は数えない（`summarizeAnnualLeave()` と同じ
+ * 数え方）。行の日数と合計が食い違わないよう、判定を二重に持たずここも1日ずつ見る。
+ */
 export function recordDaysInRange(
   record: WorkRecordItem,
   range: { from: string; to: string },
@@ -219,7 +245,13 @@ export function recordDaysInRange(
   const start = record.startDate > range.from ? record.startDate : range.from;
   const end = record.endDate < range.to ? record.endDate : range.to;
   if (start > end) return 0;
-  return daysBetween(start, end) * annualLeaveDays(record.annualLeave);
+
+  const perDay = annualLeaveDays(record.annualLeave);
+  let days = 0;
+  for (let dateKey = start; dateKey <= end; dateKey = nextDateKey(dateKey)) {
+    if (consumesLeave(record, dateKey)) days += perDay;
+  }
+  return days;
 }
 
 /**
