@@ -472,14 +472,17 @@ export function WorkScreen({
                           ダイアログに寄せる。色だけに意味を持たせないよう、上の区画の
                           「未対応 N件」と同じ印と読み上げ用の文字を添える。 */}
                       {marks.length > 0 && (
-                        <span className="flex shrink-0 items-center gap-1">
+                        <span className="flex shrink-0 items-center gap-1 text-error">
+                          {/* 印は手続きごとではなく群の先頭に1つだけ置く。バッジの中へ入れると、
+                              2つ並ぶ日（終わった出張で両方残っている日）に項目名の幅が全角4文字まで
+                              縮む。狭いときは印より行き先の名前を先に残す（issue #433 と同じ判断）。 */}
+                          <CircleAlert className="size-3.5" />
+                          <span className="sr-only">未対応の手続き:</span>
                           {marks.map((todo) => (
                             <span
                               key={todo}
-                              className="type-label-small flex items-center gap-0.5 rounded-full bg-error-container py-0.5 pl-1.5 pr-2 text-on-error-container"
+                              className="type-label-small rounded-full bg-error-container px-2 py-0.5 text-on-error-container"
                             >
-                              <CircleAlert className="size-3" />
-                              <span className="sr-only">未対応の手続き: </span>
                               {WORK_TODO_LABELS[todo]}
                             </span>
                           ))}
