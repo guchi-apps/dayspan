@@ -22,6 +22,15 @@ export default function Loading() {
 
       <div className="min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
+          {/* 出張・年休の区画。月切替より上に来る（issue #510）。 */}
+          {Array.from({ length: 2 }, (_, i) => (
+            <div key={i} className="flex flex-col gap-2">
+              <SkeletonBlock className="h-4 w-14" />
+              <SkeletonBlock className="h-16 w-full rounded-xl" />
+            </div>
+          ))}
+
+          {/* 月切替は「この月の勤務場所」の直前（issue #510）。 */}
           <div className="flex items-center justify-between">
             <SkeletonBlock className="h-8 w-8 rounded-full" />
             <SkeletonBlock className="h-5 w-24" />
