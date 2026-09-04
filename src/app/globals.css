@@ -340,6 +340,20 @@
     0 1px 3px 0 rgb(0 0 0 / 0.3);
 }
 
+/* 年休の「予定」ぶんの塗り（docs/spec.md §34）。
+   取得済みと同じ tertiary の系統でありながら、まだ休んでいない日だと分かるようにする。
+   色の濃さだけで分けると、印刷・色覚特性のある目では取得済みと同じに見えるため、
+   斜めの縞（地の違い）でも分ける。流さないのは、範囲選択（下）と違って
+   「いま押さえているところ」ではなく確定した予定だから。 */
+@utility slot-leave-planned {
+  background-color: var(--md-tertiary-container);
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--md-tertiary) 55%, transparent) 0 3px,
+    transparent 3px 7px
+  );
+}
+
 /* 時間グリッドで範囲を引いている最中の塗り（issue #119）。
    斜めの縞が流れ続けることで、置かれた枠ではなく「いま押さえているところ」だと分かる。
    確定前なので塗りは薄く保ち、下の目盛りと既存の予定が透けて見えるようにする。 */

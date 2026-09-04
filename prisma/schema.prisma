@@ -24,15 +24,16 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  googleAccounts   GoogleAccount[]
-  calendarSettings CalendarSetting[]
-  notionConnection NotionConnection?
-  uiSetting        UiSetting?
-  activityPresets  ActivityPreset[]
-  runningActivity  RunningActivity?
-  widgetToken      WidgetToken?
-  travelPlans      TravelPlan[]
-  taskEventLinks   TaskEventLink[]
+  googleAccounts    GoogleAccount[]
+  calendarSettings  CalendarSetting[]
+  notionConnection  NotionConnection?
+  uiSetting         UiSetting?
+  activityPresets   ActivityPreset[]
+  runningActivity   RunningActivity?
+  widgetToken       WidgetToken?
+  travelPlans       TravelPlan[]
+  taskEventLinks    TaskEventLink[]
+  annualLeaveGrants AnnualLeaveGrant[]
 
   pushSubscriptions   PushSubscription[]
   notificationSetting NotificationSetting?
@@ -187,6 +188,11 @@ model UiSetting {
   // カレンダー名・色はGoogle側が一次情報源のため持たない。
   activityCalendarId String?
 
+  // 年度の開始月（1〜12・docs/spec.md §34）。年休の取得状況を年度で区切るために使う。
+  // 全年度に効く1つの値として持つ。年度ごとに区切りが変わると、同じ年度の数字が
+  // 開くたびに違う期間の集計になるため。
+  fiscalYearStartMonth Int @default(4)
+
   // 移動の既定値（docs/spec.md §29）。活動記録の保存先と同じく、項目ごとではなく
   // 利用者につき1組にする。移動のたびに同じ出発地・交通手段を選び直さずに済ませるため。
   travelDefaultOrigin String?
@@ -200,6 +206,33 @@ model UiSetting {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 年休の付与（docs/spec.md §34）。
+//
+// 年休の記録そのものはNotionの勤務記録DBが一次情報源だが、「その年度に何日使えるのか」は
+// 日ごとの記録ではなく勤怠制度の設定値で、Notionのページとしては形が合わない。DaySpan固有の
+// 設定としてここに置く。
+model AnnualLeaveGrant {
+  id     String @id @default(cuid())
+  userId String
+
+  // 年度の開始年。開始月（UiSetting.fiscalYearStartMonth）が4月なら
+  // 2026 = 2026-04-01〜2027-03-31。開始月を変えると、同じ行が指す期間も一緒に動く。
+  fiscalYear Int
+
+  // その年度に付与された日数と、前年度からの繰越。半休を0.5日で数える（annualLeaveDays()）
+  // ため、日数は小数で持つ。
+  grantedDays     Float
+  carriedOverDays Float @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 同じ年度の付与が2件あると、どちらで計算するのかが決まらない。
+  @@unique([userId, fiscalYear])
 }
 
 // --- 活動記録 ---
