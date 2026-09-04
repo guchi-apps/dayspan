@@ -180,6 +180,47 @@ export async function listWorkRecordsInRange(
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
 }
 
+const RECENT_TRIP_DESTINATIONS_LIMIT = 3;
+// 重複除去後にlimit件へ届くよう、往復を増やさない範囲で少し多めに取る。
+const RECENT_TRIP_DESTINATIONS_FETCH_SIZE = 20;
+
+/**
+ * 直近の出張の行き先（重複を除いて新しい順に最大 limit 件、docs/spec.md §34）。
+ *
+ * `workTripPlaces`（出張扱いの勤務場所）ではなく実際のタイトルから作るのは、行き先が
+ * 自由記述で「出張」のような場所そのものの名前は行き先としては意味を持たない一方、
+ * workTripPlaces にはそうした名前がそのまま入りうり、候補に混ぜると具体的な行き先が
+ * 埋もれるため（issue #525）。
+ */
+export async function listRecentTripDestinations(
+  notion: Client,
+  connection: NotionConnection,
+  limit: number = RECENT_TRIP_DESTINATIONS_LIMIT,
+): Promise<string[]> {
+  const map = workPropertyMap(connection);
+  if (!connection.workDataSourceId || !map.businessTrip || !map.title) return [];
+
+  const response = await notion.dataSources.query({
+    data_source_id: connection.workDataSourceId,
+    page_size: RECENT_TRIP_DESTINATIONS_FETCH_SIZE,
+    filter: { property: map.businessTrip, checkbox: { equals: true } },
+    sorts: [{ property: map.date ?? map.title, direction: "descending" }],
+  });
+
+  const destinations: string[] = [];
+  const seen = new Set<string>();
+  for (const result of response.results) {
+    if (result.object !== "page" || !("properties" in result)) continue;
+    const page = result as WorkPage;
+    const title = text(page.properties?.[map.title]?.title);
+    if (!title || seen.has(title)) continue;
+    seen.add(title);
+    destinations.push(title);
+    if (destinations.length >= limit) break;
+  }
+  return destinations;
+}
+
 /**
  * 年休だけを期間ぶん取得する（docs/spec.md §34）。
  *

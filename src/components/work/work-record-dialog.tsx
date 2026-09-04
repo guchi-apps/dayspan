@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOffline } from "next/offline";
 import { Trash2 } from "lucide-react";
 
@@ -93,13 +93,23 @@ export function WorkRecordDialog({
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
-  const [place, setPlace] = useState(existing?.place ?? placeOptions[0]?.name ?? "");
   // 新規のときの種類はdraftの指定どおり。ここで場所から出張の既定を立てると、
   // 日の行を押しただけの下書きが出張として開くことがある。出張扱い（docs/spec.md §34）が
   // 効くのは、場所のチップを押して選んだときだけにする。
   const [kind, setKind] = useState<WorkKind>(
     draft.mode === "edit" ? kindOf(draft.record) : draft.kind,
   );
+
+  // 勤務タブでは、出張扱いの場所（門真・出張）を出さない。押すと choosePlace() で出張タブへ
+  // 切り替わってしまい、勤務タブに残す意味が無いため（issue #525）。年休・会社休業日・出張の
+  // タブでは絞り込まない（半休の残り半日の勤務場所は勤務タブと同じ選択肢を出す必要があり、
+  // 出張の勤務場所は保存対象の値で勤務タブでの絞り込みとは動機が違う。docs/spec.md §34）。
+  const workPlaceOptions =
+    kind === "work"
+      ? placeOptions.filter((option) => !isTripPlace(tripPlaces, option.name))
+      : placeOptions;
+
+  const [place, setPlace] = useState(existing?.place ?? workPlaceOptions[0]?.name ?? "");
   const [annualLeave, setAnnualLeave] = useState<string>(
     existing?.annualLeave ?? ANNUAL_LEAVE_OPTIONS[0].name,
   );
@@ -137,6 +147,27 @@ export function WorkRecordDialog({
   const businessTrip = kind === "trip";
   const isLeave = kind === "leave";
   const isHoliday = kind === "holiday";
+
+  const [recentDestinations, setRecentDestinations] = useState<string[]>([]);
+  // 出張タブを開いたときにだけ読む。`/work`のレンダーに含めると、月送り・今日のチップの
+  // 1押し・保存後の再取得のたびに往復が増える（未対応の件数をドロワーを開いたときにだけ
+  // 読むのと同じ扱い・issue #525 計画レビュー指摘）。一度取れたら開いている間は取り直さない。
+  useEffect(() => {
+    if (!businessTrip || recentDestinations.length > 0) return;
+    let cancelled = false;
+    fetch("/api/work/recent-destinations")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { destinations?: unknown } | null) => {
+        if (!cancelled && data && Array.isArray(data.destinations)) {
+          setRecentDestinations(data.destinations.filter((name): name is string => typeof name === "string"));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessTrip]);
   // 事後登録は出張の翌日以降にしかできない。「終了日」欄の表示値と同じ式で判定する
   // （既にtrueなら取り消して直せるようdisabledにしない・issue #509）。
   const postRegisterDisabled = !postRegistered && !((endDate || startDate) < todayKey);
@@ -157,6 +188,13 @@ export function WorkRecordDialog({
   const chooseKind = (next: WorkKind) => {
     setTripTouched(true);
     setKind(next);
+    // 勤務タブへ切り替えたとき、選ばれている場所が出張扱いのままだと、勤務タブのチップは
+    // どれも選ばれていないのに保存するとその場所のまま記録されてしまう（issue #525 計画
+    // レビュー指摘）。絞り込んだ一覧の先頭へ寄せる（無ければ空にする）。
+    if (next === "work" && isTripPlace(tripPlaces, place)) {
+      const fallback = placeOptions.find((option) => !isTripPlace(tripPlaces, option.name));
+      setPlace(fallback?.name ?? "");
+    }
   };
 
   /**
@@ -361,13 +399,13 @@ export function WorkRecordDialog({
         )}
 
         {/* 会社休業日と全休の日に勤務場所は入らない。半休の日は残り半日ぶんを選ばせる。 */}
-        {placeOptions.length > 0 && !isHoliday && (!isLeave || halfDay) && (
+        {workPlaceOptions.length > 0 && !isHoliday && (!isLeave || halfDay) && (
           <div className="flex flex-col gap-2">
             <span className="type-label-medium text-on-surface-variant">
               {halfDay ? "残り半日の勤務場所" : "勤務場所"}
             </span>
             <div className="flex flex-wrap gap-2">
-              {placeOptions.map((option) => (
+              {workPlaceOptions.map((option) => (
                 <button
                   key={option.id}
                   type="button"
@@ -395,6 +433,27 @@ export function WorkRecordDialog({
             value={holidayName}
             onChange={(event) => setHolidayName(event.target.value)}
           />
+        )}
+
+        {/* 直近の出張の行き先から選べるようにする（issue #525）。選択肢ではなく入力の
+            オートフィルなので、選んだあとも下のInputで自由に直せることが伝わるよう、
+            aria-pressedや選択中のハイライトは付けない。 */}
+        {businessTrip && recentDestinations.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className="type-label-medium text-on-surface-variant">最近の行き先</span>
+            <div className="flex flex-wrap gap-2">
+              {recentDestinations.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => setDestination(name)}
+                  className="type-label-large rounded-full border border-outline px-4 py-2 text-on-surface transition-colors hover:bg-on-surface/8"
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {businessTrip && (
