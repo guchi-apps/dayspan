@@ -200,10 +200,10 @@ export function WorkScreen({
 
   const openDay = (dateKey: string) => {
     const existing = records.find((record) => coversDate(record, dateKey));
-    // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも休業タブへは寄せない）。
+    // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも会社休業日のタブへは寄せない）。
     // 会社休業日は「会社が決めた休み」で期間で1件のもの（docs/spec.md §34）。土日を1日ずつ
     // 会社休業日として登録すると、月の集計（`Tally()`）で本来のお盆・年末年始の休業日数と
-    // 混ざって読めなくなる。休みとして明示的に記録したいときは、従来どおり「休業を追加」または
+    // 混ざって読めなくなる。休みとして明示的に記録したいときは、従来どおり「休みを追加」または
     // このダイアログの中でタブを切り替えて登録する。
     setDraft(
       existing
@@ -561,7 +561,7 @@ export function WorkScreen({
                     }
                   >
                     <Plus className="size-4" />
-                    休業を追加
+                    休みを追加
                   </Button>
                 )}
               </div>
