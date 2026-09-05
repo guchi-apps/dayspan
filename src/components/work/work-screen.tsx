@@ -24,11 +24,12 @@ import type { TagOption } from "@/services/notion/tag-options";
 import {
   annualLeaveDays,
   annualLeaveHours,
-  COMPANY_HOLIDAY_TITLE,
   coversDate,
   DEFAULT_WORK_MINUTES_PER_DAY,
   formatDays,
   formatLeaveHours,
+  HOLIDAY_TITLE,
+  isDefaultHolidayTitle,
   isPartialLeave,
   isTripPlace,
   openWorkRecords,
@@ -207,9 +208,9 @@ export function WorkScreen({
 
   const openDay = (dateKey: string) => {
     const existing = records.find((record) => coversDate(record, dateKey));
-    // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも会社休業日のタブへは寄せない）。
+    // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも休みのタブへは寄せない）。
     // 会社休業日は「会社が決めた休み」で期間で1件のもの（docs/spec.md §34）。土日を1日ずつ
-    // 会社休業日として登録すると、月の集計（`Tally()`）で本来のお盆・年末年始の休業日数と
+    // 休みとして登録すると、月の集計（`Tally()`）で本来のお盆・年末年始の休業日数と
     // 混ざって読めなくなる。休みとして明示的に記録したいときは、従来どおり「休みを追加」または
     // このダイアログの中でタブを切り替えて登録する。
     setDraft(
@@ -467,7 +468,7 @@ export function WorkScreen({
                             "type-body-medium min-w-0 flex-1 truncate",
                             record.businessTrip && "font-bold text-travel",
                             // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
-                            // 何の休みなのかは行の文字（「会社休業日」）が持っている。
+                            // 何の休みなのかは行の文字（「休み」）が持っている。
                             (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
                           )}
                         >
@@ -475,7 +476,11 @@ export function WorkScreen({
                         </span>
                       ) : isAutoOffDay(dateKey) ? (
                         // 登録が無い土日祝は自動的に「休み」として扱う（表示だけ、docs/spec.md §34）。
-                        <span className="type-body-medium flex-1 text-on-surface-variant">休み</span>
+                        // issue #536で登録済みの休み（会社休業日）の表記も「休み」にそろえたため、
+                        // 色（太字・tertiary か on-surface-variant）だけでは両者を読み分けられない。
+                        // 月間集計（`Tally()`）は登録済みの記録しか数えないため、「（自動）」を添えて
+                        // 集計に入らない行だと分かるようにする（issue #536 計画レビューG1の指摘）。
+                        <span className="type-body-medium flex-1 text-on-surface-variant">休み（自動）</span>
                       ) : (
                         <span className="type-body-medium flex-1 text-outline">未登録</span>
                       )}
@@ -718,7 +723,7 @@ function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] })
     if (!record) continue;
 
     if (record.companyHoliday) {
-      add(COMPANY_HOLIDAY_TITLE, 1);
+      add(HOLIDAY_TITLE, 1);
       continue;
     }
     if (record.annualLeave) {
@@ -808,15 +813,16 @@ function defaultDate(monthKey: string, todayKey: string): string {
  *
  * 年休は区分（全休・午前半休）まで出し、半休なら残り半日の勤務場所を添える。「年休」だけでは
  * 丸一日休むのか半日働くのかが読めず、月の集計の 0.5 日と行の見え方が食い違う。
- * 会社休業日は名称（「夏季休業」）まで出す。
+ * 休み（会社休業日）は名称（「夏季休業」）まで出す。
  */
 function recordLabel(record: WorkRecordItem): string {
   // 名称（「夏季休業」）を入れずに登録すると、タイトルにも種類の名前がそのまま入る。
-  // そのときに「会社休業日（会社休業日）」と出さない。
+  // そのときに「休み（休み）」と出さない（以前の既定タイトル「会社休業日」で保存済みの
+  // 記録も同じく名称なし扱いにする・issue #536）。
   if (record.companyHoliday) {
-    return record.title && record.title !== COMPANY_HOLIDAY_TITLE
-      ? `${COMPANY_HOLIDAY_TITLE}（${record.title}）`
-      : COMPANY_HOLIDAY_TITLE;
+    return record.title && !isDefaultHolidayTitle(record.title)
+      ? `${HOLIDAY_TITLE}（${record.title}）`
+      : HOLIDAY_TITLE;
   }
   if (record.annualLeave) {
     const suffix = isPartialLeave(record.annualLeave) && record.place ? `・${record.place}` : "";

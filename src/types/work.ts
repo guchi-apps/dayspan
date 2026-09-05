@@ -24,11 +24,12 @@ export type WorkRecordItem = {
   annualLeave: string | null;
   businessTrip: boolean;
   /**
-   * 会社が休みの日（お盆・年末年始・創立記念日など）。
+   * 会社が休みの日（お盆・年末年始・創立記念日など。画面では「休み」と呼ぶ）。
    *
-   * 年休と違って申請するものが無く、勤務場所も入らない。年休のselectへ「会社休業日」という
+   * 年休と違って申請するものが無く、勤務場所も入らない。年休のselectへ「休み」という
    * 選択肢を足す形にしないのは、Notionで名前を直した瞬間に振る舞いが変わり、直した本人にも
-   * 原因が読めなくなるため（年休を専用のプロパティにしたのと同じ理由）。
+   * 原因が読めなくなるため（年休を専用のプロパティにしたのと同じ理由）。Notion側のプロパティ名は
+   * `会社休業日`のままにする（既存DBとの対応付けを崩さないため）。
    */
   companyHoliday: boolean;
   preApplied: boolean;
@@ -48,19 +49,33 @@ export type WorkCapabilities = {
   businessTrip: boolean;
   /** 年休を登録し、事前申請の済み未済まで持てるか。 */
   annualLeave: boolean;
-  /** 会社休業日を登録できるか。申請を持たないため、必要なのはこの列だけ。 */
+  /** 休み（会社休業日）を登録できるか。申請を持たないため、必要なのはこの列だけ。 */
   companyHoliday: boolean;
   approval: boolean;
   memo: boolean;
 };
 
 /**
- * 名称を入れずに登録した会社休業日のタイトル。
+ * 名称を入れずに登録した休みのタイトル（issue #536）。
  *
  * Notionの一覧で開かずに読める名前が要るため、空にはしない。画面ではこの値かどうかで
- * 「名称が付いていない休業」だと判断する（入力欄の初期値・一覧の表記・カレンダーのチップ）。
+ * 「名称が付いていない休み」だと判断する（入力欄の初期値・一覧の表記・カレンダーのチップ）。
  */
-export const COMPANY_HOLIDAY_TITLE = "会社休業日";
+export const HOLIDAY_TITLE = "休み";
+
+/**
+ * 以前の既定タイトル（issue #536で「休み」に統一する前の値）。
+ *
+ * 過去にこの値で保存済みの記録は、Notion上のタイトルが文字列として`会社休業日`のまま残る。
+ * `HOLIDAY_TITLE`だけを見て「名称あり」と判定すると、これらの記録が「休み（会社休業日）」の
+ * ような二重表記になるため、名称の有無を判定するときは両方を「名称なし」として扱う。
+ */
+export const LEGACY_HOLIDAY_TITLE = "会社休業日";
+
+/** タイトルが名称未入力の既定値（新旧どちらか）かどうか。 */
+export function isDefaultHolidayTitle(title: string): boolean {
+  return title === HOLIDAY_TITLE || title === LEGACY_HOLIDAY_TITLE;
+}
 
 /** 出張について、まだ済ませていない手続き。 */
 export type WorkTodo = "preApplied" | "postRegistered";

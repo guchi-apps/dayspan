@@ -29,8 +29,9 @@ import type { TagOption } from "@/services/notion/tag-options";
 import {
   annualLeaveHours,
   DEFAULT_WORK_MINUTES_PER_DAY,
+  HOLIDAY_TITLE,
+  isDefaultHolidayTitle,
   isPartialLeave,
-  COMPANY_HOLIDAY_TITLE,
   isTripPlace,
   normalizeWorkMinutes,
   WORK_TODO_LABELS,
@@ -44,11 +45,11 @@ export type WorkKind = "work" | "trip" | "leave" | "holiday";
 /**
  * 並びに出す名前。
  *
- * 会社休業日は「休み」と短くする。日別の一覧・今日カードでは、登録の無い土日祝を
+ * 会社休業日は画面では「休み」と呼ぶ。日別の一覧・今日カードでは、登録の無い土日祝を
  * 「休み」と表示している（docs/spec.md §34、issue #510）。そこから開いたこのタブが
- * 「休業」という別の言葉だと、同じ状態を指す表記が揺れて分かりにくい（issue #522）。
- * 4つが1つの帯に並ぶため短くする必要があるのは変わらず、何の記録なのかはダイアログの
- * 見出しで引き続き「会社休業日」と出す（`COMPANY_HOLIDAY_TITLE`）。
+ * 別の言葉だと、同じ状態を指す表記が揺れて分かりにくい（issue #522・#536）。
+ * ダイアログの見出しも同じ「休み」を使うため（issue #536）、種類ごとに見出しを
+ * 出し分ける必要はなく、この並びの名前をそのまま見出しにも使う。
  */
 const KIND_LABELS: Record<WorkKind, string> = {
   work: "勤務",
@@ -131,10 +132,15 @@ export function WorkRecordDialog({
   );
   const [leaveHours, setLeaveHours] = useState<number>(existingLeaveHours ?? 1);
   const [destination, setDestination] = useState(existing?.businessTrip ? existing.title : "");
-  // 会社休業日の名称（「夏季休業」）。空のままでも登録できる（既定は「会社休業日」）。
-  // 名称を入れずに登録した記録はタイトルが既定のままなので、空欄として開く。
+  // 会社休業日の名称（「夏季休業」）。空のままでも登録できる（既定は「休み」）。
+  // 名称を入れずに登録した記録はタイトルが既定のままなので、空欄として開く
+  // （以前の既定タイトル「会社休業日」で保存済みの記録も名称なし扱いにする・issue #536）。
+  // 名称を入れずに保存すると、save()が組み立てるタイトルは常にHOLIDAY_TITLE（「休み」）になる。
+  // 旧既定タイトル「会社休業日」の記録を開いて（何も直さずに）保存しただけでも、Notion上の
+  // タイトルが「休み」へ書き換わる。統一を進める意図した挙動として許容する（issue #536
+  // 計画レビューG1の指摘）。
   const [holidayName, setHolidayName] = useState(
-    existing?.companyHoliday && existing.title !== COMPANY_HOLIDAY_TITLE ? existing.title : "",
+    existing?.companyHoliday && !isDefaultHolidayTitle(existing.title) ? existing.title : "",
   );
 
   /**
@@ -292,7 +298,7 @@ export function WorkRecordDialog({
     // 入力の欄も1つ減らす。出張は行き先が、年休は区分がタイトルになる。会社休業日は名称を
     // 入れなくても登録できるため、空なら種類の名前をそのまま置く。
     const title = isHoliday
-      ? holidayName.trim() || COMPANY_HOLIDAY_TITLE
+      ? holidayName.trim() || HOLIDAY_TITLE
       : isLeave
         ? `年休（${annualLeave}）`
         : businessTrip
@@ -348,15 +354,9 @@ export function WorkRecordDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
-        <DialogTitle>
-          {kind === "work"
-            ? "勤務場所"
-            : kind === "holiday"
-              ? COMPANY_HOLIDAY_TITLE
-              : KIND_LABELS[kind]}
-        </DialogTitle>
+        <DialogTitle>{kind === "work" ? "勤務場所" : KIND_LABELS[kind]}</DialogTitle>
         <DialogDescription className="sr-only">
-          勤務場所・出張・年休・会社休業日の登録。出張では事前申請と事後登録、年休では事前申請の
+          勤務場所・出張・年休・休みの登録。出張では事前申請と事後登録、年休では事前申請の
           状況も持てます。
         </DialogDescription>
 
