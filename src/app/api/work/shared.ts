@@ -44,7 +44,7 @@ export function validateWorkBody(
   const kinds = [
     body.businessTrip ? "出張" : null,
     body.annualLeave ? "年休" : null,
-    body.companyHoliday ? "会社休業日" : null,
+    body.companyHoliday ? "休み" : null,
   ].filter((kind): kind is string => kind !== null);
   if (kinds.length > 1) {
     return NextResponse.json(
