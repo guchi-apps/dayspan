@@ -9,13 +9,13 @@ import {
   WorkDateTakenError,
   type WorkWriteInput,
 } from "@/services/notion/work-logs";
-import { COMPANY_HOLIDAY_TITLE } from "@/types/work";
+import { HOLIDAY_TITLE } from "@/types/work";
 
 import { dateTaken, validateWorkBody } from "../shared";
 
 /** タイトルが省かれたときの名前。年休は区分まで、通常の勤務は勤務場所をそのまま使う。 */
 function defaultWorkTitle(body: WorkWriteInput): string {
-  if (body.companyHoliday) return COMPANY_HOLIDAY_TITLE;
+  if (body.companyHoliday) return HOLIDAY_TITLE;
   if (body.annualLeave) return `年休（${body.annualLeave}）`;
   return body.place || "勤務";
 }
