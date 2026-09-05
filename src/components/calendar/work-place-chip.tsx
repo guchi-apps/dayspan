@@ -95,7 +95,7 @@ export function WorkPlaceChip({
 /**
  * 幅ごとの見え方（狭い列は文字8px・余白4px、31px以上は文字10px・余白8px から決まる）。
  *
- * | チップに残る幅 | 通常の勤務・年休・休業 | 出張 |
+ * | チップに残る幅 | 通常の勤務・年休・休み | 出張 |
  * |---|---|---|
  * | 31px以上 | 10px・入る文字だけ | 10px・印＋入る文字だけ |
  * | 12〜31px | 8px・入る文字だけ | 8px・入る文字だけ |
@@ -122,11 +122,14 @@ export function WorkPlaceChip({
  * にすると年休だと分からず、区分だけにするとその日出社したことが消える）。
  *
  * 会社休業日は名称（「夏季休業」）があればそれを出す。名称を入れずに登録した記録は
- * タイトルが「会社休業日」で、狭い列では「会社」までしか入らず何の日か読めないため「休業」にする。
+ * タイトルが「会社休業日」で、狭い列では「会社」までしか入らず何の日か読めないため「休み」にする
+ * （「休業」ではないのは、勤務の画面の日別一覧・今日カードが未登録の土日祝を「休み」と表示して
+ * いるため（issue #510）。同じ会社休業日を指す言葉が「休業」と「休み」に割れると表記が揺れる
+ * ため、入力ダイアログのタブ・「休みを追加」ボタンとそろえた・issue #522）。
  */
 export function workPlaceLabel(record: WorkRecordItem): string {
   if (record.companyHoliday) {
-    return record.title && record.title !== COMPANY_HOLIDAY_TITLE ? record.title.trim() : "休業";
+    return record.title && record.title !== COMPANY_HOLIDAY_TITLE ? record.title.trim() : "休み";
   }
   if (record.annualLeave) {
     if (annualLeaveDays(record.annualLeave) === 1) return "年休";

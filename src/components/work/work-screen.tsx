@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
 import { japaneseHolidayName } from "@/lib/japanese-holidays";
+import { isAutoOffDay, weekdayOf } from "@/lib/work-days";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
@@ -199,10 +200,10 @@ export function WorkScreen({
 
   const openDay = (dateKey: string) => {
     const existing = records.find((record) => coversDate(record, dateKey));
-    // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも休業タブへは寄せない）。
+    // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも会社休業日のタブへは寄せない）。
     // 会社休業日は「会社が決めた休み」で期間で1件のもの（docs/spec.md §34）。土日を1日ずつ
     // 会社休業日として登録すると、月の集計（`Tally()`）で本来のお盆・年末年始の休業日数と
-    // 混ざって読めなくなる。休みとして明示的に記録したいときは、従来どおり「休業を追加」または
+    // 混ざって読めなくなる。休みとして明示的に記録したいときは、従来どおり「休みを追加」または
     // このダイアログの中でタブを切り替えて登録する。
     setDraft(
       existing
@@ -292,6 +293,15 @@ export function WorkScreen({
                     未申請 {openLeaveCount}件
                   </span>
                 )}
+                {/* 年度の取得状況（docs/spec.md §34）。あちらは「あと何日使えるか」を見る画面で、
+                    この区画（残っている申請を片付ける）とは開く理由が違う。入口はここ1つにし、
+                    ドロワーには行を足さない。 */}
+                <Link
+                  href="/work/leave"
+                  className="type-label-medium ml-auto text-primary underline"
+                >
+                  年度の取得状況
+                </Link>
               </div>
 
               {leaves.length === 0 ? (
@@ -399,11 +409,12 @@ export function WorkScreen({
                   {/* 場所から出張になったことは、押した本人にも見えている必要がある。
                       手続きの行き先を上の出張ではなく日別の一覧にするのは、この経路で作られるのが
                       単日の出張で、事前申請を済ませた時点で上の区画から消えるため（事後登録は
-                      終了日を過ぎるまで未対応に数えない）。日別の一覧はいつ押しても同じ所へ着く。 */}
+                      終了日を過ぎるまで未対応に数えない）。日別の一覧はいつ押しても同じ所へ着く。
+                      一覧の行からは印が読めるだけになったため（issue #521）、押して開くことまで書く。 */}
                   {todayEditableByChip && todayRecord?.businessTrip && (
                     <p className="type-body-small text-travel">
                       この場所は出張扱いです。
-                      {capabilities.approval && "事前申請・事後登録は下の日付の一覧から。"}
+                      {capabilities.approval && "事前申請・事後登録は下の日付の一覧の行を押して。"}
                     </p>
                   )}
                 </CardContent>
@@ -417,77 +428,77 @@ export function WorkScreen({
                 {days.map((dateKey) => {
                   const record = records.find((item) => coversDate(item, dateKey));
                   const holiday = japaneseHolidayName(dateKey);
-                  // 手続きが残っている項目だけ。事後登録は終了日を過ぎるまで含まれないため、
-                  // 出張中にこの一覧からうっかり完了にできてしまうことはない。
-                  const todos = record ? workTodos(record, todayKey) : [];
+                  // 未対応の手続き。事後登録は終了日を過ぎるまで含まれないため、まだできない
+                  // 手続きが未対応として並ぶことはない（判定は上の区画と同じ関数に任せる）。
+                  // 出張は期間の全ての日に同じ記録が並ぶため、印は開始日の行にだけ出す
+                  // （同じ手続きの印が日数ぶん縦に重複しないように・issue #521）。
+                  const marks =
+                    record && dateKey === record.startDate ? workTodos(record, todayKey) : [];
                   return (
-                    <div
+                    <button
                       key={dateKey}
-                      className="flex flex-col gap-1.5 border-b border-outline-variant py-2.5 last:border-b-0"
+                      type="button"
+                      onClick={() => openDay(dateKey)}
+                      className="flex w-full items-center gap-3 border-b border-outline-variant py-2.5 text-left last:border-b-0 hover:bg-on-surface/8"
                     >
-                      <button
-                        type="button"
-                        onClick={() => openDay(dateKey)}
-                        className="flex w-full items-center gap-3 text-left hover:bg-on-surface/8"
+                      <span
+                        className={cn(
+                          "type-body-small w-16 shrink-0 tabular-nums",
+                          dateClass(dateKey),
+                          dateKey === todayKey && "font-bold",
+                        )}
                       >
+                        {dayLabel(dateKey)}
+                      </span>
+                      {/* 項目名・祝日名・印は同じ行に並べる。項目名に `flex-1` を持たせて残りの幅を
+                          受け取らせ、印（`shrink-0`）を押し出さない。入れ子の箱にまとめると、その箱の
+                          ほうが縮んで印が枠からはみ出す。狭いときに切れるのは項目名と祝日名の末尾で、
+                          どちらも `truncate` で末尾から切れる。 */}
+                      {record ? (
                         <span
                           className={cn(
-                            "type-body-small w-16 shrink-0 tabular-nums",
-                            dateClass(dateKey),
-                            dateKey === todayKey && "font-bold",
+                            "type-body-medium min-w-0 flex-1 truncate",
+                            record.businessTrip && "font-bold text-travel",
+                            // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
+                            // 何の休みなのかは行の文字（「会社休業日」）が持っている。
+                            (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
                           )}
                         >
-                          {dayLabel(dateKey)}
+                          {recordLabel(record)}
                         </span>
-                        {record ? (
-                          <span
-                            className={cn(
-                              "type-body-medium min-w-0 truncate",
-                              record.businessTrip && "font-bold text-travel",
-                              // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
-                              // 何の休みなのかは行の文字（「会社休業日」）が持っている。
-                              (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
-                            )}
-                          >
-                            {recordLabel(record)}
-                          </span>
-                        ) : isAutoOffDay(dateKey) ? (
-                          // 登録が無い土日祝は自動的に「休み」として扱う（表示だけ、docs/spec.md §34）。
-                          <span className="type-body-medium text-on-surface-variant">休み</span>
-                        ) : (
-                          <span className="type-body-medium text-outline">未登録</span>
-                        )}
-                        {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
-                        {holiday && (
-                          <span className="type-label-small ml-auto min-w-0 truncate text-error">
-                            {holiday}
-                          </span>
-                        )}
-                      </button>
-                      {/* 残っている手続きをチェックボックスで区別する（issue #510）。事前申請・事後登録の
-                          どちらが残っているかが「未対応」の一括表記では読めなかったため。押すとその場で
-                          完了にでき、完了すると再取得でこの行から消える。出張は期間の全ての日に同じ
-                          記録が並ぶため、チェックボックスは開始日の行にだけ出す（同じ手続きに対する
-                          チェックボックスが日数ぶん重複しないように）。 */}
-                      {record && dateKey === record.startDate && todos.length > 0 && (
-                        <div className="flex flex-wrap gap-3 pl-[76px]">
-                          {todos.map((todo) => (
-                            <label
-                              key={todo}
-                              className="type-label-medium flex items-center gap-2 text-error"
-                            >
-                              <Checkbox
-                                className="border-error"
-                                disabled={busy || pending || offline}
-                                checked={false}
-                                onCheckedChange={() => toggleTodo(record, todo, true)}
-                              />
-                              {WORK_TODO_LABELS[todo]}
-                            </label>
-                          ))}
-                        </div>
+                      ) : isAutoOffDay(dateKey) ? (
+                        // 登録が無い土日祝は自動的に「休み」として扱う（表示だけ、docs/spec.md §34）。
+                        <span className="type-body-medium flex-1 text-on-surface-variant">休み</span>
+                      ) : (
+                        <span className="type-body-medium flex-1 text-outline">未登録</span>
                       )}
-                    </div>
+                      {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
+                      {holiday && (
+                        <span className="type-label-small min-w-0 truncate text-error">{holiday}</span>
+                      )}
+                      {/* 残っている手続きは印だけを出し、この行からは済ませられない（issue #521）。
+                          チェックボックスを置くと手続きが残る日だけ2行になり、日ごとの行の高さが
+                          揃わない。片付ける場所は上の出張・年休の区画と、行を押して開く入力
+                          ダイアログに寄せる。色だけに意味を持たせないよう、上の区画の
+                          「未対応 N件」と同じ印と読み上げ用の文字を添える。 */}
+                      {marks.length > 0 && (
+                        <span className="flex shrink-0 items-center gap-1 text-error">
+                          {/* 印は手続きごとではなく群の先頭に1つだけ置く。バッジの中へ入れると、
+                              2つ並ぶ日（終わった出張で両方残っている日）に項目名の幅が全角4文字まで
+                              縮む。狭いときは印より行き先の名前を先に残す（issue #433 と同じ判断）。 */}
+                          <CircleAlert className="size-3.5" />
+                          <span className="sr-only">未対応の手続き:</span>
+                          {marks.map((todo) => (
+                            <span
+                              key={todo}
+                              className="type-label-small rounded-full bg-error-container px-2 py-0.5 text-on-error-container"
+                            >
+                              {WORK_TODO_LABELS[todo]}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </button>
                   );
                 })}
               </CardContent>
@@ -550,7 +561,7 @@ export function WorkScreen({
                     }
                   >
                     <Plus className="size-4" />
-                    休業を追加
+                    休みを追加
                   </Button>
                 )}
               </div>
@@ -586,6 +597,17 @@ export function WorkScreen({
  * 別の形にすると同じことをするのに覚えることが2つに増えるため。違うのは出せる手続きの数だけ。
  *
  * 日付をタイトルより上・左に置くのは、この行がまず「いつの記録か」を示すため（issue #509）。
+ *
+ * 行き先と手続きのチェックボックスは横1行に並べる（issue #519）。全幅の帯として縦に積むと
+ * 1枠が144pxになり、未対応が8件あるだけで区画がスマートフォン3画面ぶんになる。行き先の右は
+ * まるごと空いており、そこへ入れれば1枠は68pxで済む。行き先が入らないときは末尾を切る
+ * （押せば入力画面で全文が読める）。左に80px（行き先5文字ぶん）も残らない幅のときだけ
+ * チェックボックスを2行目へ落とす。`flex-1`は`basis-0`なので、行き先が長いだけでは
+ * 折り返さず先に省略記号が出る。
+ *
+ * 手続きのラベルを`type-label-medium`（12px）へ落とすのは、行き先と同じ行へ収めるための寸法。
+ * `type-body-medium`（14px）のままだとチップ側が202pxになり、幅360pxでは左に80pxが残らず
+ * 折り返してしまう（12pxなら186pxで、360pxでも1行に収まる）。
  */
 function RecordRow({
   record,
@@ -613,16 +635,23 @@ function RecordRow({
 
   // ここに並ぶのは手続きが残っている記録だけなので、枠は常に未対応の色にする。
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-error p-3">
-      <button type="button" onClick={onOpen} className="flex flex-col items-start gap-0.5 text-left">
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-error p-3">
+      {/* 日付・行き先。`min-w-20`を割る幅でだけチェックボックスが2行目へ落ちる。 */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-20 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left"
+      >
         <span className="type-body-small tabular-nums text-on-surface-variant">
           {spanLabel(record)}
         </span>
-        <span className="type-body-large font-bold">{record.title}</span>
-        {sub && <span className="type-body-small text-on-surface-variant">{sub}</span>}
+        <span className="type-body-large max-w-full truncate font-bold">{record.title}</span>
+        {sub && (
+          <span className="type-body-small max-w-full truncate text-on-surface-variant">{sub}</span>
+        )}
       </button>
 
-      <div className="flex flex-col gap-1">
+      <div className="flex shrink-0 items-center gap-1.5">
         {states.map(({ todo, done, disabled: todoDisabled }) => {
           // 押せるのに未対応なものだけを目立たせる。押せない項目（終了日前の事後登録）は
           // 目立たせても押すものが増えないため、淡いままにする。
@@ -631,7 +660,7 @@ function RecordRow({
             <label
               key={todo}
               className={cn(
-                "-mx-1 flex items-center gap-3 rounded-lg px-1 py-1.5 transition-colors",
+                "flex items-center gap-2 rounded-full px-2 py-1 transition-colors",
                 needsAttention && "bg-error-container",
                 !todoDisabled && !writeDisabled && "cursor-pointer",
               )}
@@ -643,7 +672,7 @@ function RecordRow({
               />
               <span
                 className={cn(
-                  "type-body-medium",
+                  "type-label-medium whitespace-nowrap",
                   needsAttention && "font-bold text-on-error-container",
                   todoDisabled && "text-on-surface-variant",
                 )}
@@ -703,25 +732,8 @@ function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] })
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
-/** YYYY-MM-DD の曜日。UTCで組み立てて、実行環境のローカル時刻に依存させない。 */
-function weekdayOf(dateKey: string): number {
-  return new Date(`${dateKey}T00:00:00Z`).getUTCDay();
-}
-
 function dayLabel(dateKey: string): string {
   return `${Number(dateKey.slice(8, 10))}(${WEEKDAYS[weekdayOf(dateKey)]})`;
-}
-
-/**
- * 登録が無い日を自動的に「休み」として扱ってよいか（表示だけ、docs/spec.md §34）。
- *
- * 土曜・日曜・祝日が対象。`dateClass()` が日曜・祝日を同じ赤で示している理由（月曜の祝日が
- * 平日と同じ色だと、入れ忘れなのかそもそも働いていない日なのか読めない）が、そのまま
- * 「未登録」と「休み」のどちらを出すかにも当てはまるため、色分けと対象をそろえる。
- */
-function isAutoOffDay(dateKey: string): boolean {
-  const day = weekdayOf(dateKey);
-  return day === 0 || day === 6 || japaneseHolidayName(dateKey) !== null;
 }
 
 /**

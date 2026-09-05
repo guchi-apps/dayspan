@@ -180,6 +180,84 @@ export async function listWorkRecordsInRange(
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
 }
 
+const RECENT_TRIP_DESTINATIONS_LIMIT = 3;
+// 重複除去後にlimit件へ届くよう、往復を増やさない範囲で少し多めに取る。
+const RECENT_TRIP_DESTINATIONS_FETCH_SIZE = 20;
+
+/**
+ * 直近の出張の行き先（重複を除いて新しい順に最大 limit 件、docs/spec.md §34）。
+ *
+ * `workTripPlaces`（出張扱いの勤務場所）ではなく実際のタイトルから作るのは、行き先が
+ * 自由記述で「出張」のような場所そのものの名前は行き先としては意味を持たない一方、
+ * workTripPlaces にはそうした名前がそのまま入りうり、候補に混ぜると具体的な行き先が
+ * 埋もれるため（issue #525）。
+ */
+export async function listRecentTripDestinations(
+  notion: Client,
+  connection: NotionConnection,
+  limit: number = RECENT_TRIP_DESTINATIONS_LIMIT,
+): Promise<string[]> {
+  const map = workPropertyMap(connection);
+  if (!connection.workDataSourceId || !map.businessTrip || !map.title) return [];
+
+  const response = await notion.dataSources.query({
+    data_source_id: connection.workDataSourceId,
+    page_size: RECENT_TRIP_DESTINATIONS_FETCH_SIZE,
+    filter: { property: map.businessTrip, checkbox: { equals: true } },
+    sorts: [{ property: map.date ?? map.title, direction: "descending" }],
+  });
+
+  const destinations: string[] = [];
+  const seen = new Set<string>();
+  for (const result of response.results) {
+    if (result.object !== "page" || !("properties" in result)) continue;
+    const page = result as WorkPage;
+    const title = text(page.properties?.[map.title]?.title);
+    if (!title || seen.has(title)) continue;
+    seen.add(title);
+    destinations.push(title);
+    if (destinations.length >= limit) break;
+  }
+  return destinations;
+}
+
+/**
+ * 年休だけを期間ぶん取得する（docs/spec.md §34）。
+ *
+ * 年度の取得状況（`/work/leave`）は年休しか使わない。`listWorkRecordsInRange()` をそのまま
+ * 使うと、1日1件の勤務場所の記録まで1年ぶん（約250件＝3往復）取ることになる。年休だけに
+ * 絞れば年20〜40件で、往復は1回に収まる（docs/spec.md §20）。
+ *
+ * 下限を置く理由と、終了日での絞り込みをこちら側で行う理由は `listWorkRecordsInRange()` と同じ。
+ * フィルタは `and` の1段に収める（Notionの複合フィルタは2段まで・issue #402）。
+ */
+export async function listAnnualLeaveRecords(
+  notion: Client,
+  connection: NotionConnection,
+  range: { from: string; to: string },
+): Promise<WorkRecordItem[]> {
+  const map = workPropertyMap(connection);
+  // 年休の列が無いDBでは、そもそも年休を登録できない。
+  if (!connection.workDataSourceId || !map.date || !map.annualLeave) return [];
+
+  const pages = await queryWorkPages(notion, connection.workDataSourceId, {
+    and: [
+      { property: map.annualLeave, select: { is_not_empty: true } },
+      { property: map.date, date: { on_or_before: range.to } },
+      {
+        property: map.date,
+        date: { on_or_after: shiftDateKey(range.from, -WORK_RANGE_LOOKBACK_DAYS) },
+      },
+    ],
+  });
+
+  return pages
+    .map((page) => normalizeWorkPage(page, map))
+    .filter((record): record is WorkRecordItem => record !== null)
+    .filter((record) => record.annualLeave !== null && record.endDate >= range.from)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
+
 /**
  * まだ手続きが済んでいない記録（出張の事前申請・事後登録と、年休の事前申請）。
  *
