@@ -68,7 +68,7 @@ import {
 import { useScrollbarGutter } from "./use-scrollbar-gutter";
 import { useSlotRange, type SlotRangeCommit, type SlotRangePreview } from "./use-slot-range";
 import { useTimeZoom } from "./use-time-zoom";
-import { WorkPlaceChip, workRecordsByDate } from "./work-place-chip";
+import { WorkPlaceChip, WorkSlotAddMark, workRecordsByDate } from "./work-place-chip";
 
 /** 左から順に、前の期間・表示中の期間・次の期間。 */
 type PaneDays = [string[], string[], string[]];
@@ -94,6 +94,8 @@ export function TimeGridView({
   travels,
   workRecords,
   workPlaceOptions,
+  workWritable,
+  onOpenWork,
   runningActivity,
   activityCalendarIds,
   utils,
@@ -118,6 +120,10 @@ export function TimeGridView({
   workRecords: WorkRecordItem[];
   /** 勤務場所の選択肢。色を引くためだけに使う。 */
   workPlaceOptions: TagOption[];
+  /** 勤務記録DBが読み書きできるか。揃っていなければ日付ヘッダーのスロットを押せる形にしない。 */
+  workWritable: boolean;
+  /** 日付ヘッダーの勤務スロットを押したとき（issue #532）。呼び出し側で参照を保つこと。 */
+  onOpenWork: (dateKey: string) => void;
   /** 記録中の活動。まだGoogleに予定は無く、開始時刻から現在時刻までを画面上で伸ばす。 */
   runningActivity: RunningActivityItem | null;
   /**
@@ -289,6 +295,8 @@ export function TimeGridView({
               todayKey={todayKey}
               workByDate={workByDate}
               workPlaceOptions={workPlaceOptions}
+              workWritable={workWritable}
+              onOpenWork={onOpenWork}
             />
           )}
         </SwipeTrack>
@@ -426,12 +434,17 @@ const DayHeaderPane = memo(function DayHeaderPane({
   todayKey,
   workByDate,
   workPlaceOptions,
+  workWritable,
+  onOpenWork,
 }: {
   days: string[];
   todayKey: string;
   /** 日付キーから引ける勤務場所（docs/spec.md §34）。出張は期間の全ての日にかかる。 */
   workByDate: Map<string, WorkRecordItem>;
   workPlaceOptions: TagOption[];
+  /** 勤務記録DBが読み書きできるか。揃っていなければスロットを押せる形にしない。 */
+  workWritable: boolean;
+  onOpenWork: (dateKey: string) => void;
 }) {
   return (
     <div className="grid" style={dayColumnsStyle(days.length)}>
@@ -461,12 +474,34 @@ const DayHeaderPane = memo(function DayHeaderPane({
               勤務場所は終日エリアへ入れない。毎日1件あるため、入れると終日エリアが毎日1段ぶん
               伸びる（Google Calendarへ書き出さないと決めた理由がそのまま起きる・docs/spec.md §34）。
               日付ヘッダーは日数によらず高さが決まっているので、置いても他の面を押し出さない。
+
+              勤務記録DBが使えるときは、記録の有無によらず**常に**この枠を置き、押すとその日の
+              勤務の入力が開くようにする（issue #532）。記録がある日だけ枠を出していたときは、
+              その日だけヘッダーが15px高く、日をまたいで数字の並ぶ位置がずれていた。
+              押下領域を枠いっぱい（列幅×19px）にするのは、チップが狭い列では21px程度まで
+              縮むため。押す面まで一緒に縮むと、狙って押せる大きさが残らない。
             */}
-            {workRecord && (
-              // 名前をどこまで出すかは列に残っている幅で決まる（画面幅では切り替えない）。
-              <div className="@container mt-0.5 flex min-w-0 justify-center">
-                <WorkPlaceChip record={workRecord} options={workPlaceOptions} />
-              </div>
+            {workWritable ? (
+              <button
+                type="button"
+                // 名前をどこまで出すかは列に残っている幅で決まる（画面幅では切り替えない）。
+                // チップの幅判定（@max-[31px] など）はこの枠をコンテナとして見る。
+                className="@container mt-0.5 flex h-[19px] w-full min-w-0 items-center justify-center rounded-full px-0.5 transition-colors hover:bg-on-surface/8 active:bg-on-surface/12"
+                aria-label={`${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日の勤務を${workRecord ? "編集" : "登録"}`}
+                onClick={() => onOpenWork(dateKey)}
+              >
+                {workRecord ? (
+                  <WorkPlaceChip record={workRecord} options={workPlaceOptions} />
+                ) : (
+                  <WorkSlotAddMark />
+                )}
+              </button>
+            ) : (
+              workRecord && (
+                <div className="@container mt-0.5 flex min-w-0 justify-center">
+                  <WorkPlaceChip record={workRecord} options={workPlaceOptions} />
+                </div>
+              )
             )}
           </div>
         );
