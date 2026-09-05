@@ -106,7 +106,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
           "title": "自宅 → 渋谷",
           "origin": "自宅",
           "destination": "渋谷",
-          "mode": "TRAIN",                    // TRAIN|CAR|BUS|WALK|BICYCLE|PLANE|OTHER
+          "mode": "PUBLIC_TRANSIT",            // CAR|PUBLIC_TRANSIT|WALK|OTHER（旧: TRAIN|CAR|BUS|WALK|BICYCLE|PLANE|OTHER。issue #538で公共交通へ統合）
           "start": "2026-08-19T00:30:00Z",
           "end": "2026-08-19T01:00:00Z",
           "startTime": "09:30",
