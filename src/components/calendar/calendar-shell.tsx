@@ -1063,6 +1063,11 @@ function CalendarBody({
    * その日に記録があれば編集、無ければ新規（その日付・勤務のタブ）で開くのも `openDay()` と
    * 同じ形にする。新規で送ると重なりをサーバーが断る（1日1件・docs/spec.md §34）ため、
    * 開く前にここで分けておく必要がある。
+   *
+   * 他の入力（`itemDialog` など）は状態を外側の `CalendarShell` に置いているが、あれらは
+   * 日付だけからひな型を作れる。勤務はその日の**既存の記録**を引く必要があり、それが解決するのは
+   * `<Suspense>` の内側（`use(dataPromise)`）のここから。外側で待つと「ヘッダーは取得を待たずに
+   * 描く」という作りが崩れるため、状態ごとこちらへ置く（issue #532 計画レビューG1の指摘）。
    */
   const [workDraft, setWorkDraft] = useState<WorkDraft | null>(null);
 
