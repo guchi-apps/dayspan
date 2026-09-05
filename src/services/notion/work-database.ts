@@ -217,8 +217,12 @@ export const DEFAULT_TRIP_PLACES: string[] = ["出張"];
  * 年休の区分（docs/spec.md §34）。
  *
  * 選択肢はDaySpanが決める。勤務場所と違って利用者が足すものではなく、半日を 0.5 日として
- * 数えるかどうかがこの名前で決まるため（`annualLeaveDays()`）。Notionのselectは、
- * 定義に無い名前を書き込むとその場で選択肢が増えるので、画面はこの3つだけを出す。
+ * 数えるかどうかがこの名前で決まるため（`annualLeaveDays()`）。新しく作るDBにはこの3つを
+ * 入れておく。
+ *
+ * 時間休（`3時間休`）はここに並べない。所定労働時間によって使う時間数が変わり、7時間ぶん
+ * 並べるとNotionのselectの一覧が時間休で埋まる。Notionは定義に無い名前を書き込むとその場で
+ * 選択肢を足すため、実際に使った時間数だけが増えていく（issue #537）。
  */
 export const ANNUAL_LEAVE_OPTIONS = [
   { name: "全休", color: "pink" },
@@ -227,6 +231,24 @@ export const ANNUAL_LEAVE_OPTIONS = [
 ] as const;
 
 export type AnnualLeaveKind = (typeof ANNUAL_LEAVE_OPTIONS)[number]["name"];
+
+/** 入力ダイアログで時間休の区分に出す名前。時間数を名前へ含める（`annualLeaveHours()` が読み戻す）。 */
+export const HOURLY_LEAVE_LABEL = "時間休";
+
+/** 時間休の区分の名前。Notion側の選択肢は、この名前で書き込んだ時点で増える。 */
+export function hourlyLeaveName(hours: number): string {
+  return `${hours}${HOURLY_LEAVE_LABEL}`;
+}
+
+/**
+ * 時間休として選べる上限の時間数。
+ *
+ * 所定労働時間ぶん取れば全休と同じで、区分を分ける意味が無い。1時間刻みで選ばせるため、
+ * 端数のある所定（7時間45分）では切り上げてから1を引く（7時間まで）。
+ */
+export function maxHourlyLeaveHours(minutesPerDay: number): number {
+  return Math.max(1, Math.ceil(minutesPerDay / 60) - 1);
+}
 
 /**
  * 必要なプロパティを揃えた勤務記録DBを作成する。

@@ -4,7 +4,12 @@ import { tagChipClass, tagColorOf } from "@/components/tags/tag-color";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
-import { annualLeaveDays, HOLIDAY_TITLE, isDefaultHolidayTitle, type WorkRecordItem } from "@/types/work";
+import {
+  HOLIDAY_TITLE,
+  isDefaultHolidayTitle,
+  isPartialLeave,
+  type WorkRecordItem,
+} from "@/types/work";
 
 /**
  * カレンダーに出す勤務場所（docs/spec.md §34）。
@@ -121,8 +126,9 @@ export function WorkPlaceChip({
  * 行き先が入っており、そちらのほうが「どこへ行っているか」を示す。
  *
  * 年休はタイトル（「年休（午前半休）」）をそのまま出すと、狭い列では末尾から切れて
- * 括弧の途中で終わる。全休は「年休」まで、半休は区分と残り半日の勤務場所を出す（勤務場所だけ
- * にすると年休だと分からず、区分だけにするとその日出社したことが消える）。
+ * 括弧の途中で終わる。全休は「年休」まで、半休・時間休は区分と残りの勤務場所を出す
+ * （勤務場所だけにすると年休だと分からず、区分だけにするとその日出社したことが消える）。
+ * 時間休は区分そのものが `3時間休` なので、そのまま `3時間休・在宅` になる。
  *
  * 会社休業日は名称（「夏季休業」）があればそれを出す。名称を入れずに登録した記録は
  * タイトルの既定値そのものが「休み」（`HOLIDAY_TITLE`）で、ダイアログの見出し・日別一覧・
@@ -134,7 +140,7 @@ export function workPlaceLabel(record: WorkRecordItem): string {
     return record.title && !isDefaultHolidayTitle(record.title) ? record.title.trim() : "休み";
   }
   if (record.annualLeave) {
-    if (annualLeaveDays(record.annualLeave) === 1) return "年休";
+    if (!isPartialLeave(record.annualLeave)) return "年休";
     return record.place ? `${record.annualLeave}・${record.place}` : record.annualLeave;
   }
   const label = record.businessTrip ? record.title : (record.place ?? record.title);

@@ -23,10 +23,14 @@ import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
   annualLeaveDays,
+  annualLeaveHours,
   coversDate,
+  DEFAULT_WORK_MINUTES_PER_DAY,
   formatDays,
+  formatLeaveHours,
   HOLIDAY_TITLE,
   isDefaultHolidayTitle,
+  isPartialLeave,
   isTripPlace,
   openWorkRecords,
   WORK_TODO_LABELS,
@@ -56,6 +60,7 @@ export function WorkScreen({
   capabilities,
   activityRunning = false,
   timeZone,
+  workMinutesPerDay = DEFAULT_WORK_MINUTES_PER_DAY,
 }: {
   /** YYYY-MM */
   monthKey: string;
@@ -76,6 +81,8 @@ export function WorkScreen({
   activityRunning?: boolean;
   /** 下部ナビの「今日へ」に使うタイムゾーン（`UiSetting.timeZone`）。 */
   timeZone: string;
+  /** 1日の所定労働時間（分）。入力ダイアログの時間休の上限に使う（issue #537）。 */
+  workMinutesPerDay?: number;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -584,6 +591,7 @@ export function WorkScreen({
           tripPlaces={tripPlaces}
           capabilities={capabilities}
           todayKey={todayKey}
+          workMinutesPerDay={workMinutesPerDay}
           onClose={() => setDraft(null)}
           onSaved={() => {
             setDraft(null);
@@ -632,10 +640,10 @@ function RecordRow({
   onOpen: () => void;
 }) {
   const states = workTodoStates(record, todayKey, shown);
-  // 半休の日は残り半日どこで働いたかも持つ。行に出さないと、開かないと分からない。
+  // 半休・時間休の日は残りをどこで働いたかも持つ。行に出さないと、開かないと分からない。
   const sub =
-    record.annualLeave && annualLeaveDays(record.annualLeave) < 1 && record.place
-      ? `残り半日は${record.place}`
+    record.annualLeave && isPartialLeave(record.annualLeave) && record.place
+      ? `${annualLeaveHours(record.annualLeave) === null ? "残り半日は" : "残りは"}${record.place}`
       : null;
 
   // ここに並ぶのは手続きが残っている記録だけなので、枠は常に未対応の色にする。
@@ -692,11 +700,19 @@ function RecordRow({
   );
 }
 
+/** 月間集計の項目名。時間休だけは日ではなく時間で数えるため、年休とは別の項目にする。 */
+const HOURLY_LEAVE_TALLY = "時間休";
+
 /**
  * その月に何日ずつどこで働いたか。勤務場所ごとに数える。
  *
  * 半休の日は年休に 0.5 日、残り半日の勤務場所に 0.5 日を足す。勤怠の提出で見るのはこの数字
  * そのもので、半休を1日として数えると使えないため。
+ *
+ * **時間休の日は勤務場所に1日を数え、時間休は「時間」で別に足す**（issue #537）。半休と同じ
+ * 按分（`1 - leave`）を当てると勤務場所が「18.6日 在宅」になるが、3時間休を取っても出勤した
+ * 日は1日で、勤怠の提出で見る出勤日数は変わらない。日数へ換算して年休へ足し込むと、月の集計に
+ * 0.4 日のような数字が現れる。
  */
 function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] }) {
   const counts = new Map<string, number>();
@@ -711,6 +727,12 @@ function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] })
       continue;
     }
     if (record.annualLeave) {
+      const hours = annualLeaveHours(record.annualLeave);
+      if (hours !== null) {
+        add(HOURLY_LEAVE_TALLY, hours);
+        if (record.place) add(record.place, 1);
+        continue;
+      }
       const leave = annualLeaveDays(record.annualLeave);
       add("年休", leave);
       if (leave < 1 && record.place) add(record.place, 1 - leave);
@@ -725,7 +747,9 @@ function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] })
     <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
       {[...counts.entries()].map(([name, count]) => (
         <span key={name} className="type-body-small text-on-surface-variant">
-          <b className="type-title-small mr-1 tabular-nums text-on-surface">{formatDays(count)}</b>
+          <b className="type-title-small mr-1 tabular-nums text-on-surface">
+            {name === HOURLY_LEAVE_TALLY ? formatLeaveHours(count) : formatDays(count)}
+          </b>
           {name}
         </span>
       ))}
@@ -801,7 +825,7 @@ function recordLabel(record: WorkRecordItem): string {
       : HOLIDAY_TITLE;
   }
   if (record.annualLeave) {
-    const suffix = annualLeaveDays(record.annualLeave) < 1 && record.place ? `・${record.place}` : "";
+    const suffix = isPartialLeave(record.annualLeave) && record.place ? `・${record.place}` : "";
     return `年休（${record.annualLeave}）${suffix}`;
   }
   if (record.businessTrip) return `出張・${record.title}`;

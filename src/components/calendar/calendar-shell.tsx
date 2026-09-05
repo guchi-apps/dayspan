@@ -119,6 +119,8 @@ export type CalendarWorkContext = {
   tripPlaces: string[];
   /** 出張・年休・会社休業日・申請・メモが使えるか。 */
   capabilities: WorkCapabilities;
+  /** 1日の所定労働時間（分）。時間休として選べる時間数の上限を決める（issue #537）。 */
+  minutesPerDay: number;
 };
 
 export function CalendarShell({
@@ -1242,6 +1244,7 @@ function CalendarBody({
           tripPlaces={work.tripPlaces}
           capabilities={work.capabilities}
           todayKey={utils.todayKey()}
+          workMinutesPerDay={work.minutesPerDay}
           onClose={() => setWorkDraft(null)}
           onSaved={() => handleSaved(null)}
         />

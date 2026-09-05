@@ -18,7 +18,7 @@ import {
   workDatabaseReady,
   workTripPlaces,
 } from "@/services/notion/work-logs";
-import type { WorkRecordItem } from "@/types/work";
+import { normalizeWorkMinutes, type WorkRecordItem } from "@/types/work";
 
 /** その月の初日と末日。日付の解釈は設定のタイムゾーンに閉じている（月の境目もそこで決まる）。 */
 function monthRange(monthKey: string): { from: string; to: string } {
@@ -41,7 +41,10 @@ export default async function WorkPage({
 
   const [connection, uiSetting, runningActivity] = await Promise.all([
     db.notionConnection.findUnique({ where: { userId: user.id } }),
-    db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),
+    db.uiSetting.findUnique({
+      where: { userId: user.id },
+      select: { timeZone: true, workMinutesPerDay: true },
+    }),
     // ナビの記録の項目へ印を出すためだけに読む（docs/spec.md §27）。
     db.runningActivity.findUnique({ where: { userId: user.id }, select: { id: true } }),
   ]);
@@ -92,6 +95,7 @@ export default async function WorkPage({
       capabilities={workCapabilities(connection)}
       activityRunning={runningActivity !== null}
       timeZone={timeZone}
+      workMinutesPerDay={normalizeWorkMinutes(uiSetting?.workMinutesPerDay)}
     />
   );
 }
