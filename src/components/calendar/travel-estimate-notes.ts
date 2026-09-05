@@ -23,7 +23,7 @@ export const AI_NOTE = "所要時間はAIによる目安です。時刻表や道
  */
 export const YAHOO_NOTE = "Yahoo!乗換案内で選んだ経路の時刻です。";
 
-/** 電車で、まだ何も取り込んでいないときの案内。押す前に手順が分かるようにする。 */
+/** 公共交通で、まだ何も取り込んでいないときの案内。押す前に手順が分かるようにする。 */
 export const YAHOO_HOW_TO =
   "Yahoo!乗換案内で経路を選び、共有 ▸ コピーしてから取り込みます。";
 
@@ -31,8 +31,8 @@ export const YAHOO_HOW_TO =
  * 候補を出す前・選んだあとの注記。
  *
  * **押す前から出どころを名乗る。** 押してから初めて「これは何の数字か」を考えることに
- * ならないようにするため。電車以外はAIの見積もりで、使えるかは押してみないと分からない
- * （未接続・座標なしのいずれでも候補が0件になる）ので断定しない。電車はYahoo!乗換案内から
+ * ならないようにするため。公共交通以外はAIの見積もりで、使えるかは押してみないと分からない
+ * （未接続・座標なしのいずれでも候補が0件になる）ので断定しない。公共交通はYahoo!乗換案内から
  * 取り込む1本だけなので、押す前に手順そのものを書く。
  */
 export function estimateNote(
@@ -43,9 +43,10 @@ export function estimateNote(
   if (source === "YAHOO") return YAHOO_NOTE;
   if (source === "TRANSIT") return transitNote(attribution);
   if (source === "AI") return AI_NOTE;
-  // 電車は経路検索・AIを出さず、Yahoo!乗換案内から取り込む（docs/spec.md §29）。
-  // 既存の移動を開き直したときは上の分岐で出どころが出るため、ここは手入力のときだけ通る。
-  if (mode === "TRAIN") return YAHOO_HOW_TO;
+  // 公共交通（電車・バス・飛行機）は経路検索・AIを出さず、Yahoo!乗換案内から取り込む
+  // （docs/spec.md §29）。既存の移動を開き直したときは上の分岐で出どころが出るため、
+  // ここは手入力のときだけ通る。
+  if (mode === "PUBLIC_TRANSIT") return YAHOO_HOW_TO;
   return AI_NOTE;
 }
 
