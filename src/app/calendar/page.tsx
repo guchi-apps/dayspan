@@ -26,6 +26,11 @@ import { listActivityCalendarIds } from "@/services/activity/settings";
 import { loadCalendarData } from "@/services/calendar/load";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { loadTagCatalog } from "@/services/notion/tag-options";
+import {
+  workCapabilities,
+  workDatabaseReady,
+  workTripPlaces,
+} from "@/services/notion/work-logs";
 import { getTravelSettings } from "@/services/travel/settings";
 
 export default async function CalendarPage({
@@ -118,6 +123,16 @@ export default async function CalendarPage({
         initialRunningActivity={runningActivity}
         activityCalendarIds={activityCalendarIds}
         travelSettings={travelSettings}
+        /*
+          勤務記録の入力（issue #532・docs/spec.md §34）。どれも既に読んでいる
+          notionConnection の1行から決まる値で、Notionへの往復は増えない。
+          勤務場所の選択肢は tagCatalogPromise の中で読み終えている。
+        */
+        work={{
+          writable: workDatabaseReady(notionConnection),
+          tripPlaces: workTripPlaces(notionConnection),
+          capabilities: workCapabilities(notionConnection),
+        }}
         weekStartsOn={weekStartsOn}
         timeZone={timeZone}
         autoRefreshSeconds={uiSetting?.autoRefreshSeconds ?? 300}
