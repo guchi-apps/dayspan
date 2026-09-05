@@ -124,6 +124,11 @@ export function WorkRecordDialog({
   const [place, setPlace] = useState(existing?.place ?? workPlaceOptions[0]?.name ?? "");
   // 時間休だけは1つの選択肢名ではなく族（`1時間休`〜`7時間休`）なので、区分と時間数を
   // 別の状態で持ち、保存する値を `hourlyLeaveName()` で組み立てる（issue #537）。
+  //
+  // 区分は4択の enum ではなく**文字列そのもの**で持ち続ける。Notionで直接付けた「特別年休」の
+  // ような、どのチップにも当たらない名前は、どれも選ばれていない状態で開いてそのまま保存される
+  // （4択へ移すとその値の置き場が無くなり、開いて何も直さずに保存しただけで別の区分へ黙って
+  // 書き換わる・計画レビューG1の指摘）。数え方も従来どおりで、丸一日として数える。
   const existingLeaveHours = annualLeaveHours(existing?.annualLeave ?? null);
   const [leaveKind, setLeaveKind] = useState<string>(
     existingLeaveHours !== null

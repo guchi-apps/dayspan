@@ -75,25 +75,28 @@ export function AnnualLeaveScreen({
   );
 
   const total = grantedDays === null ? null : grantedDays + carriedOverDays;
+  // 帯・消化ペース・超過かどうかの判定は、日へそろえた合計で一本化する（計画レビューG1の指摘）。
+  // 日数だけで超過を決めると、合計20日・全休20日＋3時間休1回の年度が「0日 － 3時間 残り」と
+  // 出るのに帯には超過の線が立ち、同じ画面の中で食い違う。
+  const takenInDays = leaveAmountInDays(summary.taken, workMinutesPerDay);
+  const plannedInDays = leaveAmountInDays(summary.planned, workMinutesPerDay);
+  const over = total !== null && takenInDays + plannedInDays > total;
+
   // 残りは日と時間を混ぜずに出す（issue #537）。日は日どうしで引き、時間休のぶんは
   // 「－ 3時間」として並べる。1つの数へ丸めると、所定7時間45分の職場では0.5日が
   // 3時間52分30秒になり、割り切れない数字が画面に並ぶ。
   const usedDays = summary.taken.days + summary.planned.days;
   const usedHours = summary.taken.hours + summary.planned.hours;
-  const left: LeaveAmount | null =
-    total === null ? null : { days: total - usedDays, hours: -usedHours };
-  // 付与より多く取っている（繰越の入れ忘れ・使いすぎ）ことはありうる。残り0日として丸めると、
-  // 何日ぶん超えているのかが画面のどこにも出なくなる。超過は残りの裏返しなので、時間の符号も
-  // 一緒に返す（残りが「－ 3時間」なら、超過は「＋ 3時間」）。
-  const over = left !== null && left.days < 0 ? -left.days : 0;
-  const overAmount: LeaveAmount = { days: over, hours: -(left?.hours ?? 0) };
-  const leftAmount: LeaveAmount = {
-    days: Math.max(left?.days ?? 0, 0),
-    hours: left?.hours ?? 0,
-  };
-  // ペースと帯の比率だけは日へそろえる。数字と帯の位置が食い違わないようにするため。
-  const takenInDays = leaveAmountInDays(summary.taken, workMinutesPerDay);
-  const plannedInDays = leaveAmountInDays(summary.planned, workMinutesPerDay);
+  // 日数そのものがマイナス（付与より多く取っている）なら符号を反転して「4.5日 ＋ 3時間 超過」と
+  // 出す。日数は残っていて時間ぶんだけ超えている状態（「0.5日 － 5時間」）は、残りと同じ形の
+  // ままで「超過」と呼ぶ。ここで日へ丸めると、0.5日＝3時間52分30秒の端数が数字に出る。
+  // 付与日数を入れていない年度（`total === null`）ではこの区画ごと出さないため、0で持つ。
+  const remaining: LeaveAmount =
+    total === null
+      ? { days: 0, hours: 0 }
+      : total - usedDays < 0
+        ? { days: usedDays - total, hours: usedHours }
+        : { days: total - usedDays, hours: -usedHours };
   const pace =
     total === null
       ? null
@@ -161,13 +164,13 @@ export function AnnualLeaveScreen({
               <span
                 className={cn(
                   "type-headline-small font-bold tabular-nums",
-                  over > 0 && "text-error",
+                  over && "text-error",
                 )}
               >
-                {formatLeaveAmount(over > 0 ? overAmount : leftAmount)}
+                {formatLeaveAmount(remaining)}
               </span>
-              <span className={cn("type-title-medium", over > 0 && "text-error")}>
-                {over > 0 ? "超過" : "残り"}
+              <span className={cn("type-title-medium", over && "text-error")}>
+                {over ? "超過" : "残り"}
               </span>
               <span className="type-body-small ml-auto tabular-nums text-on-surface-variant">
                 うち予定 {formatLeaveAmount(summary.planned)}
@@ -179,9 +182,9 @@ export function AnnualLeaveScreen({
               taken={takenInDays}
               planned={plannedInDays}
               label={
-                takenInDays + plannedInDays > total
-                  ? `合計${formatDays(total)}日に対して、取得済み${formatLeaveAmount(summary.taken)}・予定${formatLeaveAmount(summary.planned)}で${formatLeaveAmount(overAmount)}の超過`
-                  : `合計${formatDays(total)}日のうち、取得済み${formatLeaveAmount(summary.taken)}・予定${formatLeaveAmount(summary.planned)}・残り${formatLeaveAmount(leftAmount)}`
+                over
+                  ? `合計${formatDays(total)}日に対して、取得済み${formatLeaveAmount(summary.taken)}・予定${formatLeaveAmount(summary.planned)}で${formatLeaveAmount(remaining)}の超過`
+                  : `合計${formatDays(total)}日のうち、取得済み${formatLeaveAmount(summary.taken)}・予定${formatLeaveAmount(summary.planned)}・残り${formatLeaveAmount(remaining)}`
               }
             />
 
@@ -196,13 +199,17 @@ export function AnnualLeaveScreen({
                 amount={summary.planned}
                 name="予定"
               />
-              {over > 0 ? (
+              {over ? (
                 // 帯の中で合計の位置に立てた線と同じ印にする（塗りの区画は無いため）。
-                <LegendItem className="h-2.5 w-0.5 bg-error" amount={overAmount} name="超過" />
+                <LegendItem
+                  className="h-2.5 w-0.5 bg-error"
+                  amount={remaining}
+                  name="超過"
+                />
               ) : (
                 <LegendItem
                   className="size-2.5 bg-surface-container-highest"
-                  amount={leftAmount}
+                  amount={remaining}
                   name="残り"
                 />
               )}
@@ -274,16 +281,20 @@ export function AnnualLeaveScreen({
                 ))}
               {/* 入れてある予定は、ペースの見込みとは別に確定している。両方を1文に混ぜない。 */}
               {plannedInDays > 0 &&
-                (over > 0 ? (
+                (over ? (
                   <>
                     入れてある予定まで含めると{" "}
-                    <b className="tabular-nums text-error">{formatLeaveAmount(overAmount)}</b>{" "}
+                    <b className="tabular-nums text-error">
+                      {formatLeaveAmount(remaining)}
+                    </b>{" "}
                     ぶん超えます。
                   </>
                 ) : (
                   <>
                     入れてある予定まで含めると残りは{" "}
-                    <b className="tabular-nums text-on-surface">{formatLeaveAmount(leftAmount)}</b>{" "}
+                    <b className="tabular-nums text-on-surface">
+                      {formatLeaveAmount(remaining)}
+                    </b>{" "}
                     です。
                   </>
                 ))}
