@@ -5,6 +5,7 @@ import { useOffline } from "next/offline";
 import {
   Suspense,
   use,
+  useCallback,
   useEffect,
   useMemo,
   useOptimistic,
@@ -27,6 +28,7 @@ import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { Button } from "@/components/ui/button";
 import { LinearProgress } from "@/components/ui/linear-progress";
+import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
 import {
   addDays,
   getContinuousMonthWeeks,
@@ -57,6 +59,7 @@ import type {
   TravelItem,
 } from "@/types/calendar";
 import type { TravelSettings } from "@/services/travel/settings";
+import { coversDate, type WorkCapabilities } from "@/types/work";
 
 import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime-fields";
@@ -103,6 +106,21 @@ const VIEW_LABELS: { view: CalendarView; label: string; desktopOnly?: boolean }[
   { view: "month", label: "月" },
 ];
 
+/**
+ * 勤務記録DB（docs/spec.md §34）のうち、日付ヘッダーのスロットから入力するのに要るもの。
+ *
+ * どれも `NotionConnection` の1行から決まる値で、カレンダーはその行を既に読んでいる。
+ * Notionへの往復は増えない（勤務場所の選択肢もタグ・種類と同じ `loadTagCatalog` で読み終えている）。
+ */
+export type CalendarWorkContext = {
+  /** データソースと必須プロパティが揃っているか。揃っていなければスロットを押せる形にしない。 */
+  writable: boolean;
+  /** 出張扱いにする勤務場所の名前。 */
+  tripPlaces: string[];
+  /** 出張・年休・会社休業日・申請・メモが使えるか。 */
+  capabilities: WorkCapabilities;
+};
+
 export function CalendarShell({
   view,
   anchorKey,
@@ -114,6 +132,7 @@ export function CalendarShell({
   initialRunningActivity,
   activityCalendarIds,
   travelSettings,
+  work,
   weekStartsOn,
   timeZone,
   autoRefreshSeconds,
@@ -142,6 +161,8 @@ export function CalendarShell({
   activityCalendarIds: string[];
   /** 移動の既定値（docs/spec.md §29）。予定から移動を足すときの初期値に使う。 */
   travelSettings: TravelSettings;
+  /** 勤務記録の入力に要るもの（issue #532）。 */
+  work: CalendarWorkContext;
   weekStartsOn: number;
   timeZone: string;
   autoRefreshSeconds: number;
@@ -866,6 +887,7 @@ export function CalendarShell({
           runningActivity={initialRunningActivity}
           activityCalendars={activityCalendars}
           onOpenActivity={openActivity}
+          work={work}
         />
       </Suspense>
 
@@ -943,6 +965,7 @@ function CalendarBody({
   runningActivity,
   activityCalendars,
   onOpenActivity,
+  work,
 }: {
   dataPromise: Promise<CalendarLoadResult>;
   tagCatalogPromise: Promise<TagCatalog>;
@@ -1009,6 +1032,8 @@ function CalendarBody({
   activityCalendars: ReadonlySet<string>;
   /** 記録中の帯を押したとき。開始・停止は記録の画面で行う。 */
   onOpenActivity: () => void;
+  /** 勤務記録の入力に要るもの（issue #532）。 */
+  work: CalendarWorkContext;
 }) {
   const initial = use(dataPromise);
   const tagCatalog = use(tagCatalogPromise);
@@ -1030,6 +1055,35 @@ function CalendarBody({
    * memo で包んだ日ごとの列が毎回描き直しになる。
    */
   const workPlaceOptions = useMemo(() => tagCatalog.work ?? [], [tagCatalog.work]);
+
+  /**
+   * 日付ヘッダーの勤務スロットから開く入力（issue #532）。
+   *
+   * 勤務の画面（/work）と同じ `WorkRecordDialog` をそのまま開く。新しい入力画面は作らない。
+   * その日に記録があれば編集、無ければ新規（その日付・勤務のタブ）で開くのも `openDay()` と
+   * 同じ形にする。新規で送ると重なりをサーバーが断る（1日1件・docs/spec.md §34）ため、
+   * 開く前にここで分けておく必要がある。
+   *
+   * 他の入力（`itemDialog` など）は状態を外側の `CalendarShell` に置いているが、あれらは
+   * 日付だけからひな型を作れる。勤務はその日の**既存の記録**を引く必要があり、それが解決するのは
+   * `<Suspense>` の内側（`use(dataPromise)`）のここから。外側で待つと「ヘッダーは取得を待たずに
+   * 描く」という作りが崩れるため、状態ごとこちらへ置く（issue #532 計画レビューG1の指摘）。
+   */
+  const [workDraft, setWorkDraft] = useState<WorkDraft | null>(null);
+
+  // DayHeaderPane は memo で包んである。参照が毎回変わると日付ヘッダーが描き直しになる。
+  const workRecords = data.workRecords;
+  const openWork = useCallback(
+    (dateKey: string) => {
+      const existing = workRecords.find((record) => coversDate(record, dateKey));
+      setWorkDraft(
+        existing
+          ? { mode: "edit", record: existing }
+          : { mode: "create", startDate: dateKey, kind: "work" },
+      );
+    },
+    [workRecords],
+  );
 
   /**
    * 月表示に出す予定。活動記録は除く（issue #241）。
@@ -1054,6 +1108,7 @@ function CalendarBody({
    */
   const handleSaved = (touched: TouchedRange[] | null) => {
     onCloseDialogs();
+    setWorkDraft(null);
 
     if (view !== "month") {
       onRefreshAll();
@@ -1146,6 +1201,8 @@ function CalendarBody({
           travels={data.travels}
           workRecords={data.workRecords}
           workPlaceOptions={workPlaceOptions}
+          workWritable={work.writable}
+          onOpenWork={openWork}
           runningActivity={runningActivity}
           activityCalendarIds={activityCalendars}
           utils={utils}
@@ -1172,6 +1229,23 @@ function CalendarBody({
         }}
         onAdd={onAdd}
       />
+
+      {/*
+        勤務・出張・年休・会社休業日の入力（docs/spec.md §34）。勤務の画面と同じダイアログで、
+        保存後は他の入力と同じ取り直しの経路に乗せる。開くのは時間グリッドの日付ヘッダーからだけ
+        （月表示はセルの押下が「1日表示へ移動」に決まっている・issue #532）。
+      */}
+      {workDraft && (
+        <WorkRecordDialog
+          draft={workDraft}
+          placeOptions={workPlaceOptions}
+          tripPlaces={work.tripPlaces}
+          capabilities={work.capabilities}
+          todayKey={utils.todayKey()}
+          onClose={() => setWorkDraft(null)}
+          onSaved={() => handleSaved(null)}
+        />
+      )}
 
       {itemDialog && (
         <ItemDialog

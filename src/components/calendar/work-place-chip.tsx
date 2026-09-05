@@ -1,4 +1,4 @@
-import { Briefcase } from "lucide-react";
+import { Briefcase, Plus } from "lucide-react";
 
 import { tagChipClass, tagColorOf } from "@/components/tags/tag-color";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
@@ -13,8 +13,10 @@ import { annualLeaveDays, COMPANY_HOLIDAY_TITLE, type WorkRecordItem } from "@/t
  * 混ぜると、毎日必ず1件あるぶんだけ月表示の段と終日エリアが埋まる。Google Calendarへ書き出さないと
  * 決めた理由（§34）がそのままDaySpanの中で起きるため、項目としてではなく日付の見出しへ添える。
  *
- * 押せる印にはしない。日付の見出しを押したときの行き先は「その日の1日表示へ移動」で既に決まっており、
- * そこへ別の行き先を重ねると、日を開くつもりの操作が入力画面になる。登録・修正は勤務の画面に閉じる。
+ * **チップ自体は押下を受けない**（`pointer-events-none`）。月表示ではセルの押下が「その日の1日表示へ
+ * 移動」に決まっており、そこへ別の行き先を重ねると、日を開くつもりの操作が入力画面になる。
+ * 時間グリッドでは日付ヘッダーが何の押下も受けていないため、チップを包む**スロットの側**を押せる
+ * ようにして勤務の入力を開く（issue #532）。押下を受け持つのはそのスロットで、ここではない。
  *
  * 名前は残った幅ぶんだけ出すが、**文字の途中では切らない**（issue #406）。1文字ずつ折り返させ、
  * 1行ぶんの高さ（`leading-[15px]`）で隠すことで、入る文字だけが丸ごと残る。pxで切ると、
@@ -51,7 +53,8 @@ export function WorkPlaceChip({
 
   return (
     <span
-      // 押せる印にはしないため、日のセル全体を覆う「1日表示へ移動」のボタンへ押下を通す。
+      // 押下は通す。月表示では日のセル全体を覆う「1日表示へ移動」のボタンへ、時間グリッドでは
+      // このチップを包む勤務スロットのボタンへ届く（issue #532）。
       className={cn(
         // 狭い列では文字と余白を詰める（8px・左右2px）。高さは据え置き。
         "pointer-events-none inline-flex min-w-0 items-center gap-[3px] overflow-hidden rounded-full px-1 text-[10px] leading-[15px] font-medium whitespace-nowrap",
@@ -164,4 +167,21 @@ export function workRecordsByDate(records: WorkRecordItem[]): Map<string, WorkRe
   }
 
   return byDate;
+}
+
+/**
+ * 勤務の記録が無い日に出す、押せる場所の印（issue #532）。
+ *
+ * 日付ヘッダーの勤務スロットは記録の有無によらず常に置く。無い日を空欄のままにすると、
+ * そこから勤務を入れられること自体が画面に出ない。一方でこの印は毎日出るもので、週表示では
+ * 7つ並ぶため、10px・輪郭色・不透明度0.7に留めて予定の面より前へ出さない。
+ *
+ * `＋` の意味（この日の勤務を登録する）は押下側の `aria-label` が持つ。ここでは絵だけを描く。
+ */
+export function WorkSlotAddMark() {
+  return (
+    <span aria-hidden className="grid size-[15px] place-items-center text-outline opacity-70">
+      <Plus className="size-2.5" strokeWidth={2.5} />
+    </span>
+  );
 }
