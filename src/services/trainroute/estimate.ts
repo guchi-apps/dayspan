@@ -25,7 +25,7 @@ function toTravelEstimate(
   destination: string,
 ): TravelEstimate {
   return {
-    mode: "TRAIN",
+    mode: "PUBLIC_TRANSIT",
     minutes: route.minutes,
     detail: buildDetail(route, origin, destination),
     source: "transit",

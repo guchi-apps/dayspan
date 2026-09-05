@@ -153,26 +153,20 @@ export type ReminderItem = {
   url: string | null;
 };
 
-/** 交通手段。Prismaの TravelMode と同じ並びにする。 */
-export const TRAVEL_MODES = [
-  "TRAIN",
-  "CAR",
-  "BUS",
-  "WALK",
-  "BICYCLE",
-  "PLANE",
-  "OTHER",
-] as const;
+/**
+ * 交通手段。Prismaの TravelMode と同じ並びにする。
+ *
+ * 電車・バス・飛行機はいずれもYahoo!乗換案内で経路検索できるため、公共交通として1つに
+ * まとめる（issue #538）。自転車はどの分類にも当てはまらないため、その他へ含める。
+ */
+export const TRAVEL_MODES = ["CAR", "PUBLIC_TRANSIT", "WALK", "OTHER"] as const;
 
 export type TravelMode = (typeof TRAVEL_MODES)[number];
 
 export const TRAVEL_MODE_LABELS: Record<TravelMode, string> = {
-  TRAIN: "電車",
   CAR: "車",
-  BUS: "バス",
+  PUBLIC_TRANSIT: "公共交通",
   WALK: "徒歩",
-  BICYCLE: "自転車",
-  PLANE: "飛行機",
   OTHER: "その他",
 };
 

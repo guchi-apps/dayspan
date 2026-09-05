@@ -14,8 +14,8 @@ import { isTravelMode, type TravelMode } from "@/types/calendar";
  *
  * 出どころは2つあり、ここで選ぶ。画面のボタンは1つのままにして、押す手数を増やさない。
  *
- * 1. 交通手段が電車で、両端の座標が引けるとき → trainroute 経由でNAVITIMEの経路検索
- * 2. それ以外（座標が引けない・電車でない・trainrouteが答えられない） → 従来どおりAIの見積もり
+ * 1. 交通手段が公共交通で、両端の座標が引けるとき → trainroute 経由でNAVITIMEの経路検索
+ * 2. それ以外（座標が引けない・公共交通でない・trainrouteが答えられない） → 従来どおりAIの見積もり
  *
  * どちらも呼び出しごとに枠を消費する（NAVITIMEは月500回のハードリミット、AIはプラン枠）ため、
  * 画面側ではボタン操作からだけ呼ぶ。場所の「AIに聞く」（/api/places/suggest）と同じ扱い。
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
   const mode: TravelMode | null = isTravelMode(body.mode) ? body.mode : null;
 
-  if (mode === "TRAIN") {
+  if (mode === "PUBLIC_TRANSIT") {
     const transit = await lookupTransit(body, origin, destination);
     // 残り回数は経路検索の**あと**に引く。いま使った1回が引かれた値を画面へ返すため。
     if (transit) return NextResponse.json({ ...transit, quota: await currentQuota() });
@@ -73,12 +73,12 @@ export async function POST(request: Request) {
 
   try {
     const estimates = await estimateTravel(token, { origin, destination, preferredMode: mode });
-    // 残り回数を添えるのは電車のときだけ。徒歩や車の見積もりで「経路検索は残り◯回」と出ると、
-    // 何も使っていないのに使ったように読める（枠を消費するのは電車の経路検索だけ）。
+    // 残り回数を添えるのは公共交通のときだけ。徒歩や車の見積もりで「経路検索は残り◯回」と
+    // 出ると、何も使っていないのに使ったように読める（枠を消費するのは公共交通の経路検索だけ）。
     return NextResponse.json({
       estimates,
       attribution: null,
-      quota: mode === "TRAIN" ? await currentQuota() : null,
+      quota: mode === "PUBLIC_TRANSIT" ? await currentQuota() : null,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
