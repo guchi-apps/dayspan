@@ -32,6 +32,7 @@ import {
   workTripPlaces,
 } from "@/services/notion/work-logs";
 import { getTravelSettings } from "@/services/travel/settings";
+import { normalizeWorkMinutes } from "@/types/work";
 
 export default async function CalendarPage({
   searchParams,
@@ -132,6 +133,7 @@ export default async function CalendarPage({
           writable: workDatabaseReady(notionConnection),
           tripPlaces: workTripPlaces(notionConnection),
           capabilities: workCapabilities(notionConnection),
+          minutesPerDay: normalizeWorkMinutes(uiSetting?.workMinutesPerDay),
         }}
         weekStartsOn={weekStartsOn}
         timeZone={timeZone}

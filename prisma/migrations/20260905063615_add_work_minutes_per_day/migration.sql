@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `UiSetting` ADD COLUMN `workMinutesPerDay` INTEGER NOT NULL DEFAULT 465;

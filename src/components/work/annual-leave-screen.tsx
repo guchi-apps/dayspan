@@ -14,11 +14,19 @@ import {
   fiscalYearLabel,
   fiscalYearRange,
   isPlannedRecord,
-  recordDaysInRange,
+  leaveAmountInDays,
+  recordAmountInRange,
   summarizeAnnualLeave,
+  type AnnualLeaveMonth,
+  type LeaveAmount,
 } from "@/lib/annual-leave";
 import { cn } from "@/lib/utils";
-import { formatDays, type WorkRecordItem } from "@/types/work";
+import {
+  DEFAULT_WORK_MINUTES_PER_DAY,
+  formatDays,
+  formatLeaveHours,
+  type WorkRecordItem,
+} from "@/types/work";
 
 import { AnnualLeaveGrantDialog } from "./annual-leave-grant-dialog";
 
@@ -37,6 +45,7 @@ export function AnnualLeaveScreen({
   records,
   grantedDays,
   carriedOverDays,
+  workMinutesPerDay = DEFAULT_WORK_MINUTES_PER_DAY,
   loadError = null,
 }: {
   /** 年度の開始年。4月開始なら 2026 = 2026-04-01〜2027-03-31。 */
@@ -48,6 +57,8 @@ export function AnnualLeaveScreen({
   /** その年度の付与日数。まだ入れていない年度は null。 */
   grantedDays: number | null;
   carriedOverDays: number;
+  /** 1日の所定労働時間（分）。帯と消化ペースの比率だけに使う（issue #537）。 */
+  workMinutesPerDay?: number;
   /** Notionから読めなかったときの理由。画面は開いたまま、何が起きたかだけを伝える。 */
   loadError?: string | null;
 }) {
@@ -64,12 +75,32 @@ export function AnnualLeaveScreen({
   );
 
   const total = grantedDays === null ? null : grantedDays + carriedOverDays;
-  const left = total === null ? null : total - summary.taken - summary.planned;
-  // 付与より多く取っている（繰越の入れ忘れ・使いすぎ）ことはありうる。残り0日として丸めると、
-  // 何日ぶん超えているのかが画面のどこにも出なくなる。
-  const over = left !== null && left < 0 ? -left : 0;
+  // 帯・消化ペース・超過かどうかの判定は、日へそろえた合計で一本化する（計画レビューG1の指摘）。
+  // 日数だけで超過を決めると、合計20日・全休20日＋3時間休1回の年度が「0日 － 3時間 残り」と
+  // 出るのに帯には超過の線が立ち、同じ画面の中で食い違う。
+  const takenInDays = leaveAmountInDays(summary.taken, workMinutesPerDay);
+  const plannedInDays = leaveAmountInDays(summary.planned, workMinutesPerDay);
+  const over = total !== null && takenInDays + plannedInDays > total;
+
+  // 残りは日と時間を混ぜずに出す（issue #537）。日は日どうしで引き、時間休のぶんは
+  // 「－ 3時間」として並べる。1つの数へ丸めると、所定7時間45分の職場では0.5日が
+  // 3時間52分30秒になり、割り切れない数字が画面に並ぶ。
+  const usedDays = summary.taken.days + summary.planned.days;
+  const usedHours = summary.taken.hours + summary.planned.hours;
+  // 日数そのものがマイナス（付与より多く取っている）なら符号を反転して「4.5日 ＋ 3時間 超過」と
+  // 出す。日数は残っていて時間ぶんだけ超えている状態（「0.5日 － 5時間」）は、残りと同じ形の
+  // ままで「超過」と呼ぶ。ここで日へ丸めると、0.5日＝3時間52分30秒の端数が数字に出る。
+  // 付与日数を入れていない年度（`total === null`）ではこの区画ごと出さないため、0で持つ。
+  const remaining: LeaveAmount =
+    total === null
+      ? { days: 0, hours: 0 }
+      : total - usedDays < 0
+        ? { days: usedDays - total, hours: usedHours }
+        : { days: total - usedDays, hours: -usedHours };
   const pace =
-    total === null ? null : annualLeavePace({ totalDays: total, taken: summary.taken, range, todayKey });
+    total === null
+      ? null
+      : annualLeavePace({ totalDays: total, taken: takenInDays, range, todayKey });
 
   const label = fiscalYearLabel(fiscalYear, startMonth);
   // 予定は近い順（次に来るものが先）、取得済みは新しい順。同じ一覧でも、探している向きが逆。
@@ -133,35 +164,52 @@ export function AnnualLeaveScreen({
               <span
                 className={cn(
                   "type-headline-small font-bold tabular-nums",
-                  over > 0 && "text-error",
+                  over && "text-error",
                 )}
               >
-                {formatDays(over > 0 ? over : Math.max(left ?? 0, 0))}
+                {formatLeaveAmount(remaining)}
               </span>
-              <span className={cn("type-title-medium", over > 0 && "text-error")}>
-                {over > 0 ? "日 超過" : "日 残り"}
+              <span className={cn("type-title-medium", over && "text-error")}>
+                {over ? "超過" : "残り"}
               </span>
               <span className="type-body-small ml-auto tabular-nums text-on-surface-variant">
-                うち予定 {formatDays(summary.planned)}日
+                うち予定 {formatLeaveAmount(summary.planned)}
               </span>
             </div>
 
-            <Meter total={total} taken={summary.taken} planned={summary.planned} />
+            <Meter
+              total={total}
+              taken={takenInDays}
+              planned={plannedInDays}
+              label={
+                over
+                  ? `合計${formatDays(total)}日に対して、取得済み${formatLeaveAmount(summary.taken)}・予定${formatLeaveAmount(summary.planned)}で${formatLeaveAmount(remaining)}の超過`
+                  : `合計${formatDays(total)}日のうち、取得済み${formatLeaveAmount(summary.taken)}・予定${formatLeaveAmount(summary.planned)}・残り${formatLeaveAmount(remaining)}`
+              }
+            />
 
             <div className="flex flex-wrap gap-x-4 gap-y-1">
-              <LegendItem className="size-2.5 bg-tertiary" value={summary.taken} name="取得済み" />
+              <LegendItem
+                className="size-2.5 bg-tertiary"
+                amount={summary.taken}
+                name="取得済み"
+              />
               <LegendItem
                 className="slot-leave-planned size-2.5"
-                value={summary.planned}
+                amount={summary.planned}
                 name="予定"
               />
-              {over > 0 ? (
+              {over ? (
                 // 帯の中で合計の位置に立てた線と同じ印にする（塗りの区画は無いため）。
-                <LegendItem className="h-2.5 w-0.5 bg-error" value={over} name="超過" />
+                <LegendItem
+                  className="h-2.5 w-0.5 bg-error"
+                  amount={remaining}
+                  name="超過"
+                />
               ) : (
                 <LegendItem
                   className="size-2.5 bg-surface-container-highest"
-                  value={Math.max(left ?? 0, 0)}
+                  amount={remaining}
                   name="残り"
                 />
               )}
@@ -211,7 +259,7 @@ export function AnnualLeaveScreen({
 
             <div className="flex flex-col gap-2">
               <PaceRow name="年度の経過" ratio={pace.elapsedRatio} className="bg-outline" />
-              <PaceRow name="取得" ratio={summary.taken / total} className="bg-tertiary" />
+              <PaceRow name="取得" ratio={takenInDays / total} className="bg-tertiary" />
             </div>
 
             <p className="type-body-small text-on-surface-variant">
@@ -232,16 +280,22 @@ export function AnnualLeaveScreen({
                   </>
                 ))}
               {/* 入れてある予定は、ペースの見込みとは別に確定している。両方を1文に混ぜない。 */}
-              {summary.planned > 0 &&
-                (over > 0 ? (
+              {plannedInDays > 0 &&
+                (over ? (
                   <>
                     入れてある予定まで含めると{" "}
-                    <b className="tabular-nums text-error">{formatDays(over)}</b> 日ぶん超えます。
+                    <b className="tabular-nums text-error">
+                      {formatLeaveAmount(remaining)}
+                    </b>{" "}
+                    ぶん超えます。
                   </>
                 ) : (
                   <>
                     入れてある予定まで含めると残りは{" "}
-                    <b className="tabular-nums text-on-surface">{formatDays(left ?? 0)}</b> 日です。
+                    <b className="tabular-nums text-on-surface">
+                      {formatLeaveAmount(remaining)}
+                    </b>{" "}
+                    です。
                   </>
                 ))}
             </p>
@@ -253,7 +307,11 @@ export function AnnualLeaveScreen({
       <Card>
         <CardContent className="flex flex-col gap-3">
           <h2 className="type-title-small text-on-surface-variant">月ごとの取得</h2>
-          <MonthlyBars months={summary.months} todayMonth={todayKey.slice(0, 7)} />
+          <MonthlyBars
+            months={summary.months}
+            todayMonth={todayKey.slice(0, 7)}
+            minutesPerDay={workMinutesPerDay}
+          />
         </CardContent>
       </Card>
 
@@ -272,17 +330,12 @@ export function AnnualLeaveScreen({
             </p>
           ) : (
             <>
-              <RecordGroup
-                name="予定"
-                records={planned}
-                range={range}
-                days={summary.planned}
-              />
+              <RecordGroup name="予定" records={planned} range={range} amount={summary.planned} />
               <RecordGroup
                 name="取得済み"
                 records={taken}
                 range={range}
-                days={summary.taken}
+                amount={summary.taken}
               />
             </>
           )}
@@ -295,6 +348,7 @@ export function AnnualLeaveScreen({
           startMonth={startMonth}
           grantedDays={grantedDays}
           carriedOverDays={carriedOverDays}
+          workMinutesPerDay={workMinutesPerDay}
           onClose={() => setEditing(false)}
         />
       )}
@@ -308,7 +362,19 @@ export function AnnualLeaveScreen({
  * 予定を取得済みと同じ塗りにしないのは、まだ休んでいない日だから。保存前の枠に縞を使う
  * 語彙（`slot-range-stripes`）をそのまま借り、色ではなく地の違いでも分かるようにする。
  */
-function Meter({ total, taken, planned }: { total: number; taken: number; planned: number }) {
+function Meter({
+  total,
+  taken,
+  planned,
+  label,
+}: {
+  total: number;
+  /** 帯の幅を決める、日へそろえた量（時間休のぶんも含む）。 */
+  taken: number;
+  planned: number;
+  /** 読み上げ。幅は日へそろえるが、読み上げには画面に出ている「日 ＋ 時間」をそのまま渡す。 */
+  label: string;
+}) {
   const used = taken + planned;
   // 付与より多く取っている年度では、帯の目盛りを使ったぶんまで伸ばす。合計で切ると、
   // 超えているぶんが帯からはみ出して幅の比が読めなくなる。
@@ -317,15 +383,7 @@ function Meter({ total, taken, planned }: { total: number; taken: number; planne
   const leftDays = Math.max(total - used, 0);
 
   return (
-    <div
-      className="relative flex h-3.5 gap-0.5"
-      role="img"
-      aria-label={
-        used > total
-          ? `合計${formatDays(total)}日に対して、取得済み${formatDays(taken)}日・予定${formatDays(planned)}日で${formatDays(used - total)}日の超過`
-          : `合計${formatDays(total)}日のうち、取得済み${formatDays(taken)}日・予定${formatDays(planned)}日・残り${formatDays(leftDays)}日`
-      }
-    >
+    <div className="relative flex h-3.5 gap-0.5" role="img" aria-label={label}>
       {taken > 0 && <span className="rounded-sm bg-tertiary" style={{ width: pct(taken) }} />}
       {planned > 0 && (
         <span className="slot-leave-planned rounded-sm" style={{ width: pct(planned) }} />
@@ -350,17 +408,17 @@ function Meter({ total, taken, planned }: { total: number; taken: number; planne
 
 function LegendItem({
   className,
-  value,
+  amount,
   name,
 }: {
   className: string;
-  value: number;
+  amount: LeaveAmount;
   name: string;
 }) {
   return (
     <span className="flex items-center gap-1.5">
       <i className={cn("rounded-sm", className)} aria-hidden="true" />
-      <b className="type-body-medium tabular-nums">{formatDays(value)}</b>
+      <b className="type-body-medium tabular-nums">{formatLeaveAmount(amount)}</b>
       <span className="type-body-small text-on-surface-variant">{name}</span>
     </span>
   );
@@ -390,36 +448,52 @@ function PaceRow({
   );
 }
 
-/** 月ごとの棒。目盛りはその年度でいちばん多い月に合わせる（最低5日ぶん）。 */
+/**
+ * 月ごとの棒。目盛りはその年度でいちばん多い月に合わせる（最低5日ぶん）。
+ *
+ * 高さは日へそろえて積むが、ラベルは日と時間を2行に分けて出す（issue #537）。1列に残るのは
+ * 27px程度で「1日3時間」は1行に入らない。高さは2行ぶんで固定し、時間だけの月・日だけの月でも
+ * グラフの高さが動かないようにする。
+ */
 function MonthlyBars({
   months,
   todayMonth,
+  minutesPerDay,
 }: {
-  months: Array<{ monthKey: string; taken: number; planned: number }>;
+  months: AnnualLeaveMonth[];
   todayMonth: string;
+  minutesPerDay: number;
 }) {
-  const max = Math.max(5, ...months.map((month) => month.taken + month.planned));
+  const sumOf = (month: AnnualLeaveMonth): LeaveAmount => ({
+    days: month.taken.days + month.planned.days,
+    hours: month.taken.hours + month.planned.hours,
+  });
+  const inDays = (amount: LeaveAmount) => leaveAmountInDays(amount, minutesPerDay);
+  const max = Math.max(5, ...months.map((month) => inDays(sumOf(month))));
 
   return (
     <div className="grid grid-cols-12 items-end gap-[3px]">
       {months.map((month) => {
-        const sum = month.taken + month.planned;
+        const sum = sumOf(month);
+        const takenDays = inDays(month.taken);
+        const plannedDays = inDays(month.planned);
         return (
           <div key={month.monthKey} className="flex min-w-0 flex-col items-center gap-[3px]">
-            <span className="type-label-small h-4 tabular-nums">
-              {sum > 0 ? formatDays(sum) : ""}
+            <span className="type-label-small flex h-8 flex-col items-center leading-4 tabular-nums">
+              {sum.days > 0 && <span>{formatDays(sum.days)}日</span>}
+              {sum.hours > 0 && <span>{formatLeaveHours(sum.hours)}</span>}
             </span>
             <span className="flex h-16 w-full flex-col justify-end gap-0.5">
-              {month.planned > 0 && (
+              {plannedDays > 0 && (
                 <span
                   className="slot-leave-planned block w-full rounded-sm"
-                  style={{ height: `${(month.planned / max) * 100}%` }}
+                  style={{ height: `${(plannedDays / max) * 100}%` }}
                 />
               )}
-              {month.taken > 0 && (
+              {takenDays > 0 && (
                 <span
                   className="block w-full rounded-sm bg-tertiary"
-                  style={{ height: `${(month.taken / max) * 100}%` }}
+                  style={{ height: `${(takenDays / max) * 100}%` }}
                 />
               )}
             </span>
@@ -443,12 +517,12 @@ function RecordGroup({
   name,
   records,
   range,
-  days,
+  amount,
 }: {
   name: string;
   records: WorkRecordItem[];
   range: { from: string; to: string };
-  days: number;
+  amount: LeaveAmount;
 }) {
   if (records.length === 0) return null;
 
@@ -457,7 +531,7 @@ function RecordGroup({
       <div className="type-label-medium flex items-baseline gap-2 pt-2 text-on-surface-variant">
         <span>{name}</span>
         <span className="ml-auto tabular-nums">
-          {records.length}件 / {formatDays(days)}日
+          {records.length}件 / {formatLeaveAmount(amount)}
         </span>
       </div>
 
@@ -475,7 +549,7 @@ function RecordGroup({
             {record.place && `・${record.place}`}
           </span>
           <span className="type-body-small shrink-0 tabular-nums text-on-surface-variant">
-            {formatDays(recordDaysInRange(record, range))}日
+            {formatLeaveAmount(recordAmountInRange(record, range))}
           </span>
           {/* 未申請はこの画面でも印だけ出す。片付けるのは勤務画面（押した先）。 */}
           {!record.preApplied && (
@@ -492,6 +566,25 @@ function RecordGroup({
 // --- 表示のための小さな関数 ---
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+/**
+ * 年休の量を「日 ＋ 時間」の形で出す（issue #537）。
+ *
+ * 全休・半休は日、時間休は時間で、1つの数へ丸めない。所定7時間45分の職場では0.5日が
+ * 3時間52分30秒になり、足し合わせた時点で割り切れない数字が並ぶため。残りのように引き算で
+ * 出す量では時間が負になるので、そのときは「－」でつなぐ。
+ *
+ * 時間休を1件も入れていない年度は日だけが出る（これまでの見え方と1文字も変わらない）。
+ */
+function formatLeaveAmount(amount: LeaveAmount): string {
+  const days = round(amount.days);
+  const hours = round(amount.hours);
+  if (hours === 0) return `${formatDays(days)}日`;
+  // 時間だけの量（時間休1件の行・時間休しか無い月）は「0日 ＋ 3時間」ではなく時間だけを出す。
+  // 引き算で出す残りは 0 日でも「0日 － 3時間」と出す（何も残っていないのではなく足りない）。
+  if (days === 0 && hours > 0) return formatLeaveHours(hours);
+  return `${formatDays(days)}日 ${hours < 0 ? "－" : "＋"} ${formatLeaveHours(Math.abs(hours))}`;
+}
 
 /** 小数の丸め。0.5日単位で持っている値と混ぜても、表示だけが細かくならないようにする。 */
 function round(value: number): number {

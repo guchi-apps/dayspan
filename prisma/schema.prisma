@@ -193,10 +193,16 @@ model UiSetting {
   // 開くたびに違う期間の集計になるため。
   fiscalYearStartMonth Int @default(4)
 
+  // 1日の所定労働時間（分・既定は7時間45分＝465分・docs/spec.md §34）。
+  // 時間休（`3時間休`）が1日ぶんの何割かを決める。使うのは入力ダイアログの時間数の上限と、
+  // 年休画面の帯・消化ペースの比率だけで、年休を数える処理では使わない（全休・半休は日、
+  // 時間休は時間のまま数え、1つの数へ丸めないため）。開始月と同じく全年度共通の1つにする。
+  workMinutesPerDay Int @default(465)
+
   // 移動の既定値（docs/spec.md §29）。活動記録の保存先と同じく、項目ごとではなく
   // 利用者につき1組にする。移動のたびに同じ出発地・交通手段を選び直さずに済ませるため。
   travelDefaultOrigin String?
-  travelDefaultMode   TravelMode @default(TRAIN)
+  travelDefaultMode   TravelMode @default(PUBLIC_TRANSIT)
   // 行きだけ作られても帰りは手で入れ直すことになるため、往復を既定にする。
   travelRoundTrip     Boolean    @default(true)
   // 移動をGoogle Calendarへ書き出す先。未設定なら予定作成の既定の保存先へ入れる。
@@ -282,13 +288,12 @@ model RunningActivity {
 // 入れられない。移動に固有の項目を持たせるため、本体はここに置く。
 // Google側へは写しを書き出し、他の端末のカレンダーからも見えるようにする（一次情報源はこちら）。
 
+/// 交通手段。電車・バス・飛行機はいずれもYahoo!乗換案内で経路検索できるため、公共交通として
+/// 1つにまとめる（issue #538）。自転車はどの分類にも当てはまらないため、その他へ含める。
 enum TravelMode {
-  TRAIN
   CAR
-  BUS
+  PUBLIC_TRANSIT
   WALK
-  BICYCLE
-  PLANE
   OTHER
 }
 
@@ -312,7 +317,7 @@ model TravelPlan {
 
   origin      String
   destination String
-  mode        TravelMode @default(TRAIN)
+  mode        TravelMode @default(PUBLIC_TRANSIT)
 
   departAt DateTime
   arriveAt DateTime

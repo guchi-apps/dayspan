@@ -16,19 +16,20 @@ export type WorkRecordItem = {
   /** 勤務場所（Notionのselectの選択肢）。DBに列が無い・未入力なら null。 */
   place: string | null;
   /**
-   * 年休の区分（全休・午前半休・午後半休）。年休ではない日は null。
+   * 年休の区分（全休・午前半休・午後半休・`N時間休`）。年休ではない日は null。
    *
    * チェック2つ（年休か・半休か）ではなく1つのselectで持つのは、「半休なのに全休が立つ」
-   * 組み合わせを作れないようにするため。
+   * 組み合わせを作れないようにするため。時間休は時間数を名前へ含める（`3時間休`）。
    */
   annualLeave: string | null;
   businessTrip: boolean;
   /**
-   * 会社が休みの日（お盆・年末年始・創立記念日など）。
+   * 会社が休みの日（お盆・年末年始・創立記念日など。画面では「休み」と呼ぶ）。
    *
-   * 年休と違って申請するものが無く、勤務場所も入らない。年休のselectへ「会社休業日」という
+   * 年休と違って申請するものが無く、勤務場所も入らない。年休のselectへ「休み」という
    * 選択肢を足す形にしないのは、Notionで名前を直した瞬間に振る舞いが変わり、直した本人にも
-   * 原因が読めなくなるため（年休を専用のプロパティにしたのと同じ理由）。
+   * 原因が読めなくなるため（年休を専用のプロパティにしたのと同じ理由）。Notion側のプロパティ名は
+   * `会社休業日`のままにする（既存DBとの対応付けを崩さないため）。
    */
   companyHoliday: boolean;
   preApplied: boolean;
@@ -48,19 +49,33 @@ export type WorkCapabilities = {
   businessTrip: boolean;
   /** 年休を登録し、事前申請の済み未済まで持てるか。 */
   annualLeave: boolean;
-  /** 会社休業日を登録できるか。申請を持たないため、必要なのはこの列だけ。 */
+  /** 休み（会社休業日）を登録できるか。申請を持たないため、必要なのはこの列だけ。 */
   companyHoliday: boolean;
   approval: boolean;
   memo: boolean;
 };
 
 /**
- * 名称を入れずに登録した会社休業日のタイトル。
+ * 名称を入れずに登録した休みのタイトル（issue #536）。
  *
  * Notionの一覧で開かずに読める名前が要るため、空にはしない。画面ではこの値かどうかで
- * 「名称が付いていない休業」だと判断する（入力欄の初期値・一覧の表記・カレンダーのチップ）。
+ * 「名称が付いていない休み」だと判断する（入力欄の初期値・一覧の表記・カレンダーのチップ）。
  */
-export const COMPANY_HOLIDAY_TITLE = "会社休業日";
+export const HOLIDAY_TITLE = "休み";
+
+/**
+ * 以前の既定タイトル（issue #536で「休み」に統一する前の値）。
+ *
+ * 過去にこの値で保存済みの記録は、Notion上のタイトルが文字列として`会社休業日`のまま残る。
+ * `HOLIDAY_TITLE`だけを見て「名称あり」と判定すると、これらの記録が「休み（会社休業日）」の
+ * ような二重表記になるため、名称の有無を判定するときは両方を「名称なし」として扱う。
+ */
+export const LEGACY_HOLIDAY_TITLE = "会社休業日";
+
+/** タイトルが名称未入力の既定値（新旧どちらか）かどうか。 */
+export function isDefaultHolidayTitle(title: string): boolean {
+  return title === HOLIDAY_TITLE || title === LEGACY_HOLIDAY_TITLE;
+}
 
 /** 出張について、まだ済ませていない手続き。 */
 export type WorkTodo = "preApplied" | "postRegistered";
@@ -145,7 +160,50 @@ export function isTripPlace(tripPlaces: string[], place: string | null | undefin
 }
 
 /**
- * 年休1日ぶんの日数。半休は 0.5 日。
+ * 1日の所定労働時間（分）の既定。7時間45分（docs/spec.md §34）。
+ *
+ * 時間休が1日ぶんの何割かを決める値で、`UiSetting.workMinutesPerDay` に持つ。使うのは
+ * 入力ダイアログの時間数の上限と、年休画面の帯・消化ペースの比率だけ。年休を**数える**
+ * 処理では使わない（全休・半休は日、時間休は時間のまま数え、1つの数へ丸めないため）。
+ */
+export const DEFAULT_WORK_MINUTES_PER_DAY = 465;
+
+/** 所定労働時間として受け付ける分数か。壊れた値は既定として扱う（設定が読めないことを理由に画面を止めない）。 */
+export function normalizeWorkMinutes(minutes: number | null | undefined): number {
+  if (
+    typeof minutes !== "number" ||
+    !Number.isInteger(minutes) ||
+    minutes < 60 ||
+    minutes > 1440
+  ) {
+    return DEFAULT_WORK_MINUTES_PER_DAY;
+  }
+  return minutes;
+}
+
+/** 区分の名前から時間数を読むための形（`3時間休`）。 */
+const HOURLY_LEAVE_PATTERN = /(\d+(?:\.\d+)?)?\s*時間/;
+
+/**
+ * 時間休の時間数。時間休でない区分（全休・半休）は null。
+ *
+ * 半休を名前の「半」で 0.5 日と数えているのと同じで、区分の名前から読む（docs/spec.md §34）。
+ * Notionのselectは書き込んだ名前がそのまま選択肢になるため、`3時間休` を保存すれば選択肢も
+ * その場で増える。年休の列を1つ足してもらう必要が無い。
+ *
+ * 数字の無い `時間休` は 1 時間として読む。時間休だと分かっているものを丸一日として
+ * 数えるほうが、実際との開きが大きいため。
+ */
+export function annualLeaveHours(kind: string | null): number | null {
+  if (!kind) return null;
+  const matched = HOURLY_LEAVE_PATTERN.exec(kind);
+  if (!matched) return null;
+  const hours = matched[1] === undefined ? 1 : Number(matched[1]);
+  return Number.isFinite(hours) && hours > 0 ? hours : 1;
+}
+
+/**
+ * 年休1日ぶんの日数。半休は 0.5 日、**時間休は 0 日**（時間の側で数えるため）。
  *
  * 区分の名前で決める。DaySpanが作る選択肢は全休・午前半休・午後半休の3つだが、Notionの
  * selectは書き込んだ名前がそのまま選択肢になるため、利用者が足した名前でも同じ規則で読める。
@@ -153,12 +211,35 @@ export function isTripPlace(tripPlaces: string[], place: string | null | undefin
  */
 export function annualLeaveDays(kind: string | null): number {
   if (!kind) return 0;
+  if (annualLeaveHours(kind) !== null) return 0;
   return kind.includes("半") ? 0.5 : 1;
+}
+
+/**
+ * 1日を丸ごと休むわけではない年休（半休・時間休）か。
+ *
+ * 残り半分（残りの時間）の勤務場所を持ち、期間では登録できない、という扱いが同じ。
+ * 判定を `annualLeaveDays()` の値から起こさないのは、時間休の日数が 0 で、全休（1）とも
+ * 半休（0.5）とも別の値になるため。1日ぶんかどうかは名前から直接決める。
+ */
+export function isPartialLeave(kind: string | null): boolean {
+  if (!kind) return false;
+  return annualLeaveHours(kind) !== null || kind.includes("半");
 }
 
 /** 集計に出す日数。整数の日を `12.0` と出さない。 */
 export function formatDays(days: number): string {
   return Number.isInteger(days) ? String(days) : days.toFixed(1);
+}
+
+/**
+ * 集計に出す時間数。`3時間`。
+ *
+ * 時間休は1時間単位でしか入らないため、合計にも端数が出ない。小数を付けるのは、Notionで
+ * 手書きされた `1.5時間休` のような値を受けたときだけ（`formatDays()` と同じ扱い）。
+ */
+export function formatLeaveHours(hours: number): string {
+  return `${Number.isInteger(hours) ? String(hours) : hours.toFixed(2)}時間`;
 }
 
 /** その記録が指定の日にかかっているか。出張は期間の全ての日にかかる。 */

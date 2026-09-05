@@ -467,12 +467,13 @@ export function TravelForm({
 
         {/* 所要時間の調べ方は交通手段で分ける（docs/spec.md §29）。
 
-            電車はYahoo!乗換案内から取り込む1本だけにする。実際のダイヤ上の列車が入るのに、
-            平均（経路検索）や目安（AI）を出す経路を並べても、どちらを押すか決める材料が
-            利用者に無い。電車以外はYahoo!乗換案内が経路を持たないため、従来どおりAIで調べる。
-            どちらも押したときだけ動く（入力のたびに呼ぶと、打っている途中の文字列で
-            何度も問い合わせることになる。場所の「AIに聞く」と同じ扱い）。 */}
-        {mode === "TRAIN" ? (
+            公共交通（電車・バス・飛行機）はYahoo!乗換案内から取り込む1本だけにする。実際の
+            ダイヤ上の列車・便が入るのに、平均（経路検索）や目安（AI）を出す経路を並べても、
+            どちらを押すか決める材料が利用者に無い。公共交通以外はYahoo!乗換案内が経路を
+            持たないため、従来どおりAIで調べる。どちらも押したときだけ動く（入力のたびに
+            呼ぶと、打っている途中の文字列で何度も問い合わせることになる。場所の「AIに聞く」と
+            同じ扱い）。 */}
+        {mode === "PUBLIC_TRANSIT" ? (
           <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
             <p className="text-xs text-muted-foreground">
               {estimateNote(estimateSource, mode, attribution)}
@@ -614,7 +615,7 @@ export function TravelForm({
                 </p>
                 <ul className="flex flex-col gap-1">
                   {estimates.map((estimate, index) => (
-                    // 経路検索では同じ「電車」の候補が複数並ぶ。交通手段は一意にならない。
+                    // 経路検索では同じ「公共交通」の候補が複数並ぶ。交通手段は一意にならない。
                     <li key={`${estimate.source}-${estimate.mode}-${index}`}>
                       <button
                         type="button"

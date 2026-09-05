@@ -19,12 +19,21 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { ANNUAL_LEAVE_OPTIONS } from "@/services/notion/work-database";
+import {
+  ANNUAL_LEAVE_OPTIONS,
+  HOURLY_LEAVE_LABEL,
+  hourlyLeaveName,
+  maxHourlyLeaveHours,
+} from "@/services/notion/work-database";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
-  annualLeaveDays,
-  COMPANY_HOLIDAY_TITLE,
+  annualLeaveHours,
+  DEFAULT_WORK_MINUTES_PER_DAY,
+  HOLIDAY_TITLE,
+  isDefaultHolidayTitle,
+  isPartialLeave,
   isTripPlace,
+  normalizeWorkMinutes,
   WORK_TODO_LABELS,
   type WorkCapabilities,
   type WorkRecordItem,
@@ -36,11 +45,11 @@ export type WorkKind = "work" | "trip" | "leave" | "holiday";
 /**
  * 並びに出す名前。
  *
- * 会社休業日は「休み」と短くする。日別の一覧・今日カードでは、登録の無い土日祝を
+ * 会社休業日は画面では「休み」と呼ぶ。日別の一覧・今日カードでは、登録の無い土日祝を
  * 「休み」と表示している（docs/spec.md §34、issue #510）。そこから開いたこのタブが
- * 「休業」という別の言葉だと、同じ状態を指す表記が揺れて分かりにくい（issue #522）。
- * 4つが1つの帯に並ぶため短くする必要があるのは変わらず、何の記録なのかはダイアログの
- * 見出しで引き続き「会社休業日」と出す（`COMPANY_HOLIDAY_TITLE`）。
+ * 別の言葉だと、同じ状態を指す表記が揺れて分かりにくい（issue #522・#536）。
+ * ダイアログの見出しも同じ「休み」を使うため（issue #536）、種類ごとに見出しを
+ * 出し分ける必要はなく、この並びの名前をそのまま見出しにも使う。
  */
 const KIND_LABELS: Record<WorkKind, string> = {
   work: "勤務",
@@ -73,6 +82,7 @@ export function WorkRecordDialog({
   tripPlaces,
   capabilities,
   todayKey,
+  workMinutesPerDay = DEFAULT_WORK_MINUTES_PER_DAY,
   onClose,
   onSaved,
 }: {
@@ -83,6 +93,8 @@ export function WorkRecordDialog({
   capabilities: WorkCapabilities;
   /** 事後登録が押せるかどうかの判定に使う（終了日を過ぎるまでは押せない。issue #509）。 */
   todayKey: string;
+  /** 1日の所定労働時間（分）。時間休として選べる時間数の上限を決める（issue #537）。 */
+  workMinutesPerDay?: number;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -110,14 +122,30 @@ export function WorkRecordDialog({
       : placeOptions;
 
   const [place, setPlace] = useState(existing?.place ?? workPlaceOptions[0]?.name ?? "");
-  const [annualLeave, setAnnualLeave] = useState<string>(
-    existing?.annualLeave ?? ANNUAL_LEAVE_OPTIONS[0].name,
+  // 時間休だけは1つの選択肢名ではなく族（`1時間休`〜`7時間休`）なので、区分と時間数を
+  // 別の状態で持ち、保存する値を `hourlyLeaveName()` で組み立てる（issue #537）。
+  //
+  // 区分は4択の enum ではなく**文字列そのもの**で持ち続ける。Notionで直接付けた「特別年休」の
+  // ような、どのチップにも当たらない名前は、どれも選ばれていない状態で開いてそのまま保存される
+  // （4択へ移すとその値の置き場が無くなり、開いて何も直さずに保存しただけで別の区分へ黙って
+  // 書き換わる・計画レビューG1の指摘）。数え方も従来どおりで、丸一日として数える。
+  const existingLeaveHours = annualLeaveHours(existing?.annualLeave ?? null);
+  const [leaveKind, setLeaveKind] = useState<string>(
+    existingLeaveHours !== null
+      ? HOURLY_LEAVE_LABEL
+      : (existing?.annualLeave ?? ANNUAL_LEAVE_OPTIONS[0].name),
   );
+  const [leaveHours, setLeaveHours] = useState<number>(existingLeaveHours ?? 1);
   const [destination, setDestination] = useState(existing?.businessTrip ? existing.title : "");
-  // 会社休業日の名称（「夏季休業」）。空のままでも登録できる（既定は「会社休業日」）。
-  // 名称を入れずに登録した記録はタイトルが既定のままなので、空欄として開く。
+  // 会社休業日の名称（「夏季休業」）。空のままでも登録できる（既定は「休み」）。
+  // 名称を入れずに登録した記録はタイトルが既定のままなので、空欄として開く
+  // （以前の既定タイトル「会社休業日」で保存済みの記録も名称なし扱いにする・issue #536）。
+  // 名称を入れずに保存すると、save()が組み立てるタイトルは常にHOLIDAY_TITLE（「休み」）になる。
+  // 旧既定タイトル「会社休業日」の記録を開いて（何も直さずに）保存しただけでも、Notion上の
+  // タイトルが「休み」へ書き換わる。統一を進める意図した挙動として許容する（issue #536
+  // 計画レビューG1の指摘）。
   const [holidayName, setHolidayName] = useState(
-    existing?.companyHoliday && existing.title !== COMPANY_HOLIDAY_TITLE ? existing.title : "",
+    existing?.companyHoliday && !isDefaultHolidayTitle(existing.title) ? existing.title : "",
   );
 
   /**
@@ -171,11 +199,21 @@ export function WorkRecordDialog({
   // 事後登録は出張の翌日以降にしかできない。「終了日」欄の表示値と同じ式で判定する
   // （既にtrueなら取り消して直せるようdisabledにしない・issue #509）。
   const postRegisterDisabled = !postRegistered && !((endDate || startDate) < todayKey);
-  // 半休の日は残り半日どこで働いたかも要る（勤怠の提出で使う）。全休の日は入る値が無い。
-  const halfDay = isLeave && annualLeaveDays(annualLeave) < 1;
-  // 期間を持てるのは出張・全休の年休・会社休業日。半休は単日に限る（半日ずつ2日ぶんという
-  // 形が無い）。会社休業日はお盆・年末年始のように続くため、出張と同じく期間で1件にする。
-  const spanned = businessTrip || (isLeave && !halfDay) || isHoliday;
+  // 区分に保存する値。時間休だけは時間数を名前へ含める（`3時間休`・issue #537）。
+  const hourlyLeave = leaveKind === HOURLY_LEAVE_LABEL;
+  const annualLeave = hourlyLeave ? hourlyLeaveName(leaveHours) : leaveKind;
+  // 時間休として選べる上限。所定労働時間ぶん取れば全休と同じで、区分を分ける意味が無い。
+  const hourChoices = Array.from(
+    { length: maxHourlyLeaveHours(normalizeWorkMinutes(workMinutesPerDay)) },
+    (_, index) => index + 1,
+  );
+  // 半休・時間休の日は残りをどこで働いたかも要る（勤怠の提出で使う）。全休の日は入る値が無い。
+  const partialDay = isLeave && isPartialLeave(annualLeave);
+  // 期間を持てるのは出張・全休の年休・会社休業日。半休・時間休は単日に限る（半日ずつ2日ぶん
+  // という形が無い）。会社休業日はお盆・年末年始のように続くため、出張と同じく期間で1件にする。
+  const spanned = businessTrip || (isLeave && !partialDay) || isHoliday;
+  /** 残りの勤務場所の呼び方。半休は半日、時間休は残りの時間ぶん。 */
+  const restPlaceLabel = hourlyLeave ? "残りの勤務場所" : "残り半日の勤務場所";
   // 使える種類だけを出す。揃っていないプロパティの種類を出すと、押しても保存されない道が残る。
   const kinds: WorkKind[] = [
     "work",
@@ -252,8 +290,8 @@ export function WorkRecordDialog({
       setError("行き先を入力してください。");
       return;
     }
-    if (halfDay && !place) {
-      setError("残り半日の勤務場所を選んでください。");
+    if (partialDay && !place) {
+      setError(`${restPlaceLabel}を選んでください。`);
       return;
     }
     if (!businessTrip && !isLeave && !isHoliday && !place) {
@@ -265,7 +303,7 @@ export function WorkRecordDialog({
     // 入力の欄も1つ減らす。出張は行き先が、年休は区分がタイトルになる。会社休業日は名称を
     // 入れなくても登録できるため、空なら種類の名前をそのまま置く。
     const title = isHoliday
-      ? holidayName.trim() || COMPANY_HOLIDAY_TITLE
+      ? holidayName.trim() || HOLIDAY_TITLE
       : isLeave
         ? `年休（${annualLeave}）`
         : businessTrip
@@ -275,11 +313,11 @@ export function WorkRecordDialog({
       title,
       startDate,
       endDate: spanned && endDate ? endDate : startDate,
-      // 全休の日と会社休業日に勤務場所は入らない。半休の日は残り半日の勤務場所を持つ。
+      // 全休の日と会社休業日に勤務場所は入らない。半休・時間休の日は残りの勤務場所を持つ。
       place: isHoliday
         ? null
         : isLeave
-          ? halfDay
+          ? partialDay
             ? place || null
             : null
           : businessTrip
@@ -321,15 +359,9 @@ export function WorkRecordDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
-        <DialogTitle>
-          {kind === "work"
-            ? "勤務場所"
-            : kind === "holiday"
-              ? COMPANY_HOLIDAY_TITLE
-              : KIND_LABELS[kind]}
-        </DialogTitle>
+        <DialogTitle>{kind === "work" ? "勤務場所" : KIND_LABELS[kind]}</DialogTitle>
         <DialogDescription className="sr-only">
-          勤務場所・出張・年休・会社休業日の登録。出張では事前申請と事後登録、年休では事前申請の
+          勤務場所・出張・年休・休みの登録。出張では事前申請と事後登録、年休では事前申請の
           状況も持てます。
         </DialogDescription>
 
@@ -378,31 +410,59 @@ export function WorkRecordDialog({
           <div className="flex flex-col gap-2">
             <span className="type-label-medium text-on-surface-variant">区分</span>
             <div className="flex flex-wrap gap-2">
-              {ANNUAL_LEAVE_OPTIONS.map((option) => (
+              {[...ANNUAL_LEAVE_OPTIONS.map((option) => option.name), HOURLY_LEAVE_LABEL].map(
+                (name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    aria-pressed={leaveKind === name}
+                    onClick={() => setLeaveKind(name)}
+                    className={cn(
+                      "type-label-large rounded-full border px-4 py-2 transition-colors",
+                      leaveKind === name
+                        ? "border-transparent bg-tertiary-container font-bold text-on-tertiary-container"
+                        : "border-outline text-on-surface hover:bg-on-surface/8",
+                    )}
+                  >
+                    {name}
+                  </button>
+                ),
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 時間数はチップで選ばせる（issue #537）。数値の欄にすると、いちばん多い1〜3時間を
+            入れるのに毎回キーボードが出る。上限は所定労働時間から決まる（それ以上は全休と同じ）。 */}
+        {isLeave && hourlyLeave && (
+          <div className="flex flex-col gap-2">
+            <span className="type-label-medium text-on-surface-variant">時間数</span>
+            <div className="flex flex-wrap gap-2">
+              {hourChoices.map((hours) => (
                 <button
-                  key={option.name}
+                  key={hours}
                   type="button"
-                  aria-pressed={annualLeave === option.name}
-                  onClick={() => setAnnualLeave(option.name)}
+                  aria-pressed={leaveHours === hours}
+                  onClick={() => setLeaveHours(hours)}
                   className={cn(
-                    "type-label-large rounded-full border px-4 py-2 transition-colors",
-                    annualLeave === option.name
+                    "type-label-large rounded-full border px-3.5 py-1.5 transition-colors",
+                    leaveHours === hours
                       ? "border-transparent bg-tertiary-container font-bold text-on-tertiary-container"
                       : "border-outline text-on-surface hover:bg-on-surface/8",
                   )}
                 >
-                  {option.name}
+                  {hours}時間
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* 会社休業日と全休の日に勤務場所は入らない。半休の日は残り半日ぶんを選ばせる。 */}
-        {workPlaceOptions.length > 0 && !isHoliday && (!isLeave || halfDay) && (
+        {/* 会社休業日と全休の日に勤務場所は入らない。半休・時間休の日は残りぶんを選ばせる。 */}
+        {workPlaceOptions.length > 0 && !isHoliday && (!isLeave || partialDay) && (
           <div className="flex flex-col gap-2">
             <span className="type-label-medium text-on-surface-variant">
-              {halfDay ? "残り半日の勤務場所" : "勤務場所"}
+              {partialDay ? restPlaceLabel : "勤務場所"}
             </span>
             <div className="flex flex-wrap gap-2">
               {workPlaceOptions.map((option) => (
@@ -473,7 +533,7 @@ export function WorkRecordDialog({
             value={startDate}
             onChange={(event) => setStartDate(event.target.value)}
           />
-          {/* 終了日は出張・全休の年休・会社休業日だけ。通常の勤務と半休は1日1件で、
+          {/* 終了日は出張・全休の年休・会社休業日だけ。通常の勤務と半休・時間休は1日1件で、
               期間を持たせる意味が無い。 */}
           {spanned && (
             <Input

@@ -63,12 +63,12 @@ export type TravelEstimateInput = {
 export function buildTravelEstimatePrompt(input: TravelEstimateInput): string {
   const preferred = input.preferredMode
     ? TRAVEL_MODE_LABELS[input.preferredMode]
-    : TRAVEL_MODE_LABELS.TRAIN;
+    : TRAVEL_MODE_LABELS.PUBLIC_TRANSIT;
 
   return `カレンダーアプリで移動の予定を作っている人が、出発地から目的地までの所要時間を知りたがっています。交通手段ごとの所要時間の目安を挙げてください。
 
 出力は前置きや説明・コードフェンスを一切付けず、以下の形式のJSONのみを出力してください。
-{"estimates": [{"mode": "TRAIN", "minutes": 40, "detail": "経路の要点またはnull"}]}
+{"estimates": [{"mode": "CAR", "minutes": 40, "detail": "経路の要点またはnull"}]}
 
 # 条件
 - mode は次のいずれか: ${TRAVEL_MODES.join(", ")}

@@ -20,7 +20,7 @@ export type TravelSettings = {
 
 export const DEFAULT_TRAVEL_SETTINGS: TravelSettings = {
   defaultOrigin: null,
-  defaultMode: "TRAIN",
+  defaultMode: "PUBLIC_TRANSIT",
   roundTrip: true,
   calendarId: null,
 };

@@ -16,7 +16,7 @@ import {
   workCapabilities,
   workDatabaseReady,
 } from "@/services/notion/work-logs";
-import type { WorkRecordItem } from "@/types/work";
+import { normalizeWorkMinutes, type WorkRecordItem } from "@/types/work";
 
 /**
  * 年度ごとの年休の取得状況（docs/spec.md §34）。
@@ -36,7 +36,7 @@ export default async function AnnualLeavePage({
     db.notionConnection.findUnique({ where: { userId: user.id } }),
     db.uiSetting.findUnique({
       where: { userId: user.id },
-      select: { timeZone: true, fiscalYearStartMonth: true },
+      select: { timeZone: true, fiscalYearStartMonth: true, workMinutesPerDay: true },
     }),
   ]);
 
@@ -82,6 +82,7 @@ export default async function AnnualLeavePage({
       records={records}
       grantedDays={grant?.grantedDays ?? null}
       carriedOverDays={grant?.carriedOverDays ?? 0}
+      workMinutesPerDay={normalizeWorkMinutes(uiSetting?.workMinutesPerDay)}
       loadError={loadError}
     />
   );

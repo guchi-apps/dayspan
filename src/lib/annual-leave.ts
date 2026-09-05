@@ -1,5 +1,5 @@
 import { isAutoOffDay } from "@/lib/work-days";
-import { annualLeaveDays, type WorkRecordItem } from "@/types/work";
+import { annualLeaveDays, annualLeaveHours, type WorkRecordItem } from "@/types/work";
 
 /**
  * 年休の取得状況を年度で数える（docs/spec.md §34）。
@@ -99,18 +99,44 @@ function consumesLeave(record: WorkRecordItem, dateKey: string): boolean {
   return !isAutoOffDay(dateKey);
 }
 
+/**
+ * 年休の量。**日と時間を混ぜずに持つ**（issue #537）。
+ *
+ * 全休・半休は日、時間休は時間。1つの数へ丸めると、所定労働時間が7時間45分の職場では
+ * 0.5日が3時間52分30秒になり、時間へ足し込んだ時点で割り切れない数字が画面に並ぶ。
+ * 分けて持てば、どちらの単位も入力したままの形で読める。
+ */
+export type LeaveAmount = {
+  /** 全休・半休ぶんの日数（0.5刻み）。 */
+  days: number;
+  /** 時間休ぶんの時間数。 */
+  hours: number;
+};
+
+export const EMPTY_LEAVE_AMOUNT: LeaveAmount = { days: 0, hours: 0 };
+
+/** 帯・消化ペースの比率に使う、日へそろえた量。目盛りの上の位置を決めるためだけに使う。 */
+export function leaveAmountInDays(amount: LeaveAmount, minutesPerDay: number): number {
+  return amount.days + (amount.hours * 60) / minutesPerDay;
+}
+
+/** 量が入っているか。0のときは日だけを出し、いままでと同じ見え方にするための判定。 */
+export function hasLeaveAmount(amount: LeaveAmount): boolean {
+  return amount.days !== 0 || amount.hours !== 0;
+}
+
 export type AnnualLeaveMonth = {
   /** YYYY-MM */
   monthKey: string;
-  taken: number;
-  planned: number;
+  taken: LeaveAmount;
+  planned: LeaveAmount;
 };
 
 export type AnnualLeaveSummary = {
-  /** 今日までに取った日数（半休は0.5日）。 */
-  taken: number;
-  /** 明日以降に入れてある日数。 */
-  planned: number;
+  /** 今日までに取った量（半休は0.5日、時間休は時間）。 */
+  taken: LeaveAmount;
+  /** 明日以降に入れてある量。 */
+  planned: LeaveAmount;
   months: AnnualLeaveMonth[];
   /** 年度に重なる年休の記録。日付の新しい順（一覧はこの順で出す）。 */
   records: WorkRecordItem[];
@@ -120,9 +146,10 @@ export type AnnualLeaveSummary = {
  * 年度ぶんの年休を数える。
  *
  * 数え方は勤務画面の月の集計（`Tally()`）と同じで、**日ごとに** `annualLeaveDays()` を足す。
- * 期間の全休（夏季休暇など）は1件でも日数ぶんになり、半休は0.5日になる。記録の期間が年度から
- * はみ出す場合は、年度の中に入っている日だけを数える（年度をまたぐ記録を丸ごと片方の年度へ
- * 入れると、両方の年度の合計が実際に休んだ日数と合わなくなる）。
+ * 期間の全休（夏季休暇など）は1件でも日数ぶんになり、半休は0.5日、時間休は日数を持たず時間の
+ * 側へ足される（issue #537）。記録の期間が年度からはみ出す場合は、年度の中に入っている日だけを
+ * 数える（年度をまたぐ記録を丸ごと片方の年度へ入れると、両方の年度の合計が実際に休んだ日数と
+ * 合わなくなる）。
  *
  * 今日より後の日を `planned` に分けるのは、まだ休んでいない日を「使った」として扱わないため。
  * 今日をまたぐ期間の記録は、前半を `taken`・後半を `planned` に振り分ける。
@@ -133,12 +160,14 @@ export function summarizeAnnualLeave(
   todayKey: string,
 ): AnnualLeaveSummary {
   const monthly = new Map<string, AnnualLeaveMonth>();
-  let taken = 0;
-  let planned = 0;
+  const taken: LeaveAmount = { days: 0, hours: 0 };
+  const planned: LeaveAmount = { days: 0, hours: 0 };
 
   for (const record of records) {
     if (!record.annualLeave) continue;
+    // 時間休は日数を持たず、時間の側へ足す（issue #537）。
     const perDay = annualLeaveDays(record.annualLeave);
+    const perDayHours = annualLeaveHours(record.annualLeave) ?? 0;
     // 年度の中に入っている日だけを数える。
     const start = record.startDate > range.from ? record.startDate : range.from;
     const end = record.endDate < range.to ? record.endDate : range.to;
@@ -146,14 +175,17 @@ export function summarizeAnnualLeave(
     for (let dateKey = start; dateKey <= end; dateKey = nextDateKey(dateKey)) {
       if (!consumesLeave(record, dateKey)) continue;
       const monthKey = dateKey.slice(0, 7);
-      const month = monthly.get(monthKey) ?? { monthKey, taken: 0, planned: 0 };
-      if (dateKey <= todayKey) {
-        taken += perDay;
-        month.taken += perDay;
-      } else {
-        planned += perDay;
-        month.planned += perDay;
-      }
+      const month: AnnualLeaveMonth = monthly.get(monthKey) ?? {
+        monthKey,
+        taken: { days: 0, hours: 0 },
+        planned: { days: 0, hours: 0 },
+      };
+      const [total, bucket] =
+        dateKey <= todayKey ? ([taken, month.taken] as const) : ([planned, month.planned] as const);
+      total.days += perDay;
+      total.hours += perDayHours;
+      bucket.days += perDay;
+      bucket.hours += perDayHours;
       monthly.set(monthKey, month);
     }
   }
@@ -161,7 +193,12 @@ export function summarizeAnnualLeave(
   const startMonth = Number(range.from.slice(5, 7));
   const fiscalYear = Number(range.from.slice(0, 4));
   const months = fiscalYearMonths(fiscalYear, startMonth).map(
-    (monthKey) => monthly.get(monthKey) ?? { monthKey, taken: 0, planned: 0 },
+    (monthKey) =>
+      monthly.get(monthKey) ?? {
+        monthKey,
+        taken: { days: 0, hours: 0 },
+        planned: { days: 0, hours: 0 },
+      },
   );
 
   return {
@@ -232,26 +269,29 @@ export function annualLeavePace({
 }
 
 /**
- * 一覧の1件が何日ぶんか。
+ * 一覧の1件がどれだけか（日と時間）。
  *
  * 年度の外へはみ出したぶんと、期間の中の土日祝は数えない（`summarizeAnnualLeave()` と同じ
- * 数え方）。行の日数と合計が食い違わないよう、判定を二重に持たずここも1日ずつ見る。
+ * 数え方）。行の量と合計が食い違わないよう、判定を二重に持たずここも1日ずつ見る。
  */
-export function recordDaysInRange(
+export function recordAmountInRange(
   record: WorkRecordItem,
   range: { from: string; to: string },
-): number {
-  if (!record.annualLeave) return 0;
+): LeaveAmount {
+  if (!record.annualLeave) return { ...EMPTY_LEAVE_AMOUNT };
   const start = record.startDate > range.from ? record.startDate : range.from;
   const end = record.endDate < range.to ? record.endDate : range.to;
-  if (start > end) return 0;
+  if (start > end) return { ...EMPTY_LEAVE_AMOUNT };
 
   const perDay = annualLeaveDays(record.annualLeave);
-  let days = 0;
+  const perDayHours = annualLeaveHours(record.annualLeave) ?? 0;
+  const amount: LeaveAmount = { days: 0, hours: 0 };
   for (let dateKey = start; dateKey <= end; dateKey = nextDateKey(dateKey)) {
-    if (consumesLeave(record, dateKey)) days += perDay;
+    if (!consumesLeave(record, dateKey)) continue;
+    amount.days += perDay;
+    amount.hours += perDayHours;
   }
-  return days;
+  return amount;
 }
 
 /**

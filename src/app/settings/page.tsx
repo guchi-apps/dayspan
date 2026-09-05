@@ -106,7 +106,7 @@ export default async function SettingsPage() {
           value={
             uiSetting?.travelDefaultOrigin
               ? `${uiSetting.travelDefaultOrigin}から / ${TRAVEL_MODE_LABELS[uiSetting.travelDefaultMode]}`
-              : `既定の交通手段: ${TRAVEL_MODE_LABELS[uiSetting?.travelDefaultMode ?? "TRAIN"]}`
+              : `既定の交通手段: ${TRAVEL_MODE_LABELS[uiSetting?.travelDefaultMode ?? "PUBLIC_TRANSIT"]}`
           }
         />
         {/* 記録中の1件はGoogle未接続でも出せるため、Google接続の有無にかかわらず出す。 */}

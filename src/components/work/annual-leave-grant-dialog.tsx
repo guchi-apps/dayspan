@@ -10,18 +10,20 @@ import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { fiscalYearLabel, normalizeStartMonth } from "@/lib/annual-leave";
+import { DEFAULT_WORK_MINUTES_PER_DAY } from "@/types/work";
 
 /**
- * 年休の付与日数・繰越・年度の開始月を直す（docs/spec.md §34）。
+ * 年休の付与日数・繰越・年度の開始月・1日の所定労働時間を直す（docs/spec.md §34）。
  *
  * 設定画面ではなく、見ている年度の画面から開く。付与日数は年度ごとに違い、直したくなるのは
- * その年度を見ているときだから。開始月だけは全年度に効くので、そう書き添える。
+ * その年度を見ているときだから。開始月と所定労働時間は全年度に効くので、そう書き添える。
  */
 export function AnnualLeaveGrantDialog({
   fiscalYear,
   startMonth,
   grantedDays,
   carriedOverDays,
+  workMinutesPerDay = DEFAULT_WORK_MINUTES_PER_DAY,
   onClose,
 }: {
   fiscalYear: number;
@@ -29,6 +31,8 @@ export function AnnualLeaveGrantDialog({
   /** その年度の付与日数。まだ入れていない年度は null（欄は空で開く）。 */
   grantedDays: number | null;
   carriedOverDays: number;
+  /** 1日の所定労働時間（分）。時間休が1日ぶんの何割かを決める（issue #537）。 */
+  workMinutesPerDay?: number;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -42,6 +46,10 @@ export function AnnualLeaveGrantDialog({
   const [granted, setGranted] = useState(grantedDays === null ? "" : String(grantedDays));
   const [carried, setCarried] = useState(carriedOverDays === 0 ? "" : String(carriedOverDays));
   const [month, setMonth] = useState(String(startMonth));
+  // 所定労働時間は時と分に分けて持つ。1つの欄にすると 7.75 のような小数を打たせることになる
+  // （日時の入力を日付と時刻の欄に分けているのと同じ理由・issue #537）。
+  const [workHours, setWorkHours] = useState(String(Math.floor(workMinutesPerDay / 60)));
+  const [workMinutes, setWorkMinutes] = useState(String(workMinutesPerDay % 60));
 
   const close = () => {
     setOpen(false);
@@ -59,6 +67,9 @@ export function AnnualLeaveGrantDialog({
     const grantedDaysValue = granted.trim() === "" ? 0 : Number(granted);
     const carriedDaysValue = carried.trim() === "" ? 0 : Number(carried);
     const monthValue = Number(month);
+    // 分の欄を空にしただけで保存できなくならないよう、空欄は0として扱う（繰越と同じ）。
+    const workMinutesValue =
+      Number(workHours || 0) * 60 + Number(workMinutes.trim() === "" ? 0 : workMinutes);
 
     if (!isDays(grantedDaysValue) || !isDays(carriedDaysValue)) {
       setError("付与日数・繰越日数は0〜400の範囲で、0.5日単位で入力してください。");
@@ -66,6 +77,14 @@ export function AnnualLeaveGrantDialog({
     }
     if (!Number.isInteger(monthValue) || monthValue < 1 || monthValue > 12) {
       setError("年度の開始月は1〜12で入力してください。");
+      return;
+    }
+    if (
+      !Number.isInteger(workMinutesValue) ||
+      workMinutesValue < 60 ||
+      workMinutesValue > 1440
+    ) {
+      setError("1日の所定労働時間は1時間〜24時間の範囲で入力してください。");
       return;
     }
 
@@ -80,6 +99,7 @@ export function AnnualLeaveGrantDialog({
           grantedDays: grantedDaysValue,
           carriedOverDays: carriedDaysValue,
           fiscalYearStartMonth: monthValue,
+          workMinutesPerDay: workMinutesValue,
         }),
       });
       if (!response.ok) {
@@ -103,7 +123,7 @@ export function AnnualLeaveGrantDialog({
       <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
         <DialogTitle>{label}の年休</DialogTitle>
         <DialogDescription className="sr-only">
-          付与日数・繰越日数と年度の開始月を設定します。
+          付与日数・繰越日数・1日の所定労働時間と年度の開始月を設定します。
         </DialogDescription>
 
         {error && (
@@ -133,6 +153,36 @@ export function AnnualLeaveGrantDialog({
           value={carried}
           onChange={(event) => setCarried(event.target.value)}
         />
+
+        {/* 時間休が何日ぶんかを決める値（issue #537）。時と分を分けるのは、7.75 のような
+            小数を打たせないため。 */}
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            id="leave-work-hours"
+            label="1日の所定労働時間（時）"
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min="0"
+            max="24"
+            value={workHours}
+            onChange={(event) => setWorkHours(event.target.value)}
+          />
+          <Input
+            id="leave-work-minutes"
+            label="（分）"
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min="0"
+            max="59"
+            value={workMinutes}
+            onChange={(event) => setWorkMinutes(event.target.value)}
+          />
+        </div>
+        <p className="type-body-small text-on-surface-variant">
+          時間休が何日ぶんかを決めます。すべての年度に効きます。
+        </p>
 
         <Input
           id="leave-start-month"

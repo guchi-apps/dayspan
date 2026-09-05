@@ -23,9 +23,14 @@ import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import {
   annualLeaveDays,
-  COMPANY_HOLIDAY_TITLE,
+  annualLeaveHours,
   coversDate,
+  DEFAULT_WORK_MINUTES_PER_DAY,
   formatDays,
+  formatLeaveHours,
+  HOLIDAY_TITLE,
+  isDefaultHolidayTitle,
+  isPartialLeave,
   isTripPlace,
   openWorkRecords,
   WORK_TODO_LABELS,
@@ -55,6 +60,7 @@ export function WorkScreen({
   capabilities,
   activityRunning = false,
   timeZone,
+  workMinutesPerDay = DEFAULT_WORK_MINUTES_PER_DAY,
 }: {
   /** YYYY-MM */
   monthKey: string;
@@ -75,6 +81,8 @@ export function WorkScreen({
   activityRunning?: boolean;
   /** 下部ナビの「今日へ」に使うタイムゾーン（`UiSetting.timeZone`）。 */
   timeZone: string;
+  /** 1日の所定労働時間（分）。入力ダイアログの時間休の上限に使う（issue #537）。 */
+  workMinutesPerDay?: number;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -200,9 +208,9 @@ export function WorkScreen({
 
   const openDay = (dateKey: string) => {
     const existing = records.find((record) => coversDate(record, dateKey));
-    // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも会社休業日のタブへは寄せない）。
+    // 新規作成の既定は常に勤務のタブから始める（isAutoOffDayでも休みのタブへは寄せない）。
     // 会社休業日は「会社が決めた休み」で期間で1件のもの（docs/spec.md §34）。土日を1日ずつ
-    // 会社休業日として登録すると、月の集計（`Tally()`）で本来のお盆・年末年始の休業日数と
+    // 休みとして登録すると、月の集計（`Tally()`）で本来のお盆・年末年始の休業日数と
     // 混ざって読めなくなる。休みとして明示的に記録したいときは、従来どおり「休みを追加」または
     // このダイアログの中でタブを切り替えて登録する。
     setDraft(
@@ -460,7 +468,7 @@ export function WorkScreen({
                             "type-body-medium min-w-0 flex-1 truncate",
                             record.businessTrip && "font-bold text-travel",
                             // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
-                            // 何の休みなのかは行の文字（「会社休業日」）が持っている。
+                            // 何の休みなのかは行の文字（「休み」）が持っている。
                             (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
                           )}
                         >
@@ -468,7 +476,11 @@ export function WorkScreen({
                         </span>
                       ) : isAutoOffDay(dateKey) ? (
                         // 登録が無い土日祝は自動的に「休み」として扱う（表示だけ、docs/spec.md §34）。
-                        <span className="type-body-medium flex-1 text-on-surface-variant">休み</span>
+                        // issue #536で登録済みの休み（会社休業日）の表記も「休み」にそろえたため、
+                        // 色（太字・tertiary か on-surface-variant）だけでは両者を読み分けられない。
+                        // 月間集計（`Tally()`）は登録済みの記録しか数えないため、「（自動）」を添えて
+                        // 集計に入らない行だと分かるようにする（issue #536 計画レビューG1の指摘）。
+                        <span className="type-body-medium flex-1 text-on-surface-variant">休み（自動）</span>
                       ) : (
                         <span className="type-body-medium flex-1 text-outline">未登録</span>
                       )}
@@ -579,6 +591,7 @@ export function WorkScreen({
           tripPlaces={tripPlaces}
           capabilities={capabilities}
           todayKey={todayKey}
+          workMinutesPerDay={workMinutesPerDay}
           onClose={() => setDraft(null)}
           onSaved={() => {
             setDraft(null);
@@ -627,10 +640,10 @@ function RecordRow({
   onOpen: () => void;
 }) {
   const states = workTodoStates(record, todayKey, shown);
-  // 半休の日は残り半日どこで働いたかも持つ。行に出さないと、開かないと分からない。
+  // 半休・時間休の日は残りをどこで働いたかも持つ。行に出さないと、開かないと分からない。
   const sub =
-    record.annualLeave && annualLeaveDays(record.annualLeave) < 1 && record.place
-      ? `残り半日は${record.place}`
+    record.annualLeave && isPartialLeave(record.annualLeave) && record.place
+      ? `${annualLeaveHours(record.annualLeave) === null ? "残り半日は" : "残りは"}${record.place}`
       : null;
 
   // ここに並ぶのは手続きが残っている記録だけなので、枠は常に未対応の色にする。
@@ -687,11 +700,19 @@ function RecordRow({
   );
 }
 
+/** 月間集計の項目名。時間休だけは日ではなく時間で数えるため、年休とは別の項目にする。 */
+const HOURLY_LEAVE_TALLY = "時間休";
+
 /**
  * その月に何日ずつどこで働いたか。勤務場所ごとに数える。
  *
  * 半休の日は年休に 0.5 日、残り半日の勤務場所に 0.5 日を足す。勤怠の提出で見るのはこの数字
  * そのもので、半休を1日として数えると使えないため。
+ *
+ * **時間休の日は勤務場所に1日を数え、時間休は「時間」で別に足す**（issue #537）。半休と同じ
+ * 按分（`1 - leave`）を当てると勤務場所が「18.6日 在宅」になるが、3時間休を取っても出勤した
+ * 日は1日で、勤怠の提出で見る出勤日数は変わらない。日数へ換算して年休へ足し込むと、月の集計に
+ * 0.4 日のような数字が現れる。
  */
 function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] }) {
   const counts = new Map<string, number>();
@@ -702,10 +723,16 @@ function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] })
     if (!record) continue;
 
     if (record.companyHoliday) {
-      add(COMPANY_HOLIDAY_TITLE, 1);
+      add(HOLIDAY_TITLE, 1);
       continue;
     }
     if (record.annualLeave) {
+      const hours = annualLeaveHours(record.annualLeave);
+      if (hours !== null) {
+        add(HOURLY_LEAVE_TALLY, hours);
+        if (record.place) add(record.place, 1);
+        continue;
+      }
       const leave = annualLeaveDays(record.annualLeave);
       add("年休", leave);
       if (leave < 1 && record.place) add(record.place, 1 - leave);
@@ -720,7 +747,9 @@ function Tally({ records, days }: { records: WorkRecordItem[]; days: string[] })
     <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
       {[...counts.entries()].map(([name, count]) => (
         <span key={name} className="type-body-small text-on-surface-variant">
-          <b className="type-title-small mr-1 tabular-nums text-on-surface">{formatDays(count)}</b>
+          <b className="type-title-small mr-1 tabular-nums text-on-surface">
+            {name === HOURLY_LEAVE_TALLY ? formatLeaveHours(count) : formatDays(count)}
+          </b>
           {name}
         </span>
       ))}
@@ -784,18 +813,19 @@ function defaultDate(monthKey: string, todayKey: string): string {
  *
  * 年休は区分（全休・午前半休）まで出し、半休なら残り半日の勤務場所を添える。「年休」だけでは
  * 丸一日休むのか半日働くのかが読めず、月の集計の 0.5 日と行の見え方が食い違う。
- * 会社休業日は名称（「夏季休業」）まで出す。
+ * 休み（会社休業日）は名称（「夏季休業」）まで出す。
  */
 function recordLabel(record: WorkRecordItem): string {
   // 名称（「夏季休業」）を入れずに登録すると、タイトルにも種類の名前がそのまま入る。
-  // そのときに「会社休業日（会社休業日）」と出さない。
+  // そのときに「休み（休み）」と出さない（以前の既定タイトル「会社休業日」で保存済みの
+  // 記録も同じく名称なし扱いにする・issue #536）。
   if (record.companyHoliday) {
-    return record.title && record.title !== COMPANY_HOLIDAY_TITLE
-      ? `${COMPANY_HOLIDAY_TITLE}（${record.title}）`
-      : COMPANY_HOLIDAY_TITLE;
+    return record.title && !isDefaultHolidayTitle(record.title)
+      ? `${HOLIDAY_TITLE}（${record.title}）`
+      : HOLIDAY_TITLE;
   }
   if (record.annualLeave) {
-    const suffix = annualLeaveDays(record.annualLeave) < 1 && record.place ? `・${record.place}` : "";
+    const suffix = isPartialLeave(record.annualLeave) && record.place ? `・${record.place}` : "";
     return `年休（${record.annualLeave}）${suffix}`;
   }
   if (record.businessTrip) return `出張・${record.title}`;
