@@ -27,6 +27,52 @@ export type CalendarEventItem = {
    */
   readOnly: boolean;
   url: string | null;
+  /**
+   * 「起こらなかった」記録（docs/spec.md §37）。付いていなければ null。
+   *
+   * Service Workerが保存した古い応答にはこの項目が無い。読む側は必ず `?? null` で受ける
+   * （項目が増えるだけで応答の形は変わらないため、`public/sw.js` の VERSION は上げていない）。
+   */
+  outcome: EventOutcomeItem | null;
+};
+
+/**
+ * 予定に付ける「起こらなかった」の種類（docs/spec.md §37）。Prismaの EventOutcomeKind と
+ * 同じ並びにする。
+ *
+ * 「開かれなかった（中止）」と「行われたが自分は行かなかった（不参加）」は別の事実で、
+ * あとから見返すときに読みたいのはその違い。1つにまとめると、予定を消さずに残す理由が
+ * 半分になる。
+ */
+export const EVENT_OUTCOME_KINDS = ["CANCELED", "ABSENT"] as const;
+
+export type EventOutcomeKind = (typeof EVENT_OUTCOME_KINDS)[number];
+
+export const EVENT_OUTCOME_KIND_LABELS: Record<EventOutcomeKind, string> = {
+  CANCELED: "中止",
+  ABSENT: "不参加",
+};
+
+/** 種類を選ぶときの説明。名前だけでは、どちらを選べばよいか画面から読めないため添える。 */
+export const EVENT_OUTCOME_KIND_DESCRIPTIONS: Record<EventOutcomeKind, string> = {
+  CANCELED: "予定そのものが無くなった",
+  ABSENT: "行われたが自分は行かなかった",
+};
+
+export function isEventOutcomeKind(value: unknown): value is EventOutcomeKind {
+  return typeof value === "string" && (EVENT_OUTCOME_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * 予定に付けた「起こらなかった」記録（docs/spec.md §37）。
+ *
+ * 本体はDaySpanのDBにある。Google Calendarには「中止だが残す」欄が無く、タイトル・説明へ
+ * 書き足すと記録を外したあとも文字列が残るため、移動・タスクの紐づけと同じく線だけを持つ。
+ */
+export type EventOutcomeItem = {
+  kind: EventOutcomeKind;
+  /** 理由。場面ごとに違うため選択肢にせず自由入力にする。未入力は null。 */
+  note: string | null;
 };
 
 export type TaskPriority = string | null;

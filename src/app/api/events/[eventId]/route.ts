@@ -11,6 +11,7 @@ import {
   updateEvent,
   type EventWriteInput,
 } from "@/services/google-calendar/events";
+import { dropOutcomesForEvent, moveEventOutcome } from "@/services/calendar/event-outcomes";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
 import { dropLinksForEvent, syncLinksForEvent } from "@/services/task-links/links";
 
@@ -66,6 +67,10 @@ export async function PATCH(
     if (moving) {
       // moveはカレンダーのみを変える。他の項目は移動後に、移動先カレンダーへ改めて反映する。
       await moveEvent(account, sourceCalendarId, eventId, body.calendarId);
+      // 中止・不参加の記録が持つカレンダーの写しも合わせる（docs/spec.md §37）。
+      // 記録そのものは予定IDで引くため移動に追随するが、写しが古いままだと
+      // 「どのカレンダーの予定だったか」を偽ることになる。
+      await moveEventOutcome(userId, eventId, body.calendarId);
     }
     await updateEvent(account, body.calendarId, eventId, {
       title: body.title.trim(),
@@ -127,6 +132,9 @@ export async function DELETE(
 
     // 紐づけの相手が消えたので外す。日付はタスクに残す（消すと「いつやるつもりか」まで失われる）。
     const unlinked = await dropLinksForEvent(userId, eventId, scope);
+
+    // 中止・不参加の記録も一緒に消す（docs/spec.md §37）。予定が無くなれば指す先が無い。
+    await dropOutcomesForEvent(userId, eventId, scope);
 
     return NextResponse.json({ ok: true, unlinkedTasks: unlinked });
   } catch (error) {

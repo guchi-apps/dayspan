@@ -212,6 +212,7 @@ function toInternalEvent(
     description: event.description,
     calendarName: event.calendarName,
     recurring: event.recurring,
+    outcome: event.outcome?.kind ?? null,
     url: event.url,
   };
 }

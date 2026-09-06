@@ -172,6 +172,9 @@ function planEvents(
 
   for (const event of events) {
     if (event.allDay) continue;
+    // 中止・不参加を記録した予定は知らせない（docs/spec.md §37）。起こらないと分かっている
+    // 予定の10分前に鳴らしても、そこから先の行動は変わらない。
+    if (event.outcome) continue;
 
     const start = new Date(event.start);
     if (Number.isNaN(start.getTime())) continue;

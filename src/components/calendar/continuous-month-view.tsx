@@ -12,19 +12,21 @@ import {
 
 import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
-import type {
-  CalendarEventItem,
-  CalendarItem,
-  ReminderItem,
-  TaskEventLinkItem,
-  TaskItem,
-  TravelItem,
+import {
+  EVENT_OUTCOME_KIND_LABELS,
+  type CalendarEventItem,
+  type CalendarItem,
+  type ReminderItem,
+  type TaskEventLinkItem,
+  type TaskItem,
+  type TravelItem,
 } from "@/types/calendar";
 import type { TagOption } from "@/services/notion/tag-options";
 import type { WorkRecordItem } from "@/types/work";
 
 import { eventAccent, eventColors } from "./calendar-color";
 import { dayTone, weekdayOnlyTone } from "./day-tone";
+import { EventOutcomeMark } from "./event-outcome-mark";
 import {
   isAllDayItem,
   reminderAnnualYearLabel,
@@ -799,6 +801,8 @@ function EventChip({
   onOpen: () => void;
 }) {
   const colors = eventColors(event.color);
+  // 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。
+  const outcome = event.outcome ?? null;
 
   return (
     <button
@@ -809,14 +813,21 @@ function EventChip({
         // 週をまたぐ側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
         continuesBefore && "rounded-l-none border-l-0",
         continuesAfter && "rounded-r-none border-r-0",
+        // 起こらなかった予定は明るさだけ下げる。塗りを抜くと、どのカレンダーの予定だったかが
+        // 読めなくなり、活動記録の描き分け（塗りを落として左に色帯）とも紛れる。
+        outcome && "opacity-55",
       )}
       style={{
         backgroundColor: colors.background,
         color: colors.foreground,
         borderColor: colors.border,
       }}
-      title={event.title}
+      title={
+        outcome ? `${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}: ${event.title}` : event.title
+      }
     >
+      {/* 印は名前の直前。狭い列では時刻（sm:inline）の側が先に落ちる。 */}
+      {outcome && !continuesBefore && <EventOutcomeMark className="size-[9px] sm:size-2.5" />}
       {/* 開始時刻は実際に始まる日にだけ添える。続きの側に出すと、その日に始まったように読めるため。 */}
       {!event.allDay && !continuesBefore && (
         <span className="hidden shrink-0 opacity-75 sm:inline">
@@ -826,8 +837,13 @@ function EventChip({
       {/*
         週の境界で切れた続きの側にもタイトルを出す。その週だけを見ている人には
         前の週の帯が見えず、名前の無い帯だけが残ってしまうため。
+
+        打ち消し線は名前にだけ引く。時刻まで引くと枠の中の全部に線が乗り、何が書いてあるか
+        読みにくくなる。消えたのは「その予定が行われたこと」なので、線は名前に乗せる。
       */}
-      <span className="clip-nowrap">{event.title}</span>
+      <span className={cn("clip-nowrap", outcome && "line-through")}>{event.title}</span>
+      {/* 色と線だけに意味を持たせない。中止か不参加かは読み上げにも残す。 */}
+      {outcome && <span className="sr-only">（{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}）</span>}
     </button>
   );
 }

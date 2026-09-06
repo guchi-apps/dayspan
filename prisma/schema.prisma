@@ -33,6 +33,7 @@ model User {
   widgetToken       WidgetToken?
   travelPlans       TravelPlan[]
   taskEventLinks    TaskEventLink[]
+  eventOutcomes     EventOutcome[]
   annualLeaveGrants AnnualLeaveGrant[]
 
   pushSubscriptions   PushSubscription[]
@@ -542,4 +543,45 @@ model NotificationJob {
   // 時刻が来た未送信の下書きを引く。
   @@index([sentAt, scheduledAt])
   @@index([userId, scheduledAt])
+}
+
+// --- 予定の中止・不参加 ---
+// 行かなかった予定を消すと、その日に何があったのかまで消える（docs/spec.md §37）。
+// 予定はカレンダーに残したまま「起こらなかった」の一段だけを足す。
+//
+// Google Calendarには「中止だが残す」欄が無い。status: cancelled は削除相当で予定そのものが
+// 消え（listEvents() も落としている）、出欠（responseStatus）は招待された予定にしか無い。
+// タイトル・説明へ「【中止】」と書き足すと、記録を外したあとも文字列が残り、外部で編集された
+// ときに壊れる。移動（TravelPlan）・タスクの紐づけ（TaskEventLink）と同じく、相手のDBに欄が
+// 無いものは線だけをDaySpanが持つ。
+
+/// 予定に付ける「起こらなかった」の種類。
+///
+/// 「開かれなかった」と「行われたが自分は行かなかった」は別の事実で、あとから見返すときに
+/// 読みたいのはその違い。1つにまとめると、予定を消さずに残す理由が半分になる。
+enum EventOutcomeKind {
+  /// 中止。予定そのものが無くなった（相手都合・雨天中止・休講）。
+  CANCELED
+  /// 不参加。予定は行われたが自分は行かなかった（体調・都合）。
+  ABSENT
+}
+
+model EventOutcome {
+  id     String @id @default(cuid())
+  userId String
+
+  calendarId String
+  eventId    String // 繰り返し予定は展開した1回分のID
+
+  kind EventOutcomeKind
+  // 理由（体調・都合）は場面ごとに違うため選択肢にせず自由入力にする。空のままでもよい。
+  note String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 予定1件につき1つ。中止と不参加が同時に立つことはない。
+  @@unique([userId, eventId])
 }
