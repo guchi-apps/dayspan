@@ -18,9 +18,9 @@ import { TravelMark } from "./travel-mark";
  * 保存したものにはその縞が付かず、同じ場所へ同じつもりで入れたものが2通りの見た目で並んでいた。
  * 入力経路の違いを画面で区別する必要は無いため、縞と縦線をやめて予定と同じ塗りへ戻した。
  *
- * 移動だと分かるのはタイトル頭の矢印（`TravelMark`）だけになる。矢印は固定の専用色にせず
+ * 移動だと分かるのはタイトル頭の印（`TravelMark`）だけになる。印は固定の専用色にせず
  * 文字色（`eventColors()`が背景の明るさから選んだ色）に乗せる。青緑のままだと、ブルーベリーの
- * ような濃い色のカレンダーで矢印だけが背景に沈み、移動だと分かる手掛かりが何も残らないため。
+ * ような濃い色のカレンダーで印だけが背景に沈み、移動だと分かる手掛かりが何も残らないため。
  */
 export function TravelBlock({
   travel,
@@ -68,7 +68,7 @@ export function TravelBlock({
       title={`${timeText} ${travel.title}（${modeLabel} ${minutes}分）`}
     >
       <span className="clip-nowrap flex shrink-0 items-center gap-1 font-semibold">
-        <TravelMark className="size-2" />
+        <TravelMark mode={travel.mode} className="size-2.5" />
         <span className="clip-nowrap">{travel.title}</span>
       </span>
       {textLines > 1 && (
