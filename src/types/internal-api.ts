@@ -24,6 +24,13 @@ export type InternalEvent = {
   calendarName: string;
   /** 繰り返し予定の1回分かどうか */
   recurring: boolean;
+  /**
+   * 中止・不参加の記録（docs/spec.md §37）。付いていなければ null。
+   *
+   * 落とさず添えるのは、記録の付いた予定を黙って消すと呼び出し元では「その予定は無かった」
+   * ことになるため。起こらないと分かっている予定かどうかは、呼び出し元が決める。
+   */
+  outcome: "CANCELED" | "ABSENT" | null;
   url: string | null;
 };
 

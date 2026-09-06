@@ -69,6 +69,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
           "description": null,
           "calendarName": "仕事",
           "recurring": true,
+          "outcome": null,                    // 中止・不参加の記録。CANCELED | ABSENT | null
           "url": "https://www.google.com/calendar/event?eid=..."
         }
       ],
@@ -144,6 +145,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
 - **終日予定は `startTime` / `endTime` が `null`。** `start` / `end` は `YYYY-MM-DD`
 - **1つのタスクは期限と予定日で2枠に現れる**（`field` で区別する）。日時が完全に同じときは期限の1枠にまとめる（docs/spec.md §5）
 - **完了済みのタスクは返らない。** 取得元（`listTasksInRange()`）が除いている
+- **中止・不参加を記録した予定も返る**（`outcome` に `CANCELED` / `ABSENT` が入る。docs/spec.md §37）。黙って落とすと呼び出し元では「その予定は無かった」ことになるため、扱いは呼び出し元が決める
 
 ### 期限切れタスク（`overdueTasks`）
 

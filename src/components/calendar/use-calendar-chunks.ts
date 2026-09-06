@@ -84,6 +84,16 @@ function withWorkRecords(data: CalendarLoadResult): CalendarLoadResult {
 }
 
 /**
+ * 中止・不参加の記録を持たない応答も受ける（docs/spec.md §37）。
+ *
+ * `outcome` も項目が増えただけの変更で、`workRecords` と同じ理由で `VERSION` は上げていない。
+ * 記録を足す前に保存された応答には項目そのものが無いため、ここで null を入れて形をそろえる。
+ */
+function withEventOutcomes(events: CalendarEventItem[]): CalendarEventItem[] {
+  return events.map((event) => (event.outcome === undefined ? { ...event, outcome: null } : event));
+}
+
+/**
  * タスクがカレンダーで場所を取っている日付。期限と予定日で別の日に現れるため、
  * 取り直しの対象も両方になる（どちらも未設定ならカレンダーに出ていない）。
  */
@@ -290,7 +300,11 @@ export function useCalendarChunks({
 
       const data = (await response.json()) as CalendarLoadResult;
       const fresh = splitByMonth(
-        { ...withWorkRecords(data), tasks: withTaskLinks(data.tasks) },
+        {
+          ...withWorkRecords(data),
+          events: withEventOutcomes(data.events),
+          tasks: withTaskLinks(data.tasks),
+        },
         months,
         Date.now(),
       );

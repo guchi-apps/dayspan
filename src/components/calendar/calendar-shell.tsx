@@ -1298,6 +1298,12 @@ function CalendarBody({
           // 場所を地図で開くとき、登録済みの場所なら座標で開く（issue #426）。
           places={placeCatalog.places}
           onDeleted={handleSaved}
+          // 中止・不参加の記録（docs/spec.md §37）。続けて直せるようダイアログは閉じず、
+          // 開いている予定だけ差し替えてから、その予定がかかる月を取り直す。
+          onOutcomeChanged={(outcome) => {
+            onOpenEvent({ ...viewingEvent, outcome });
+            handleChanged([{ start: viewingEvent.start, end: viewingEvent.end }]);
+          }}
         />
       )}
 

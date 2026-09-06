@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
 import { listCalendars } from "@/services/google-calendar/calendars";
 import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google-calendar/events";
 import { canWriteCalendar, SETTING_ORDER } from "@/services/google-calendar/settings";
@@ -143,6 +144,13 @@ export async function loadGoogleEvents(
   const accounts = await db.googleAccount.findMany({ where: { userId } });
   if (accounts.length === 0) return { items: [], calendars: [], errors: [] };
 
+  // 中止・不参加の記録（docs/spec.md §37）。DaySpanのDBのみのため外部APIの往復は増えない。
+  // ここで付けると、カレンダー・通知の下書き・サーバー間APIの3経路すべてに一度で効く。
+  // Googleの取得と並行にはしない。索引の効いたローカルの1クエリで、待ちはGoogleへの
+  // 往復に比べて無視できる一方、投げっぱなしにするとこの先で例外が出たときに
+  // 拾い手のいない reject が残る。
+  const outcomes = await listEventOutcomes(userId);
+
   const items: CalendarEventItem[] = [];
   const calendars: WritableCalendar[] = [];
   const errors: CalendarLoadResult["errors"] = [];
@@ -237,7 +245,7 @@ export async function loadGoogleEvents(
     });
   }
 
-  return { items, calendars, errors };
+  return { items: attachEventOutcomes(items, outcomes), calendars, errors };
 }
 
 async function loadNotionItems(
