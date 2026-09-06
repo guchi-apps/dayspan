@@ -1,4 +1,4 @@
-import type { GoogleAccount, NotionConnection } from "@prisma/client";
+import type { GoogleAccount, NotionConnection, Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
 
@@ -27,6 +27,29 @@ export async function resolveGoogleAccountForCalendar(
   if (!setting.writeEnabled) return { ok: false, reason: "write_disabled" };
 
   return { ok: true, account: setting.googleAccount };
+}
+
+const CREATE_DEFAULT_ORDER: Prisma.CalendarSettingOrderByWithRelationInput[] = [
+  { isCreateDefault: "desc" },
+  { sortOrder: "asc" },
+  { createdAt: "asc" },
+];
+
+/**
+ * `calendarId` を指定されなかったときに使う既定の保存先を解決する（予定新規作成の既定と同じ、
+ * `CalendarSetting.isCreateDefault`）。書き込みが無効なカレンダーは既定にならないため、
+ * `writeEnabled: true` に絞ったうえで一番優先度の高いものを返す。
+ *
+ * 書き込めるカレンダーが1つも無ければ null（Google未接続、または全カレンダーの使用オフ）。
+ */
+export async function resolveDefaultCalendarId(userId: string): Promise<string | null> {
+  const setting = await db.calendarSetting.findFirst({
+    where: { userId, writeEnabled: true },
+    orderBy: CREATE_DEFAULT_ORDER,
+    select: { calendarId: true },
+  });
+
+  return setting?.calendarId ?? null;
 }
 
 export async function getNotionConnection(userId: string): Promise<NotionConnection | null> {
