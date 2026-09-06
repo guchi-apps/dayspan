@@ -5,12 +5,21 @@
  * Scriptableが持つ描画APIだけで組む。エンドポイントとトークンは設定画面で埋め込んで配り、
  * 利用者に値を貼り込ませない。
  *
+ * 台本は面（活動記録・今日の予定・タスク・買い物リスト）ごとに分けず1本にする。分けると
+ * 貼り付けが面の数だけ増え、台本を直すたびに全部を貼り替えることになる。どの面を出すかは
+ * ウィジェットを編集の `Parameter`（`args.widgetParameter`）で決める。同じ台本をホーム画面へ
+ * 複数置き、枠ごとに値を変えれば4種類が同時に出せる。
+ *
  * 中身をテンプレート文字列ではなく差し込み記号で持つのは、台本の側でJavaScriptの
  * テンプレートリテラル（`${...}`）を使えるようにするため。二重にエスケープすると、
  * 台本を読んだときにそのまま動く形に見えなくなる。
+ *
+ * ただし台本の中（SCRIPTABLE_TEMPLATE の内側）にはバッククォートを書けない。String.raw の
+ * テンプレートがそこで閉じ、以降が丸ごとTypeScriptの構文として読まれる。コメントで識別子を
+ * 囲みたくなる場所も含めて、引用符か素の名前で書く。
  */
 
-const ENDPOINT_MARK = "__DAYSPAN_ENDPOINT__";
+const ENDPOINT_MARK = "__DAYSPAN_ENDPOINT_BASE__";
 const TOKEN_MARK = "__DAYSPAN_TOKEN__";
 const APP_URL_MARK = "__DAYSPAN_APP_URL__";
 const WEBAPP_URL_MARK = "__DAYSPAN_WEBAPP_URL__";
@@ -19,24 +28,41 @@ const REFRESH_MARK = "__DAYSPAN_REFRESH_MINUTES__";
 /**
  * 台本が次の更新を要求する間隔（分）。iOSがこのとおりに更新するとは限らない目安値。
  *
- * 更新のたびにGoogle Calendarへ1回問い合わせるため、短くするほど外部APIへの往復が増える
- * （docs/spec.md §20「過剰なアクセスを発生させない」）。画面の案内文もこの値から作る。
+ * 更新のたびに、その面の取得元（Google Calendar か Notion）へ1回問い合わせるため、
+ * 短くするほど外部APIへの往復が増える（docs/spec.md §20「過剰なアクセスを発生させない」）。
+ * 画面の案内文もこの値から作る。
  *
- * ロック画面ぶんを足すとウィジェットの数だけ更新が走るため、今日の合計は
- * サーバー側で短時間だけ持ち回す（services/activity/today-cache.ts）。往復の数は
- * ウィジェットの数ではなくその保持時間で決まる。
+ * 同じ面をホーム画面とロック画面の両方へ置くと枠の数だけ更新が走るため、取得結果は
+ * サーバー側で3分だけ持ち回す（services/widget/cache.ts・services/activity/today-cache.ts）。
+ * 往復の数はウィジェットの数ではなくその保持時間で決まる。
  */
 export const WIDGET_REFRESH_MINUTES = 5;
 
+/**
+ * ウィジェットに出せる面と、`Parameter` に入れる値。設定画面の案内もこの表から作る。
+ *
+ * 空欄は `activity`。配布済みの台本を置いたままの枠が、貼り替えなくても今までどおり
+ * 活動記録を出し続けるようにするため。
+ */
+export const WIDGET_VIEW_CHOICES: { value: string; label: string; description: string }[] = [
+  { value: "activity", label: "活動記録", description: "記録中の項目と今日の合計（空欄のときもこれ）" },
+  { value: "schedule", label: "今日の予定", description: "これから始まる予定と移動" },
+  { value: "tasks", label: "タスク", description: "期限切れ・今日・これからのタスク" },
+  { value: "shopping", label: "買い物リスト", description: "まだ買っていないもの" },
+];
+
 export function buildScriptableWidgetScript(options: {
-  /** ウィジェットが読むAPIの絶対URL。 */
-  endpoint: string;
+  /**
+   * ウィジェットが読むAPIの絶対URL（面のパスを付ける前まで）。台本が
+   * `ENDPOINT_BASE + "/" + 面` を組み立てる。
+   */
+  endpointBase: string;
   /** ウィジェット用トークン。未発行なら空文字を渡す（台本の見本として使う）。 */
   token: string;
   /** ウィジェットを押したときに開くDaySpanのURL。 */
   appUrl: string;
 }): string {
-  return SCRIPTABLE_TEMPLATE.replaceAll(ENDPOINT_MARK, escapeForJsString(options.endpoint))
+  return SCRIPTABLE_TEMPLATE.replaceAll(ENDPOINT_MARK, escapeForJsString(options.endpointBase))
     .replaceAll(TOKEN_MARK, escapeForJsString(options.token))
     .replaceAll(APP_URL_MARK, escapeForJsString(options.appUrl))
     .replaceAll(WEBAPP_URL_MARK, escapeForJsString(toWebAppUrl(options.appUrl)))
@@ -66,6 +92,9 @@ export function toWebAppUrl(origin: string): string {
  * （長押し ▸ ウィジェットを編集）の `URL` 欄へ入れる値がこれで、そこは利用者が手で
  * 入力する欄のため、ホスト名を打ち間違えても気付ける場所が実機のウィジェット（何も出ない）
  * しかない。台本と同じく、値はこちらで作って渡す。
+ *
+ * 面ごとに変えられない。iOSは `webapp://` のパスを無視してWebアプリの最初の画面から開くため、
+ * 買い物リストの枠を押しても着くのは記録の画面になる。
  *
  * `app` が null になるのは `http` のアドレス（LAN経由の開発サーバー等）で開いたとき。
  * httpのサイトはWebアプリとしてホーム画面へ追加できず、`webapp://` の宛先になりようがない。
@@ -99,7 +128,7 @@ function escapeForJsString(value: string): string {
   return JSON.stringify(value).slice(1, -1);
 }
 
-const SCRIPTABLE_TEMPLATE = String.raw`// DaySpan 活動記録ウィジェット
+const SCRIPTABLE_TEMPLATE = String.raw`// DaySpan ウィジェット
 //
 // 設定 > iPhoneウィジェット から生成された台本です。
 // トークンが入っているので、そのまま他人へ渡さないでください。
@@ -107,10 +136,17 @@ const SCRIPTABLE_TEMPLATE = String.raw`// DaySpan 活動記録ウィジェット
 // 使い方: Scriptableで新しいスクリプトを作り、この内容を貼り付けて保存します。
 // ホーム画面を長押し > ウィジェットを追加 > Scriptable > このスクリプトを選びます。
 //
+// 何を出すかは、置いたウィジェットを長押し > ウィジェットを編集 の Parameter で決まります。
+//   （空） / activity … 活動記録
+//   schedule          … 今日の予定
+//   tasks             … タスク
+//   shopping          … 買い物リスト
+// 同じ台本を複数置いて、枠ごとに違う値を入れられます。
+//
 // ウィジェットを押したときと、Scriptableの一覧でこの台本のアイコンを押したときは、
 // どちらもDaySpanが開きます（ウィジェットの見本は表示しません）。
 
-const ENDPOINT = "__DAYSPAN_ENDPOINT__";
+const ENDPOINT_BASE = "__DAYSPAN_ENDPOINT_BASE__";
 const TOKEN = "__DAYSPAN_TOKEN__";
 const APP_URL = "__DAYSPAN_APP_URL__";
 
@@ -126,6 +162,9 @@ const OPEN_IN = "app";
 // 次の更新までの目安（分）。iOSは要求どおりに更新するとは限りません。
 const REFRESH_MINUTES = __DAYSPAN_REFRESH_MINUTES__;
 
+// Parameter に入れられる値。
+const VIEWS = ["activity", "schedule", "tasks", "shopping"];
+
 // DaySpanの画面と同じ配色。記録中だけ色を変え、色でも記録中かどうかが分かるようにする。
 const RUN_BG = Color.dynamic(new Color("#eaddff"), new Color("#4f378b"));
 const RUN_INK = Color.dynamic(new Color("#21005d"), new Color("#eaddff"));
@@ -133,6 +172,9 @@ const IDLE_BG = Color.dynamic(new Color("#fef7ff"), new Color("#1d1b20"));
 const IDLE_INK = Color.dynamic(new Color("#1d1b20"), new Color("#e6e0e9"));
 // 目盛りの下地。文字色から作れないため、明暗のどちらでも沈まない灰色を薄く敷く。
 const TRACK = new Color("#8a8a8a", 0.3);
+// 優先度の帯。タスク画面・買い物リストと同じ色（error / tertiary）に揃える。
+const PRIORITY_HIGH = Color.dynamic(new Color("#b3261e"), new Color("#f2b8b5"));
+const PRIORITY_MID = Color.dynamic(new Color("#7d5260"), new Color("#efb8c8"));
 
 const FAMILY = config.widgetFamily || "small";
 const IS_ACCESSORY = FAMILY.indexOf("accessory") === 0;
@@ -146,8 +188,14 @@ const IS_ACCESSORY = FAMILY.indexOf("accessory") === 0;
 // 両方をまかなえるためです。
 const OPEN_URL = (OPEN_IN === "app" && WEBAPP_URL ? WEBAPP_URL : APP_URL) + "/activity";
 
+// 出す面。空欄は活動記録（貼り替えていない枠を今までどおり動かすため）。
+// 知らない値は活動記録へ落とさずに断る。落とすと、打ち間違いに気付ける場所が無くなる。
+const VIEW = readView();
+
 if (config.runsInWidget) {
-  const data = await load();
+  const data = VIEW
+    ? await load(VIEW)
+    : { error: "Parameterには " + VIEWS.join(" / ") + " のいずれかを入れてください。" };
   const widget = build(data);
 
   widget.url = OPEN_URL;
@@ -162,9 +210,15 @@ if (config.runsInWidget) {
 }
 Script.complete();
 
-async function load() {
+function readView() {
+  const raw = (args.widgetParameter || "").trim().toLowerCase();
+  if (raw === "") return "activity";
+  return VIEWS.indexOf(raw) >= 0 ? raw : null;
+}
+
+async function load(view) {
   try {
-    const request = new Request(ENDPOINT);
+    const request = new Request(ENDPOINT_BASE + "/" + view);
     // トークンはクエリではなくヘッダーで送る。URLに載せるとサーバーのアクセスログに残る。
     request.headers = { Authorization: "Bearer " + TOKEN };
     request.timeoutInterval = 15;
@@ -184,7 +238,8 @@ async function load() {
 function build(data) {
   const widget = new ListWidget();
   const summary = data.summary;
-  const running = summary ? summary.running : null;
+  // 背景で記録中を示すのは活動記録の面だけ。他の面は記録の有無を読んでいない。
+  const running = VIEW === "activity" && summary ? summary.running : null;
 
   if (IS_ACCESSORY) {
     // ロック画面のウィジェットはiOSが白の濃淡で描き直す。色では記録中かどうかを示せない。
@@ -199,7 +254,19 @@ function build(data) {
 
   if (data.error) {
     renderError(widget, ink, data.error);
-  } else if (FAMILY === "accessoryCircular") {
+  } else if (VIEW === "activity") {
+    renderActivity(widget, ink, summary);
+  } else {
+    renderList(widget, ink, modelOf(VIEW, summary));
+  }
+
+  return widget;
+}
+
+// --- 活動記録 ---
+
+function renderActivity(widget, ink, summary) {
+  if (FAMILY === "accessoryCircular") {
     renderCircular(widget, ink, summary);
   } else if (FAMILY === "accessoryInline") {
     renderInline(widget, ink, summary);
@@ -210,12 +277,9 @@ function build(data) {
   } else {
     renderSmall(widget, ink, summary);
   }
-
-  return widget;
 }
 
-// --- ホーム画面（小） ---
-// 「いま何を、どれだけ続けているか」の1つだけ。経過時間をいちばん大きい字にする。
+// ホーム画面（小）。「いま何を、どれだけ続けているか」の1つだけ。経過時間をいちばん大きい字にする。
 
 function renderSmall(widget, ink, summary) {
   const running = summary.running;
@@ -243,8 +307,7 @@ function renderSmall(widget, ink, summary) {
   }
 }
 
-// --- ホーム画面（中） ---
-// 左に記録中の1件、右に今日の内訳。
+// ホーム画面（中）。左に記録中の1件、右に今日の内訳。
 
 function renderMedium(widget, ink, summary) {
   const running = summary.running;
@@ -352,8 +415,7 @@ function addBar(stack, ink, item, longest) {
   time.lineLimit = 1;
 }
 
-// --- ロック画面 ---
-// 色が使えないため、形と文字だけで読める並びにする。
+// ロック画面（活動記録）。色が使えないため、形と文字だけで読める並びにする。
 
 function renderRectangular(widget, ink, summary) {
   const running = summary.running;
@@ -415,6 +477,335 @@ function renderInline(widget, ink, summary) {
   addText(widget, ink, "記録していません", Font.systemFont(12));
 }
 
+// --- 一覧の面（今日の予定・タスク・買い物リスト） ---
+//
+// 3つとも「見出し＋数行＋脚注」で読む形は同じ。枠ごとの描き分けをここに1つだけ持ち、
+// 面ごとに違うのは中身を組み立てる modelOf() だけにする。面の数だけ描画を書くと、
+// 行数や余白の直しを面の数ぶん繰り返すことになる。
+
+function modelOf(view, summary) {
+  if (view === "schedule") return scheduleModel(summary);
+  if (view === "tasks") return tasksModel(summary);
+  return shoppingModel(summary);
+}
+
+function scheduleModel(summary) {
+  const items = summary.items || [];
+  const upcoming = items.filter(function (item) {
+    return !item.past;
+  });
+  const done = items.length - upcoming.length;
+
+  // 1行の枠に出すのは、これから始まるもののうち時刻の決まっている先頭。終日を先に出すと、
+  // 研修ウィークのような1日中続く項目がある日は、次に何時に何があるかが出なくなる。
+  const timed = upcoming.filter(function (item) {
+    return !item.allDay;
+  });
+  const next = timed.length > 0 ? timed[0] : upcoming.length > 0 ? upcoming[0] : null;
+
+  return {
+    label: "今日の予定",
+    head: "残り" + upcoming.length,
+    headWide: formatDateKey(summary.date) + " ・ 残り" + upcoming.length,
+    circle: { value: String(upcoming.length), label: "予定" },
+    inline: next ? whenOf(next, summary.timeZone) + " " + next.title : "今日の予定なし",
+    rows: items.map(function (item) {
+      return {
+        when: whenOf(item, summary.timeZone),
+        text: item.title,
+        // 中止・不参加は理由より先に「起こらなかった」ことが読めればよい（docs/spec.md §37）。
+        side: item.outcome ? outcomeLabel(item.outcome) : item.detail,
+        mode: item.mode,
+        priority: null,
+        dim: item.past || item.outcome !== null,
+      };
+    }),
+    // 見出しの数字が数えているもの。行は残りが先に並ぶため、入りきらなかった数もここから出す。
+    total: upcoming.length,
+    bars: false,
+    foot: done > 0 ? ["済み " + done + "件"] : [],
+    footSmall: [],
+    stamp: formatTime(summary.now, summary.timeZone) + " 時点",
+    note: scheduleNote(summary.unavailable),
+    empty: "今日の予定はありません",
+  };
+}
+
+function tasksModel(summary) {
+  const items = summary.items || [];
+  const due = summary.overdueCount + summary.todayCount;
+
+  return {
+    label: "タスク",
+    head: String(due),
+    headWide: "期限切れ " + summary.overdueCount + " ・ 今日 " + summary.todayCount,
+    circle: { value: String(due), label: "タスク" },
+    inline:
+      due > 0
+        ? "期限切れ" + summary.overdueCount + "・今日" + summary.todayCount
+        : "期限の来たタスクなし",
+    rows: items.map(function (item) {
+      return {
+        when: null,
+        text: item.title,
+        side: item.dueLabel,
+        mode: null,
+        priority: item.priority,
+        dim: false,
+      };
+    }),
+    total: summary.total,
+    bars: true,
+    foot: [],
+    // 小さい枠は行の右端に期限を出す幅が無く、見出しにも数字しか入らない。内訳を脚注へ回さないと、
+    // 「4」が期限切れなのか今日ぶんなのかがどこにも出ない。
+    footSmall: ["期限切れ " + summary.overdueCount + "・今日 " + summary.todayCount],
+    stamp: formatTime(summary.now, summary.timeZone) + " 時点",
+    note: tasksNote(summary.unavailable),
+    empty: "期限のあるタスクはありません",
+  };
+}
+
+function shoppingModel(summary) {
+  const items = summary.items || [];
+
+  return {
+    label: "買い物リスト",
+    head: String(summary.remaining),
+    headWide: "残り " + summary.remaining,
+    circle: { value: String(summary.remaining), label: "買い物" },
+    inline: summary.remaining > 0 ? "買い物 残り" + summary.remaining : "買うものなし",
+    rows: items.map(function (item) {
+      return {
+        when: null,
+        text: item.name,
+        side: item.category,
+        mode: null,
+        priority: item.priority,
+        dim: false,
+      };
+    }),
+    total: summary.remaining,
+    bars: true,
+    foot: [],
+    footSmall: [],
+    stamp: formatTime(summary.now, summary.timeZone) + " 時点",
+    note: shoppingNote(summary.unavailable),
+    empty: "買うものはありません",
+  };
+}
+
+function renderList(widget, ink, model) {
+  if (FAMILY === "accessoryCircular") return renderListCircular(widget, ink, model);
+  if (FAMILY === "accessoryInline") return renderListInline(widget, ink, model);
+  if (IS_ACCESSORY) return renderListRectangular(widget, ink, model);
+
+  const max = FAMILY === "large" ? 8 : FAMILY === "medium" ? 4 : 3;
+  const rows = model.note ? [] : model.rows.slice(0, max);
+  const wide = FAMILY !== "small";
+
+  // 連携が未設定・取得できなかったときに件数を出すと、0件だったのか読めなかったのかが
+  // 区別できない。数字の代わりに横棒を置く（丸い枠と同じ扱い）。
+  addHeader(widget, ink, model.label, false, model.note ? "—" : wide ? model.headWide : model.head);
+
+  if (model.note) {
+    widget.addSpacer(6);
+    const note = addText(widget, ink, model.note, Font.systemFont(11));
+    note.textOpacity = 0.75;
+    note.lineLimit = 3;
+    note.minimumScaleFactor = 0.7;
+  } else if (rows.length === 0) {
+    widget.addSpacer(6);
+    const empty = addText(widget, ink, model.empty, Font.systemFont(11));
+    empty.textOpacity = 0.75;
+    empty.lineLimit = 2;
+  } else {
+    widget.addSpacer(6);
+    for (let i = 0; i < rows.length; i++) {
+      if (i > 0) widget.addSpacer(5);
+      addRow(widget, ink, rows[i], { showSide: wide, showBar: model.bars });
+    }
+  }
+
+  widget.addSpacer();
+
+  // 脚注は下から詰める。小さい枠は2行までで、いつ時点かはホーム画面の大きい枠にだけ出す
+  // （小さい枠でその1行を使うと、項目が1件ぶん落ちる）。
+  const foot = footLines(model, rows, wide);
+  for (let i = 0; i < foot.length; i++) {
+    const line = addText(widget, ink, foot[i], Font.systemFont(i === foot.length - 1 && wide ? 10 : 11));
+    line.textOpacity = i === foot.length - 1 && wide ? 0.6 : 0.75;
+    line.lineLimit = 1;
+    line.minimumScaleFactor = 0.7;
+  }
+}
+
+/**
+ * 脚注。下から詰める。
+ *
+ * foot はどの枠にも出す行、footSmall は小さい枠だけに出す行（広い枠では見出しや行の右端に
+ * 同じことが出ているため）。いつ時点かはホーム画面の大きい枠にだけ出す。小さい枠でその1行を
+ * 使うと、項目が1件ぶん落ちる。
+ */
+function footLines(model, shown, wide) {
+  const lines = model.note ? [] : (wide ? model.foot : model.footSmall.concat(model.foot)).slice();
+
+  // 数えるのは見出しの数字に入っている行だけ。予定の面は済んだぶんを別の行で示しており、
+  // そこまで足すと同じものが2つの数に出る。
+  const counted = shown.filter(function (row) {
+    return !row.dim;
+  }).length;
+  const hidden = model.total - counted;
+  if (!model.note && hidden > 0) lines.push("ほか " + hidden + "件");
+
+  if (wide) {
+    lines.push(model.stamp);
+    return lines;
+  }
+  return lines.slice(0, 2);
+}
+
+function renderListRectangular(widget, ink, model) {
+  const head = addText(
+    widget,
+    ink,
+    model.label + "  " + (model.note ? "—" : model.headWide),
+    Font.semiboldSystemFont(12),
+  );
+  head.lineLimit = 1;
+  head.minimumScaleFactor = 0.7;
+
+  if (model.note) {
+    const note = addText(widget, ink, model.note, Font.systemFont(11));
+    note.textOpacity = 0.75;
+    note.lineLimit = 2;
+    note.minimumScaleFactor = 0.7;
+    return;
+  }
+
+  const rows = model.rows.slice(0, 2);
+  if (rows.length === 0) {
+    const empty = addText(widget, ink, model.empty, Font.systemFont(11));
+    empty.textOpacity = 0.75;
+    empty.lineLimit = 1;
+    empty.minimumScaleFactor = 0.7;
+    return;
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    // ロック画面は色が白の濃淡へ潰される。優先度の帯は色でしか意味を持たないため置かない。
+    addRow(widget, ink, rows[i], { showSide: false, showBar: false });
+  }
+}
+
+function renderListCircular(widget, ink, model) {
+  widget.addSpacer();
+
+  const value = addText(widget, ink, model.note ? "—" : model.circle.value, Font.boldSystemFont(18));
+  value.centerAlignText();
+  value.lineLimit = 1;
+  value.minimumScaleFactor = 0.6;
+
+  const label = addText(widget, ink, model.circle.label, Font.systemFont(9));
+  label.centerAlignText();
+  label.lineLimit = 1;
+  label.minimumScaleFactor = 0.6;
+
+  widget.addSpacer();
+}
+
+function renderListInline(widget, ink, model) {
+  // インラインの枠は要素を1つしか置けない。件数より、次に何が来るかのほうが読む理由に近い。
+  addText(widget, ink, model.note ? model.label + " —" : model.inline, Font.systemFont(12));
+}
+
+/**
+ * 一覧の1行。左から 優先度の帯 / 時刻 / 交通手段の印 / 項目名 …… 右端に補足。
+ *
+ * 項目名だけは必ず出す。狭い枠で削るなら補足のほう（狭い列で印より名前を先に残すのと同じ扱い）。
+ */
+function addRow(container, ink, row, options) {
+  const line = container.addStack();
+  line.layoutHorizontally();
+  line.centerAlignContent();
+  line.spacing = 4;
+
+  if (options.showBar) addPriorityBar(line, row.priority);
+
+  if (row.when) {
+    // 時刻の幅を揃える。揃えないと、終日と時刻の行で項目名の始まる位置がずれる。
+    const box = line.addStack();
+    box.size = new Size(33, 0);
+    const when = addText(box, ink, row.when, Font.mediumSystemFont(11));
+    when.lineLimit = 1;
+    when.minimumScaleFactor = 0.7;
+    if (row.dim) when.textOpacity = 0.5;
+  }
+
+  if (row.mode) addModeMark(line, ink, row.mode, row.dim);
+
+  const text = addText(line, ink, row.text, Font.systemFont(11));
+  text.lineLimit = 1;
+  text.minimumScaleFactor = 0.7;
+  if (row.dim) text.textOpacity = 0.5;
+
+  line.addSpacer();
+
+  if (options.showSide && row.side) {
+    const side = addText(line, ink, row.side, Font.systemFont(10));
+    side.textOpacity = row.dim ? 0.45 : 0.6;
+    side.lineLimit = 1;
+  }
+}
+
+/**
+ * 優先度の帯。タスク画面・買い物リストと同じ「行左端の色帯」に揃える。
+ *
+ * 低・未設定でも同じ幅の場所を空ける。空けないと、優先度の付いた行だけ項目名が右へずれ、
+ * 縦に読んだときに文字の始まりが揃わない。
+ */
+function addPriorityBar(container, priority) {
+  const bar = container.addStack();
+  bar.size = new Size(3, 12);
+
+  if (priority === "高") {
+    bar.cornerRadius = 1.5;
+    bar.backgroundColor = PRIORITY_HIGH;
+  } else if (priority === "中") {
+    bar.cornerRadius = 1.5;
+    bar.backgroundColor = PRIORITY_MID;
+  }
+}
+
+/**
+ * 交通手段の印（docs/spec.md §29）。車・電車・足跡は輪郭を読んだ時点で移動だと分かる。
+ *
+ * 右矢印は使わない。方向・遷移・「次へ」など何にでも当たる記号で、移動そのものを指していない
+ * （issue #548）。記号の名前はiOSの版で増えるため、使える名前を順に試して最初に見つかった
+ * ものを使い、どれも無ければ印そのものを落とす（印が無くても行き先の名前は読める）。
+ */
+function addModeMark(container, ink, mode, dim) {
+  const names =
+    mode === "CAR"
+      ? ["car.fill"]
+      : mode === "PUBLIC_TRANSIT"
+        ? ["tram.fill", "train.side.front.car"]
+        : mode === "WALK"
+          ? ["figure.walk"]
+          : ["signpost.right.fill", "map.fill"];
+
+  for (let i = 0; i < names.length; i++) {
+    const symbol = SFSymbol.named(names[i]);
+    if (!symbol) continue;
+
+    const image = container.addImage(symbol.image);
+    image.imageSize = new Size(11, 11);
+    image.tintColor = ink;
+    if (dim) image.imageOpacity = 0.5;
+    return;
+  }
+}
+
 // --- 共通 ---
 
 function renderError(widget, ink, message) {
@@ -450,7 +841,7 @@ function renderError(widget, ink, message) {
   widget.addSpacer();
 }
 
-function addHeader(container, ink, label, running) {
+function addHeader(container, ink, label, running, trailing) {
   const row = container.addStack();
   row.layoutHorizontally();
   row.centerAlignContent();
@@ -462,6 +853,12 @@ function addHeader(container, ink, label, running) {
   text.textOpacity = 0.75;
   text.lineLimit = 1;
   row.addSpacer();
+
+  if (trailing) {
+    const value = addText(row, ink, trailing, Font.semiboldSystemFont(11));
+    value.lineLimit = 1;
+    value.minimumScaleFactor = 0.7;
+  }
 }
 
 // 動いていることを色だけでなく形でも示す。ロック画面では色が使えないため。
@@ -525,6 +922,32 @@ function unavailableText(reason) {
   return "設定で記録の保存先カレンダーを選ぶと、今日の合計も出ます";
 }
 
+function scheduleNote(reason) {
+  if (reason === "google_unavailable") return "今日の予定を取得できませんでした";
+  if (reason === "google_not_connected") return "設定でGoogleカレンダーを接続すると、今日の予定が出ます";
+  return null;
+}
+
+function tasksNote(reason) {
+  if (reason === "notion_unavailable") return "タスクを取得できませんでした";
+  if (reason === "notion_not_connected") return "設定でNotionのタスクDBを選ぶと、タスクが出ます";
+  return null;
+}
+
+function shoppingNote(reason) {
+  if (reason === "notion_unavailable") return "買い物リストを取得できませんでした";
+  if (reason === "shopping_not_ready") return "設定でNotionの買い物リストDBを選ぶと、残りが出ます";
+  return null;
+}
+
+function outcomeLabel(kind) {
+  return kind === "ABSENT" ? "不参加" : "中止";
+}
+
+function whenOf(item, timeZone) {
+  return item.allDay || !item.start ? "終日" : formatTime(item.start, timeZone);
+}
+
 function formatDuration(minutes) {
   const total = Math.max(0, Math.round(minutes));
   const hours = Math.floor(total / 60);
@@ -549,5 +972,19 @@ function formatTime(iso, timeZone) {
     formatter.dateFormat = "H:mm";
     return formatter.string(new Date(iso));
   }
+}
+
+/**
+ * YYYY-MM-DD を「9月6日(土)」に直す。
+ *
+ * 曜日は日付の数字だけから求める（時刻を持たないため、端末のタイムゾーンに左右されない）。
+ */
+function formatDateKey(dateKey) {
+  const parts = String(dateKey || "").split("-");
+  if (parts.length !== 3) return "";
+
+  const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  const days = ["日", "月", "火", "水", "木", "金", "土"];
+  return Number(parts[1]) + "月" + Number(parts[2]) + "日(" + days[date.getDay()] + ")";
 }
 `;
