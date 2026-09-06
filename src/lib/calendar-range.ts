@@ -22,6 +22,23 @@ export function toDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * `YYYY-MM-DD` の形をしていて、かつ実在する日付か。
+ *
+ * 形だけを見て通すと、2026-13-45 は日付を組み立てる段でRangeErrorになる。2026-02-30 は
+ * もっと悪く、例外にならず3月2日へ繰り上がって、頼んだ覚えのない日として扱われる。
+ * 組み立て直した文字列と突き合わせればどちらも同じ判定で弾ける
+ * （サーバー間参照用APIの入力検査。docs/internal-api.md）。
+ */
+export function isRealDateKey(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+  const parsed = parseDateKey(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  return toDateKey(parsed) === value;
+}
+
 export function addDays(date: Date, days: number): Date {
   const next = new Date(date);
   next.setUTCDate(next.getUTCDate() + days);

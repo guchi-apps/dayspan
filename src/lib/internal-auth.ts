@@ -13,11 +13,30 @@ import { db } from "@/lib/db";
  * 呼び出し側が「返り値があればそのまま返す」だけで済むようにする。
  */
 export function requireInternalApiKey(request: Request): Response | null {
-  const expected = process.env.INTERNAL_API_KEY;
+  return requireBearerKey(request, "INTERNAL_API_KEY", "internal_api_not_configured");
+}
+
+/**
+ * 書き込み系（`POST /api/internal/events` 等）の認証。読み取り用の `INTERNAL_API_KEY` とは
+ * 別の環境変数（`INTERNAL_EVENTS_API_KEY`）で守る（docs/internal-api.md「認証」）。
+ *
+ * 読み取り用のキーが漏れても予定を書き込まれないようにするための分離で、比較・未設定時の
+ * 扱いは読み取り用とまったく同じ。
+ */
+export function requireInternalEventsApiKey(request: Request): Response | null {
+  return requireBearerKey(request, "INTERNAL_EVENTS_API_KEY", "internal_events_api_not_configured");
+}
+
+function requireBearerKey(
+  request: Request,
+  envVarName: "INTERNAL_API_KEY" | "INTERNAL_EVENTS_API_KEY",
+  notConfiguredError: string,
+): Response | null {
+  const expected = process.env[envVarName];
 
   // 未設定を「素通り」にはしない。設定漏れがそのまま認証なしの公開に化けるのを防ぐ。
   if (!expected) {
-    return json({ error: "internal_api_not_configured" }, 503);
+    return json({ error: notConfiguredError }, 503);
   }
 
   const header = request.headers.get("authorization");

@@ -1,4 +1,4 @@
-import { addDays, getFetchRange, parseDateKey, toDateKey } from "@/lib/calendar-range";
+import { addDays, getFetchRange, isRealDateKey, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
 import { requireInternalApiKey, resolveInternalUserId } from "@/lib/internal-auth";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
@@ -13,8 +13,6 @@ import type { InternalScheduleResponse } from "@/types/internal-api";
 
 // 呼び出し元は毎回その時点の予定を読む。途中の経路に残されると、動かした予定が古いまま返る。
 export const dynamic = "force-dynamic";
-
-const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** 1回で返せる日数の上限。朝のブリーフィングは1日ぶんで足りるため、誤った指定を頭打ちにする。 */
 const MAX_DAYS = 31;
@@ -125,23 +123,6 @@ export async function GET(request: Request) {
     console.error("[dayspan] internal schedule api failed:", detail);
     return json({ error: "internal_api_failed", message: detail.slice(0, 200) }, 503);
   }
-}
-
-/**
- * `YYYY-MM-DD` の形をしていて、かつ実在する日付か。
- *
- * 形だけを見て通すと、2026-13-45 は日付を組み立てる段でRangeErrorになり、形式不正が
- * 「取得に失敗した（503）」として返る。2026-02-30 はもっと悪く、例外にならず3月2日へ
- * 繰り上がって、頼んだ覚えのない日の予定が黙って返る。組み立て直した文字列と突き合わせれば
- * どちらも同じ判定で弾ける。
- */
-function isRealDateKey(value: string): boolean {
-  if (!DATE_KEY.test(value)) return false;
-
-  const parsed = parseDateKey(value);
-  if (Number.isNaN(parsed.getTime())) return false;
-
-  return toDateKey(parsed) === value;
 }
 
 function json(body: unknown, status: number): Response {
