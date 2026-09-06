@@ -180,7 +180,9 @@ export async function listWorkRecordsInRange(
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
 }
 
-const RECENT_TRIP_DESTINATIONS_LIMIT = 3;
+// 出張タブは勤務場所のチップを出さず、候補はこの行き先だけになった（issue #549）。
+// 折り返さず横に送るため、5件並べても行き先の欄・日付を押し出さない。
+const RECENT_TRIP_DESTINATIONS_LIMIT = 5;
 // 重複除去後にlimit件へ届くよう、往復を増やさない範囲で少し多めに取る。
 const RECENT_TRIP_DESTINATIONS_FETCH_SIZE = 20;
 
