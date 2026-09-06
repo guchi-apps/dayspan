@@ -1,3 +1,4 @@
+import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
 import { listShoppingItems, shoppingDatabaseReady } from "@/services/notion/shopping-items";
@@ -24,7 +25,7 @@ export async function buildWidgetShopping(userId: string): Promise<WidgetShoppin
   });
   const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
 
-  const source = await loadSource(userId, now);
+  const source = await loadSource(userId, timeZone, createCalendarDateUtils(timeZone).todayKey(), now);
   if (!source.ok) {
     return {
       timeZone,
@@ -54,8 +55,16 @@ type ShoppingSource =
   | { ok: true; items: ShoppingItem[] }
   | { ok: false; unavailable: WidgetShoppingPayload["unavailable"] };
 
-async function loadSource(userId: string, now: Date): Promise<ShoppingSource> {
-  const cached = readWidgetCache<ShoppingItem[]>(userId, "shopping", now);
+async function loadSource(
+  userId: string,
+  timeZone: string,
+  dateKey: string,
+  now: Date,
+): Promise<ShoppingSource> {
+  // 買い物リストは日付を持たないが、鍵の形は他の面と揃える。日付・タイムゾーンが変われば
+  // 取り直しになるだけで、正しさは変わらない。
+  const cacheKey = { userId, view: "shopping" as const, dateKey, timeZone };
+  const cached = readWidgetCache<ShoppingItem[]>(cacheKey, now);
   if (cached) return { ok: true, items: cached };
 
   const connection = await db.notionConnection.findUnique({ where: { userId } });
@@ -73,6 +82,6 @@ async function loadSource(userId: string, now: Date): Promise<ShoppingSource> {
     return { ok: false, unavailable: "notion_unavailable" };
   }
 
-  writeWidgetCache(userId, "shopping", items, now);
+  writeWidgetCache(cacheKey, items, now);
   return { ok: true, items };
 }

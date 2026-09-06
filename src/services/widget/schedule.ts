@@ -1,10 +1,14 @@
+import type { GoogleAccount } from "@prisma/client";
+
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { localInputToIso } from "@/components/calendar/datetime-fields";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
-import { loadGoogleEvents } from "@/services/calendar/load";
+import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
+import { listEvents, toCalendarItems } from "@/services/google-calendar/events";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
 import { readWidgetCache, writeWidgetCache } from "@/services/widget/cache";
+import type { CalendarEventItem } from "@/types/calendar";
 import type { WidgetScheduleItem, WidgetSchedulePayload } from "@/types/widget";
 
 /**
@@ -39,7 +43,7 @@ export async function buildWidgetSchedule(userId: string): Promise<WidgetSchedul
   };
 }
 
-/** 持ち回す中身。過ぎたかどうか（`past`）は毎回付け直すため、ここでは持たない。 */
+/** 持ち回す中身。過ぎたかどうか（past）は毎回付け直すため、ここでは持たない。 */
 type ScheduleSource = {
   items: Omit<WidgetScheduleItem, "past">[];
   unavailable: WidgetSchedulePayload["unavailable"];
@@ -51,27 +55,29 @@ async function loadSource(
   dateKey: string,
   now: Date,
 ): Promise<ScheduleSource> {
-  const cached = readWidgetCache<ScheduleSource>(userId, "schedule", now);
+  const cacheKey = { userId, view: "schedule" as const, dateKey, timeZone };
+  const cached = readWidgetCache<ScheduleSource>(cacheKey, now);
   if (cached) return cached;
 
-  // Google未接続は失敗ではなく空で返るため（services/calendar/load.ts）、繋いでいないことを
-  // 先に見分ける。区別しないと、繋いでいない人のウィジェットに「今日の予定はありません」と出る。
-  const googleAccounts = await db.googleAccount.count({ where: { userId } });
-  if (googleAccounts === 0) return { items: [], unavailable: "google_not_connected" };
+  // Google未接続は失敗ではなく空になるため、繋いでいないことを先に見分ける。区別しないと、
+  // 繋いでいない人のウィジェットに「今日の予定はありません」と出る。
+  const accounts = await db.googleAccount.findMany({ where: { userId } });
+  if (accounts.length === 0) return { items: [], unavailable: "google_not_connected" };
 
   const timeMin = localInputToIso(`${dateKey}T00:00`, timeZone);
   const timeMax = localInputToIso(`${toDateKey(addDays(parseDateKey(dateKey), 1))}T00:00`, timeZone);
   const range = { timeMin, timeMax };
 
-  // 移動はDaySpanのDBにあり、外部APIの往復は増えない。Googleと並行に読む。
-  const [events, travelPlans] = await Promise.all([
-    loadGoogleEvents(userId, range),
+  // 移動と中止・不参加の記録はDaySpanのDBにあり、外部APIの往復は増えない。Googleと並行に読む。
+  const [events, travelPlans, outcomes] = await Promise.all([
+    loadEvents(accounts, range),
     listTravelsInRange(userId, range),
+    listEventOutcomes(userId),
   ]);
 
-  // カレンダーを1つも取れていないのに errors だけが積まれている状態は「取得できなかった」。
-  // 予定が0件だったのと区別しないと、Googleが落ちている日に「今日の予定はありません」と出る。
-  if (events.items.length === 0 && events.errors.length > 0) {
+  // 1つも取れず、取りにいったカレンダーが全部失敗した状態は「取得できなかった」。予定が0件
+  // だったのと区別しないと、Googleが落ちている日に「今日の予定はありません」と出る。
+  if (events.items.length === 0 && events.attempted > 0 && events.failed === events.attempted) {
     return { items: [], unavailable: "google_unavailable" };
   }
 
@@ -85,7 +91,7 @@ async function loadSource(
 
   const items: Omit<WidgetScheduleItem, "past">[] = [];
 
-  for (const event of events.items) {
+  for (const event of attachEventOutcomes(events.items, outcomes)) {
     if (exportedEventIds.has(event.id)) continue;
     if (!utils.eventCoversDay(event, dateKey)) continue;
 
@@ -121,9 +127,68 @@ async function loadSource(
   }
 
   const source: ScheduleSource = { items, unavailable: null };
-  writeWidgetCache(userId, "schedule", source, now);
+  writeWidgetCache(cacheKey, source, now);
 
   return source;
+}
+
+/**
+ * 表示オンのカレンダーの予定を取る。
+ *
+ * `loadGoogleEvents()` は使わない。あれは名前と色のためにアカウントごとの `listCalendars` も
+ * 投げるが、ウィジェットはカレンダーの名前も色も出さない。5分ごとに走るものなので、使わない
+ * 値のための往復は削る（docs/spec.md §20）。予定そのものの取得はカレンダーごとに1回で、
+ * これは減らせない。
+ *
+ * 1つのカレンダーの失敗で他まで巻き添えにしない。何件試して何件落ちたかを返し、全部落ちた
+ * ときだけ「取得できなかった」として扱う。
+ */
+async function loadEvents(
+  accounts: GoogleAccount[],
+  range: { timeMin: string; timeMax: string },
+): Promise<{ items: CalendarEventItem[]; attempted: number; failed: number }> {
+  const items: CalendarEventItem[] = [];
+  let attempted = 0;
+  let failed = 0;
+
+  for (const account of accounts) {
+    const settings = await db.calendarSetting.findMany({
+      where: { googleAccountId: account.id, visible: true },
+    });
+    if (settings.length === 0) continue;
+
+    attempted += settings.length;
+
+    const results = await Promise.all(
+      settings.map((setting) =>
+        listEvents(account, setting.calendarId, range).then(
+          (events) => ({ ok: true as const, calendarId: setting.calendarId, events }),
+          () => ({ ok: false as const, calendarId: setting.calendarId, events: [] }),
+        ),
+      ),
+    );
+
+    for (const result of results) {
+      if (!result.ok) {
+        failed += 1;
+        continue;
+      }
+
+      items.push(
+        ...toCalendarItems(result.events, {
+          calendarId: result.calendarId,
+          // 名前と色はカレンダー一覧を取らないと分からない。ウィジェットはどちらも出さないため、
+          // そのためだけの往復は投げない。
+          name: "",
+          color: null,
+          // ウィジェットからは編集できない。読み取り専用のAPIしか持たせていない。
+          readOnly: true,
+        }),
+      );
+    }
+  }
+
+  return { items, attempted, failed };
 }
 
 /**

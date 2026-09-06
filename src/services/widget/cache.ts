@@ -9,11 +9,11 @@ import type { WidgetView } from "@/types/widget";
  * 「過剰なアクセスを発生させない」）。
  *
  * 活動記録は先に `services/activity/today-cache.ts` が同じことをしている。あちらは保存先
- * カレンダーと日付まで鍵に含み、記録を止めた時点で捨てる作りのため、そのまま残す。
+ * カレンダーまで鍵に含み、記録を止めた時点で捨てる作りのため、そのまま残す。
  *
- * 持ち回すのは**取得したもの**だけで、そこから作る値（過ぎた予定かどうか・期限の言葉）は
- * 毎回その時点の時刻で組み立て直す。組み立てた後の値を持つと、日付が変わっても
- * 「今日」のままになるなど、時刻に追随すべき部分だけが止まる。
+ * 持ち回すのは**取得したもの**だけで、そこから作る値（今日の合計・済んだ予定かどうか・
+ * 期限の言葉）は毎回その時点の時刻で組み立て直す。組み立てた後の値を持つと、記録中のぶんが
+ * 伸びても合計だけが止まる、といった食い違いが起きる。
  *
  * 本番はPM2の `instances: 1` / `exec_mode: "fork"`（deploy/ecosystem.config.js）で1プロセス。
  * 増やしたときもプロセスごとに持つだけで、正しさは変わらない（往復が減りにくくなるだけ）。
@@ -30,37 +30,55 @@ import type { WidgetView } from "@/types/widget";
  */
 const TTL_MS = 3 * 60_000;
 
-type CacheEntry = { userId: string; value: unknown; fetchedAt: number };
+/**
+ * 何を取ったかを決める条件。
+ *
+ * 日付とタイムゾーンまで鍵に入れる。取ってあるのは「その日」を切り出したあとのもので、
+ * 00:00 をまたいだ直後に前日ぶんを使い回すと、最大3分のあいだ前日の予定と前日基準の
+ * 期限の言葉が「今日」として出る（today-cache.ts が鍵に日付を入れているのと同じ理由）。
+ */
+export type WidgetCacheKey = {
+  userId: string;
+  view: WidgetView;
+  /** 設定タイムゾーンでの今日（YYYY-MM-DD）。 */
+  dateKey: string;
+  timeZone: string;
+};
+
+type CacheEntry = { value: unknown; fetchedAt: number };
 
 const cache = new Map<string, CacheEntry>();
 
 /** まだ使える取得結果。無ければ null。 */
-export function readWidgetCache<T>(userId: string, view: WidgetView, now: Date): T | null {
-  const key = cacheKey(userId, view);
-  const entry = cache.get(key);
+export function readWidgetCache<T>(key: WidgetCacheKey, now: Date): T | null {
+  const id = cacheKey(key);
+  const entry = cache.get(id);
   if (!entry) return null;
 
   if (now.getTime() - entry.fetchedAt >= TTL_MS) {
-    cache.delete(key);
+    cache.delete(id);
     return null;
   }
 
   return entry.value as T;
 }
 
-export function writeWidgetCache<T>(userId: string, view: WidgetView, value: T, now: Date): void {
+export function writeWidgetCache<T>(key: WidgetCacheKey, value: T, now: Date): void {
   expire(now);
-  cache.set(cacheKey(userId, view), { userId, value, fetchedAt: now.getTime() });
+  cache.set(cacheKey(key), { value, fetchedAt: now.getTime() });
 }
 
-function cacheKey(userId: string, view: WidgetView): string {
-  // 改行で繋ぐ。ユーザーIDにも面の名前にも改行は入らない。
-  return `${userId}\n${view}`;
+function cacheKey(key: WidgetCacheKey): string {
+  // 改行で繋ぐ。ユーザーID・面の名前・日付・タイムゾーンのいずれにも改行は入らない。
+  return `${key.userId}\n${key.view}\n${key.timeZone}\n${key.dateKey}`;
 }
 
-/** 使えなくなった行を落とす。放っておくと、使わなくなった鍵がプロセスの間ずっと残る。 */
+/**
+ * 使えなくなった行を落とす。日付が変わるとその日の鍵は二度と引かれず、
+ * 放っておくとプロセスの間ずっと残る。
+ */
 function expire(now: Date): void {
-  for (const [key, entry] of cache) {
-    if (now.getTime() - entry.fetchedAt >= TTL_MS) cache.delete(key);
+  for (const [id, entry] of cache) {
+    if (now.getTime() - entry.fetchedAt >= TTL_MS) cache.delete(id);
   }
 }
