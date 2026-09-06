@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 /** コピーボタンの識別子。どのボタンで「コピーしました」を出すかを決めるために使う。 */
-type CopyTarget = "script" | "appUrl" | "browserUrl";
+type CopyTarget = "script" | "bridgeUrl" | "appUrl" | "browserUrl";
 
 /**
  * iPhoneウィジェットの設定（docs/spec.md §28）。
@@ -40,9 +40,10 @@ export function WidgetSection({
   lastUsedLabel: string | null;
   /**
    * ウィジェットを押したときに開くURL。iOSのウィジェット編集画面へ手で入れる値。
-   * `app` は http のアドレスで開いているときに null（`webapp://` を組み立てられないため）。
+   * `bridge` はHTTPSの受け渡しページ（既定）、`app` は `webapp://` を直接開く従来の値で
+   * http のアドレスで開いているときに null（`webapp://` を組み立てられないため）。
    */
-  openUrls: { app: string | null; browser: string };
+  openUrls: { bridge: string; app: string | null; browser: string };
   refreshMinutes: number;
   /**
    * `Parameter` に入れられる値。台本を組み立てるモジュールから渡してもらう。
@@ -142,10 +143,15 @@ export function WidgetSection({
     }
   };
 
-  // ウィジェット編集画面の `URL` 欄へ入れる値。ホーム画面のDaySpanを開けるなら
-  // そちらを既定にし、httpのアドレスで開いていて作れないときはブラウザで開くURLを案内する。
-  const openUrl = openUrls.app ?? openUrls.browser;
-  const openUrlTarget: CopyTarget = openUrls.app ? "appUrl" : "browserUrl";
+  // ウィジェット編集画面の `URL` 欄へ入れる値。HTTPSの受け渡しページを既定にする
+  // （issue #562）。`webapp://` を直接入れると、端末によっては押してもScriptableが開くだけで
+  // 先へ進まない。httpsのURLなら必ず開けるので、渡す先の判断はページ側に持たせる。
+  const openUrl = openUrls.bridge;
+  const openUrlTarget: CopyTarget = "bridgeUrl";
+
+  // `webapp://` を直接開くURL。ここでconstへ受けるのは、押されたときに走るコールバックの中で
+  // 型の絞り込みが効かなくなるため（プロパティのままだと非nullアサーションが要る）。
+  const directAppUrl = openUrls.app;
 
   return (
     <Card>
@@ -311,36 +317,84 @@ export function WidgetSection({
                 台本を貼り替える必要はありません。
               </p>
 
-              {openUrls.app ? (
-                <p className="type-body-small flex flex-wrap items-center gap-2 text-on-surface-variant">
-                  <span>
-                    ホーム画面に追加していないときや、ブラウザで開きたいときは、URLに
-                    <code className="mx-1">{openUrls.browser}</code>
-                    を入れ、台本の先頭にある<code className="mx-1">OPEN_IN</code>も
-                    <code className="mx-1">&quot;browser&quot;</code>に変えてください。
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      copy("browserUrl", openUrls.browser, "上のURLを選択してコピーしてください。")
-                    }
-                  >
-                    {copiedTarget === "browserUrl" ? (
-                      <Check className="size-4" />
-                    ) : (
-                      <Copy className="size-4" />
-                    )}
-                    {copiedTarget === "browserUrl" ? "コピーしました" : "ブラウザ用をコピー"}
-                  </Button>
-                </p>
-              ) : (
-                <p className="type-body-small text-on-surface-variant">
-                  いまhttpのアドレスでこの画面を開いているため、ホーム画面のDaySpanを開くURL
-                  （<code className="mx-1">webapp://</code>）は作れません。httpsのアドレスで開き直すと、
-                  そちらのURLが出ます。
-                </p>
-              )}
+              {/*
+                この欄はiOS側の設定で、DaySpanからは変えられない。以前の案内（webapp:// を直接）で
+                置いた枠は、貼り替えるまで押しても何も起きないままになる（issue #562）。
+              */}
+              <p className="type-body-small text-on-surface-variant">
+                上の<code className="mx-1">URL</code>
+                は、ホーム画面に追加したDaySpanへ切り替えるための受け渡しページです。端末によっては
+                <code className="mx-1">webapp://</code>
+                で始まるURLを直接開けず、押してもScriptableが開くだけで先へ進みません。httpsのURLなら
+                必ず開けるため、いったんこのページを開き、そこからDaySpanへ切り替えます。切り替わらな
+                かったときは、そのページからブラウザで開けます。
+              </p>
+
+              <p className="type-body-small text-on-surface-variant">
+                すでにウィジェットを置いているときも、この<code className="mx-1">URL</code>
+                欄を新しい値へ貼り替えてください。台本を貼り替えるだけでは変わりません。
+              </p>
+
+              <details className="type-body-small text-on-surface-variant">
+                <summary className="cursor-pointer">別の開き方にする</summary>
+
+                <div className="flex flex-col gap-2 pt-2">
+                  {directAppUrl ? (
+                    <p className="flex flex-wrap items-center gap-2">
+                      <span>
+                        受け渡しページを挟まず、ホーム画面のDaySpanを直接開くときは、URLに
+                        <code className="mx-1">{directAppUrl}</code>
+                        を入れ、台本の先頭にある<code className="mx-1">OPEN_IN</code>も
+                        <code className="mx-1">&quot;app-direct&quot;</code>
+                        に変えてください。直接開ける端末では、こちらのほうが速く開きます。
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          copy("appUrl", directAppUrl, "上のURLを選択してコピーしてください。")
+                        }
+                      >
+                        {copiedTarget === "appUrl" ? (
+                          <Check className="size-4" />
+                        ) : (
+                          <Copy className="size-4" />
+                        )}
+                        {copiedTarget === "appUrl" ? "コピーしました" : "直接開く用をコピー"}
+                      </Button>
+                    </p>
+                  ) : (
+                    <p>
+                      いまhttpのアドレスでこの画面を開いているため、ホーム画面のDaySpanを直接開くURL
+                      （<code className="mx-1">webapp://</code>
+                      ）は作れません。httpsのアドレスで開き直すと、そちらのURLも出ます。
+                    </p>
+                  )}
+
+                  <p className="flex flex-wrap items-center gap-2">
+                    <span>
+                      ホーム画面に追加していないときや、ブラウザで開きたいときは、URLに
+                      <code className="mx-1">{openUrls.browser}</code>
+                      を入れ、<code className="mx-1">OPEN_IN</code>も
+                      <code className="mx-1">&quot;browser&quot;</code>に変えてください。
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        copy("browserUrl", openUrls.browser, "上のURLを選択してコピーしてください。")
+                      }
+                    >
+                      {copiedTarget === "browserUrl" ? (
+                        <Check className="size-4" />
+                      ) : (
+                        <Copy className="size-4" />
+                      )}
+                      {copiedTarget === "browserUrl" ? "コピーしました" : "ブラウザ用をコピー"}
+                    </Button>
+                  </p>
+                </div>
+              </details>
             </div>
 
             {/*
