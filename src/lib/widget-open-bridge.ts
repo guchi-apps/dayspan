@@ -12,7 +12,9 @@ import { DEFAULT_HOME_PATH } from "@/lib/home-path";
  * そこでウィジェットへは必ず開ける `https://` のURLを入れ、そのページからホーム画面の
  * DaySpanへ渡す。渡せなかったときも、同じページからブラウザのDaySpanへ入れる。
  *
- * middleware（認証を通さないパスの判定）・ルートハンドラ・設定画面の案内が同じ値を見る。
+ * middleware（認証を通さないパスの判定）とルートハンドラが同じ値を見る。
+ * `src/lib/scriptable-widget.ts` にも同じ値の写しがある（あちらは他のモジュールをimportしない
+ * 前提で作られており、`scripts/preview-widget.mjs` がその前提に乗っている）。変えるときは両方直す。
  */
 export const WIDGET_OPEN_BRIDGE_PATH = "/open";
 

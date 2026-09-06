@@ -19,8 +19,6 @@
  * 囲みたくなる場所も含めて、引用符か素の名前で書く。
  */
 
-import { WIDGET_OPEN_BRIDGE_PATH } from "@/lib/widget-open-bridge";
-
 const ENDPOINT_MARK = "__DAYSPAN_ENDPOINT_BASE__";
 const TOKEN_MARK = "__DAYSPAN_TOKEN__";
 const APP_URL_MARK = "__DAYSPAN_APP_URL__";
@@ -69,7 +67,7 @@ export function buildScriptableWidgetScript(options: {
     .replaceAll(TOKEN_MARK, escapeForJsString(options.token))
     .replaceAll(APP_URL_MARK, escapeForJsString(options.appUrl))
     .replaceAll(WEBAPP_URL_MARK, escapeForJsString(toWebAppUrl(options.appUrl)))
-    .replaceAll(BRIDGE_URL_MARK, escapeForJsString(`${options.appUrl}${WIDGET_OPEN_BRIDGE_PATH}`))
+    .replaceAll(BRIDGE_URL_MARK, escapeForJsString(toBridgeUrl(options.appUrl)))
     .replaceAll(REFRESH_MARK, String(WIDGET_REFRESH_MINUTES));
 }
 
@@ -90,6 +88,17 @@ export function toWebAppUrl(origin: string): string {
 }
 
 /**
+ * ホーム画面のDaySpanへ渡すための受け渡しページ（`/open`）のURL。
+ *
+ * `http` のアドレスでは空文字を返す。渡す相手（ホーム画面のWebアプリ）がそもそも存在せず、
+ * 受け渡しページを挟んでもブラウザで開くのと同じところへ着くため。`toWebAppUrl()` が
+ * 空文字を返す条件とそろえてある。
+ */
+export function toBridgeUrl(origin: string): string {
+  return toWebAppUrl(origin) ? `${origin}${WIDGET_OPEN_BRIDGE_PATH}` : "";
+}
+
+/**
  * ウィジェットを押したときに開くURL。設定画面の案内とコピー用に使う。
  *
  * 台本の中でも同じ組み立てをしている（`OPEN_URL`）。iOSのウィジェット編集画面
@@ -103,25 +112,35 @@ export function toWebAppUrl(origin: string): string {
  * - `bridge` … 既定。HTTPSの受け渡しページ（`/open`）を経由してホーム画面のDaySpanへ渡す。
  *   ウィジェットから `webapp://` を直接開けない端末があり、そこでは押しても何も起きない
  *   （issue #562）。`https://` のURLなら必ず開けるため、渡す先の判断をページ側へ移す。
- *   http のアドレスでも作れるので、この項目だけは常に値を持つ。
  * - `app` … `webapp://` を直接開く従来の値。効いている端末ではこちらのほうが速い。
- *   null になるのは `http` のアドレス（LAN経由の開発サーバー等）で開いたとき。
- *   httpのサイトはWebアプリとしてホーム画面へ追加できず、`webapp://` の宛先になりようがない。
  * - `browser` … ブラウザで開く。
+ *
+ * `bridge` と `app` が null になるのは `http` のアドレス（LAN経由の開発サーバー等）で開いたとき。
+ * httpのサイトはWebアプリとしてホーム画面へ追加できず、渡す相手がそもそも存在しない。
  */
 export function buildWidgetOpenUrls(origin: string): {
-  bridge: string;
+  bridge: string | null;
   app: string | null;
   browser: string;
 } {
   const webApp = toWebAppUrl(origin);
 
   return {
-    bridge: `${origin}${WIDGET_OPEN_BRIDGE_PATH}`,
+    bridge: toBridgeUrl(origin) || null,
     app: webApp ? `${webApp}${WIDGET_OPEN_PATH}` : null,
     browser: `${origin}${WIDGET_OPEN_PATH}`,
   };
 }
+
+/**
+ * 受け渡しページのパス。`src/lib/widget-open-bridge.ts` の `WIDGET_OPEN_BRIDGE_PATH` と同じ値。
+ *
+ * importせず写しを置くのは、このファイルが他のモジュールを一切importしない前提で作られているため。
+ * `scripts/preview-widget.mjs` はtscでこの1ファイルだけをJSへ落として読み込む（importを足すと、
+ * ビルドは通るのにその道具だけが動かなくなる）。`/activity` を `DEFAULT_HOME_PATH` からではなく
+ * `WIDGET_OPEN_PATH` として持っているのと同じ扱い。値を変えるときは両方直す。
+ */
+const WIDGET_OPEN_BRIDGE_PATH = "/open";
 
 /**
  * 開く先のパス。記録の画面。
@@ -175,6 +194,7 @@ const WEBAPP_URL = "__DAYSPAN_WEBAPP_URL__";
 // ホーム画面のDaySpanへ渡すためのHTTPSのページ。
 // 端末によっては webapp:// を直接開けず、押してもScriptableが開くだけで先へ進みません。
 // httpsのURLなら必ず開けるので、いったんこのページへ飛ばし、そこから切り替えます。
+// httpのアドレスで作った台本では空になります（渡す相手がいないため）。
 const BRIDGE_URL = "__DAYSPAN_BRIDGE_URL__";
 
 // 押したときに開く先。
