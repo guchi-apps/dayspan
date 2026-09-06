@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SUPABASE_USER_ID_HEADER } from "@/lib/auth-header";
 import { resolveInternalPath } from "@/lib/home-path";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { WIDGET_OPEN_BRIDGE_PATH } from "@/lib/widget-open-bridge";
 
 const publicPaths = ["/login", "/auth/signin", "/auth/callback"];
 
@@ -25,11 +26,26 @@ function isTokenAuthApiPath(pathname: string): boolean {
   return pathname.startsWith("/api/widget/") || pathname.startsWith("/api/internal/");
 }
 
+/**
+ * 認証をまったく通さないパス。
+ *
+ * いまのところ iPhoneウィジェットの受け渡しページ（docs/spec.md §28）だけ。あの面が返すのは
+ * 「ホーム画面のDaySpanへ渡す」ためのHTMLだけで、利用者に紐づく値を持たない。
+ *
+ * `publicPaths` へ足すのではなくここで分けるのは、あちらの判定が `supabase.auth.getUser()` の
+ * あとに来るため。ウィジェットを押すたびにSupabase Authへの往復が1回増え、その待ちがそのまま
+ * 「押しても開かない」に見える。Supabaseが応答しない間も同じだけ待たされる。
+ */
+function isNoAuthPath(pathname: string): boolean {
+  return pathname === WIDGET_OPEN_BRIDGE_PATH;
+}
+
 export async function updateSession(request: NextRequest) {
-  if (isTokenAuthApiPath(request.nextUrl.pathname)) {
-    const tokenAuthHeaders = new Headers(request.headers);
-    tokenAuthHeaders.delete(SUPABASE_USER_ID_HEADER);
-    return NextResponse.next({ request: { headers: tokenAuthHeaders } });
+  if (isTokenAuthApiPath(request.nextUrl.pathname) || isNoAuthPath(request.nextUrl.pathname)) {
+    // 詐称されたユーザーIDヘッダーを後段へ届かせない。認証を通さない経路ほど、ここで消しておく。
+    const unauthenticatedHeaders = new Headers(request.headers);
+    unauthenticatedHeaders.delete(SUPABASE_USER_ID_HEADER);
+    return NextResponse.next({ request: { headers: unauthenticatedHeaders } });
   }
 
   // セッション更新でSupabaseが発行したCookieは、最終的に返すレスポンスへ必ず載せる必要がある。
