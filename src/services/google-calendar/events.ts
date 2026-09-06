@@ -244,14 +244,14 @@ export async function createEvent(
   account: GoogleAccount,
   calendarId: string,
   input: EventWriteInput,
-): Promise<{ id: string }> {
+): Promise<{ id: string; url: string | null }> {
   const created = await googleCalendarFetch<GoogleEvent>(
     account,
     `/calendars/${encodeURIComponent(calendarId)}/events`,
     { method: "POST", body: JSON.stringify(toRequestBody(input)) },
   );
 
-  return { id: created.id };
+  return { id: created.id, url: created.htmlLink ?? null };
 }
 
 /**

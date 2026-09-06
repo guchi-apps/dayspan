@@ -143,3 +143,25 @@ export type InternalScheduleResponse = {
    */
   errors: { source: "google" | "notion"; reason: string }[];
 };
+
+/**
+ * `POST /api/internal/events` の入力（docs/internal-api.md）。作成だけを扱い、編集・削除は
+ * 持たない（取り消せない操作をサーバー間経路へ出さないため）。
+ */
+export type InternalCreateEventRequest = {
+  title: string;
+  /** YYYY-MM-DD */
+  date: string;
+  /** HH:MM。両方省略で終日、片方だけの指定は不正 */
+  startTime?: string | null;
+  endTime?: string | null;
+  location?: string | null;
+  /** 省略時は予定新規作成の既定の保存先（CalendarSetting.isCreateDefault） */
+  calendarId?: string | null;
+};
+
+/** 秘書（AIDE）が「入れました」の根拠として案内できるよう、作成した予定のURLを返す。 */
+export type InternalCreateEventResponse = {
+  id: string;
+  url: string | null;
+};

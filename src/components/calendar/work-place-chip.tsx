@@ -42,7 +42,18 @@ import {
  * 8pxにするのは幅で決めており、出張かどうかでは分けない。同じ月表示の中で出張の日だけ文字の
  * 大きさが違うと、幅で決まっているはずの見え方が種別で変わって見える。狭い列では通常の勤務・
  * 年休・会社休業日も8pxになるが、そこは10pxでも1文字しか入らない幅で、名前が読めるほうを採る。
+ *
+ * **出張の色は勤務場所ではなく travel の1色に固定する**（issue #549）。チップの色は勤務場所の
+ * 選択肢が持つNotionのタグ色から引いているが、出張が持つのは自由記述の行き先で、色を持たない。
+ * 入力ダイアログから出張へ勤務場所を書き込まなくしたため、`place` から引くと同じ出張でも
+ * 「今日の勤務場所の1押しで作った出張（場所の色）」と「ダイアログで作った出張（既定の灰）」で
+ * 見た目が分かれる。作り方で色が変わらないよう、出張は1色に決める。travel を充てるのは、
+ * 勤務の画面が出張の行き先を `text-travel` で出しており、アプリの中で出張に使っている色だから。
+ * 印（ブリーフケース）が落ちる狭い列（31px未満）でも、色だけで出張だと分かる。
  */
+
+/** 出張のチップの色。行き先ごとには変えられないため1色に決める（issue #549）。 */
+const TRIP_CHIP_CLASS = "bg-travel/18 text-travel";
 export function WorkPlaceChip({
   record,
   options,
@@ -64,7 +75,9 @@ export function WorkPlaceChip({
         // 狭い列では文字と余白を詰める（8px・左右2px）。高さは据え置き。
         "pointer-events-none inline-flex min-w-0 items-center gap-[3px] overflow-hidden rounded-full px-1 text-[10px] leading-[15px] font-medium whitespace-nowrap",
         "@max-[31px]:px-0.5 @max-[31px]:text-[8px]",
-        tagChipClass(tagColorOf(options, record.place ?? "")),
+        record.businessTrip
+          ? TRIP_CHIP_CLASS
+          : tagChipClass(tagColorOf(options, record.place ?? "")),
         className,
       )}
     >

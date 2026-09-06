@@ -14,6 +14,7 @@ import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/
 import { cn } from "@/lib/utils";
 import {
   EVENT_OUTCOME_KIND_LABELS,
+  TRAVEL_MODE_LABELS,
   type CalendarEventItem,
   type CalendarItem,
   type ReminderItem,
@@ -920,13 +921,17 @@ function TaskChip({
 }
 
 /**
- * 移動は塗らず、矢印の印と行き先だけを出す（docs/spec.md §29）。
+ * 移動は塗らず、交通手段の印と行き先だけを出す（docs/spec.md §29）。
  *
  * 月表示で1日に置ける件数は限られている。移動は予定に1件ずつ付くため、予定と同じように
  * 塗った帯にすると、その日に何があるかを読む前に枠が埋まる。出発地まで出さないのも同じ理由で、
  * 「どこへ向かうか」が分かれば予定と結び付けられる。
  *
- * 輪郭の色は書き出し先カレンダーの色を使う（issue #492）。矢印は固定の専用色のまま残す。
+ * 輪郭の色は書き出し先カレンダーの色を使う（issue #492）。印は固定の専用色のまま残す。
+ *
+ * 印は交通手段ごとの線画にする（issue #548）。チップに出るのは行き先と出発時刻だけで、車で行くのか
+ * 電車で行くのかは押して開くまで読めなかった。色だけに意味を持たせないのと同じ理由で、印だけが
+ * 示すことになる交通手段は `title` にも添える。
  */
 function TravelChip({
   travel,
@@ -947,9 +952,9 @@ function TravelChip({
       onClick={onOpen}
       className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
       style={{ borderColor: `color-mix(in srgb, ${accent} 50%, transparent)` }}
-      title={`${travel.title}（${utils.formatTime(travel.start)}発）`}
+      title={`${travel.title}（${TRAVEL_MODE_LABELS[travel.mode]} ${utils.formatTime(travel.start)}発）`}
     >
-      <TravelMark className="size-2 text-travel" />
+      <TravelMark mode={travel.mode} className="size-2.5 text-travel" />
       {/* 出発時刻は実際に出発する日にだけ添える。日をまたいだ続きの側に出すと、その日に出発したように読める。 */}
       {!continuesBefore && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(travel.start)}</span>

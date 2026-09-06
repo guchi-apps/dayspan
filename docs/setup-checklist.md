@@ -16,6 +16,7 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `google-calendar-client-id` | 本番用のDaySpan専用OAuthクライアントID |
 | `google-calendar-client-secret` | 同シークレット |
 | `internal-api-key` | サーバー間参照用APIの共有シークレット（`openssl rand -hex 32` で生成。呼び出し元のAIDE側にも同じ値を設定する。docs/internal-api.md） |
+| `internal-events-api-key` | `POST /api/internal/events`（予定の作成）専用の共有シークレット。`internal-api-key` とは別の値にする（`openssl rand -hex 32` で生成。呼び出し元のAIDE側にも同じ値を設定する。docs/internal-api.md） |
 | `ci-webhook-url` | Signaly の DaySpan 用チャンネルWebhook URL |
 | `vapid-public-key` | 通知（Web Push）の公開鍵。`node scripts/gen-vapid-keys.mjs mailto:自分のアドレス` の出力（docs/notifications.md） |
 | `vapid-private-key` | 同・秘密鍵。上のコマンドが公開鍵と対で出す |

@@ -21,6 +21,8 @@ Authorization: Bearer <INTERNAL_API_KEY>
 
 キーの比較は `node:crypto` の `timingSafeEqual` で定数時間で行う（`src/lib/internal-auth.ts`）。トークンはクエリではなく `Authorization` ヘッダーで受ける。クエリに載せるとApacheのアクセスログにそのまま残る（iPhoneウィジェットのトークンと同じ理由。docs/spec.md §28）。
 
+**書き込み系（`POST /api/internal/events`）は読み取りとは別の鍵（`INTERNAL_EVENTS_API_KEY`）で守る。** 読み取り用の `INTERNAL_API_KEY` が漏れても予定を書き込まれないようにするため（起点: guchi-apps/aide-bot#184「読み取りとは別の資格情報」）。未設定・不一致のときの応答（503 / 401）は読み取り用とまったく同じ形。
+
 `/api/internal/` は `src/proxy.ts`（`src/lib/supabase/middleware.ts`）がSupabaseへ問い合わせずに素通しする。認証がキーで完結しており、呼ばれるたびにSupabase Authへ往復させる理由が無いため。matcherからは外さない（外すと詐称されたユーザーIDヘッダーが後段へ届く）。
 
 **対象ユーザーは `ALLOWED_GOOGLE_EMAILS` で引く。** 利用者が1人だけの前提のため、APIキーとユーザーの対応表はDBに持っていない。**この環境変数が2件以上を含むときは `500`（`target_user_not_resolvable`）を返す。** 黙って先頭を選ぶと、利用者を増やした瞬間に別人の予定を返しうるため。複数ユーザーを扱う必要が出た時点で対応表を導入する。
@@ -172,6 +174,73 @@ Google未接続・NotionのDB未設定は「失敗」ではないため `errors`
 
 DaySpan自身のDBを引けなかったときだけは、取れたぶんという概念が無いため `503`（`internal_api_failed`）を返す。
 
+## `POST /api/internal/events`
+
+予定を1件作成する（起点: guchi-apps/aide-bot#184）。秘書（AIDE）が「明日10時に歯医者を入れて」のような発話から予定を登録できるようにするための入口で、**作成だけを持つ。編集・削除は無い。** 取り消せない操作をサーバー間経路へ出さないため、動かす・消すには画面から行う。
+
+認証は `INTERNAL_EVENTS_API_KEY`（読み取り用の `INTERNAL_API_KEY` とは別の鍵。上記「認証」参照）。
+
+既存の `POST /api/events`（ブラウザ用）と同じ作成処理（`src/services/google-calendar/events.ts` の `createEvent`）を通すため、書き込み可否の判定（`resolveGoogleAccountForCalendar`）も同じ経路を通る。「使用」がオフのカレンダー・書き込み不可のカレンダーへは書けない。
+
+### リクエスト
+
+```jsonc
+{
+  "title": "歯医者",
+  "date": "2026-09-07",        // YYYY-MM-DD
+  "startTime": "10:00",         // HH:MM。省略（endTimeも省略）で終日
+  "endTime": "11:00",
+  "location": "〇〇歯科",        // 任意
+  "calendarId": "primary"       // 任意。省略で予定新規作成の既定の保存先（CalendarSetting.isCreateDefault）
+}
+```
+
+| 項目 | 必須 | 内容 |
+| --- | --- | --- |
+| `title` | ○ | 空文字（trim後）は `400` |
+| `date` | ○ | `YYYY-MM-DD`。形式不正・実在しない日付（`2026-02-30` 等）は `400` |
+| `startTime` / `endTime` | - | `HH:MM`。**両方指定するか、両方省略するかのどちらかのみ。** 片方だけの指定、`endTime <= startTime`、形式不正はいずれも `400`（時刻ありか終日かが決まらない・所要時間が0以下になるため） |
+| `location` | - | 省略可 |
+| `calendarId` | - | 省略時は書き込み可能な既定のカレンダーを解決する。書き込めるカレンダーが1つも無ければ `404`（`no_writable_calendar`） |
+
+日付の解釈は `GET /api/internal/schedule` と同じく `UiSetting.timeZone`（既定 `Asia/Tokyo`）で行う。呼び出し側でJSTの時刻へ変換する必要はない。
+
+### レスポンス
+
+```jsonc
+{
+  "id": "abc123",
+  "url": "https://www.google.com/calendar/event?eid=..."   // 秘書が「入れました」の根拠として案内する用
+}
+```
+
+### エラー
+
+| 状況 | 応答 |
+| --- | --- |
+| 認証エラー | `401` / `503`（上記「認証」参照） |
+| 入力不正 | `400` |
+| 対象ユーザーを1人に決められない | `500`（`target_user_not_resolvable`。`ALLOWED_GOOGLE_EMAILS` が未設定・複数） |
+| 書き込めるカレンダーが無い（`calendarId` 省略時） | `404`（`no_writable_calendar`） |
+| 指定した `calendarId` が存在しない / 使用オフ | `404`（`calendar_not_found`） / `403`（`calendar_not_writable`） |
+| 指定した `calendarId` の「使用」がオフ | `403`（`calendar_not_writable`） |
+| Googleへの書き込みが失敗 | `502`（`google_request_failed`。Googleが返したメッセージを含む） |
+
+### 動作確認
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"歯医者","date":"2026-09-07","startTime":"10:00","endTime":"11:00"}' \
+  "http://127.0.0.1:3113/api/internal/events" | jq .
+
+# 終日予定
+curl -s -X POST -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"出張","date":"2026-09-10"}' \
+  "http://127.0.0.1:3113/api/internal/events" | jq .
+```
+
 ## `POST /api/internal/notifications/dispatch`
 
 通知の送信を1回ぶん走らせる（docs/spec.md §32・docs/notifications.md）。時刻が来た下書きを送り、
@@ -213,8 +282,8 @@ curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:3113/api/internal/sch
 
 | 場所 | 設定 |
 | --- | --- |
-| 1Password | `apps/dayspan` の `internal-api-key` フィールド（**正**） |
-| GitHub Secret | `INTERNAL_API_KEY`。`scripts/sync-github-secrets.sh --only INTERNAL_API_KEY` で1Passwordから同期する |
+| 1Password | `apps/dayspan` の `internal-api-key`（読み取り用） / `internal-events-api-key`（書き込み用）フィールド（**正**） |
+| GitHub Secret | `INTERNAL_API_KEY` / `INTERNAL_EVENTS_API_KEY`。`scripts/sync-github-secrets.sh --only INTERNAL_API_KEY,INTERNAL_EVENTS_API_KEY` で1Passwordから同期する |
 | 対応表 | `.github/secrets-manifest.tsv` |
 | 本番 `.env` | `.github/workflows/deploy.yml` が `update_env` で書き込む |
 
