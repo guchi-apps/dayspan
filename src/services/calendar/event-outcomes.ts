@@ -77,7 +77,7 @@ export async function setEventOutcome(
 ): Promise<EventOutcome> {
   const note = normalizeNote(input.note);
 
-  return db.eventOutcome.upsert({
+  const outcome = await db.eventOutcome.upsert({
     where: { userId_eventId: { userId, eventId: input.eventId } },
     create: {
       userId,
@@ -89,12 +89,51 @@ export async function setEventOutcome(
     // カレンダーは予定を移すと変わる。記録は予定IDで引くため、写しのほうを合わせる。
     update: { calendarId: input.calendarId, kind: input.kind, note },
   });
+
+  await replanNotifications(userId);
+
+  return outcome;
 }
 
 /** 記録を外す。消えるのは記録の一段だけで、予定は残る。 */
 export async function clearEventOutcome(userId: string, eventId: string): Promise<number> {
   const result = await db.eventOutcome.deleteMany({ where: { userId, eventId } });
+  if (result.count > 0) await replanNotifications(userId);
   return result.count;
+}
+
+/**
+ * 予定を別のカレンダーへ移したときに、記録が持つカレンダーの写しも合わせる。
+ *
+ * 引き当てには使わない（`eventId` で引く。Googleの move は予定のIDを保つため、記録は移動に
+ * そのまま追随する）が、持っている値が古いままだと「どのカレンダーの予定だったか」を
+ * 記録が偽ることになる。持つなら移動時に更新する。
+ */
+export async function moveEventOutcome(
+  userId: string,
+  eventId: string,
+  calendarId: string,
+): Promise<void> {
+  await db.eventOutcome.updateMany({ where: { userId, eventId }, data: { calendarId } });
+}
+
+/**
+ * 通知の下書きを作り直させる（docs/spec.md §32・§37）。
+ *
+ * 下書きは30分ごとにしか作り直されない。記録を付けても、その時点で作られている下書きは
+ * そのまま残り、起こらないと分かっている予定の通知が最悪29分後まで送られる。この機能で
+ * 想定されるのは「当日、直前に行けなくなった」で、まさにその窓に入る。
+ *
+ * 作った印（plannedAt）を消しておけば、次の毎分のtickで作り直される
+ * （通知設定を変えたときと同じ扱い。services/notifications/settings.ts）。
+ * 記録そのものは保存できているため、ここで落ちても応答は失敗にしない。
+ */
+async function replanNotifications(userId: string): Promise<void> {
+  try {
+    await db.notificationSetting.updateMany({ where: { userId }, data: { plannedAt: null } });
+  } catch (error) {
+    console.error("[dayspan] event outcome: replan failed:", error);
+  }
 }
 
 /**
