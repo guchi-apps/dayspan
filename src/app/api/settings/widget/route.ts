@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     {
       token,
       script: buildScriptableWidgetScript({
-        endpoint: `${origin}/api/widget/activity`,
+        endpointBase: `${origin}/api/widget`,
         token,
         appUrl: origin,
       }),

@@ -16,6 +16,9 @@ type CopyTarget = "script" | "appUrl" | "browserUrl";
  * Scriptableはブラウザのログインセッションを持てないため、専用トークンを発行して
  * 台本の中へ埋め込んで配る。利用者がURLやトークンを手で貼り込む工程を作らない。
  * 打ち間違いに気付ける場所が実機のウィジェット（何も出ない）しかないため。
+ *
+ * 台本は面（活動記録・今日の予定・タスク・買い物リスト）ごとに分けず1本だけ配り、
+ * どの面を出すかは `Parameter` で選ばせる。分けると貼り付けが面の数だけ増える。
  */
 export function WidgetSection({
   initialToken,
@@ -23,6 +26,7 @@ export function WidgetSection({
   lastUsedLabel,
   openUrls,
   refreshMinutes,
+  viewChoices,
 }: {
   /** 発行済みのトークン。未発行なら null。 */
   initialToken: string | null;
@@ -40,6 +44,11 @@ export function WidgetSection({
    */
   openUrls: { app: string | null; browser: string };
   refreshMinutes: number;
+  /**
+   * `Parameter` に入れられる値。台本を組み立てるモジュールから渡してもらう。
+   * ここでimportすると台本の本文がクライアントのJavaScriptに付いてくる。
+   */
+  viewChoices: { value: string; label: string; description: string }[];
 }) {
   const router = useRouter();
 
@@ -151,8 +160,8 @@ export function WidgetSection({
           <div className="flex flex-col gap-3">
             <p className="type-body-medium text-on-surface-variant">
               トークンを発行すると、そのトークンを埋め込んだ台本（Scriptable用のスクリプト）を
-              コピーできるようになります。台本でできるのは活動記録の読み取りだけで、
-              予定やタスクの読み書きはできません。
+              コピーできるようになります。台本でできるのは読み取りだけ（活動記録・今日の予定・
+              タスク・買い物リスト）で、予定やタスクを書き換えることはできません。
             </p>
             <div>
               <Button disabled={busy} onClick={() => issue(false)}>
@@ -270,10 +279,37 @@ export function WidgetSection({
                     {copiedTarget === openUrlTarget ? "コピーしました" : "コピー"}
                   </Button>
                 </SettingRow>
+                {/*
+                  何を出すかはこの欄で決まる。台本を面ごとに分けず1本だけ配るため、
+                  ここが唯一の切り替え口になる。値を間違えるとウィジェットには
+                  「Parameterには … のいずれかを入れてください」が出る。
+                */}
                 <SettingRow label="Parameter">
-                  <span className="text-on-surface-variant">空のまま</span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="text-on-surface-variant">
+                      出したいものの名前（空のままなら活動記録）
+                    </span>
+                    <dl className="flex flex-col gap-0.5">
+                      {viewChoices.map((choice) => (
+                        <div key={choice.value} className="flex flex-wrap items-baseline gap-x-2">
+                          <dt className="type-body-small font-mono">{choice.value}</dt>
+                          <dd className="type-body-small text-on-surface-variant">
+                            {choice.label}
+                            <span className="mx-1">—</span>
+                            {choice.description}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
                 </SettingRow>
               </dl>
+
+              <p className="type-body-small text-on-surface-variant">
+                同じ台本をホーム画面にいくつも置き、枠ごとに<code className="mx-1">Parameter</code>
+                を変えれば、活動記録・今日の予定・タスク・買い物リストを同時に並べられます。
+                台本を貼り替える必要はありません。
+              </p>
 
               {openUrls.app ? (
                 <p className="type-body-small flex flex-wrap items-center gap-2 text-on-surface-variant">
@@ -331,9 +367,12 @@ export function WidgetSection({
             </ol>
 
             <ul className="type-body-small flex list-disc flex-col gap-1 pl-5 text-on-surface-variant">
-              <li>丸い枠: 経過時間と項目名</li>
-              <li>横長の枠: 項目名・経過時間・開始時刻（いちばん多く読める）</li>
-              <li>時計の上の1行: 経過時間のみ（この枠には1つしか置けません）</li>
+              <li>丸い枠: 件数（活動記録では経過時間）と、何の数かを示す一言</li>
+              <li>横長の枠: 見出しと2行（いちばん多く読める）</li>
+              <li>
+                時計の上の1行: 次の予定や件数を1つだけ（活動記録では経過時間。この枠には1つしか
+                置けません）
+              </li>
             </ul>
 
             <details className="rounded-lg bg-surface-container-high">
@@ -361,13 +400,19 @@ export function WidgetSection({
                 <code className="mx-1">Run Script</code>のままです。上のとおりに直してください。
               </p>
               <p>
-                記録中の経過時間はiOSが数えるため、常に進みます。項目名と今日の合計は約
+                記録中の経過時間はiOSが数えるため、常に進みます。それ以外の中身は約
                 {refreshMinutes}分ごとの更新で取り直します（iOSの都合で前後します）。別の端末で
                 記録を止めたときは、次の更新までウィジェットが記録中のまま進み続けます。
               </p>
               <p>
+                同じものを見る枠が複数あっても外部への問い合わせが増えないよう、取得した内容は
+                サーバー側で3分だけ持ち回します。DaySpanの画面で買い物にチェックを付けたり
+                タスクを完了にした直後は、ウィジェットに反映されるまで最大3分かかります。
+              </p>
+              <p>
                 今日の合計と内訳は、活動記録の保存先カレンダーを選んでいるときだけ出せます
-                （設定 ▸ 活動記録）。
+                （設定 ▸ 活動記録）。今日の予定はGoogleカレンダーの接続、タスクと買い物リストは
+                NotionのDB設定が要ります。足りないときは、ウィジェットに何を設定すればよいかが出ます。
               </p>
             </div>
           </>
