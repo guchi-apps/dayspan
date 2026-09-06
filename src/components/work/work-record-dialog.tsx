@@ -112,10 +112,11 @@ export function WorkRecordDialog({
     draft.mode === "edit" ? kindOf(draft.record) : draft.kind,
   );
 
-  // 勤務タブでは、出張扱いの場所（門真・出張）を出さない。押すと choosePlace() で出張タブへ
-  // 切り替わってしまい、勤務タブに残す意味が無いため（issue #525）。年休・会社休業日のタブでは
-  // 絞り込まない（半休の残り半日の勤務場所は勤務タブと同じ選択肢を出す必要がある。
-  // docs/spec.md §34）。出張タブは勤務場所そのものを出さない（issue #549）。
+  // 勤務タブでは、出張扱いの場所（門真・出張）を出さない。行けば必ず出張になる場所を
+  // 通常の勤務として登録できると、出張のはずの日が勤務として集計される（issue #525）。
+  // 年休・会社休業日のタブでは絞り込まない（半休の残り半日の勤務場所は勤務タブと同じ
+  // 選択肢を出す必要がある。docs/spec.md §34）。出張タブは勤務場所そのものを出さない
+  // （issue #549）。
   const workPlaceOptions =
     kind === "work"
       ? placeOptions.filter((option) => !isTripPlace(tripPlaces, option.name))
@@ -146,20 +147,6 @@ export function WorkRecordDialog({
   // 計画レビューG1の指摘）。
   const [holidayName, setHolidayName] = useState(
     existing?.companyHoliday && !isDefaultHolidayTitle(existing.title) ? existing.title : "",
-  );
-
-  /**
-   * 出張の種類選択を手で操作したか。
-   *
-   * 触るまでは勤務場所の既定へ追従し、一度触ったあとは場所を選び直しても動かさない。
-   * 選んだつもりの状態が黙って書き換わらないようにするため（繰り返しの曜日と同じ考え方）。
-   * すでに出張として保存されている記録は、場所とは無関係にそう決められたものなので、
-   * 開いた時点で「触った」扱いにして追従させない。
-   */
-  const [tripTouched, setTripTouched] = useState(
-    draft.mode === "edit" &&
-      draft.record.businessTrip &&
-      !isTripPlace(tripPlaces, draft.record.place),
   );
 
   const [startDate, setStartDate] = useState(
@@ -222,9 +209,8 @@ export function WorkRecordDialog({
     ...(capabilities.companyHoliday ? (["holiday"] as const) : []),
   ];
 
-  /** 種類を手で選ぶ。以降は場所を選び直しても出張扱いの既定を追従させない。 */
+  /** 種類を手で選ぶ。 */
   const chooseKind = (next: WorkKind) => {
-    setTripTouched(true);
     setKind(next);
     // 勤務タブへ切り替えたとき、選ばれている場所が出張扱いのままだと、勤務タブのチップは
     // どれも選ばれていないのに保存するとその場所のまま記録されてしまう（issue #525 計画
@@ -233,20 +219,6 @@ export function WorkRecordDialog({
       const fallback = placeOptions.find((option) => !isTripPlace(tripPlaces, option.name));
       setPlace(fallback?.name ?? "");
     }
-  };
-
-  /**
-   * 勤務場所を選ぶ。出張扱いの場所なら、種類と行き先まで出張へ合わせる。
-   * 半休の残り半日の勤務場所を選ぶ操作では、種類（年休）を動かさない。
-   * 行き先を上書きするのは、空のときと前の場所の名前がそのまま残っているときだけ。
-   */
-  const choosePlace = (name: string) => {
-    setPlace(name);
-    if (isLeave || isHoliday || tripTouched || !capabilities.businessTrip) return;
-
-    const trip = isTripPlace(tripPlaces, name);
-    setKind(trip ? "trip" : "work");
-    if (trip && (!destination.trim() || destination === place)) setDestination(name);
   };
 
   const close = () => {
@@ -481,7 +453,7 @@ export function WorkRecordDialog({
                   key={option.id}
                   type="button"
                   aria-pressed={place === option.name}
-                  onClick={() => choosePlace(option.name)}
+                  onClick={() => setPlace(option.name)}
                   className={cn(
                     "type-label-large rounded-full border px-4 py-2 transition-colors",
                     place === option.name
