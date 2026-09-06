@@ -23,6 +23,7 @@ const ENDPOINT_MARK = "__DAYSPAN_ENDPOINT_BASE__";
 const TOKEN_MARK = "__DAYSPAN_TOKEN__";
 const APP_URL_MARK = "__DAYSPAN_APP_URL__";
 const WEBAPP_URL_MARK = "__DAYSPAN_WEBAPP_URL__";
+const BRIDGE_URL_MARK = "__DAYSPAN_BRIDGE_URL__";
 const REFRESH_MARK = "__DAYSPAN_REFRESH_MINUTES__";
 
 /**
@@ -66,6 +67,7 @@ export function buildScriptableWidgetScript(options: {
     .replaceAll(TOKEN_MARK, escapeForJsString(options.token))
     .replaceAll(APP_URL_MARK, escapeForJsString(options.appUrl))
     .replaceAll(WEBAPP_URL_MARK, escapeForJsString(toWebAppUrl(options.appUrl)))
+    .replaceAll(BRIDGE_URL_MARK, escapeForJsString(toBridgeUrl(options.appUrl)))
     .replaceAll(REFRESH_MARK, String(WIDGET_REFRESH_MINUTES));
 }
 
@@ -86,6 +88,17 @@ export function toWebAppUrl(origin: string): string {
 }
 
 /**
+ * ホーム画面のDaySpanへ渡すための受け渡しページ（`/open`）のURL。
+ *
+ * `http` のアドレスでは空文字を返す。渡す相手（ホーム画面のWebアプリ）がそもそも存在せず、
+ * 受け渡しページを挟んでもブラウザで開くのと同じところへ着くため。`toWebAppUrl()` が
+ * 空文字を返す条件とそろえてある。
+ */
+export function toBridgeUrl(origin: string): string {
+  return toWebAppUrl(origin) ? `${origin}${WIDGET_OPEN_BRIDGE_PATH}` : "";
+}
+
+/**
  * ウィジェットを押したときに開くURL。設定画面の案内とコピー用に使う。
  *
  * 台本の中でも同じ組み立てをしている（`OPEN_URL`）。iOSのウィジェット編集画面
@@ -96,17 +109,38 @@ export function toWebAppUrl(origin: string): string {
  * 面ごとに変えられない。iOSは `webapp://` のパスを無視してWebアプリの最初の画面から開くため、
  * 買い物リストの枠を押しても着くのは記録の画面になる。
  *
- * `app` が null になるのは `http` のアドレス（LAN経由の開発サーバー等）で開いたとき。
- * httpのサイトはWebアプリとしてホーム画面へ追加できず、`webapp://` の宛先になりようがない。
+ * - `bridge` … 既定。HTTPSの受け渡しページ（`/open`）を経由してホーム画面のDaySpanへ渡す。
+ *   ウィジェットから `webapp://` を直接開けない端末があり、そこでは押しても何も起きない
+ *   （issue #562）。`https://` のURLなら必ず開けるため、渡す先の判断をページ側へ移す。
+ * - `app` … `webapp://` を直接開く従来の値。効いている端末ではこちらのほうが速い。
+ * - `browser` … ブラウザで開く。
+ *
+ * `bridge` と `app` が null になるのは `http` のアドレス（LAN経由の開発サーバー等）で開いたとき。
+ * httpのサイトはWebアプリとしてホーム画面へ追加できず、渡す相手がそもそも存在しない。
  */
-export function buildWidgetOpenUrls(origin: string): { app: string | null; browser: string } {
+export function buildWidgetOpenUrls(origin: string): {
+  bridge: string | null;
+  app: string | null;
+  browser: string;
+} {
   const webApp = toWebAppUrl(origin);
 
   return {
+    bridge: toBridgeUrl(origin) || null,
     app: webApp ? `${webApp}${WIDGET_OPEN_PATH}` : null,
     browser: `${origin}${WIDGET_OPEN_PATH}`,
   };
 }
+
+/**
+ * 受け渡しページのパス。`src/lib/widget-open-bridge.ts` の `WIDGET_OPEN_BRIDGE_PATH` と同じ値。
+ *
+ * importせず写しを置くのは、このファイルが他のモジュールを一切importしない前提で作られているため。
+ * `scripts/preview-widget.mjs` はtscでこの1ファイルだけをJSへ落として読み込む（importを足すと、
+ * ビルドは通るのにその道具だけが動かなくなる）。`/activity` を `DEFAULT_HOME_PATH` からではなく
+ * `WIDGET_OPEN_PATH` として持っているのと同じ扱い。値を変えるときは両方直す。
+ */
+const WIDGET_OPEN_BRIDGE_PATH = "/open";
 
 /**
  * 開く先のパス。記録の画面。
@@ -145,6 +179,9 @@ const SCRIPTABLE_TEMPLATE = String.raw`// DaySpan ウィジェット
 //
 // ウィジェットを押したときと、Scriptableの一覧でこの台本のアイコンを押したときは、
 // どちらもDaySpanが開きます（ウィジェットの見本は表示しません）。
+//
+// 押してもScriptableが開くだけで先へ進まないときは、ウィジェットを長押し > ウィジェットを編集 の
+// When Interacting を Open URL にし、URL 欄へ設定画面に出ているURLを入れてください。
 
 const ENDPOINT_BASE = "__DAYSPAN_ENDPOINT_BASE__";
 const TOKEN = "__DAYSPAN_TOKEN__";
@@ -154,9 +191,16 @@ const APP_URL = "__DAYSPAN_APP_URL__";
 // httpのアドレスで作った台本では空になります（httpのサイトはWebアプリとして追加できないため）。
 const WEBAPP_URL = "__DAYSPAN_WEBAPP_URL__";
 
+// ホーム画面のDaySpanへ渡すためのHTTPSのページ。
+// 端末によっては webapp:// を直接開けず、押してもScriptableが開くだけで先へ進みません。
+// httpsのURLなら必ず開けるので、いったんこのページへ飛ばし、そこから切り替えます。
+// httpのアドレスで作った台本では空になります（渡す相手がいないため）。
+const BRIDGE_URL = "__DAYSPAN_BRIDGE_URL__";
+
 // 押したときに開く先。
-//   "app"     … ホーム画面に追加したDaySpan
-//   "browser" … ブラウザ（ホーム画面に追加していないときはこちらにしてください）
+//   "app"        … ホーム画面に追加したDaySpan（上のページを経由します）
+//   "app-direct" … ホーム画面に追加したDaySpan（webapp:// を直接開きます。効く端末はこちらが速い）
+//   "browser"    … ブラウザ（ホーム画面に追加していないときはこちらにしてください）
 const OPEN_IN = "app";
 
 // 次の更新までの目安（分）。iOSは要求どおりに更新するとは限りません。
@@ -182,11 +226,20 @@ const IS_ACCESSORY = FAMILY.indexOf("accessory") === 0;
 // 押したときに開く先。ウィジェットの中では記録を start / stop できないため、
 // 「止めたい」と思った操作がそのまま画面へつながるようにする。
 //
-// iOSは webapp:// のパスを無視し、Webアプリの最初の画面から開きます。その最初の画面が記録の
-// 画面なので、どちらの経路でも同じ所へ着きます（すでに開いていたときは前の画面のまま）。
-// それでも /activity を付けているのは、ブラウザで開くときにはこのパスが効き、同じ組み立てで
-// 両方をまかなえるためです。
-const OPEN_URL = (OPEN_IN === "app" && WEBAPP_URL ? WEBAPP_URL : APP_URL) + "/activity";
+// 既定（"app"）はHTTPSの受け渡しページです。端末によっては webapp:// を直接開けず、押しても
+// Scriptableが開くだけで先へ進まないため、ページ側でホーム画面のDaySpanへ切り替えます。
+//
+// "app-direct" は webapp:// を直接開きます。iOSはこのスキームのパスを無視し、Webアプリの
+// 最初の画面から開きます。その最初の画面が記録の画面なので、どの経路でも同じ所へ着きます
+// （すでに開いていたときは前の画面のまま）。それでも /activity を付けているのは、
+// ブラウザで開くときにはこのパスが効くためです。
+const OPEN_URL = resolveOpenUrl();
+
+function resolveOpenUrl() {
+  if (OPEN_IN === "app" && BRIDGE_URL) return BRIDGE_URL;
+  if (OPEN_IN === "app-direct" && WEBAPP_URL) return WEBAPP_URL + "/activity";
+  return APP_URL + "/activity";
+}
 
 // 出す面。空欄は活動記録（貼り替えていない枠を今までどおり動かすため）。
 // 知らない値は活動記録へ落とさずに断る。落とすと、打ち間違いに気付ける場所が無くなる。
