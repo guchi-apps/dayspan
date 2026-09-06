@@ -318,7 +318,7 @@ export function EventDetailDialog({
               {linkedTravels.map((travel) => {
                 // 背景は書き出し先カレンダーの色を使う（issue #492）。時間グリッドの
                 // TravelBlockと同じ考え方で、塗り・枠線は予定と同じにし、移動だと分かるのは
-                // 矢印だけにする（issue #502）。
+                // 交通手段の印だけにする（issue #502）。
                 const colors = eventColors(travel.color);
                 return (
                   <button
@@ -332,7 +332,7 @@ export function EventDetailDialog({
                       borderColor: colors.border,
                     }}
                   >
-                    <TravelMark className="size-3 shrink-0" />
+                    <TravelMark mode={travel.mode} className="size-3.5 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">
                       {travel.title}
                       <span className="opacity-75">（{travelSummary(travel)}）</span>
