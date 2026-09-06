@@ -113,9 +113,9 @@ export function WorkRecordDialog({
   );
 
   // 勤務タブでは、出張扱いの場所（門真・出張）を出さない。押すと choosePlace() で出張タブへ
-  // 切り替わってしまい、勤務タブに残す意味が無いため（issue #525）。年休・会社休業日・出張の
-  // タブでは絞り込まない（半休の残り半日の勤務場所は勤務タブと同じ選択肢を出す必要があり、
-  // 出張の勤務場所は保存対象の値で勤務タブでの絞り込みとは動機が違う。docs/spec.md §34）。
+  // 切り替わってしまい、勤務タブに残す意味が無いため（issue #525）。年休・会社休業日のタブでは
+  // 絞り込まない（半休の残り半日の勤務場所は勤務タブと同じ選択肢を出す必要がある。
+  // docs/spec.md §34）。出張タブは勤務場所そのものを出さない（issue #549）。
   const workPlaceOptions =
     kind === "work"
       ? placeOptions.filter((option) => !isTripPlace(tripPlaces, option.name))
@@ -314,15 +314,23 @@ export function WorkRecordDialog({
       startDate,
       endDate: spanned && endDate ? endDate : startDate,
       // 全休の日と会社休業日に勤務場所は入らない。半休・時間休の日は残りの勤務場所を持つ。
-      place: isHoliday
-        ? null
-        : isLeave
-          ? partialDay
-            ? place || null
-            : null
-          : businessTrip
-            ? place || null
-            : place,
+      //
+      // 出張は項目ごと送らない（`place: undefined` は toProperties() で「触らない」扱い・
+      // issue #549）。画面から選べなくなったため、送ると利用者が選んでいない既定の場所
+      // （selectの定義順の先頭）を書き込むことになる。かといって null で消すと、今日の
+      // チップから作った出張（行き先＝場所名）が持っている場所まで消え、
+      // work-screen の todayEditableByChip が偽になってチップから取り消せなくなる。
+      ...(businessTrip
+        ? {}
+        : {
+            place: isHoliday
+              ? null
+              : isLeave
+                ? partialDay
+                  ? place || null
+                  : null
+                : place,
+          }),
       ...(capabilities.businessTrip ? { businessTrip } : {}),
       ...(capabilities.annualLeave ? { annualLeave: isLeave ? annualLeave : null } : {}),
       ...(capabilities.companyHoliday ? { companyHoliday: isHoliday } : {}),
@@ -458,8 +466,11 @@ export function WorkRecordDialog({
           </div>
         )}
 
-        {/* 会社休業日と全休の日に勤務場所は入らない。半休・時間休の日は残りぶんを選ばせる。 */}
-        {workPlaceOptions.length > 0 && !isHoliday && (!isLeave || partialDay) && (
+        {/* 会社休業日と全休の日に勤務場所は入らない。半休・時間休の日は残りぶんを選ばせる。
+            出張の日にも出さない。読む値は行き先（Notionのtitle）で、勤務場所は月の集計でも
+            カレンダーのチップでも使っておらず、「在宅」「出張」のように出張の行き先としては
+            意味を持たない選択肢が並ぶだけになるため（issue #549）。 */}
+        {workPlaceOptions.length > 0 && !businessTrip && !isHoliday && (!isLeave || partialDay) && (
           <div className="flex flex-col gap-2">
             <span className="type-label-medium text-on-surface-variant">
               {partialDay ? restPlaceLabel : "勤務場所"}
@@ -499,15 +510,20 @@ export function WorkRecordDialog({
             オートフィルなので、選んだあとも下のInputで自由に直せることが伝わるよう、
             aria-pressedや選択中のハイライトは付けない。 */}
         {businessTrip && recentDestinations.length > 0 && (
-          <div className="flex flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-2">
             <span className="type-label-medium text-on-surface-variant">最近の行き先</span>
-            <div className="flex flex-wrap gap-2">
+            {/* 折り返さず横に送る（issue #549）。5件を折り返すと、その下の行き先の欄と日付が
+                画面の外へ押し出される。min-w-0が無いと、縮まないチップの合計幅がそのまま
+                ダイアログの最小幅になり、画面ごと横に広がる。チップの枠やフォーカスリングが
+                切れないよう左右と下に余白を取り、その分を負のマージンで戻す
+                （予定の保存先を選ぶ calendar-chip-select と同じ形）。 */}
+            <div className="-mx-1 flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:thin]">
               {recentDestinations.map((name) => (
                 <button
                   key={name}
                   type="button"
                   onClick={() => setDestination(name)}
-                  className="type-label-large rounded-full border border-outline px-4 py-2 text-on-surface transition-colors hover:bg-on-surface/8"
+                  className="type-label-large shrink-0 rounded-full border border-outline px-4 py-2 whitespace-nowrap text-on-surface transition-colors hover:bg-on-surface/8"
                 >
                   {name}
                 </button>
