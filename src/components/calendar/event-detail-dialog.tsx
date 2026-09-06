@@ -27,10 +27,19 @@ import {
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { mapLink } from "@/lib/map-link";
 import type { PlaceItem } from "@/services/notion/places";
-import { TRAVEL_MODE_LABELS, type CalendarEventItem, type TravelItem } from "@/types/calendar";
+import { cn } from "@/lib/utils";
+import {
+  EVENT_OUTCOME_KIND_LABELS,
+  TRAVEL_MODE_LABELS,
+  type CalendarEventItem,
+  type EventOutcomeItem,
+  type TravelItem,
+} from "@/types/calendar";
 
 import { eventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { EventOutcomeDialog } from "./event-outcome-dialog";
+import { EventOutcomeMark } from "./event-outcome-mark";
 import { placeCoordinates } from "./location-input";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelMark } from "./travel-mark";
@@ -59,6 +68,7 @@ export function EventDetailDialog({
   linkedTasks,
   places = [],
   onDeleted,
+  onOutcomeChanged,
 }: {
   event: CalendarEventItem;
   timeZone: string;
@@ -88,12 +98,19 @@ export function EventDetailDialog({
   places?: PlaceItem[];
   /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onDeleted: (touched: TouchedRange[] | null) => void;
+  /**
+   * 中止・不参加の記録が変わったときの処理（docs/spec.md §37）。外したときは null。
+   * ダイアログは開いたままにするため、削除（onDeleted）とは別に受ける。
+   */
+  onOutcomeChanged: (outcome: EventOutcomeItem | null) => void;
 }) {
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
   // 削除は取り消せない。押した直後には消さず、確認を挟む。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // 中止・不参加の記録（docs/spec.md §37）。表示画面を閉じずに重ねて開く。
+  const [editingOutcome, setEditingOutcome] = useState(false);
 
   const close = () => {
     setOpen(false);
@@ -141,6 +158,9 @@ export function EventDetailDialog({
    */
   const locationLink = readOnly ? null : mapLink(event.location, placeCoordinates(event.location ?? "", places));
 
+  /** 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。 */
+  const outcome = event.outcome ?? null;
+
   const deleted = (touched: TouchedRange[] | null) => {
     setOpen(false);
     setTimeout(() => onDeleted(touched), 150);
@@ -154,6 +174,17 @@ export function EventDetailDialog({
             item={{ kind: "event", event, linkedTasks }}
             onCancel={() => setConfirmingDelete(false)}
             onDeleted={deleted}
+          />
+        )}
+
+        {editingOutcome && (
+          <EventOutcomeDialog
+            event={event}
+            onCancel={() => setEditingOutcome(false)}
+            onSaved={(next) => {
+              setEditingOutcome(false);
+              onOutcomeChanged(next);
+            }}
           />
         )}
 
@@ -192,10 +223,31 @@ export function EventDetailDialog({
         </div>
 
         <DialogHeader>
-          <DialogTitle className={event.readOnly ? "pr-22" : "pr-38"}>{event.title}</DialogTitle>
+          {/* 起こらなかった予定は、名前に打ち消し線を引く。カレンダー上の枠と同じ描き分け。 */}
+          <DialogTitle
+            className={cn(event.readOnly ? "pr-22" : "pr-38", outcome && "line-through")}
+          >
+            {event.title}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 text-sm">
+          {/*
+            記録は日時より先に出す。この予定が起こらなかったことは、いつだったかより先に
+            伝わっている必要がある（同じ予定を見返す理由がそこにあるため）。
+          */}
+          {outcome && (
+            <div className="flex items-start gap-2.5 rounded-md border border-destructive/40 bg-error-container px-3 py-2.5 text-on-error-container">
+              <EventOutcomeMark className="mt-0.5 size-4" />
+              <div className="flex min-w-0 flex-col">
+                <span className="font-bold">{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}</span>
+                {outcome.note && (
+                  <span className="break-words opacity-90">{outcome.note}</span>
+                )}
+              </div>
+            </div>
+          )}
+
           <DetailRow icon={<CalendarClock className="size-4" />}>
             {formatEventRange(event, timeZone)}
           </DetailRow>
@@ -324,6 +376,21 @@ export function EventDetailDialog({
             >
               <TaskStageMark stage="AFTER_END" className="h-4 w-5 text-on-secondary-container" />
               タスクを紐づける
+            </Button>
+
+            {/*
+              中止・不参加の記録（docs/spec.md §37）。記録はGoogleへ書き込まないため、
+              「使用」がオフのカレンダーの予定にも付けられる（タスクの紐づけと同じ扱い）。
+            */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-error-container text-on-error-container"
+              disabled={readOnly}
+              onClick={() => setEditingOutcome(true)}
+            >
+              <EventOutcomeMark className="size-4" />
+              {outcome ? "記録を直す" : "中止・不参加にする"}
             </Button>
           </div>
         </div>

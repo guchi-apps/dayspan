@@ -11,6 +11,7 @@ import {
   updateEvent,
   type EventWriteInput,
 } from "@/services/google-calendar/events";
+import { dropOutcomesForEvent } from "@/services/calendar/event-outcomes";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
 import { dropLinksForEvent, syncLinksForEvent } from "@/services/task-links/links";
 
@@ -127,6 +128,9 @@ export async function DELETE(
 
     // 紐づけの相手が消えたので外す。日付はタスクに残す（消すと「いつやるつもりか」まで失われる）。
     const unlinked = await dropLinksForEvent(userId, eventId, scope);
+
+    // 中止・不参加の記録も一緒に消す（docs/spec.md §37）。予定が無くなれば指す先が無い。
+    await dropOutcomesForEvent(userId, eventId, scope);
 
     return NextResponse.json({ ok: true, unlinkedTasks: unlinked });
   } catch (error) {

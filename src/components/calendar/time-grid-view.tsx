@@ -6,18 +6,20 @@ import { cn } from "@/lib/utils";
 import { eventColors, subduedEventColors } from "./calendar-color";
 import { dayTone, weekdayLabel } from "./day-tone";
 import type { RunningActivityItem } from "@/types/activity";
-import type {
-  CalendarEventItem,
-  ReminderItem,
-  TaskEventLinkItem,
-  TaskItem,
-  TravelItem,
+import {
+  EVENT_OUTCOME_KIND_LABELS,
+  type CalendarEventItem,
+  type ReminderItem,
+  type TaskEventLinkItem,
+  type TaskItem,
+  type TravelItem,
 } from "@/types/calendar";
 import type { TagOption } from "@/services/notion/tag-options";
 import type { WorkRecordItem } from "@/types/work";
 
 import { ActivityLaneBlock } from "./activity-lane-block";
 import { ActivityMark } from "./activity-mark";
+import { EventOutcomeMark } from "./event-outcome-mark";
 import { RunningActivityBlock } from "./running-activity-block";
 import { useMinuteBucket } from "./use-clock";
 import {
@@ -859,6 +861,8 @@ function DayColumn({
 
         // 活動記録は左端のレーンへ分けてあるため、ここへ来るのは普通の予定だけ（issue #327）。
         const colors = eventColors(event.color);
+        // 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。
+        const outcome = event.outcome ?? null;
 
         // 高さに収まる行数ぶんだけ、タイトルの下へ順に添える（issue #73）。
         // 掴んでいる間は、動かした先の時刻を出す。
@@ -912,16 +916,24 @@ function DayColumn({
                 // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
                 "flex size-full flex-col overflow-hidden rounded-item border px-1.5 py-0.5 text-left text-[10px] leading-tight",
                 eventPreview && "ring-2 ring-foreground/50",
+                // 起こらなかった予定は明るさだけ下げる。塗りを抜くと、どのカレンダーの予定
+                // だったかが読めなくなり、活動記録の描き分けとも紛れる（docs/spec.md §37）。
+                outcome && "opacity-55",
               )}
               style={{
                 backgroundColor: colors.background,
                 color: colors.foreground,
                 borderColor: colors.border,
               }}
-              title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.title}`}
+              title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${outcome ? `[${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}] ` : ""}${event.title}`}
             >
               <div className="clip-nowrap flex shrink-0 items-center gap-1 font-semibold">
-                <span className="clip-nowrap">{event.title}</span>
+                {outcome && <EventOutcomeMark className="size-2.5" />}
+                {/* 打ち消し線は名前にだけ引く。時刻・場所まで引くと枠の全行に線が乗る。 */}
+                <span className={cn("clip-nowrap", outcome && "line-through")}>{event.title}</span>
+                {outcome && (
+                  <span className="sr-only">（{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}）</span>
+                )}
               </div>
               {/* 短い予定に詰め込むと文字が潰れるため、高さに収まるぶんだけ出す。 */}
               {details.map((detail) => (
@@ -1626,6 +1638,8 @@ function AllDayEventChip({
 }) {
   const colors = eventColors(event.color);
   const quiet = subdued ? subduedEventColors(event.color) : null;
+  // 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。
+  const outcome = event.outcome ?? null;
 
   return (
     <button
@@ -1639,6 +1653,7 @@ function AllDayEventChip({
         continuesBefore && "rounded-l-none border-l-0",
         continuesAfter && "rounded-r-none border-r-0",
         dragging && "ring-2 ring-foreground/50",
+        outcome && "opacity-55",
       )}
       style={
         quiet
@@ -1653,10 +1668,14 @@ function AllDayEventChip({
               borderColor: colors.border,
             }
       }
-      title={event.title}
+      title={
+        outcome ? `${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}: ${event.title}` : event.title
+      }
     >
       {quiet && !continuesBefore && <ActivityMark className="size-1.5" />}
-      <span className="clip-nowrap">{event.title}</span>
+      {outcome && !continuesBefore && <EventOutcomeMark className="size-2.5" />}
+      <span className={cn("clip-nowrap", outcome && "line-through")}>{event.title}</span>
+      {outcome && <span className="sr-only">（{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}）</span>}
     </button>
   );
 }
