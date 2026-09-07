@@ -25,7 +25,7 @@ import {
 import type { TagOption } from "@/services/notion/tag-options";
 import type { WorkRecordItem } from "@/types/work";
 
-import { eventAccent, eventColors } from "./calendar-color";
+import { tintedEventColors } from "./calendar-color";
 import { dayTone, weekdayOnlyTone } from "./day-tone";
 import { EventOutcomeMark } from "./event-outcome-mark";
 import {
@@ -38,6 +38,7 @@ import {
   type TaskDateField,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
+import { TaskCheckMark } from "./task-check-mark";
 import { taskLinkForField, taskLinkTargetedLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelMark } from "./travel-mark";
@@ -787,7 +788,12 @@ function ReminderChip({
   );
 }
 
-/** 予定は占有した時間の「幅」。塗りつぶした帯で表す。 */
+/**
+ * 予定は占有した時間の「幅」。地の色に近い淡い面と、左端の色帯で表す（issue #573）。
+ *
+ * 以前はカレンダー色でベタ塗りしていたが、予定が3件並ぶとマスの大半が飽和した色になり、
+ * 日付の数字・勤務場所のチップが予定の色に負けていた。色は左の3pxへ集約する。
+ */
 function EventChip({
   event,
   utils,
@@ -801,7 +807,7 @@ function EventChip({
   continuesAfter: boolean;
   onOpen: () => void;
 }) {
-  const colors = eventColors(event.color);
+  const colors = tintedEventColors(event.color);
   // 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。
   const outcome = event.outcome ?? null;
 
@@ -811,17 +817,25 @@ function EventChip({
       onClick={onOpen}
       className={cn(
         "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4",
+        // 起こらなかった予定は面を外す（issue #573）。以前は opacity を下げていたが、
+        // 淡い面に55%を掛けると面も文字も消える。色帯は残すので、どのカレンダーの予定
+        // だったかは読める。文字色は三項で選ぶ（Tailwindは同じ役割のユーティリティを
+        // クラス名の並び順では解決しないため、両方を並べるとどちらが勝つか決まらない）。
+        outcome ? "text-on-surface-variant" : "text-on-surface",
         // 週をまたぐ側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
+        // 続きの側は左の色帯も持てないため、カレンダー色は面だけが伝える。
         continuesBefore && "rounded-l-none border-l-0",
         continuesAfter && "rounded-r-none border-r-0",
-        // 起こらなかった予定は明るさだけ下げる。塗りを抜くと、どのカレンダーの予定だったかが
-        // 読めなくなり、活動記録の描き分け（塗りを落として左に色帯）とも紛れる。
-        outcome && "opacity-55",
       )}
       style={{
-        backgroundColor: colors.background,
-        color: colors.foreground,
+        backgroundColor: outcome ? "var(--md-surface-container-lowest)" : colors.background,
         borderColor: colors.border,
+        // 色の主張は左端の帯へ集約する。続きの側は境界の線を引かないため立てない。
+        // 左の余白を2pxへ詰めるのは、帯の3pxと合わせて右側（余白4px＋枠線1px）と同じ
+        // 5pxにするため。詰めないと中身が右へ2pxずれる。
+        ...(continuesBefore
+          ? null
+          : { borderLeftWidth: "3px", borderLeftColor: colors.accent, paddingLeft: "2px" }),
       }}
       title={
         outcome ? `${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}: ${event.title}` : event.title
@@ -850,9 +864,9 @@ function EventChip({
 }
 
 /**
- * タスクは期限という「点」。塗らず、先頭に目盛りを立てて予定と描き分ける（docs/spec.md §5）。
+ * タスクは塗らず、先頭のチェックボックスで予定と描き分ける（docs/spec.md §5・issue #573）。
  *
- * 予定日の枠は、同じ形のまま枠線を破線・目盛りを薄くして描く。締切ではなく見込みであることを
+ * 予定日の枠は、同じ形のまま枠線を破線・印の輪郭を薄くして描く。締切ではなく見込みであることを
  * 一目で分けるためで、別の形にしないのは同じタスクの枠だと分かるようにするため。
  */
 function TaskChip({
@@ -904,13 +918,7 @@ function TaskChip({
           />
         ))
       ) : (
-        <span
-          aria-hidden
-          className={cn(
-            "h-2.5 w-0.5 shrink-0",
-            task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
-          )}
-        />
+        <TaskCheckMark done={task.done} planned={planned} size="sm" />
       )}
       {hasTime && date && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(date)}</span>
@@ -921,17 +929,20 @@ function TaskChip({
 }
 
 /**
- * 移動は塗らず、交通手段の印と行き先だけを出す（docs/spec.md §29）。
+ * 移動は予定とまったく同じ塗り・枠・色帯にし、交通手段の印と行き先だけを出す（docs/spec.md §29）。
  *
- * 月表示で1日に置ける件数は限られている。移動は予定に1件ずつ付くため、予定と同じように
- * 塗った帯にすると、その日に何があるかを読む前に枠が埋まる。出発地まで出さないのも同じ理由で、
- * 「どこへ向かうか」が分かれば予定と結び付けられる。
+ * 以前は月表示だけ塗らず輪郭だけにしていた。移動は予定に1件ずつ付くため、ベタ塗りの帯にすると
+ * その日に何があるかを読む前にマスが埋まる、という理由だった。予定の塗りが地の色近くまで落ちた
+ * いま（issue #573）、その理由は当てはまらない。同じ「移動」カレンダーへ保存されているのに
+ * 月表示と時間グリッド（`TravelBlock`）で塗り方が違う状態のほうが読み違えを生むため揃える。
+ * 移動だと分かるのは交通手段の印だけになる（時間グリッドと同じ・issue #502）。
  *
- * 輪郭の色は書き出し先カレンダーの色を使う（issue #492）。印は固定の専用色のまま残す。
+ * 出発地を出さないのは従来どおり。「どこへ向かうか」が分かれば予定と結び付けられる。
  *
  * 印は交通手段ごとの線画にする（issue #548）。チップに出るのは行き先と出発時刻だけで、車で行くのか
  * 電車で行くのかは押して開くまで読めなかった。色だけに意味を持たせないのと同じ理由で、印だけが
- * 示すことになる交通手段は `title` にも添える。
+ * 示すことになる交通手段は `title` にも添える。印の色は `text-travel` のまま残す。移動の帯は
+ * 淡い面しか持たず、下地は常に画面の背景になるため、専用色でも背景に沈まない。
  */
 function TravelChip({
   travel,
@@ -944,14 +955,24 @@ function TravelChip({
   continuesBefore: boolean;
   onOpen: () => void;
 }) {
-  const accent = eventAccent(travel.color);
+  const colors = tintedEventColors(travel.color);
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border bg-surface-container-lowest px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4"
-      style={{ borderColor: `color-mix(in srgb, ${accent} 50%, transparent)` }}
+      className={cn(
+        "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border px-1 text-left text-[9px] leading-[15px] font-medium text-on-surface sm:h-[18px] sm:text-[10px] sm:leading-4",
+        // 日をまたいだ続きの側は角を落とし、境界の線も引かない（予定と同じ扱い）。
+        continuesBefore && "rounded-l-none border-l-0",
+      )}
+      style={{
+        backgroundColor: colors.background,
+        borderColor: colors.border,
+        ...(continuesBefore
+          ? null
+          : { borderLeftWidth: "3px", borderLeftColor: colors.accent, paddingLeft: "2px" }),
+      }}
       title={`${travel.title}（${TRAVEL_MODE_LABELS[travel.mode]} ${utils.formatTime(travel.start)}発）`}
     >
       <TravelMark mode={travel.mode} className="size-2.5 text-travel" />
