@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
+import { dayTone, OFF_DAY_TONE } from "@/lib/day-tone";
 import { japaneseHolidayName } from "@/lib/japanese-holidays";
 import { isAutoOffDay, weekdayOf } from "@/lib/work-days";
 import { cn } from "@/lib/utils";
@@ -489,9 +490,13 @@ export function WorkScreen({
                           className={cn(
                             "type-body-medium min-w-0 flex-1 truncate",
                             record.businessTrip && "font-bold text-travel",
-                            // 会社休業日も年休と同じ色にする。どちらもその日働かないことを指しており、
-                            // 何の休みなのかは行の文字（「休み」）が持っている。
-                            (record.annualLeave || record.companyHoliday) && "font-bold text-tertiary",
+                            // 年休は本人が取得して日数を消費する記録で、年休の画面の集計と結び付いて
+                            // いる。休み（会社休業日・土日祝）とは読む理由が違うため色を分ける。
+                            record.annualLeave && !record.companyHoliday && "font-bold text-tertiary",
+                            // 休みは日付・祝日名と同じ赤にする（issue #582）。日付の色だけだと、
+                            // 平日に入れた休み（夏季休業）がその日は働かない日だと行から読めない。
+                            // 太字にはしない（休みは片付ける手続きではなく、その日の事実のため）。
+                            record.companyHoliday && OFF_DAY_TONE,
                           )}
                         >
                           {recordLabel(record)}
@@ -502,13 +507,19 @@ export function WorkScreen({
                         // 色（太字・tertiary か on-surface-variant）だけでは両者を読み分けられない。
                         // 月間集計（`Tally()`）は登録済みの記録しか数えないため、「（自動）」を添えて
                         // 集計に入らない行だと分かるようにする（issue #536 計画レビューG1の指摘）。
-                        <span className="type-body-medium flex-1 text-on-surface-variant">休み（自動）</span>
+                        // 色は登録済みの休みと同じ赤にし、読み分けは「（自動）」の表記が持つ
+                        // （issue #582。灰色のままだと「未登録」と同じ色で、休みだと読めない）。
+                        <span className={cn("type-body-medium flex-1", OFF_DAY_TONE)}>休み（自動）</span>
                       ) : (
                         <span className="type-body-medium flex-1 text-outline">未登録</span>
                       )}
-                      {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。 */}
+                      {/* 祝日の名前。赤いだけでは何の日か分からず、色以外の手掛かりも要る。
+                          色は日付・休みと同じ赤にそろえる（未対応の手続きの赤＝`error` とは
+                          役割が違い、同じ行に強さの違う赤を並べない・issue #582）。 */}
                       {holiday && (
-                        <span className="type-label-small min-w-0 truncate text-error">{holiday}</span>
+                        <span className={cn("type-label-small min-w-0 truncate", OFF_DAY_TONE)}>
+                          {holiday}
+                        </span>
                       )}
                       {/* 残っている手続きは印だけを出し、この行からは済ませられない（issue #521）。
                           チェックボックスを置くと手続きが残る日だけ2行になり、日ごとの行の高さが
@@ -884,17 +895,19 @@ function dayLabel(dateKey: string): string {
 }
 
 /**
- * 日付の文字色。日曜と祝日は赤（`error`）、土曜は青（`travel`）にする。
+ * 日付の文字色。日曜と祝日は赤、土曜は青にする。
  *
  * 祝日を日曜と同じ色にするのは、勤務場所を入れるときに見ているのが曜日ではなく
  * 「その日が働く日かどうか」のため。月曜が祝日で灰色のままだと、入れ忘れなのか
  * そもそも働いていない日なのかが一覧から読めない。
+ *
+ * 色はカレンダー画面と同じ `dayTone()` から採る（issue #582）。ここで別のロール
+ * （`error` / `travel`）を当てていたため、同じ日がカレンダーでは赤・青、この一覧では
+ * 色なし・緑という状態になっていた（`--color-error` が `@theme` に無く `text-error` が
+ * 捨てられていた／`travel` は青緑）。
  */
 function dateClass(dateKey: string): string {
-  const day = weekdayOf(dateKey);
-  if (day === 0 || japaneseHolidayName(dateKey)) return "text-error";
-  if (day === 6) return "text-travel";
-  return "text-on-surface-variant";
+  return dayTone(dateKey) ?? "text-on-surface-variant";
 }
 
 function spanLabel(record: WorkRecordItem): string {

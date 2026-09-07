@@ -63,6 +63,13 @@
   --color-accent-foreground: var(--md-on-secondary-container);
   --color-destructive: var(--md-error);
   --color-destructive-foreground: var(--md-on-error);
+  /* エラー（M3のロール名そのまま）。`--color-error-container` だけを出して `--color-error` を
+     出していなかったため、`text-error` / `border-error` / `bg-error` が未定義のユーティリティと
+     して黙って捨てられていた（issue #171・#544 と同じ落とし穴）。勤務の画面では日曜・祝日の
+     日付と祝日名・未対応の印と赤枠、年休の画面では超過の数字と帯の超過線が、赤のつもりで
+     書かれたまま色を持てずにいた（issue #582）。 */
+  --color-error: var(--md-error);
+  --color-on-error: var(--md-on-error);
   --color-error-container: var(--md-error-container);
   --color-on-error-container: var(--md-on-error-container);
   --color-border: var(--md-outline-variant);
