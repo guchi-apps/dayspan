@@ -135,3 +135,13 @@ export function splitNameAndAddress(text: string): { name: string; address: stri
 
   return { name, address };
 }
+
+/**
+ * 場所欄の値から表示用の名前だけを取り出す（issue #587）。
+ *
+ * カレンダー上のチップ・ダイアログは幅が狭く、住所まで出すと場所名が埋もれて読みにくい。
+ * 住所を切り分けられない値（施設名だけ・英語住所など）はそのまま返す。
+ */
+export function placeDisplayName(text: string): string {
+  return splitNameAndAddress(text)?.name ?? text.trim();
+}

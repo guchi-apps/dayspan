@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { addDays, parseDateKey, toDateKey, weekMonthKey, weeksBetween } from "@/lib/calendar-range";
+import { placeDisplayName } from "@/lib/place-text";
 import { cn } from "@/lib/utils";
 import {
   EVENT_OUTCOME_KIND_LABELS,
@@ -985,7 +986,7 @@ function TravelChip({
       {!continuesBefore && (
         <span className="hidden shrink-0 opacity-70 sm:inline">{utils.formatTime(travel.start)}</span>
       )}
-      <span className="clip-nowrap">{travel.destination}</span>
+      <span className="clip-nowrap">{placeDisplayName(travel.destination)}</span>
     </button>
   );
 }
