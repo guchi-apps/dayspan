@@ -24,8 +24,10 @@ const MAX_MINUTES = 24 * 60;
 /**
  * 所要時間の候補。
  *
- * AIの見積もりと、trainroute 経由で引いた経路検索の結果の両方をこの形で画面へ渡す。
- * 別々の型にすると、候補の一覧・押したときの処理を出どころの数だけ書くことになる。
+ * 旧trainroute経由の経路検索（撤去済み。issue #591）とAIの見積もりの両方をこの形で
+ * 画面へ渡す設計だった名残で、`source: "transit"` と `transit` 内訳は今のAI見積もりからは
+ * 入らない（常に "ai" ・undefined）。画面側は既存のTRANSIT出どころの移動を開いたときの
+ * 表示にこの形をそのまま使うため、型としては残している。
  */
 export type TravelEstimate = {
   mode: TravelMode;
