@@ -22,13 +22,13 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `vapid-private-key` | 同・秘密鍵。上のコマンドが公開鍵と対で出す |
 | `vapid-subject` | 同・連絡先。`mailto:` か `https://` で始める |
 
-`TRAINROUTE_TOKEN`（電車の所要時間を trainroute 経由で引くための共有シークレット。docs/spec.md §29）は
-**`dayspan` アイテムには置かない。正は `op://apps/trainroute/internal-api-key`** で、trainroute が
-受ける側として持っている値をそのまま参照する。**両側が同じ値でないと 401 で連携が止まる。**
-このとき画面はエラーにならず、電車の所要時間だけがAIの見積もりへ静かに落ちるため、
-止まっていることに気付きにくい。値を更新するときは trainroute とDaySpanの両方を同時に同期する。
-未設定の間は、設定 ▸ 移動 の「経路検索の利用状況」も出ない（出す数字が無いため。docs/spec.md §29）。
-
+**`TRAINROUTE_TOKEN`（電車の所要時間を trainroute 経由で引くための共有シークレット）を撤去した。**
+交通系APIの窓口を `guchi-apps/trainroute` に置き、`op://apps/trainroute/internal-api-key` を
+参照する構成だったが、画面からは一度も呼ばれないまま電車の所要時間はYahoo!乗換案内からの
+取り込みへ移行し、trainroute自体も廃止・VPSから撤去されることになったため、issue #591 で
+DaySpan側の連携コード・`.github/secrets-manifest.tsv` の参照を削除した（詳細はdocs/spec.md §29）。
+**1Password（`dayspan` アイテムは元々未使用）・GitHub Secrets・VPS上の `.env` に残っている値は、
+このPRの対象外。人手で個別に消す。**
 
 共通アイテム（`DB` / `Server` / `githubaction-sshkey` / `Supabase`）は既存のものをそのまま参照する（`.github/deploy.env.tpl` 参照）。
 
@@ -36,7 +36,7 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 1Passwordへ入れたあとは、GitHub Secretsへの同期まで行って初めて本番へ届く。
 
 ```bash
-gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT,TRAINROUTE_TOKEN
+gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
 ```
 
 （手元から `scripts/sync-github-secrets.sh` を叩く場合は個人アカウントのセッションが要る。

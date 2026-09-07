@@ -224,8 +224,8 @@ export function isTravelMode(value: unknown): value is TravelMode {
 /**
  * 所要時間の出どころ。Prismaの TravelEstimateSource と同じ並びにする。
  *
- * TRANSIT は trainroute 経由で引いた経路検索の結果。AIの見積もりと同じく確定した時刻では
- * ないが、実際の路線網・乗換・徒歩を計算した値で、精度が違う。
+ * TRANSIT は旧trainroute経由で引いた経路検索の結果（撤去済み。issue #591）。既存の移動に
+ * 残る過去データとして値は残しているが、新しくこの値が付く移動は今後作られない。
  *
  * YAHOO は、利用者がYahoo!乗換案内で選んでコピーした経路（docs/spec.md §29）。**これだけは
  * 実際のダイヤ上の列車**で、他の3つのように「目安」「平均」と断る値ではない。
