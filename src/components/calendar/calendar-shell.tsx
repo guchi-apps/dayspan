@@ -60,10 +60,10 @@ import type {
 } from "@/types/calendar";
 import type { TravelSettings } from "@/services/travel/settings";
 import { coversDate, type WorkCapabilities } from "@/types/work";
+import { dayTone, weekdayLabel } from "@/lib/day-tone";
 
 import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime-fields";
-import { dayTone, weekdayLabel } from "./day-tone";
 import { EventDetailDialog } from "./event-detail-dialog";
 import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
 import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./item-dialog";

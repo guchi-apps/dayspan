@@ -24,9 +24,9 @@ import {
 } from "@/types/calendar";
 import type { TagOption } from "@/services/notion/tag-options";
 import type { WorkRecordItem } from "@/types/work";
+import { dayTone, weekdayOnlyTone } from "@/lib/day-tone";
 
 import { tintedEventColors } from "./calendar-color";
-import { dayTone, weekdayOnlyTone } from "./day-tone";
 import { EventOutcomeMark } from "./event-outcome-mark";
 import {
   isAllDayItem,

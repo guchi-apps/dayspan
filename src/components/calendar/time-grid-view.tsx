@@ -2,9 +2,9 @@
 
 import { memo, useCallback, useMemo } from "react";
 
+import { dayTone, weekdayLabel } from "@/lib/day-tone";
 import { cn } from "@/lib/utils";
 import { subduedEventColors, tintedEventColors } from "./calendar-color";
-import { dayTone, weekdayLabel } from "./day-tone";
 import type { RunningActivityItem } from "@/types/activity";
 import {
   EVENT_OUTCOME_KIND_LABELS,
