@@ -4,6 +4,7 @@ import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { localInputToIso } from "@/components/calendar/datetime-fields";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
+import { placeDisplayName } from "@/lib/place-text";
 import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
 import { listEvents, toCalendarItems } from "@/services/google-calendar/events";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
@@ -116,7 +117,8 @@ async function loadSource(
     items.push({
       kind: "travel",
       // 枠に入るのは1行ぶん。「自宅 → 大阪駅」だと出発地で幅を使い切るため、行き先だけを出す。
-      title: travel.destination,
+      // 住所付きだとその行き先自体が埋もれるため、場所名だけにする（issue #587）。
+      title: placeDisplayName(travel.destination),
       allDay: false,
       start: travel.start,
       end: travel.end,
