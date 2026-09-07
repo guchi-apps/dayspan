@@ -179,13 +179,20 @@ export function ReminderDetailDialog({
             </a>
           )}
 
+          {/* 「編集の入口を出すか」（external）と「なぜ変更できないのか」は分けて持つ。
+              条件だけ広げると、買い物の詳細にゴミの日の文言が出る。 */}
           {shopping && (
-            <Button asChild variant="secondary" className="mt-1 w-full">
-              <Link href="/shopping">
-                <ShoppingCart className="size-4" />
-                買い物リストを開く
-              </Link>
-            </Button>
+            <>
+              <p className="text-xs text-on-surface-variant">
+                その日に買うものをまとめた枠です。品目を直すには買い物リストを開いてください。
+              </p>
+              <Button asChild variant="secondary" className="mt-1 w-full">
+                <Link href="/shopping">
+                  <ShoppingCart className="size-4" />
+                  買い物リストを開く
+                </Link>
+              </Button>
+            </>
           )}
 
           {reminder.source === "garbage" && (

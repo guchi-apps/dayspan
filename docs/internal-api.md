@@ -98,9 +98,21 @@ Authorization: Bearer <INTERNAL_API_KEY>
           "time": null,
           "category": "記念日",
           "annual": true,                     // 判断できないときは null
-          "source": "reminder",               // reminder | garbage（ゴミの収集日）
+          "source": "reminder",               // reminder | garbage（ゴミの収集日）| shopping（その日の買い物）
           "memo": null,
           "url": "https://www.notion.so/..."
+        },
+        {
+          "id": "shopping:2026-08-19",        // 買い物はNotionページではなく、その日のぶんをまとめた1件
+          "title": "買い物 3件",              // 件数はタイトルに含む（未購入のものだけを数える）
+          "date": "2026-08-19",
+          "hasTime": false,
+          "time": null,
+          "category": null,
+          "annual": false,
+          "source": "shopping",
+          "memo": "・牛乳（2本）\n・卵\n・トイレットペーパー",  // その日に買う品目
+          "url": null                         // 指す先のページが1つに決まらないため常に null
         }
       ],
       "travels": [
@@ -168,7 +180,7 @@ Google未接続・NotionのDB未設定は「失敗」ではないため `errors`
 ```jsonc
 "errors": [
   { "source": "google", "reason": "example@gmail.com の「仕事」の予定を取得できませんでした。" },
-  { "source": "notion", "reason": "Notionのタスク・日付リマインド・ゴミの日を取得できませんでした。" }
+  { "source": "notion", "reason": "Notionのタスク・日付リマインド・ゴミの日・勤務場所・買い物を取得できませんでした。" }
 ]
 ```
 
