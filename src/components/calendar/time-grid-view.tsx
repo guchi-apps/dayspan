@@ -918,15 +918,13 @@ function DayColumn({
                 // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
                 "flex size-full flex-col overflow-hidden rounded-item border py-0.5 pr-1.5 text-left text-[10px] leading-tight",
                 eventPreview && "ring-2 ring-foreground/50",
-                // 起こらなかった予定は面を外す（issue #573）。以前は opacity を下げていたが、
-                // 淡い面に55%を掛けると面も文字も消える。色帯は残すので、どのカレンダーの
-                // 予定だったかは読める（docs/spec.md §37）。
+                // 起こらなかった予定も塗りは落とさない（docs/spec.md §37）。以前の opacity 55%
+                // は、面が淡くなった以上（issue #573）掛けると面も文字も消える。「起こらなかった」
+                // は文字色・打ち消し線・印で示す。
                 outcome ? "text-on-surface-variant" : "text-on-surface",
               )}
               style={{
-                backgroundColor: outcome
-                  ? "var(--md-surface-container-lowest)"
-                  : colors.background,
+                backgroundColor: colors.background,
                 borderColor: colors.border,
                 // 左の余白（4px）と帯（3px）で、右側の余白6px＋枠線1pxと同じ7pxにそろえる。
                 borderLeftWidth: "3px",
@@ -1028,7 +1026,8 @@ function DayColumn({
             }${task.title}`}
           >
             {/* 予定が「幅」なのに対し、タスクは期限という「点」。引き出し線の先の印で描き分ける。
-                紐づいたタスクは、チェックボックスの代わりに段階の印を立てる。 */}
+                紐づいたタスクは、チェックボックスの代わりに段階の印を立てる（並べては出さない。
+                docs/spec.md §38）。 */}
             <span
               className="flex shrink-0 items-center"
               style={{ transform: `translateY(${shift}px)` }}
@@ -1650,7 +1649,8 @@ function AllDayEventChip({
       onClick={onOpen}
       className={cn(
         "clip-nowrap flex w-full items-center gap-1 rounded-item border px-1.5 text-left text-[10px] leading-5 font-medium",
-        // 起こらなかった予定は面を外す（issue #573）。淡い面に opacity を掛けると消えるため。
+        // 起こらなかった予定も塗りは落とさない（docs/spec.md §37）。面を外すと、この終日エリアで
+        // 活動記録（面を外して帯と印だけ）とまったく同じ描き分けになる。
         outcome ? "text-on-surface-variant" : "text-on-surface",
         // 期間の境界で切れた続きの側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
         continuesBefore && "rounded-l-none border-l-0",
@@ -1658,9 +1658,8 @@ function AllDayEventChip({
         dragging && "ring-2 ring-foreground/50",
       )}
       style={{
-        // 活動記録は面ごと外す。予定が淡い面を持つようになったため（上のコメント）。
-        backgroundColor:
-          quiet || outcome ? "var(--md-surface-container-lowest)" : colors.background,
+        // 活動記録だけ面ごと外す。予定が淡い面を持つようになったため（上のコメント）。
+        backgroundColor: quiet ? "var(--md-surface-container-lowest)" : colors.background,
         borderColor: quiet ? quiet.border : colors.border,
         // 続きの側は境界の線を引かないため、色帯も立てない。
         ...(continuesBefore
