@@ -4,7 +4,14 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
-import { Briefcase, ChevronLeft, ChevronRight, CircleAlert, Plus } from "lucide-react";
+import {
+  Briefcase,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Plus,
+} from "lucide-react";
 
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { AppMenuButton } from "@/components/nav/app-drawer";
@@ -32,7 +39,7 @@ import {
   isDefaultHolidayTitle,
   isPartialLeave,
   isTripPlace,
-  openWorkRecords,
+  splitOpenWorkRecords,
   WORK_TODO_LABELS,
   workTodos,
   workTodoStates,
@@ -225,10 +232,26 @@ export function WorkScreen({
   // 月のあいだ残すと、いま手を打つべきものがその中に埋もれる。出張の前の事後登録も同じ理由で
   // 落ちる（`workTodos()` が終了日を過ぎるまで数えないため、判定を二重に持たなくてよい）。
   // 済んだ記録を直したくなったときは、下の日別の一覧から入力ダイアログを開く（issue #412）。
-  const openTodos = openTrips.flatMap((trip) => workTodos(trip, todayKey));
-  const trips = openWorkRecords(openTrips, todayKey);
-  const leaves = openWorkRecords(openLeaves, todayKey);
-  const openLeaveCount = leaves.length;
+  //
+  // 並べるのは「いま片付けるもの」だけで、1週間より先の事前申請は畳んでおく（issue #571）。
+  // 事前申請は先の予定にも付くため、絞り込まないと、まだ申請しなくてよい先の出張・年休が
+  // 同じ枠へ積み上がり、期限が迫っている事前申請・終わった出張の事後登録がその中に埋もれる。
+  // 見出しの件数は総数のまま（ドロワーのバッジが数えているのも総数で、片方だけ減ると同じ
+  // 画面の中で数字が食い違う）。畳んだぶんの件数はボタンに出すので、総数＝表示中＋畳んだぶん
+  // として読める。
+  const trips = splitOpenWorkRecords(openTrips, todayKey);
+  const leaves = splitOpenWorkRecords(openLeaves, todayKey);
+  // 赤い件数が数えるのは「いま手を打つべき件数」（docs/spec.md §34）。畳んだぶんまで足すと、
+  // 全件が先の予定の月に「未対応 3件」の直下へ「いま対応が必要な手続きはありません。」が並び、
+  // 同じ見出しの中で意味が反対になる（issue #571 計画レビューG2の指摘）。畳んだぶんの件数は
+  // 折りたたみのボタンが出すため、総数も画面から読める。ドロワーのバッジ（`/api/work/alerts`）は
+  // 総数のままにする。あちらは「勤務の画面を開く理由があるか」を示すもので役割が違う。
+  //
+  // dueの記録の手続きは必ず全てdueになる。事後登録が未対応に数えられるのは終了日を過ぎた
+  // ときだけ（`workTodos()`）で、そのとき開始日も当然過ぎており事前申請もdueになるため、
+  // 「事後登録がdueで事前申請がlater」の組み合わせは起きない。
+  const openTodos = trips.due.flatMap((trip) => workTodos(trip, todayKey));
+  const openLeaveCount = leaves.due.length;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -267,25 +290,15 @@ export function WorkScreen({
                 )}
               </div>
 
-              {trips.length === 0 ? (
-                <p className="type-body-small text-on-surface-variant">
-                  未対応の手続きはありません。
-                </p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {trips.map((trip) => (
-                    <RecordRow
-                      key={trip.id}
-                      record={trip}
-                      todayKey={todayKey}
-                      todos={["preApplied", "postRegistered"]}
-                      writeDisabled={busy || pending || offline}
-                      onToggle={toggleTodo}
-                      onOpen={() => setDraft({ mode: "edit", record: trip })}
-                    />
-                  ))}
-                </div>
-              )}
+              <OpenRecords
+                split={trips}
+                todayKey={todayKey}
+                todos={["preApplied", "postRegistered"]}
+                emptyLabel="未対応の手続きはありません。"
+                writeDisabled={busy || pending || offline}
+                onToggle={toggleTodo}
+                onOpen={(record) => setDraft({ mode: "edit", record })}
+              />
             </section>
           )}
 
@@ -312,25 +325,15 @@ export function WorkScreen({
                 </Link>
               </div>
 
-              {leaves.length === 0 ? (
-                <p className="type-body-small text-on-surface-variant">
-                  未申請の年休はありません。
-                </p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {leaves.map((leave) => (
-                    <RecordRow
-                      key={leave.id}
-                      record={leave}
-                      todayKey={todayKey}
-                      todos={["preApplied"]}
-                      writeDisabled={busy || pending || offline}
-                      onToggle={toggleTodo}
-                      onOpen={() => setDraft({ mode: "edit", record: leave })}
-                    />
-                  ))}
-                </div>
-              )}
+              <OpenRecords
+                split={leaves}
+                todayKey={todayKey}
+                todos={["preApplied"]}
+                emptyLabel="未申請の年休はありません。"
+                writeDisabled={busy || pending || offline}
+                onToggle={toggleTodo}
+                onOpen={(record) => setDraft({ mode: "edit", record })}
+              />
             </section>
           )}
 
@@ -447,16 +450,35 @@ export function WorkScreen({
                       key={dateKey}
                       type="button"
                       onClick={() => openDay(dateKey)}
-                      className="flex w-full items-center gap-3 border-b border-outline-variant py-2.5 text-left last:border-b-0 hover:bg-on-surface/8"
+                      className={cn(
+                        "flex w-full items-center gap-3 border-b border-outline-variant py-2.5 text-left last:border-b-0",
+                        // 今日は行ごと淡く塗る（issue #571）。31行を上から追う面で、日付の印だけでは
+                        // スクロール中に見つけにくい。塗りは項目名・祝日名・未対応のバッジの後ろに
+                        // 敷くだけで、それらの色は変えない。
+                        dateKey === todayKey
+                          ? "bg-primary/8 hover:bg-primary/12"
+                          : "hover:bg-on-surface/8",
+                      )}
                     >
-                      <span
-                        className={cn(
-                          "type-body-small w-16 shrink-0 tabular-nums",
-                          dateClass(dateKey),
-                          dateKey === todayKey && "font-bold",
-                        )}
-                      >
-                        {dayLabel(dateKey)}
+                      {/*
+                        今日は塗りつぶしたピルにする（issue #571）。太字だけでは弱く、カレンダーの
+                        月表示が今日を紫の丸で示しているのに、この一覧だけその流儀から外れていた。
+
+                        余白（padding）でピルを作らず、**全ての行の日付を同じ高さの枠へ入れて今日だけ
+                        塗る**。今日の行だけ高さが変わると、1日ぶんを必ず1行に収めて行の高さを揃える
+                        決め（issue #521）が崩れ、日付を目で追う速さがそこで落ちる。
+                      */}
+                      <span className="flex w-16 shrink-0">
+                        <span
+                          className={cn(
+                            "type-body-small inline-flex h-5 items-center rounded-full px-2 tabular-nums",
+                            dateKey === todayKey
+                              ? "bg-primary font-semibold text-primary-foreground"
+                              : dateClass(dateKey),
+                          )}
+                        >
+                          {dayLabel(dateKey)}
+                        </span>
                       </span>
                       {/* 項目名・祝日名・印は同じ行に並べる。項目名に `flex-1` を持たせて残りの幅を
                           受け取らせ、印（`shrink-0`）を押し出さない。入れ子の箱にまとめると、その箱の
@@ -603,6 +625,91 @@ export function WorkScreen({
   );
 }
 
+/** 区画の1件をどちらとして描くか（issue #571）。 */
+type RecordTone = "due" | "later";
+
+/**
+ * 出張・年休の区画の中身（issue #571）。
+ *
+ * 出す順は「いま片付けるもの」が先で、1週間より先の事前申請は畳んでおく。畳んだぶんは
+ * 見出しではなく1行のボタンで開く（日付リマインドの「過ぎた日付」・タスクの「完了」と同じ形）。
+ *
+ * 開閉を端末に覚えさせないのは、この区画を開く理由が毎回「いま片付けるもの」から始まるため。
+ * 前に開いたまま覚えていると、次に来たときも先の予定が並んだ状態から読むことになる。
+ *
+ * 開いた先の記録は `tone="later"` で描く。いま片付けるものと同じ赤枠のまま並べると、
+ * 「まだ申請しなくてよい」と分けた意味が開いた瞬間に見え方の上では消える
+ * （issue #571 計画レビューG1の指摘）。
+ *
+ * 出張と年休で作りを分けないのは、開く理由（まだ済ませていない手続きを片付ける）が同じで、
+ * 別の形にすると同じことをするのに覚えることが2つに増えるため。違うのは出せる手続きの数と、
+ * 1件も無いときの文言だけ。
+ */
+function OpenRecords({
+  split,
+  todayKey,
+  todos,
+  emptyLabel,
+  writeDisabled,
+  onToggle,
+  onOpen,
+}: {
+  split: { due: WorkRecordItem[]; later: WorkRecordItem[] };
+  todayKey: string;
+  /** 行に出せる手続き。年休は事前申請だけ、出張は事前申請と事後登録。 */
+  todos: WorkTodo[];
+  /** どちらも0件のときの文言。 */
+  emptyLabel: string;
+  writeDisabled: boolean;
+  onToggle: (record: WorkRecordItem, todo: WorkTodo, done: boolean) => void;
+  onOpen: (record: WorkRecordItem) => void;
+}) {
+  const [laterOpen, setLaterOpen] = useState(false);
+
+  const row = (record: WorkRecordItem, tone: RecordTone) => (
+    <RecordRow
+      key={record.id}
+      record={record}
+      todayKey={todayKey}
+      todos={todos}
+      tone={tone}
+      writeDisabled={writeDisabled}
+      onToggle={onToggle}
+      onOpen={() => onOpen(record)}
+    />
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      {split.due.length === 0 ? (
+        <p className="type-body-small text-on-surface-variant">
+          {/* 先のぶんが残っているときは「ありません」と言い切らない。畳んだ先に件数があるのに
+              何も無いと読めてしまう。 */}
+          {split.later.length === 0 ? emptyLabel : "いま対応が必要な手続きはありません。"}
+        </p>
+      ) : (
+        split.due.map((record) => row(record, "due"))
+      )}
+
+      {split.later.length > 0 && (
+        <>
+          <button
+            type="button"
+            className="type-label-large flex items-center gap-1.5 self-start rounded-full px-2 py-1 text-left text-on-surface-variant hover:bg-on-surface/8"
+            aria-expanded={laterOpen}
+            onClick={() => setLaterOpen(!laterOpen)}
+          >
+            {laterOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+            1週間より先
+            <span className="type-label-small opacity-70">{split.later.length}件</span>
+          </button>
+          {laterOpen && split.later.map((record) => row(record, "later"))}
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
  * 出張・年休1件ぶんの行。済み・未済はその場で切り替えられる。
  *
@@ -626,6 +733,7 @@ function RecordRow({
   record,
   todayKey,
   todos: shown,
+  tone,
   writeDisabled,
   onToggle,
   onOpen,
@@ -634,6 +742,8 @@ function RecordRow({
   todayKey: string;
   /** 出せる手続き。年休は事前申請だけ、出張は事前申請と事後登録。 */
   todos: WorkTodo[];
+  /** いま片付けるものか、畳んだ先の記録か（issue #571）。 */
+  tone: RecordTone;
   /** 書き込み中・オフライン中かどうか。項目単位の`disabled`（押せない手続き）とは別に持つ。 */
   writeDisabled: boolean;
   onToggle: (record: WorkRecordItem, todo: WorkTodo, done: boolean) => void;
@@ -646,9 +756,15 @@ function RecordRow({
       ? `${annualLeaveHours(record.annualLeave) === null ? "残り半日は" : "残りは"}${record.place}`
       : null;
 
-  // ここに並ぶのは手続きが残っている記録だけなので、枠は常に未対応の色にする。
+  // 枠の色は「いま片付けるものか」で決める（issue #571）。畳んだ先の記録まで同じ赤枠で並べると、
+  // 「まだ申請しなくてよい」と分けた意味が、開いた瞬間に見え方の上では消える。
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-error p-3">
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-3 rounded-xl border p-3",
+        tone === "due" ? "border-error" : "border-outline-variant",
+      )}
+    >
       {/* 日付・行き先。`min-w-20`を割る幅でだけチェックボックスが2行目へ落ちる。 */}
       <button
         type="button"
@@ -667,8 +783,10 @@ function RecordRow({
       <div className="flex shrink-0 items-center gap-1.5">
         {states.map(({ todo, done, disabled: todoDisabled }) => {
           // 押せるのに未対応なものだけを目立たせる。押せない項目（終了日前の事後登録）は
-          // 目立たせても押すものが増えないため、淡いままにする。
-          const needsAttention = !done && !todoDisabled;
+          // 目立たせても押すものが増えないため、淡いままにする。畳んだ先の記録（later）でも
+          // 押すことはできるが、赤で押し出すのはいま片付けるものの側だけにする（issue #571）。
+          // 未対応であることはチェックの外れた枠が示しており、色を足さなくても読める。
+          const needsAttention = tone === "due" && !done && !todoDisabled;
           return (
             <label
               key={todo}
