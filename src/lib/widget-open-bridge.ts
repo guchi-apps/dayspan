@@ -31,6 +31,11 @@ export const WIDGET_OPEN_BRIDGE_PATH = "/open";
  *
  * 地の色はアイコン・起動画面と同じ紫にする（docs/spec.md §33）。Safariで一瞬出るこの面が
  * 起動画面と地続きに見え、渡す途中で別の画面を挟んだようには見えない。
+ *
+ * ページを開いた時点では `webapp://` を試さない。扱えない端末のSafariは、そのスキームへ
+ * 進もうとした時点で「ページを開けません。アドレスが無効です。」という消すまで操作を受け付けない
+ * 警告を出す（issue #566）。押した覚えのない警告が毎回出るうえ、こちらから抑える手立てが無い。
+ * 開ける端末かどうかは事前に判別できないため、どちらへ渡すかは押して選んでもらう。
  */
 export function buildWidgetOpenBridgeHtml(): string {
   return `<!doctype html>
@@ -74,41 +79,35 @@ export function buildWidgetOpenBridgeHtml(): string {
   </head>
   <body>
     <main>
-      <h1 id="heading">DaySpan を開いています…</h1>
-      <p id="status">ホーム画面に追加した DaySpan へ切り替えます。</p>
+      <h1>DaySpan を開く</h1>
+      <p id="status">ホーム画面に追加した DaySpan と、このままブラウザのどちらで開くかを選んでください。</p>
 
       <!--
-        自動の切り替えが効かない端末のための逃げ道。切り替えが成功したときには目に入らないため、
-        少し置いてから出す。リンクは素の <a> で置く。スクリプトから開くと、アプリが入っていても
-        ブラウザへ落ちることがある（CLAUDE.md のYahoo!乗換案内の判断と同じ）。
+        リンクは素の <a> で置く。スクリプトから開くと、アプリが入っていてもブラウザへ落ちることが
+        ある（CLAUDE.md のYahoo!乗換案内の判断と同じ）。ホーム画面の DaySpan の側だけ最初は
+        隠しておくのは、宛先（webapp://<ホスト>）がブラウザ側でしか組み立てられないため。
       -->
-      <div class="actions" id="fallback" hidden>
-        <a class="primary" id="app-link" href="${DEFAULT_HOME_PATH}">ホーム画面の DaySpan を開く</a>
+      <div class="actions">
+        <a class="primary" id="app-link" href="#" hidden>ホーム画面の DaySpan を開く</a>
         <a id="browser-link" href="${DEFAULT_HOME_PATH}">このままブラウザで開く</a>
       </div>
 
-      <noscript>
-        <div class="actions">
-          <a class="primary" href="${DEFAULT_HOME_PATH}">DaySpan を開く</a>
-        </div>
-      </noscript>
+      <p id="note" hidden></p>
     </main>
 
     <script>
       (function () {
-        var heading = document.getElementById("heading");
         var status = document.getElementById("status");
-        var fallback = document.getElementById("fallback");
         var appLink = document.getElementById("app-link");
+        var note = document.getElementById("note");
 
-        function showFallback(message) {
-          heading.textContent = "DaySpan を開く";
-          status.textContent = message;
-          fallback.hidden = false;
+        function showNote(message) {
+          note.textContent = message;
+          note.hidden = false;
         }
 
         // すでにホーム画面の DaySpan の中で開かれていたら、渡す相手は自分自身になる。
-        // そのまま webapp:// を試すと同じ画面へ戻り続けるため、記録の画面へ送って終わる。
+        // そのまま選ばせても行き先が同じなので、記録の画面へ送って終わる。
         var standalone =
           window.navigator.standalone === true ||
           (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
@@ -120,20 +119,29 @@ export function buildWidgetOpenBridgeHtml(): string {
 
         // http のサイトはホーム画面へWebアプリとして追加できず、webapp:// の宛先になりようがない
         // （src/lib/scriptable-widget.ts の toWebAppUrl() と同じ判断）。
-        var appUrl = location.protocol === "https:" ? "webapp://" + location.host : "";
-
-        if (!appUrl) {
-          appLink.hidden = true;
-          showFallback("http のアドレスではホーム画面の DaySpan を開けません。");
+        if (location.protocol !== "https:") {
+          status.textContent = "このままブラウザで開きます。";
+          showNote("http のアドレスではホーム画面の DaySpan を開けません。");
           return;
         }
 
-        appLink.href = appUrl;
-        location.href = appUrl;
+        appLink.href = "webapp://" + location.host;
+        appLink.hidden = false;
 
-        setTimeout(function () {
-          showFallback("ホーム画面の DaySpan が開かないときは、下から選んでください。");
-        }, 1200);
+        // 扱えない端末では、押した先で「アドレスが無効です」と出てこのページに留まる。
+        // 何が起きたのか・次にどうすればよいのかがその画面からは読めないため、こちらで添える。
+        // 切り替わった端末では画面が隠れるので、この案内は目に入らない。
+        appLink.addEventListener("click", function () {
+          setTimeout(function () {
+            if (document.visibilityState === "hidden") return;
+
+            showNote(
+              "ホーム画面の DaySpan へ切り替わらないときは、この端末では開けません。" +
+                "「このままブラウザで開く」を使ってください。" +
+                "設定 ▸ iPhoneウィジェット から、押したときブラウザで開くように変えられます。",
+            );
+          }, 1500);
+        });
       })();
     </script>
   </body>
