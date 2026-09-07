@@ -193,7 +193,7 @@ const WEBAPP_URL = "__DAYSPAN_WEBAPP_URL__";
 
 // ホーム画面のDaySpanへ渡すためのHTTPSのページ。
 // 端末によっては webapp:// を直接開けず、押してもScriptableが開くだけで先へ進みません。
-// httpsのURLなら必ず開けるので、いったんこのページへ飛ばし、そこから切り替えます。
+// httpsのURLなら必ず開けるので、いったんこのページへ飛ばし、そこで開く先を選びます。
 // httpのアドレスで作った台本では空になります（渡す相手がいないため）。
 const BRIDGE_URL = "__DAYSPAN_BRIDGE_URL__";
 
@@ -227,7 +227,7 @@ const IS_ACCESSORY = FAMILY.indexOf("accessory") === 0;
 // 「止めたい」と思った操作がそのまま画面へつながるようにする。
 //
 // 既定（"app"）はHTTPSの受け渡しページです。端末によっては webapp:// を直接開けず、押しても
-// Scriptableが開くだけで先へ進まないため、ページ側でホーム画面のDaySpanへ切り替えます。
+// Scriptableが開くだけで先へ進まないため、ページ側でホーム画面のDaySpanかブラウザかを選びます。
 //
 // "app-direct" は webapp:// を直接開きます。iOSはこのスキームのパスを無視し、Webアプリの
 // 最初の画面から開きます。その最初の画面が記録の画面なので、どの経路でも同じ所へ着きます

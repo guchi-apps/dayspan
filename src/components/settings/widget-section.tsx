@@ -329,11 +329,23 @@ export function WidgetSection({
                 <>
                   <p className="type-body-small text-on-surface-variant">
                     上の<code className="mx-1">URL</code>
-                    は、ホーム画面に追加したDaySpanへ切り替えるための受け渡しページです。端末によっては
+                    は、ホーム画面に追加したDaySpanへ渡すための受け渡しページです。端末によっては
                     <code className="mx-1">webapp://</code>
                     で始まるURLを直接開けず、押してもScriptableが開くだけで先へ進みません。httpsのURL
-                    なら必ず開けるため、いったんこのページを開き、そこからDaySpanへ切り替えます。
-                    切り替わらなかったときは、そのページからブラウザで開けます。
+                    なら必ず開けるため、いったんこのページを開き、ホーム画面のDaySpanで開くか、
+                    このままブラウザで開くかをそこで選びます。
+                  </p>
+
+                  {/*
+                    webapp:// を扱えない端末では、押した先でiOSが「アドレスが無効です」と出す。
+                    受け渡しページ側にも同じ案内を置いているが（issue #566）、そちらは押した人しか
+                    読めないため、貼り替えの手順が並ぶこの画面にも書いておく。
+                  */}
+                  <p className="type-body-small text-on-surface-variant">
+                    「ホーム画面の DaySpan を開く」を押したときに
+                    <span className="mx-1">「アドレスが無効です」</span>
+                    と出る端末では、ホーム画面のDaySpanを開けません。下の「別の開き方にする」から、
+                    ブラウザで開く設定に変えてください。
                   </p>
 
                   <p className="type-body-small text-on-surface-variant">
