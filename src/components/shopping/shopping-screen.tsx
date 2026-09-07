@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
 import { ArrowUpDown, Eye, EyeOff, Plus, RefreshCw, ShoppingCart } from "lucide-react";
 
+import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav } from "@/components/nav/main-nav";
@@ -24,6 +25,8 @@ import {
   SHOPPING_SORTS,
   SHOPPING_SORT_LABELS,
   shoppingCategoryKeys,
+  shoppingDateLabel,
+  shoppingDateTone,
   unboughtCounts,
   type ShoppingItem,
 } from "@/types/shopping";
@@ -73,6 +76,10 @@ export function ShoppingScreen({
     () => categoryOptions.map((option) => option.name),
     [categoryOptions],
   );
+
+  // 「今日」「明日」の判定は設定タイムゾーンで行う。端末の時計に任せると、サーバー（UTC）と
+  // ブラウザ（JST）で日付が食い違い、最初の描画がハイドレーションと一致しない。
+  const todayKey = useMemo(() => createCalendarDateUtils(timeZone).todayKey(), [timeZone]);
 
   // 楽観更新ぶんを重ねた一覧。以降の集計・区分はすべてこれを見る。
   const shown = useMemo(
@@ -251,6 +258,7 @@ export function ShoppingScreen({
                 <ShoppingRow
                   key={item.id}
                   item={item}
+                  todayKey={todayKey}
                   disabled={busyId === item.id || offline}
                   onToggleBought={(bought) => toggleBought(item, bought)}
                   onOpen={() => setDialog({ mode: "edit", item })}
@@ -287,6 +295,7 @@ export function ShoppingScreen({
         <ShoppingItemDialog
           draft={dialog}
           categoryOptions={categoryOptions}
+          timeZone={timeZone}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null);
@@ -320,8 +329,10 @@ function CategoryTab({
       onClick={onClick}
       className={cn(
         "type-label-large flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 transition-colors",
+        // 選択中は塗り・輪郭・太さの3つで示す（入力ダイアログのチップと同じ規則・issue #570）。
+        // 塗りだけだと、横に送れるタブの列の中でどれを選んでいるのかが読み取りにくい。
         active
-          ? "border-transparent bg-secondary-container text-on-secondary-container"
+          ? "border-current bg-secondary-container font-medium text-on-secondary-container"
           : "border-outline-variant text-on-surface-variant hover:bg-on-surface/8",
       )}
     >
@@ -333,11 +344,14 @@ function CategoryTab({
 
 function ShoppingRow({
   item,
+  todayKey,
   disabled,
   onToggleBought,
   onOpen,
 }: {
   item: ShoppingItem;
+  /** 「今日」「明日」を判定する基準日。設定タイムゾーンでの今日（画面側で1度だけ求める）。 */
+  todayKey: string;
   disabled: boolean;
   onToggleBought: (bought: boolean) => void;
   onOpen: () => void;
@@ -355,13 +369,22 @@ function ShoppingRow({
       />
 
       <button type="button" className="min-w-0 flex-1 text-left" onClick={onOpen}>
-        <div
-          className={cn(
-            "type-body-medium clip-nowrap",
-            item.bought && "text-on-surface-variant line-through",
+        <div className="flex min-w-0 items-center gap-1.5">
+          {/* min-w-0 が要る。flexの子は既定で min-width:auto のため、付けないと長い名前が
+              縮まず、右の予定日が枠の外へ押し出される。 */}
+          <span
+            className={cn(
+              "type-body-medium clip-nowrap min-w-0",
+              item.bought && "text-on-surface-variant line-through",
+            )}
+          >
+            {item.name}
+          </span>
+          {/* 購入予定日は名前の後ろへ流す。先に読みたいのは何を買うかで、日付はその次
+              （docs/spec.md §36）。未設定のときは何も出さない。 */}
+          {item.plannedDate && !item.bought && (
+            <PlannedDateChip dateKey={item.plannedDate} todayKey={todayKey} />
           )}
-        >
-          {item.name}
         </div>
         {item.memo && (
           <div className="type-label-small clip-nowrap font-normal text-on-surface-variant">
@@ -370,6 +393,33 @@ function ShoppingRow({
         )}
       </button>
     </li>
+  );
+}
+
+/**
+ * 行に添える購入予定日。
+ *
+ * 過ぎた予定日は色を分ける。買うつもりだった日を過ぎても日付はそのまま残すため（今日へ
+ * 繰り上げると、いつ買うつもりだったかが消える）、まだ買っていないことがひと目で分かる
+ * 必要がある。色だけに意味を持たせないよう、読み上げ用の文字を添える。
+ */
+function PlannedDateChip({ dateKey, todayKey }: { dateKey: string; todayKey: string }) {
+  const tone = shoppingDateTone(dateKey, todayKey);
+
+  return (
+    <span
+      className={cn(
+        "type-label-small shrink-0 rounded px-1 tabular-nums",
+        // `text-on-primary` は @theme に出ていないロール名で、書いてもTailwindが黙って捨てる
+        // （CLAUDE.md「M3のカラーロール」）。同じ色は `--color-primary-foreground` にある。
+        tone === "today" && "bg-primary text-primary-foreground",
+        tone === "past" && "bg-error-container text-on-error-container",
+        tone === "future" && "bg-secondary-container text-on-secondary-container",
+      )}
+    >
+      <span className="sr-only">購入予定日{tone === "past" ? "（過ぎています）" : ""} </span>
+      {shoppingDateLabel(dateKey, todayKey)}
+    </span>
   );
 }
 

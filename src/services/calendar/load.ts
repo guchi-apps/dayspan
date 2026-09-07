@@ -8,6 +8,7 @@ import { createNotionClient } from "@/services/notion/client";
 import { listGarbageDaysInRange } from "@/services/notion/garbage";
 import { listTasksInRange } from "@/services/notion/tasks";
 import { listRemindersInRange } from "@/services/notion/reminders";
+import { listShoppingPlansInRange, shoppingPlanReady } from "@/services/notion/shopping-plans";
 import { listWorkRecordsInRange, workDatabaseReady } from "@/services/notion/work-logs";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
 import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
@@ -261,10 +262,12 @@ async function loadNotionItems(
 }> {
   const connection = await db.notionConnection.findUnique({ where: { userId } });
   if (
-    !connection?.taskDataSourceId &&
-    !connection?.reminderDataSourceId &&
-    !connection?.garbageDataSourceId &&
-    !connection?.workDataSourceId
+    !connection ||
+    (!connection.taskDataSourceId &&
+      !connection.reminderDataSourceId &&
+      !connection.garbageDataSourceId &&
+      !connection.workDataSourceId &&
+      !shoppingPlanReady(connection))
   ) {
     return {
       tasks: [],
@@ -283,17 +286,19 @@ async function loadNotionItems(
       from: range.timeMin.slice(0, 10),
       to: range.timeMax.slice(0, 10),
     };
-    // ゴミの日は日付リマインドと同じ形で描くため、同じ配列へ混ぜて返す（docs/spec.md §9）。
-    // 勤務場所（docs/spec.md §34）は日付の見出しに出す別枠のため、混ぜずに分けて返す。
-    const [tasks, reminders, garbageDays, workRecords] = await Promise.all([
+    // ゴミの日と、購入予定日のある買い物は日付リマインドと同じ形で描くため、同じ配列へ混ぜて
+    // 返す（docs/spec.md §9・§36）。勤務場所（docs/spec.md §34）は日付の見出しに出す別枠のため、
+    // 混ぜずに分けて返す。
+    const [tasks, reminders, garbageDays, workRecords, shoppingPlans] = await Promise.all([
       connection.taskDataSourceId ? listTasksInRange(notion, connection, dateRange) : [],
       connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],
       connection.garbageDataSourceId ? listGarbageDaysInRange(notion, connection, dateRange) : [],
       workDatabaseReady(connection) ? listWorkRecordsInRange(notion, connection, dateRange) : [],
+      shoppingPlanReady(connection) ? listShoppingPlansInRange(notion, connection, dateRange) : [],
     ]);
     return {
       tasks,
-      reminders: [...reminders, ...garbageDays],
+      reminders: [...reminders, ...garbageDays, ...shoppingPlans],
       workRecords,
       ready: Boolean(connection.taskDataSourceId),
       reminderReady: Boolean(connection.reminderDataSourceId),
@@ -309,7 +314,8 @@ async function loadNotionItems(
       errors: [
         {
           source: "notion",
-          reason: "Notionのタスク・日付リマインド・ゴミの日・勤務場所を取得できませんでした。",
+          reason:
+            "Notionのタスク・日付リマインド・ゴミの日・勤務場所・買い物を取得できませんでした。",
         },
       ],
     };

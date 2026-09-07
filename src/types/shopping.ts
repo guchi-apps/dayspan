@@ -1,3 +1,5 @@
+import { dateKeyDiffDays } from "@/lib/calendar-range";
+
 /**
  * 買い物リストの項目と、その並べ方・束ね方（docs/spec.md §36）。
  *
@@ -17,19 +19,27 @@ export type ShoppingItem = {
   category: string | null;
   memo: string | null;
   priority: ShoppingPriority;
+  /**
+   * 購入予定日（`YYYY-MM-DD`）。未設定は null（docs/spec.md §36）。
+   *
+   * 時刻は持たない。買い物に開始時刻という概念が無く、「今日買う・明日買う」までが決まれば
+   * リストとしては足りる。Notion側の日付プロパティに時刻が入っていても、読むときに日付へ落とす。
+   */
+  plannedDate: string | null;
   bought: boolean;
   url: string | null;
 };
 
 /** 並び順。購入済みを末尾へ送るのはどの並びでも共通で、ここには含めない。 */
-export type ShoppingSort = "added" | "name" | "priority";
+export type ShoppingSort = "added" | "name" | "priority" | "planned";
 
-export const SHOPPING_SORTS: ShoppingSort[] = ["added", "name", "priority"];
+export const SHOPPING_SORTS: ShoppingSort[] = ["added", "name", "priority", "planned"];
 
 export const SHOPPING_SORT_LABELS: Record<ShoppingSort, string> = {
   added: "追加順",
   name: "名前順",
   priority: "優先度順",
+  planned: "予定日順",
 };
 
 /**
@@ -73,6 +83,11 @@ export function sortShoppingItems(items: ShoppingItem[], sort: ShoppingSort): Sh
         (PRIORITY_ORDER[a.priority ?? ""] ?? SHOPPING_PRIORITIES.length) -
         (PRIORITY_ORDER[b.priority ?? ""] ?? SHOPPING_PRIORITIES.length),
     );
+  } else if (sort === "planned") {
+    // 予定日を決めていないものは末尾へ送る。日付順で見る理由は「次に買いに行く日のぶんを
+    // まとめて読む」ことで、日の決まっていないものが先頭に並ぶとその邪魔になる。
+    // 日付は YYYY-MM-DD なので文字列のまま比べられる。
+    sorted.sort((a, b) => (a.plannedDate ?? "9999-99-99").localeCompare(b.plannedDate ?? "9999-99-99"));
   }
 
   // 安定ソートなので、購入済みで分けたあとも上の並びがそのまま残る。
@@ -148,4 +163,36 @@ export function buildShoppingSections(
       return { key, label: categoryLabelOf(key), items: sortShoppingItems(visible, sort) };
     })
     .filter((section) => section.items.length > 0);
+}
+
+/**
+ * 購入予定日の見せ方（`docs/spec.md` §36）。
+ *
+ * 「今日」「明日」は日付そのものより先に読める言葉にする。買い物リストで決めたいのは
+ * 「いま出れば済むか、明日でよいか」で、`9/7` と `9/8` の見分けはその判断より一段遠い。
+ * それより先の日は月日で出す（年は出さない。買い物の予定日が年をまたぐことは想定していない）。
+ *
+ * 今日の日付は必ず呼び出し側から渡す。実行環境のローカル時刻で決めると、サーバー（UTC）と
+ * ブラウザ（JST）で「今日」が食い違い、描画が一致しない（CLAUDE.md「日付・時刻の解釈」）。
+ */
+export type ShoppingDateTone = "past" | "today" | "future";
+
+export function shoppingDateLabel(dateKey: string, todayKey: string): string {
+  const diff = dateKeyDiffDays(todayKey, dateKey);
+  if (diff === 0) return "今日";
+  if (diff === 1) return "明日";
+
+  const [, month, day] = dateKey.split("-");
+  return `${Number(month)}/${Number(day)}`;
+}
+
+/**
+ * 過ぎた予定日は色を分ける。
+ *
+ * 買うつもりだった日を過ぎても、その日付のまま残す（今日へ繰り上げると、いつ買うつもり
+ * だったかが消える）。代わりに、まだ買っていないことがひと目で分かるようにする。
+ */
+export function shoppingDateTone(dateKey: string, todayKey: string): ShoppingDateTone {
+  if (dateKey < todayKey) return "past";
+  return dateKey === todayKey ? "today" : "future";
 }
