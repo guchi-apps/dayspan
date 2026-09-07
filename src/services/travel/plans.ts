@@ -1,6 +1,7 @@
 import type { TravelPlan } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { placeDisplayName } from "@/lib/place-text";
 import {
   isTravelEstimateSource,
   isTravelMode,
@@ -73,7 +74,9 @@ export function toTravelItem(plan: TravelPlan, color: string | null = null): Tra
   return {
     kind: "travel",
     id: plan.id,
-    title: `${plan.origin} → ${plan.destination}`,
+    // カレンダー上では場所名だけを出す。住所付きの生の値は origin/destination に残す
+    // （編集フォームの初期値・地点解決に要るため。issue #587）。
+    title: `${placeDisplayName(plan.origin)} → ${placeDisplayName(plan.destination)}`,
     origin: plan.origin,
     destination: plan.destination,
     mode: plan.mode,

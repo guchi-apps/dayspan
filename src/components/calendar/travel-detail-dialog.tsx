@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { CalendarClock, CloudOff, MapPin, Pencil, Route, Trash2 } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { placeDisplayName } from "@/lib/place-text";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -119,8 +120,8 @@ export function TravelDetailDialog({
 
           <DetailRow icon={<MapPin className="size-4" />}>
             <span className="flex flex-col">
-              <span>出発地: {travel.origin}</span>
-              <span>目的地: {travel.destination}</span>
+              <span>出発地: {placeDisplayName(travel.origin)}</span>
+              <span>目的地: {placeDisplayName(travel.destination)}</span>
             </span>
           </DetailRow>
 
