@@ -33,14 +33,18 @@ import { tagColorOf } from "@/components/tags/tag-color";
 import { useTaskViewPrefs } from "@/components/tasks/use-task-view-prefs";
 import { cn } from "@/lib/utils";
 import {
+  classifyDateOf,
   classifyTasks,
   groupTasksByTag,
   NO_TAG_GROUP_KEY,
   overdueDaysLabel,
   sortDoneTasks,
   sortTasks,
-  TASK_BUCKET_LABELS,
+  taskBucketLabels,
+  TASK_SORT_LABELS,
+  TASK_SORTS,
   type TaskBucketKey,
+  type TaskSort,
 } from "@/services/notion/task-buckets";
 import type { TagCatalog, TagOption } from "@/services/notion/tag-options";
 import type { PlaceCatalog } from "@/services/notion/places";
@@ -105,10 +109,14 @@ export function TaskList({
   const todayKey = utils.todayKey();
   const tagOptions = useMemo(() => tagCatalog.task ?? [], [tagCatalog]);
 
+  // 分類の基準日は並び順に従う。予定順のときは予定日を優先し、無ければ期限で代える
+  // （issue #572 計画レビュー指摘）。期限は指定していないが予定日だけ入れているタスクも、
+  // 予定日が近ければ「今後」より前の区分に上がってくる。
   const buckets = useMemo(
-    () => classifyTasks(tasks, todayKey, utils.itemDateKey),
-    [tasks, todayKey, utils],
+    () => classifyTasks(tasks, todayKey, utils.itemDateKey, sort),
+    [tasks, todayKey, utils, sort],
   );
+  const bucketLabels = useMemo(() => taskBucketLabels(sort), [sort]);
 
   // 分類の軸にタグを出してよいか。選択肢はNotionの取得に失敗しても空になり、その失敗は
   // 画面には出ない（services/notion/tag-options.ts）。タグが1つも無いまま切り替えられると、
@@ -135,13 +143,15 @@ export function TaskList({
 
     return DUE_ORDER.map((key) => ({
       key,
-      label: TASK_BUCKET_LABELS[key],
+      label: bucketLabels[key],
       tagName: null,
       tasks: sortTasks(buckets[key], sort),
     }));
-  }, [effectiveGroupBy, sort, tasks, tagOptions, buckets]);
+  }, [effectiveGroupBy, sort, tasks, tagOptions, buckets, bucketLabels]);
 
   const doneTasks = useMemo(() => sortDoneTasks(buckets.done), [buckets]);
+
+  const nextSort = () => setSort(TASK_SORTS[(TASK_SORTS.indexOf(sort) + 1) % TASK_SORTS.length]);
 
   const patchTaskDone = async (task: TaskItem, done: boolean) => {
     if (offline) throw new Error(OFFLINE_WRITE_MESSAGE);
@@ -209,6 +219,7 @@ export function TaskList({
       tagOptions={tagOptions}
       utils={utils}
       todayKey={todayKey}
+      sort={sort}
       disabled={busyId === task.id || offline}
       onToggleDone={(done) => toggleDone(task, done)}
       onOpen={() => setViewingTask(task)}
@@ -247,11 +258,11 @@ export function TaskList({
         <Button
           variant="outline"
           size="sm"
-          aria-label={sort === "due" ? "優先度順に並べ替える" : "期限順に並べ替える"}
-          onClick={() => setSort(sort === "due" ? "priority" : "due")}
+          aria-label={`並び替え（いまは${TASK_SORT_LABELS[sort]}）`}
+          onClick={nextSort}
         >
           <ArrowUpDown className="size-4" />
-          {sort === "due" ? "期限順" : "優先度順"}
+          {TASK_SORT_LABELS[sort]}
         </Button>
         <Button
           variant="ghost"
@@ -313,7 +324,7 @@ export function TaskList({
                 ) : (
                   <ChevronRight className="size-3.5" />
                 )}
-                {TASK_BUCKET_LABELS.done}
+                {bucketLabels.done}
                 <span className="text-[10px] opacity-70">{doneTasks.length}</span>
               </button>
             </h2>
@@ -328,6 +339,7 @@ export function TaskList({
                     tagOptions={tagOptions}
                     utils={utils}
                     todayKey={todayKey}
+                    sort={sort}
                     disabled={busyId === task.id || offline}
                     onToggleDone={(done) => toggleDone(task, done)}
                     onOpen={() => setViewingTask(task)}
@@ -407,6 +419,7 @@ function TaskRow({
   tagOptions,
   utils,
   todayKey,
+  sort,
   disabled,
   onToggleDone,
   onOpen,
@@ -417,13 +430,20 @@ function TaskRow({
   tagOptions: TagOption[];
   utils: ReturnType<typeof createCalendarDateUtils>;
   todayKey: string;
+  /** 分類・超過表示の基準日を期限にするか予定日優先にするかを決める（issue #572）。 */
+  sort: TaskSort;
   disabled: boolean;
   onToggleDone: (done: boolean) => void;
   onOpen: () => void;
 }) {
-  const dueKey = task.due ? utils.itemDateKey(task.due) : null;
-  const overdue = !task.done && dueKey !== null && dueKey < todayKey;
-  const overdueLabel = dueKey !== null && !task.done ? overdueDaysLabel(dueKey, todayKey) : null;
+  // どちらの日付欄で超過を示すかは、実際に分類に使った基準日（classifyDateOf）に合わせる。
+  // 予定順で予定日を使っているタスクは「予定」欄を、それ以外は「期限」欄を赤くする。
+  const classifyDate = classifyDateOf(task, sort);
+  const classifyDateKey = classifyDate ? utils.itemDateKey(classifyDate) : null;
+  const overdue = !task.done && classifyDateKey !== null && classifyDateKey < todayKey;
+  const overdueLabel =
+    classifyDateKey !== null && !task.done ? overdueDaysLabel(classifyDateKey, todayKey) : null;
+  const overdueOnPlanned = sort === "planned" && task.planned != null;
   const tags = hideTagName ? task.tags.filter((name) => name !== hideTagName) : task.tags;
 
   return (
@@ -450,15 +470,19 @@ function TaskRow({
 
         <div className="type-label-small flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-normal text-on-surface-variant">
           {task.due && (
-            <span className={cn(overdue && "text-destructive")}>
+            <span className={cn(!overdueOnPlanned && overdue && "text-destructive")}>
               {formatTaskDate(task.due, task.hasTime, utils, todayKey)}
-              {overdueLabel && `・${overdueLabel}`}
+              {!overdueOnPlanned && overdueLabel && `・${overdueLabel}`}
             </span>
           )}
-          {/* 予定日は期限とは別の日付。分類・並び順は期限のままで、見えるだけ添える。 */}
+          {/*
+            予定日は期限とは別の日付。並び順が期限順・優先度順のときは見えるだけ添えるが、
+            予定順のときは分類・超過表示の基準もこちら（無ければ期限）に切り替わる（issue #572）。
+          */}
           {task.planned && (
-            <span className="opacity-80">
+            <span className={cn(overdueOnPlanned && overdue ? "text-destructive" : "opacity-80")}>
               予定 {formatTaskDate(task.planned, task.plannedHasTime, utils, todayKey)}
+              {overdueOnPlanned && overdueLabel && `・${overdueLabel}`}
             </span>
           )}
           {/*
