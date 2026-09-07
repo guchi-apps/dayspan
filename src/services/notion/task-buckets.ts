@@ -14,7 +14,33 @@ export const TASK_BUCKET_LABELS: Record<TaskBucketKey, string> = {
   done: "完了",
 };
 
-export type TaskSort = "due" | "priority";
+export type TaskSort = "due" | "priority" | "planned";
+
+export const TASK_SORTS: TaskSort[] = ["due", "priority", "planned"];
+
+export const TASK_SORT_LABELS: Record<TaskSort, string> = {
+  due: "期限順",
+  priority: "優先度順",
+  planned: "予定順",
+};
+
+/**
+ * 予定順で分類しているときの見出し。期限だけでなく予定日も基準に含むため、
+ * 「期限」という言葉のままだと、予定日だけが過ぎている・予定日だけがあるタスクの区分として
+ * 誤解を招く（issue #572 計画レビュー指摘）。
+ */
+export const TASK_BUCKET_LABELS_PLANNED: Record<TaskBucketKey, string> = {
+  overdue: "超過",
+  today: "今日",
+  upcoming: "今後",
+  someday: "未設定",
+  done: "完了",
+};
+
+/** 並び順に応じた区分見出し。並び順ごとに分類の基準日が変わるため、見出しもそれに合わせる。 */
+export function taskBucketLabels(sort: TaskSort): Record<TaskBucketKey, string> {
+  return sort === "planned" ? TASK_BUCKET_LABELS_PLANNED : TASK_BUCKET_LABELS;
+}
 
 const PRIORITY_ORDER: Record<string, number> = { 高: 0, 中: 1, 低: 2 };
 
@@ -29,10 +55,21 @@ function priorityRank(priority: string | null): number {
  */
 type DateKeyOf = (due: string) => string;
 
+/**
+ * 分類・超過表示の基準にする日付。予定順のときだけ予定日を優先し、無ければ期限で代える
+ * （issue #572）。期限順・優先度順のときは従来どおり期限だけを見る。
+ *
+ * `classifyTasks` と `TaskRow`（画面側の超過表示）の両方から呼ぶため、判定を1か所に置く。
+ */
+export function classifyDateOf(task: TaskItem, sort: TaskSort): string | null {
+  return sort === "planned" ? (task.planned ?? task.due) : task.due;
+}
+
 export function classifyTasks(
   tasks: TaskItem[],
   todayKey: string,
   dateKeyOf: DateKeyOf,
+  sort: TaskSort = "due",
 ): Record<TaskBucketKey, TaskItem[]> {
   const buckets: Record<TaskBucketKey, TaskItem[]> = {
     overdue: [],
@@ -49,14 +86,15 @@ export function classifyTasks(
       continue;
     }
 
-    if (!task.due) {
+    const classifyDate = classifyDateOf(task, sort);
+    if (!classifyDate) {
       buckets.someday.push(task);
       continue;
     }
 
-    const dueKey = dateKeyOf(task.due);
-    if (dueKey < todayKey) buckets.overdue.push(task);
-    else if (dueKey === todayKey) buckets.today.push(task);
+    const dateKey = dateKeyOf(classifyDate);
+    if (dateKey < todayKey) buckets.overdue.push(task);
+    else if (dateKey === todayKey) buckets.today.push(task);
     else buckets.upcoming.push(task);
   }
 
@@ -82,8 +120,32 @@ function compareByPriority(a: TaskItem, b: TaskItem): number {
   return compareByDue(a, b);
 }
 
+/**
+ * 予定順。期限は指定していないが予定日だけ入れているタスクも、優先度を確認しながら
+ * 上から順に着手できるようにするための並び（issue #572）。予定日を優先し、
+ * 予定日が無ければ期限で代える。両方無いものは後ろへ、同じ日時なら優先度→タイトルにする。
+ */
+function compareByPlanned(a: TaskItem, b: TaskItem): number {
+  const keyA = a.planned ?? a.due;
+  const keyB = b.planned ?? b.due;
+  if (keyA && keyB && keyA !== keyB) return keyA < keyB ? -1 : 1;
+  if (keyA && !keyB) return -1;
+  if (!keyA && keyB) return 1;
+
+  const priority = priorityRank(a.priority) - priorityRank(b.priority);
+  if (priority !== 0) return priority;
+
+  return a.title.localeCompare(b.title, "ja");
+}
+
+const SORT_COMPARATORS: Record<TaskSort, (a: TaskItem, b: TaskItem) => number> = {
+  due: compareByDue,
+  priority: compareByPriority,
+  planned: compareByPlanned,
+};
+
 export function sortTasks(tasks: TaskItem[], sort: TaskSort): TaskItem[] {
-  return [...tasks].sort(sort === "priority" ? compareByPriority : compareByDue);
+  return [...tasks].sort(SORT_COMPARATORS[sort]);
 }
 
 /** 完了タスクは履歴なので、新しく期限が来たものから見せる。 */
@@ -178,11 +240,12 @@ export function groupTasksByTag(
 const OVERDUE_DAYS_FORMAT = new Intl.NumberFormat("ja-JP");
 
 /**
- * 期限を過ぎたタスクに添える超過日数のラベル（「5日超過」）。今日・これからの期限では null。
+ * 基準日（期限、予定順のときは予定日）を過ぎたタスクに添える超過日数のラベル（「5日超過」）。
+ * 今日・これからの基準日では null。
  *
- * 「期限切れ」に入っていることは分類で分かるが、昨日過ぎたのか半年放置しているのかは分からない。
+ * 「期限切れ」「超過」に入っていることは分類で分かるが、昨日過ぎたのか半年放置しているのかは分からない。
  */
-export function overdueDaysLabel(dueKey: string, todayKey: string): string | null {
-  if (dueKey >= todayKey) return null;
-  return `${OVERDUE_DAYS_FORMAT.format(dateKeyDiffDays(dueKey, todayKey))}日超過`;
+export function overdueDaysLabel(dateKey: string, todayKey: string): string | null {
+  if (dateKey >= todayKey) return null;
+  return `${OVERDUE_DAYS_FORMAT.format(dateKeyDiffDays(dateKey, todayKey))}日超過`;
 }
