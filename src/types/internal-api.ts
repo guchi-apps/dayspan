@@ -78,8 +78,11 @@ export type InternalReminder = {
   category: string | null;
   /** 毎年の項目かどうか。プロパティ未設定で判断できないときは null */
   annual: boolean | null;
-  /** garbage は外部アプリ（myroom）が書くゴミの収集日。DaySpanからは読むだけ */
-  source: "reminder" | "garbage";
+  /**
+   * garbage は外部アプリ（myroom）が書くゴミの収集日。DaySpanからは読むだけ。
+   * shopping はその日に買う予定の買い物を1件へまとめたもの（docs/spec.md §36）。
+   */
+  source: "reminder" | "garbage" | "shopping";
   memo: string | null;
   url: string | null;
 };

@@ -17,10 +17,11 @@ type PropertyValue = {
   title?: Array<{ plain_text?: string }>;
   rich_text?: Array<{ plain_text?: string }>;
   select?: { name?: string } | null;
+  date?: { start?: string | null } | null;
   checkbox?: boolean;
 };
 
-type ShoppingPage = { id: string; url?: string; properties?: Record<string, PropertyValue> };
+export type ShoppingPage = { id: string; url?: string; properties?: Record<string, PropertyValue> };
 
 const text = (items?: Array<{ plain_text?: string }>) =>
   items?.map((item) => item.plain_text ?? "").join("").trim() || "";
@@ -42,7 +43,21 @@ function toPriority(name: string | undefined): ShoppingPriority {
     : null;
 }
 
-function normalizeShoppingPage(page: ShoppingPage, map: ShoppingPropertyMap): ShoppingItem | null {
+/**
+ * 購入予定日は日付だけを持つ（docs/spec.md §36）。
+ *
+ * Notion側の日付プロパティには時刻も入れられる（別アプリやNotionの画面から直接入れたもの）。
+ * 時刻ごと持つと、買い物の項目が終日と時刻ありに分かれ、カレンダーへ出す位置も分かれる。
+ * 読む時点で日付へ落として、以降はどこから来た値でも同じ形にする。
+ */
+function toPlannedDate(value: string | null | undefined): string | null {
+  return value ? value.slice(0, 10) : null;
+}
+
+export function normalizeShoppingPage(
+  page: ShoppingPage,
+  map: ShoppingPropertyMap,
+): ShoppingItem | null {
   const get = (field: ShoppingField) => (map[field] ? page.properties?.[map[field]!] : undefined);
 
   const name = text(get("title")?.title);
@@ -55,6 +70,7 @@ function normalizeShoppingPage(page: ShoppingPage, map: ShoppingPropertyMap): Sh
     category: get("category")?.select?.name ?? null,
     memo: text(get("memo")?.rich_text) || null,
     priority: toPriority(get("priority")?.select?.name),
+    plannedDate: toPlannedDate(get("plannedDate")?.date?.start),
     bought: get("bought")?.checkbox === true,
     url: page.url ?? null,
   };
@@ -98,6 +114,8 @@ export type ShoppingWriteInput = {
   category?: string | null;
   memo?: string | null;
   priority?: ShoppingPriority;
+  /** `YYYY-MM-DD` か、消すときは null。項目ごと渡さなければ「触らない」。 */
+  plannedDate?: string | null;
   bought?: boolean;
 };
 
@@ -122,6 +140,9 @@ function toProperties(
   }
   if (input.priority !== undefined) {
     set("priority", { select: input.priority ? { name: input.priority } : null });
+  }
+  if (input.plannedDate !== undefined) {
+    set("plannedDate", { date: input.plannedDate ? { start: input.plannedDate } : null });
   }
   if (input.bought !== undefined) {
     set("bought", { checkbox: input.bought });
@@ -186,6 +207,7 @@ export async function createShoppingItem(
     category: input.category ?? null,
     memo: input.memo ?? null,
     priority: input.priority ?? null,
+    plannedDate: input.plannedDate ?? null,
     bought: input.bought ?? false,
     url: "url" in page ? (page.url ?? null) : null,
   };

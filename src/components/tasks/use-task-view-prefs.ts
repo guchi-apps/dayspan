@@ -2,7 +2,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-import type { TaskSort } from "@/services/notion/task-buckets";
+import { TASK_SORTS, type TaskSort } from "@/services/notion/task-buckets";
 
 // タスク画面の見え方（分類の軸・並び順・完了の開閉）を端末に覚えさせる（issue #286）。
 //
@@ -50,7 +50,7 @@ function readStored(): Prefs {
 
   return {
     groupBy: groupBy === "tag" ? "tag" : DEFAULT_PREFS.groupBy,
-    sort: sort === "priority" ? "priority" : DEFAULT_PREFS.sort,
+    sort: TASK_SORTS.includes(sort as TaskSort) ? (sort as TaskSort) : DEFAULT_PREFS.sort,
     doneOpen: doneOpen === "1",
   };
 }

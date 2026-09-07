@@ -1,6 +1,10 @@
 // 予定の色はGoogle側のカレンダー色をそのまま使う（docs/spec.md §5）。
-// パレットには淡い色（バナナ・シトロン等）も濃い色（トマト・ブルーベリー等）も含まれるため、
-// 文字色を固定すると片方が読めなくなる。背景の明るさから選び直す。
+// パレットには淡い色（バナナ・シトロン等）も濃い色（トマト・ブルーベリー等）も含まれる。
+//
+// カレンダーの面に置く項目の塗り方は3段に分かれる。
+//   予定・移動           `tintedEventColors`   淡い面＋左端の色帯（issue #573）
+//   活動記録（レーン）   `subduedEventColors`  さらに淡い面＋色帯（issue #241）
+//   保存先を選ぶチップ   `eventColors`         ベタ塗り。面そのものが色見本のため
 
 const FALLBACK = "#5484ed";
 
@@ -44,6 +48,9 @@ function contrastRatio(a: number, b: number): number {
  * 白のままで足りる色は白のままにし、足りない色だけ濃色へ切り替える。
  * 常に最大コントラストを選ぶとトマトやブルーベリーまで黒文字になり、
  * Google Calendar上での見え方から離れすぎるため。3.0はWCAGの大きめ文字の基準。
+ *
+ * 文字色を背景の明るさから選び直す必要があるのは、面をカレンダー色でベタ塗りする場面だけ。
+ * カレンダーの帯（`tintedEventColors`）は塗りが淡く、下地が常に画面の背景になるため使わない。
  */
 const WHITE_TEXT_MIN_CONTRAST = 3;
 
@@ -90,7 +97,39 @@ export function subduedEventColors(color: string | null): SubduedEventColors {
   };
 }
 
-/** 月表示のタスクなど、色を面ではなく線として使う場面向け。 */
-export function eventAccent(color: string | null): string {
-  return color ?? FALLBACK;
+export type TintedEventColors = {
+  /** 地の色に混ぜた淡い面。透明にしないのは下記のとおり。 */
+  background: string;
+  border: string;
+  /** 左端に立てる色帯。カレンダー色の主張はここだけが担うため、薄めない。 */
+  accent: string;
+};
+
+/**
+ * 予定・移動の色（issue #573）。
+ *
+ * 以前はカレンダー色でベタ塗りしていたが、予定が3件並ぶとマスの大半が飽和した色になり、
+ * 日付の数字・勤務場所のチップが予定の色に負けていた。塗りを地の色近くまで落とし、
+ * カレンダー色は左端の3pxの帯へ集約する。
+ *
+ * 塗りを完全に外さないのは、時間グリッドでは面の高さが「その予定が占めた時間」を表すため。
+ * 活動記録を淡くしたとき（issue #241）と同じ理由で、枠線だけにすると重なりが線の交差にしか
+ * 見えず、空いている時間を探す画面として読めなくなる。加えて、週・期間をまたぐ予定の続きの側は
+ * 左の帯を引かない（`continuesBefore` で `border-l-0`）ため、面まで外すとその帯から
+ * カレンダー色の手掛かりが何も残らない。
+ *
+ * `transparent` ではなく `--md-surface-container-lowest` へ混ぜるのは、時間グリッドの時刻の罫線と
+ * 終日エリアの日の区切り線が帯の中を通って見えるため。
+ *
+ * 文字色は返さない。塗りが淡く下地は常に画面の背景になるので、テーマの文字色に任せる
+ * （`subduedEventColors` と同じ扱い）。
+ */
+export function tintedEventColors(color: string | null): TintedEventColors {
+  const base = color ?? FALLBACK;
+
+  return {
+    background: `color-mix(in srgb, ${base} 14%, var(--md-surface-container-lowest))`,
+    border: `color-mix(in srgb, ${base} 38%, transparent)`,
+    accent: base,
+  };
 }

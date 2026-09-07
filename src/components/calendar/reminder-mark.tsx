@@ -1,4 +1,4 @@
-import { Trash } from "lucide-react";
+import { ShoppingCart, Trash } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { ReminderItem } from "@/types/calendar";
@@ -17,6 +17,10 @@ import type { ReminderItem } from "@/types/calendar";
  *
  * 品目ごとには分けない。Notionへ渡るのは品目名の文字列だけで、種類は常に「ゴミの日」のため、
  * どの品目かは名前が示す。
+ *
+ * 購入予定日のある買い物（docs/spec.md §36）はカートの形にする。ゴミの日と同じ理由で、
+ * 枠に出るのは「買い物 3件」という件数だけで、菱形では日付リマインドと見分けが付かない。
+ * 買い物とゴミの日はどちらも週に何度も入るため、形だけで分かれることに幅を割く価値がある。
  */
 export function ReminderMark({
   source,
@@ -36,6 +40,18 @@ export function ReminderMark({
   if (source === "garbage") {
     return (
       <Trash
+        aria-hidden
+        strokeWidth={2.25}
+        className={cn("shrink-0 text-tertiary", size === "md" ? "size-3" : "size-2.5")}
+      />
+    );
+  }
+
+  // 買い物も同じ理由で線画にする。枠に出るのは「買い物 3件」という件数だけで、菱形のままだと
+  // 日付リマインドと見分けが付かない。大きさ・色はゴミ箱と揃える。
+  if (source === "shopping") {
+    return (
+      <ShoppingCart
         aria-hidden
         strokeWidth={2.25}
         className={cn("shrink-0 text-tertiary", size === "md" ? "size-3" : "size-2.5")}
