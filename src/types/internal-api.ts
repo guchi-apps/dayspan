@@ -101,7 +101,7 @@ export type InternalTravel = {
   endTime: string | null;
   /** 所要時間が手入力でないかどうか（目安であることを示すために持つ） */
   estimated: boolean;
-  /** 所要時間の出どころ。MANUAL / AI / TRANSIT（trainroute経由の経路検索）/ YAHOO（Yahoo!乗換案内） */
+  /** 所要時間の出どころ。MANUAL / AI / TRANSIT（旧trainroute経由の経路検索。撤去済み・過去データのみ）/ YAHOO（Yahoo!乗換案内） */
   estimateSource: TravelEstimateSource;
   returnLeg: boolean;
   note: string | null;

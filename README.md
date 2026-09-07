@@ -82,7 +82,7 @@ bash scripts/setup-db.sh   # ローカルMariaDBにDB・ユーザーを作成（
 
 本体には `node_modules` を置いていないため、マイグレーションはworktree側で `pnpm exec prisma migrate deploy` を実行します（DBは本体・worktreeで共通の `app_dayspan`）。
 
-`GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` は開発用のOAuthクライアントで1Passwordには無く、空のままで構いません。空だとカレンダー連携の接続だけができず、画面は開きます。VAPID鍵・trainrouteのトークンも同様に任意です。
+`GOOGLE_CALENDAR_CLIENT_ID` / `GOOGLE_CALENDAR_CLIENT_SECRET` は開発用のOAuthクライアントで1Passwordには無く、空のままで構いません。空だとカレンダー連携の接続だけができず、画面は開きます。VAPID鍵も同様に任意です。
 
 すでに作成済みのworktreeには、`scripts/start-issue.sh <issue番号>`（または issue-deck の「ローカルで開始」）をもう一度通すと配られます。手で置く場合は本体の `.env.local` をコピーし、`PORT` を `6000 + Issue番号` に直します。
 

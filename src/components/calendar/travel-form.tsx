@@ -23,7 +23,6 @@ import {
   yahooSearchedDateKey,
   yahooStationName,
 } from "@/lib/yahoo-transit-route";
-import type { TransitQuota } from "@/lib/transit-quota";
 import type { PlaceCatalog } from "@/services/notion/places";
 import {
   TRAVEL_MODES,
@@ -37,16 +36,9 @@ import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { ItemFormActions } from "./item-form-actions";
-import { LocationInput, placeCoordinates, withPlaceAddress } from "./location-input";
+import { LocationInput, withPlaceAddress } from "./location-input";
 import { readErrorMessage } from "./response-error";
-import {
-  estimateNote,
-  quotaNote,
-  resultNote,
-  transitDetail,
-  yahooImportNote,
-  type EstimateAttribution,
-} from "./travel-estimate-notes";
+import { estimateNote, resultNote, transitDetail, yahooImportNote } from "./travel-estimate-notes";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export type TravelDraft = {
@@ -106,10 +98,6 @@ export function TravelForm({
   const [roundTrip, setRoundTrip] = useState(Boolean(draft.roundTrip && draft.linkedEvent));
 
   const [estimates, setEstimates] = useState<TravelEstimate[] | null>(null);
-  // 経路検索の提供元。NAVITIMEの規約が表示を求めるため、返ってきた値をそのまま出す。
-  const [attribution, setAttribution] = useState<EstimateAttribution | null>(null);
-  // 経路検索の残り回数。見積もりの応答に一緒に載って返る（そのためだけの往復は増やさない）。
-  const [quota, setQuota] = useState<TransitQuota | null>(null);
   const [estimating, setEstimating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -288,9 +276,6 @@ export function TravelForm({
     try {
       // AIへは住所まで添えて渡す。「自宅」のような名前だけでは地点が定まらず、
       // 見積もりが常に0件になる。場所DBは既に手元にあるため往復は増えない。
-      //
-      // 経路検索は座標で行うため、場所DBに登録済みの座標も一緒に渡す。サーバー側で
-      // 引き直すと、押すたびにNotionの全件取得が増える（docs/spec.md §29）。
       const response = await fetch("/api/travels/estimate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -298,23 +283,14 @@ export function TravelForm({
           origin: withPlaceAddress(origin, placeCatalog.places),
           destination: withPlaceAddress(destination, placeCatalog.places),
           mode,
-          arriveAt: arriveAt ? localInputToIso(arriveAt, timeZone) : null,
-          originCoordinates: placeCoordinates(origin, placeCatalog.places),
-          destinationCoordinates: placeCoordinates(destination, placeCatalog.places),
         }),
       });
       if (!response.ok) {
         setError(await readErrorMessage(response, "所要時間を調べられませんでした。"));
         return;
       }
-      const body = (await response.json()) as {
-        estimates: TravelEstimate[];
-        attribution?: EstimateAttribution | null;
-        quota?: TransitQuota | null;
-      };
+      const body = (await response.json()) as { estimates: TravelEstimate[] };
       setEstimates(body.estimates);
-      setAttribution(body.attribution ?? null);
-      setQuota(body.quota ?? null);
     } catch {
       setError("所要時間を調べられませんでした。");
     } finally {
@@ -475,9 +451,7 @@ export function TravelForm({
             同じ扱い）。 */}
         {mode === "PUBLIC_TRANSIT" ? (
           <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
-            <p className="text-xs text-muted-foreground">
-              {estimateNote(estimateSource, mode, attribution)}
-            </p>
+            <p className="text-xs text-muted-foreground">{estimateNote(estimateSource, mode, null)}</p>
 
             {/* どちらの時刻で探すか（issue #444）。時刻の有無だけで決めると、予定から足した
                 移動では出発時刻に仮の値（開始30分前）が必ず入っているぶん、その値で探すことに
@@ -568,8 +542,7 @@ export function TravelForm({
             {estimates === null ? (
               <>
                 <p className="text-xs text-muted-foreground">
-                  {estimateNote(estimateSource, mode, attribution)}
-                  <TermsLink attribution={estimateSource === "TRANSIT" ? attribution : null} />
+                  {estimateNote(estimateSource, mode, null)}
                 </p>
                 <Button
                   type="button"
@@ -586,7 +559,6 @@ export function TravelForm({
                       ? "所要時間を調べる"
                       : "調べ直す"}
                 </Button>
-                <QuotaNote note={quotaNote(quota, timeZone)} />
               </>
             ) : estimates.length === 0 ? (
               <>
@@ -605,14 +577,7 @@ export function TravelForm({
               </>
             ) : (
               <>
-                <p className="text-xs text-muted-foreground">
-                  {resultNote(estimates, attribution)}
-                  <TermsLink
-                    attribution={
-                      estimates.some((estimate) => estimate.source === "transit") ? attribution : null
-                    }
-                  />
-                </p>
+                <p className="text-xs text-muted-foreground">{resultNote(estimates, null)}</p>
                 <ul className="flex flex-col gap-1">
                   {estimates.map((estimate, index) => (
                     // 経路検索では同じ「公共交通」の候補が複数並ぶ。交通手段は一意にならない。
@@ -644,9 +609,6 @@ export function TravelForm({
                     </li>
                   ))}
                 </ul>
-                {/* 押した直後は、いま使った1回が引かれた値に変わる。減ったことがその場で
-                    見えるのが、設定画面（設定 ▸ 移動）ではなくここにも置く理由。 */}
-                <QuotaNote note={quotaNote(quota, timeZone)} />
               </>
             )}
           </div>
@@ -685,41 +647,6 @@ export function TravelForm({
           deleteDisabled={busy || offline}
         />
       )}
-    </>
-  );
-}
-
-/**
- * 提供元の利用規約へのリンク。
- *
- * NAVITIMEの利用規約が、規約へのリンクをサイト内に出すことを求めている。URLは
- * trainroute が応答へ添えてくるので、こちらでは持たない（提供元が変わってもここは変えない）。
- */
-/** 経路検索の残り回数の1行。取れていないときは何も出さない。 */
-function QuotaNote({ note }: { note: string | null }) {
-  if (!note) return null;
-
-  return (
-    <p className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
-      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-travel" />
-      {note}
-    </p>
-  );
-}
-
-function TermsLink({ attribution }: { attribution: EstimateAttribution | null }) {
-  if (!attribution?.termsUrl) return null;
-  return (
-    <>
-      {" "}
-      <a
-        href={attribution.termsUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline underline-offset-2"
-      >
-        利用規約
-      </a>
     </>
   );
 }
