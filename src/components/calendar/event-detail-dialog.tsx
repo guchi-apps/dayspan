@@ -36,7 +36,7 @@ import {
   type TravelItem,
 } from "@/types/calendar";
 
-import { eventColors } from "./calendar-color";
+import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { EventOutcomeDialog } from "./event-outcome-dialog";
 import { EventOutcomeMark } from "./event-outcome-mark";
@@ -318,18 +318,21 @@ export function EventDetailDialog({
               {linkedTravels.map((travel) => {
                 // 背景は書き出し先カレンダーの色を使う（issue #492）。時間グリッドの
                 // TravelBlockと同じ考え方で、塗り・枠線は予定と同じにし、移動だと分かるのは
-                // 交通手段の印だけにする（issue #502）。
-                const colors = eventColors(travel.color);
+                // 交通手段の印だけにする（issue #502）。面は淡く、色は左端の帯へ（issue #573）。
+                // カレンダー上の移動と同じものを指しているため、ここだけベタ塗りを残さない。
+                const colors = tintedEventColors(travel.color);
                 return (
                   <button
                     key={travel.id}
                     type="button"
                     onClick={() => openTravel(travel)}
-                    className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs"
+                    className="flex items-center gap-2 rounded-md border py-1.5 pr-2.5 text-left text-xs text-on-surface"
                     style={{
                       backgroundColor: colors.background,
-                      color: colors.foreground,
                       borderColor: colors.border,
+                      borderLeftWidth: "3px",
+                      borderLeftColor: colors.accent,
+                      paddingLeft: "8px",
                     }}
                   >
                     <TravelMark mode={travel.mode} className="size-3.5 shrink-0" />

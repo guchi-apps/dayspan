@@ -3,7 +3,7 @@
 import { memo, useCallback, useMemo } from "react";
 
 import { cn } from "@/lib/utils";
-import { eventColors, subduedEventColors } from "./calendar-color";
+import { subduedEventColors, tintedEventColors } from "./calendar-color";
 import { dayTone, weekdayLabel } from "./day-tone";
 import type { RunningActivityItem } from "@/types/activity";
 import {
@@ -41,6 +41,7 @@ import {
   type TaskOccurrence,
 } from "./item-layout";
 import { ReminderMark } from "./reminder-mark";
+import { TaskCheckMark } from "./task-check-mark";
 import { taskLinkForField, taskLinkStageLabel, taskLinkTargetedLabel } from "./task-link-label";
 
 /**
@@ -860,7 +861,8 @@ function DayColumn({
             utils.itemDateKey(event.start) === dateKey);
 
         // 活動記録は左端のレーンへ分けてあるため、ここへ来るのは普通の予定だけ（issue #327）。
-        const colors = eventColors(event.color);
+        // 塗りは地の色に近い淡い面にし、カレンダー色は左端の3pxの帯へ集約する（issue #573）。
+        const colors = tintedEventColors(event.color);
         // 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。
         const outcome = event.outcome ?? null;
 
@@ -914,16 +916,22 @@ function DayColumn({
               className={cn(
                 // ボタンは中身を上下中央へ寄せるため、flexにして上揃えへ戻す。
                 // 高さのある予定で、タイトルが枠の真ん中から始まって見えるのを防ぐ。
-                "flex size-full flex-col overflow-hidden rounded-item border px-1.5 py-0.5 text-left text-[10px] leading-tight",
+                "flex size-full flex-col overflow-hidden rounded-item border py-0.5 pr-1.5 text-left text-[10px] leading-tight",
                 eventPreview && "ring-2 ring-foreground/50",
-                // 起こらなかった予定は明るさだけ下げる。塗りを抜くと、どのカレンダーの予定
-                // だったかが読めなくなり、活動記録の描き分けとも紛れる（docs/spec.md §37）。
-                outcome && "opacity-55",
+                // 起こらなかった予定は面を外す（issue #573）。以前は opacity を下げていたが、
+                // 淡い面に55%を掛けると面も文字も消える。色帯は残すので、どのカレンダーの
+                // 予定だったかは読める（docs/spec.md §37）。
+                outcome ? "text-on-surface-variant" : "text-on-surface",
               )}
               style={{
-                backgroundColor: colors.background,
-                color: colors.foreground,
+                backgroundColor: outcome
+                  ? "var(--md-surface-container-lowest)"
+                  : colors.background,
                 borderColor: colors.border,
+                // 左の余白（4px）と帯（3px）で、右側の余白6px＋枠線1pxと同じ7pxにそろえる。
+                borderLeftWidth: "3px",
+                borderLeftColor: colors.accent,
+                paddingLeft: "4px",
               }}
               title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${outcome ? `[${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}] ` : ""}${event.title}`}
             >
@@ -1019,8 +1027,8 @@ function DayColumn({
                   : ""
             }${task.title}`}
           >
-            {/* 予定が「幅」なのに対し、タスクは期限という「点」。目盛り線として描き分ける。
-                紐づいたタスクは、目盛りの代わりに段階の印を立てる。 */}
+            {/* 予定が「幅」なのに対し、タスクは期限という「点」。引き出し線の先の印で描き分ける。
+                紐づいたタスクは、チェックボックスの代わりに段階の印を立てる。 */}
             <span
               className="flex shrink-0 items-center"
               style={{ transform: `translateY(${shift}px)` }}
@@ -1035,17 +1043,7 @@ function DayColumn({
                   />
                 ))
               ) : (
-                <span
-                  aria-hidden
-                  className={cn(
-                    "h-2.5 w-0.5",
-                    task.done
-                      ? "bg-on-surface-variant/60"
-                      : planned
-                        ? "bg-primary/40"
-                        : "bg-primary",
-                  )}
-                />
+                <TaskCheckMark done={task.done} planned={planned} size="md" />
               )}
             </span>
             <MarkLeader
@@ -1615,9 +1613,13 @@ const AllDayPane = memo(function AllDayPane({
 });
 
 /**
- * 終日エリアに置く予定。活動記録のカレンダーの予定は、時間グリッドと同じく
- * 塗りを落として印を添える（issue #241）。記録は時刻を持つため終日にはまず現れないが、
- * 同じカレンダーの終日予定だけ濃く残ると、どちらのカレンダーの予定か読み違えるため揃える。
+ * 終日エリアに置く予定。塗りは地の色に近い淡い面で、カレンダー色は左端の帯（issue #573）。
+ *
+ * 活動記録のカレンダーの予定（`subdued`）は、ここでは面ごと外して帯と印だけにする。記録は時刻を
+ * 持つため終日にはまず現れないが、予定が淡い面を持つようになったため、レーンと同じ 20% の面のままだと
+ * 終日エリアで普通の予定と同じ見え方になる。記録であることを示していた「塗りを落とす」という差
+ * （issue #241）が消えないよう、一段さらに落として住み分ける。レーン（`activity-lane-block.tsx`）の
+ * ほうは面が占有時間を示す役割を持っているため変えない。
  */
 function AllDayEventChip({
   event,
@@ -1636,7 +1638,7 @@ function AllDayEventChip({
   onStartDrag: (event: React.PointerEvent) => void;
   onOpen: () => void;
 }) {
-  const colors = eventColors(event.color);
+  const colors = tintedEventColors(event.color);
   const quiet = subdued ? subduedEventColors(event.color) : null;
   // 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。
   const outcome = event.outcome ?? null;
@@ -1648,26 +1650,27 @@ function AllDayEventChip({
       onClick={onOpen}
       className={cn(
         "clip-nowrap flex w-full items-center gap-1 rounded-item border px-1.5 text-left text-[10px] leading-5 font-medium",
-        quiet && "border-l-[3px] text-on-surface",
+        // 起こらなかった予定は面を外す（issue #573）。淡い面に opacity を掛けると消えるため。
+        outcome ? "text-on-surface-variant" : "text-on-surface",
         // 期間の境界で切れた続きの側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
         continuesBefore && "rounded-l-none border-l-0",
         continuesAfter && "rounded-r-none border-r-0",
         dragging && "ring-2 ring-foreground/50",
-        outcome && "opacity-55",
       )}
-      style={
-        quiet
-          ? {
-              backgroundColor: quiet.background,
-              borderColor: quiet.border,
-              borderLeftColor: continuesBefore ? undefined : quiet.accent,
-            }
+      style={{
+        // 活動記録は面ごと外す。予定が淡い面を持つようになったため（上のコメント）。
+        backgroundColor:
+          quiet || outcome ? "var(--md-surface-container-lowest)" : colors.background,
+        borderColor: quiet ? quiet.border : colors.border,
+        // 続きの側は境界の線を引かないため、色帯も立てない。
+        ...(continuesBefore
+          ? null
           : {
-              backgroundColor: colors.background,
-              color: colors.foreground,
-              borderColor: colors.border,
-            }
-      }
+              borderLeftWidth: "3px",
+              borderLeftColor: quiet ? quiet.accent : colors.accent,
+              paddingLeft: "4px",
+            }),
+      }}
       title={
         outcome ? `${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}: ${event.title}` : event.title
       }
@@ -1681,7 +1684,7 @@ function AllDayEventChip({
 }
 
 /**
- * 終日エリアに置く時刻なしのタスク。予定日の枠は枠線を破線・目盛りを薄くして、
+ * 終日エリアに置く時刻なしのタスク。予定日の枠は枠線を破線・印の輪郭を薄くして、
  * 締切（期限）ではなく見込みであることを示す（docs/spec.md §5）。
  */
 function AllDayTaskChip({
@@ -1729,13 +1732,7 @@ function AllDayTaskChip({
           />
         ))
       ) : (
-        <span
-          aria-hidden
-          className={cn(
-            "h-2.5 w-0.5 shrink-0",
-            task.done ? "bg-on-surface-variant/60" : planned ? "bg-primary/40" : "bg-primary",
-          )}
-        />
+        <TaskCheckMark done={task.done} planned={planned} size="md" />
       )}
       <span className="clip-nowrap">
         {task.title}
