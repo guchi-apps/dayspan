@@ -514,6 +514,20 @@ Prismaスキーマのフィールド削除・関数やエクスポートの改�
 場合、PR作成の直前に `git fetch origin && git merge origin/develop`（またはrebase）してから
 `pnpm typecheck` を通す。CIの結果だけを根拠にしない。
 
+## 計画レビューはissueコメントとして非同期に届く
+
+`21.plan-required` が付いたIssueでは、計画の内容に対するレビュー（本文末尾に
+`<!-- supervisor:plan-review -->` を持つコメント）がissueへ投稿される。**投稿の時刻はこちらの
+作業の進み具合とは無関係で、実装中・PR作成後に届くこともある。**
+
+issue #571 では、計画の承認を得て実装している最中にG1〜G3の指摘が投稿され、それを読む前に出した
+develop向けPRが約4分で自動マージされた。結果、レビュー対応が2本目のPRに分かれた。
+
+**PRを作る直前に `gh api repos/:owner/:repo/issues/<番号>/comments` を実行する**（作成後ではなく）。
+一度マージされると同じPRへは積めず、追加のPRを出すしかない（上記「develop向けPRは作成直後に
+マージされうる」と同じ理由）。なお `gh issue view --comments` は Projects (classic) 廃止の
+GraphQLエラーで落ちることがあるため、コメントだけを読むならREST APIのほうが確実。
+
 ## develop向けPRは作成直後にマージされうる
 
 `claude-review-develop.yml` はCIが通った時点で自動マージまで進む。issue #352 では、PR作成から
