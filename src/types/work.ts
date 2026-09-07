@@ -1,3 +1,5 @@
+import { dateKeyDiffDays } from "@/lib/calendar-range";
+
 /**
  * 勤務場所・出張・年休・会社休業日（docs/spec.md §34）。
  *
@@ -119,6 +121,60 @@ export function openWorkRecords(records: WorkRecordItem[], todayKey: string): Wo
   return records
     .filter((record) => workTodos(record, todayKey).length > 0)
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
+
+/**
+ * 事前申請を「いま片付けるもの」として区画へ出す先の幅（日・issue #571）。
+ *
+ * 事前申請は先の予定にも付くため、絞り込まないと「まだ申請しなくてよい先の出張・年休」が
+ * 同じ枠へ積み上がり、いま手を打つべきものがその中に埋もれる。設定で変えられるようにしない
+ * のは、この1つの数字のために設定画面へ欄が1つ増えるため。
+ */
+export const PRE_APPLY_HORIZON_DAYS = 7;
+
+/**
+ * その手続きを、いま片付けるものとして区画の先頭に出すか（issue #571）。
+ *
+ * **事後登録は常に出す。** `workTodos()` が終了日を過ぎたものしか数えないため、未対応として
+ * 挙がっている時点で「もうできる・まだ済んでいない」もので、先送りする理由が無い。
+ *
+ * **事前申請は開始日で決める。** 今日+7日以内なら出し、それより先は畳む。過ぎたもの
+ * （開始日が今日より前）は畳まない。申請し損ねた記録は件数も少なく、畳むとそのまま忘れる。
+ * 日数差は負の値になるため、`<=` の一式で自然に含まれる。
+ */
+export function isDueWorkTodo(
+  record: WorkRecordItem,
+  todo: WorkTodo,
+  todayKey: string,
+): boolean {
+  if (todo === "postRegistered") return true;
+  return dateKeyDiffDays(todayKey, record.startDate) <= PRE_APPLY_HORIZON_DAYS;
+}
+
+/**
+ * 区画に出す記録を「いま片付けるもの」と「まだ先のもの」へ分ける（issue #571）。
+ *
+ * 何が未対応かの判定は `workTodos()` のまま。ここが足すのは、そのうちどれを先に出すかだけで、
+ * 未対応の数え方（ドロワーのバッジ・日別一覧の印）は変えない。並び順と「手続きが残っている
+ * ものだけ」の絞り込みは `openWorkRecords()` に任せ、日付の規則を二重に持たない。
+ */
+export function splitOpenWorkRecords(
+  records: WorkRecordItem[],
+  todayKey: string,
+): { due: WorkRecordItem[]; later: WorkRecordItem[] } {
+  const due: WorkRecordItem[] = [];
+  const later: WorkRecordItem[] = [];
+
+  for (const record of openWorkRecords(records, todayKey)) {
+    const todos = workTodos(record, todayKey);
+    if (todos.some((todo) => isDueWorkTodo(record, todo, todayKey))) {
+      due.push(record);
+    } else {
+      later.push(record);
+    }
+  }
+
+  return { due, later };
 }
 
 /** 行に出すチェックボックス1件ぶんの状態。 */
