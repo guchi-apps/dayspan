@@ -110,12 +110,15 @@ export function workTodos(record: WorkRecordItem, todayKey: string): WorkTodo[] 
 }
 
 /**
- * 出張・年休の区画に出す記録。手続きが残っているものだけを日付順に並べる。
+ * 手続きが残っている記録を日付順に並べる。区画に出す候補そのもの。
  *
  * 済んだものをその月のあいだ並べたままにすると、開く理由（まだ済ませていないものを片付ける）に
  * 対して読むものが増えるだけになる。出張の前で事後登録だけが残っている記録も、`workTodos()` が
  * 終了日を過ぎるまで数えないため一緒に落ちる（日付の規則をここへ二重に持たない）。
  * 済んだ記録は日別の一覧に残っており、行を押せば入力ダイアログから外せる（issue #412）。
+ *
+ * **このうちどれを先に出すかは `splitOpenWorkRecords()` が決める**（issue #571）。ここが持つのは
+ * 「手続きが残っているか」だけで、いつのものかは見ない。
  */
 export function openWorkRecords(records: WorkRecordItem[], todayKey: string): WorkRecordItem[] {
   return records

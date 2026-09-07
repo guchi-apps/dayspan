@@ -239,10 +239,19 @@ export function WorkScreen({
   // 見出しの件数は総数のまま（ドロワーのバッジが数えているのも総数で、片方だけ減ると同じ
   // 画面の中で数字が食い違う）。畳んだぶんの件数はボタンに出すので、総数＝表示中＋畳んだぶん
   // として読める。
-  const openTodos = openTrips.flatMap((trip) => workTodos(trip, todayKey));
   const trips = splitOpenWorkRecords(openTrips, todayKey);
   const leaves = splitOpenWorkRecords(openLeaves, todayKey);
-  const openLeaveCount = leaves.due.length + leaves.later.length;
+  // 赤い件数が数えるのは「いま手を打つべき件数」（docs/spec.md §34）。畳んだぶんまで足すと、
+  // 全件が先の予定の月に「未対応 3件」の直下へ「いま対応が必要な手続きはありません。」が並び、
+  // 同じ見出しの中で意味が反対になる（issue #571 計画レビューG2の指摘）。畳んだぶんの件数は
+  // 折りたたみのボタンが出すため、総数も画面から読める。ドロワーのバッジ（`/api/work/alerts`）は
+  // 総数のままにする。あちらは「勤務の画面を開く理由があるか」を示すもので役割が違う。
+  //
+  // dueの記録の手続きは必ず全てdueになる。事後登録が未対応に数えられるのは終了日を過ぎた
+  // ときだけ（`workTodos()`）で、そのとき開始日も当然過ぎており事前申請もdueになるため、
+  // 「事後登録がdueで事前申請がlater」の組み合わせは起きない。
+  const openTodos = trips.due.flatMap((trip) => workTodos(trip, todayKey));
+  const openLeaveCount = leaves.due.length;
 
   return (
     <div className="flex h-dvh flex-col">
@@ -616,6 +625,9 @@ export function WorkScreen({
   );
 }
 
+/** 区画の1件をどちらとして描くか（issue #571）。 */
+type RecordTone = "due" | "later";
+
 /**
  * 出張・年休の区画の中身（issue #571）。
  *
@@ -624,6 +636,10 @@ export function WorkScreen({
  *
  * 開閉を端末に覚えさせないのは、この区画を開く理由が毎回「いま片付けるもの」から始まるため。
  * 前に開いたまま覚えていると、次に来たときも先の予定が並んだ状態から読むことになる。
+ *
+ * 開いた先の記録は `tone="later"` で描く。いま片付けるものと同じ赤枠のまま並べると、
+ * 「まだ申請しなくてよい」と分けた意味が開いた瞬間に見え方の上では消える
+ * （issue #571 計画レビューG1の指摘）。
  *
  * 出張と年休で作りを分けないのは、開く理由（まだ済ませていない手続きを片付ける）が同じで、
  * 別の形にすると同じことをするのに覚えることが2つに増えるため。違うのは出せる手続きの数と、
@@ -650,12 +666,13 @@ function OpenRecords({
 }) {
   const [laterOpen, setLaterOpen] = useState(false);
 
-  const row = (record: WorkRecordItem) => (
+  const row = (record: WorkRecordItem, tone: RecordTone) => (
     <RecordRow
       key={record.id}
       record={record}
       todayKey={todayKey}
       todos={todos}
+      tone={tone}
       writeDisabled={writeDisabled}
       onToggle={onToggle}
       onOpen={() => onOpen(record)}
@@ -671,7 +688,7 @@ function OpenRecords({
           {split.later.length === 0 ? emptyLabel : "いま対応が必要な手続きはありません。"}
         </p>
       ) : (
-        split.due.map(row)
+        split.due.map((record) => row(record, "due"))
       )}
 
       {split.later.length > 0 && (
@@ -686,7 +703,7 @@ function OpenRecords({
             1週間より先
             <span className="type-label-small opacity-70">{split.later.length}件</span>
           </button>
-          {laterOpen && split.later.map(row)}
+          {laterOpen && split.later.map((record) => row(record, "later"))}
         </>
       )}
     </div>
@@ -716,6 +733,7 @@ function RecordRow({
   record,
   todayKey,
   todos: shown,
+  tone,
   writeDisabled,
   onToggle,
   onOpen,
@@ -724,6 +742,8 @@ function RecordRow({
   todayKey: string;
   /** 出せる手続き。年休は事前申請だけ、出張は事前申請と事後登録。 */
   todos: WorkTodo[];
+  /** いま片付けるものか、畳んだ先の記録か（issue #571）。 */
+  tone: RecordTone;
   /** 書き込み中・オフライン中かどうか。項目単位の`disabled`（押せない手続き）とは別に持つ。 */
   writeDisabled: boolean;
   onToggle: (record: WorkRecordItem, todo: WorkTodo, done: boolean) => void;
@@ -736,9 +756,15 @@ function RecordRow({
       ? `${annualLeaveHours(record.annualLeave) === null ? "残り半日は" : "残りは"}${record.place}`
       : null;
 
-  // ここに並ぶのは手続きが残っている記録だけなので、枠は常に未対応の色にする。
+  // 枠の色は「いま片付けるものか」で決める（issue #571）。畳んだ先の記録まで同じ赤枠で並べると、
+  // 「まだ申請しなくてよい」と分けた意味が、開いた瞬間に見え方の上では消える。
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-error p-3">
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-3 rounded-xl border p-3",
+        tone === "due" ? "border-error" : "border-outline-variant",
+      )}
+    >
       {/* 日付・行き先。`min-w-20`を割る幅でだけチェックボックスが2行目へ落ちる。 */}
       <button
         type="button"
@@ -757,8 +783,10 @@ function RecordRow({
       <div className="flex shrink-0 items-center gap-1.5">
         {states.map(({ todo, done, disabled: todoDisabled }) => {
           // 押せるのに未対応なものだけを目立たせる。押せない項目（終了日前の事後登録）は
-          // 目立たせても押すものが増えないため、淡いままにする。
-          const needsAttention = !done && !todoDisabled;
+          // 目立たせても押すものが増えないため、淡いままにする。畳んだ先の記録（later）でも
+          // 押すことはできるが、赤で押し出すのはいま片付けるものの側だけにする（issue #571）。
+          // 未対応であることはチェックの外れた枠が示しており、色を足さなくても読める。
+          const needsAttention = tone === "due" && !done && !todoDisabled;
           return (
             <label
               key={todo}
