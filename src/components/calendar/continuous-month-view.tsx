@@ -817,10 +817,12 @@ function EventChip({
       onClick={onOpen}
       className={cn(
         "type-label-small flex h-[17px] w-full min-w-0 items-center gap-1 overflow-hidden rounded-item border px-1 text-left text-[9px] leading-[15px] font-medium sm:h-[18px] sm:text-[10px] sm:leading-4",
-        // 起こらなかった予定は面を外す（issue #573）。以前は opacity を下げていたが、
-        // 淡い面に55%を掛けると面も文字も消える。色帯は残すので、どのカレンダーの予定
-        // だったかは読める。文字色は三項で選ぶ（Tailwindは同じ役割のユーティリティを
-        // クラス名の並び順では解決しないため、両方を並べるとどちらが勝つか決まらない）。
+        // 起こらなかった予定も塗りは落とさない（docs/spec.md §37）。以前は opacity を55%まで
+        // 下げていたが、面が淡くなった以上（issue #573）そこへ掛けると面も文字も消える。
+        // 「起こらなかった」は文字色・打ち消し線・印の3つで示し、面はそのままにする。塗りを
+        // 抜くと、終日エリアで活動記録（面を外して帯と印だけ）と同じ描き分けになるため。
+        // 文字色は三項で選ぶ（Tailwindは同じ役割のユーティリティをクラス名の並び順では
+        // 解決しないため、両方を並べるとどちらが勝つか決まらない）。
         outcome ? "text-on-surface-variant" : "text-on-surface",
         // 週をまたぐ側は角を落とし、境界の線も引かない。切れずに続いていることを示す。
         // 続きの側は左の色帯も持てないため、カレンダー色は面だけが伝える。
@@ -828,7 +830,7 @@ function EventChip({
         continuesAfter && "rounded-r-none border-r-0",
       )}
       style={{
-        backgroundColor: outcome ? "var(--md-surface-container-lowest)" : colors.background,
+        backgroundColor: colors.background,
         borderColor: colors.border,
         // 色の主張は左端の帯へ集約する。続きの側は境界の線を引かないため立てない。
         // 左の余白を2pxへ詰めるのは、帯の3pxと合わせて右側（余白4px＋枠線1px）と同じ
@@ -887,6 +889,9 @@ function TaskChip({
   // （docs/spec.md §31）。月表示のマスは日までしか分かれず、同じ日の期限と予定日は期限の
   // 1枠にまとまる（issue #338）。まとまった枠は両方の日付を表しているため、印も両方出す。
   // 片方を落とすと、その紐づけの段階もずれも月表示のどこにも出なくなる。
+  // 紐づいたタスクは段階の印に置き換わり、チェックボックスは並べない（docs/spec.md §38）。
+  // 段階の印はすでに線画で、「2pxの縦棒が印として読まれない」という issue #573 の問題には
+  // 当たらない。2つ並べると項目名から11pxほど奪う（狭いときは印より名前・issue #433）。
   const links = taskFieldsInFrame(task, field, utils.itemDateKey)
     .map((each) => taskLinkForField(task, each))
     .filter((item): item is TaskEventLinkItem => item !== null);
