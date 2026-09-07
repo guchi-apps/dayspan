@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useOffline } from "next/offline";
-import { Plus, Trash2 } from "lucide-react";
+import { Check, Plus, Trash2 } from "lucide-react";
 
 import { ItemFormActions } from "@/components/calendar/item-form-actions";
+import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { tagChipClass } from "@/components/tags/tag-color";
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import { SHOPPING_PRIORITIES, type ShoppingItem, type ShoppingPriority } from "@/types/shopping";
@@ -31,12 +33,18 @@ export type ShoppingDraft =
 export function ShoppingItemDialog({
   draft,
   categoryOptions,
+  timeZone,
   onClose,
   onSaved,
 }: {
   draft: ShoppingDraft;
   /** 登録済みのカテゴリ。ここに無い名前も、この画面から足せる。 */
   categoryOptions: TagOption[];
+  /**
+   * 「今日」「明日」を決めるためのタイムゾーン（`UiSetting.timeZone`）。
+   * 端末の時計に任せると、サーバー（UTC）とブラウザ（JST）で日付が食い違う。
+   */
+  timeZone: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -53,6 +61,13 @@ export function ShoppingItemDialog({
     draft.mode === "edit" ? draft.item.category : draft.category,
   );
   const [priority, setPriority] = useState<ShoppingPriority>(existing?.priority ?? null);
+  const [plannedDate, setPlannedDate] = useState<string | null>(existing?.plannedDate ?? null);
+
+  // 「今日」「明日」の日付は設定タイムゾーンから決める（CLAUDE.md「日付・時刻の解釈」）。
+  const { todayKey, tomorrowKey } = useMemo(() => {
+    const today = createCalendarDateUtils(timeZone).todayKey();
+    return { todayKey: today, tomorrowKey: toDateKey(addDays(parseDateKey(today), 1)) };
+  }, [timeZone]);
 
   // 新しいカテゴリの追加。入力の途中で思いついた売り場を、設定画面へ回らずに足せるようにする
   // （タスクのタグ・場所の登録と同じ理由）。押されるまで欄は出さない。
@@ -101,7 +116,7 @@ export function ShoppingItemDialog({
       return;
     }
 
-    const body = { name: trimmed, memo: memo.trim() || null, category, priority };
+    const body = { name: trimmed, memo: memo.trim() || null, category, priority, plannedDate };
 
     if (existing) {
       await send(
@@ -171,7 +186,7 @@ export function ShoppingItemDialog({
       <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
         <DialogTitle>{existing ? "買い物リストの項目" : "買い物リストに追加"}</DialogTitle>
         <DialogDescription className="sr-only">
-          アイテム名・メモ・カテゴリ・優先度を入力します。
+          アイテム名・メモ・カテゴリ・購入予定日・優先度を入力します。
         </DialogDescription>
 
         {error && (
@@ -265,6 +280,38 @@ export function ShoppingItemDialog({
           )}
         </div>
 
+        {/* 購入予定日（docs/spec.md §36）。「今日買う」「明日買う」がいちばん多い指定なので、
+            そこはチップ1つで済ませる。それ以外の日は下の欄で選ぶ。チップと欄はどちらも同じ値を
+            指しており、押した値と保存される値が食い違わない。 */}
+        <div className="flex flex-col gap-2">
+          <span className="type-label-large text-on-surface-variant">購入予定日</span>
+          <div className="flex flex-wrap gap-1.5">
+            <ChoiceChip selected={plannedDate === null} onClick={() => setPlannedDate(null)}>
+              未定
+            </ChoiceChip>
+            <ChoiceChip
+              selected={plannedDate === todayKey}
+              onClick={() => setPlannedDate(todayKey)}
+            >
+              今日
+            </ChoiceChip>
+            <ChoiceChip
+              selected={plannedDate === tomorrowKey}
+              onClick={() => setPlannedDate(tomorrowKey)}
+            >
+              明日
+            </ChoiceChip>
+          </div>
+          {/* 日付の欄には ✕（クリア）を出さない。消す操作は「未定」のチップが受けており、
+              欄にも置くと同じことをする出口が2つ並ぶ（CLAUDE.md「入力欄の ✕」）。 */}
+          <Input
+            label="日付"
+            type="date"
+            value={plannedDate ?? ""}
+            onChange={(event) => setPlannedDate(event.target.value || null)}
+          />
+        </div>
+
         <div className="flex flex-col gap-2">
           <span className="type-label-large text-on-surface-variant">優先度</span>
           <div className="flex flex-wrap gap-1.5">
@@ -321,8 +368,16 @@ export function ShoppingItemDialog({
 /**
  * 選択肢1つぶんのチップ。
  *
- * カテゴリはNotionの色をそのまま帯びるが、選ばれているものは色よりも「いま選ばれている」
- * ことが先に読めないといけない。選択中は配色を secondary-container で統一する。
+ * **色を持つのは選ばれているものだけ**にする（issue #570）。以前は逆で、未選択がNotionの
+ * タグ色で塗られ、選択中だけが secondary-container だった。色付きが並ぶ中でいちばん色の弱い
+ * ものが選択中という並びになり、押した手応えが色に出ない。タスクのタグ選び
+ * （`components/tags/tag-picker.tsx` の `TagToggle`）は既にこの規則で、同じ操作の見え方が
+ * アプリの中で2通りある状態でもあった。
+ *
+ * 手掛かりは3つ重ねる。塗り（選んだものだけ色を持つ）、チェック（色を読み分けにくい状況でも
+ * 分かる。色だけに意味を持たせない）、輪郭（タグ色の塗りは18%と淡く、塗りだけでは枠が立たない）。
+ *
+ * タグ色を持たない選択肢（未設定・購入予定日・優先度）は、選択中を secondary-container で塗る。
  */
 function ChoiceChip({
   selected,
@@ -331,6 +386,7 @@ function ChoiceChip({
   children,
 }: {
   selected: boolean;
+  /** Notionのタグ色。持たない選択肢では省く。 */
   colorClass?: string;
   onClick: () => void;
   children: React.ReactNode;
@@ -342,12 +398,17 @@ function ChoiceChip({
       aria-checked={selected}
       onClick={onClick}
       className={cn(
-        "type-label-large rounded-full border px-3 py-1 transition-colors",
+        "type-label-large flex items-center gap-1 rounded-full border px-3 py-1 transition-colors",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
         selected
-          ? "border-transparent bg-secondary-container font-bold text-on-secondary-container"
-          : cn("border-outline-variant text-on-surface-variant hover:bg-on-surface/8", colorClass),
+          ? cn(
+              "border-current font-medium",
+              colorClass ?? "bg-secondary-container text-on-secondary-container",
+            )
+          : "border-outline-variant text-on-surface-variant hover:bg-on-surface/8",
       )}
     >
+      {selected && <Check className="size-3.5 shrink-0" aria-hidden />}
       {children}
     </button>
   );

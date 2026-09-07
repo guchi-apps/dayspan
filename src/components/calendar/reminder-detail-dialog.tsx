@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import { CalendarClock, ExternalLink, Pencil, RotateCw, Tag, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { CalendarClock, ExternalLink, Pencil, RotateCw, ShoppingCart, Tag, Trash2 } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { TagChip } from "@/components/tags/tag-chip";
@@ -89,9 +90,11 @@ export function ReminderDetailDialog({
         }年目）`
       : null;
 
-  // ゴミの日はmyroomが正で、DaySpanからは読むだけ（docs/spec.md §9）。押せるまま残すと
-  // サーバーが断るまで直せるように見えるため、編集・削除は入口ごと出さない。
-  const external = reminder.source === "garbage";
+  // ゴミの日はmyroomが正で、DaySpanからは読むだけ（docs/spec.md §9）。買い物はその日のぶんを
+  // 1件へまとめた枠で、直す相手のページが1つに決まらない（docs/spec.md §36）。どちらも押せるまま
+  // 残すと直せるように見えるため、編集・削除は入口ごと出さない。
+  const external = reminder.source !== "reminder";
+  const shopping = reminder.source === "shopping";
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
@@ -176,7 +179,16 @@ export function ReminderDetailDialog({
             </a>
           )}
 
-          {external && (
+          {shopping && (
+            <Button asChild variant="secondary" className="mt-1 w-full">
+              <Link href="/shopping">
+                <ShoppingCart className="size-4" />
+                買い物リストを開く
+              </Link>
+            </Button>
+          )}
+
+          {reminder.source === "garbage" && (
             <p className="text-xs text-on-surface-variant">
               ゴミの日はmyroomが毎日書き直すため、DaySpanからは変更できません。
             </p>

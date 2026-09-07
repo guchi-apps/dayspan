@@ -172,10 +172,11 @@ export type ReminderItem = {
   kind: "reminder";
   /**
    * この項目の出どころ。garbage は myroom が日次で書き直すゴミの収集日で、DaySpanからは読むだけ。
-   * 描画・並び順は日付リマインドと同じ経路を通すため、kind ではなくこの項目で分ける
-   * （docs/spec.md §9）。編集・削除の入口を出すかどうかの判断に使う。
+   * shopping は購入予定日のある買い物をその日ごとに1件へまとめたもので、中身の編集は買い物の
+   * 画面に任せる（docs/spec.md §36）。描画・並び順は日付リマインドと同じ経路を通すため、
+   * kind ではなくこの項目で分ける（docs/spec.md §9）。編集・削除の入口を出すかどうかの判断に使う。
    */
-  source: "reminder" | "garbage";
+  source: "reminder" | "garbage" | "shopping";
   /**
    * 表示上のID。毎年の項目を各年へ展開した回は、元ページのIDへ日付を足した別物になる
    * （services/notion/reminders.ts）。編集の宛先には使えない。

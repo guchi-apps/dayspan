@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isRealDateKey } from "@/lib/calendar-range";
 import type { ShoppingWriteInput } from "@/services/notion/shopping-items";
 import { SHOPPING_PRIORITIES } from "@/types/shopping";
 
@@ -47,6 +48,21 @@ export function validateShoppingBody(
       { status: 400 },
     );
   }
+  // 購入予定日は日付だけ（docs/spec.md §36）。形だけを見て通すと、2026-02-30 のような値が
+  // 例外にならずNotion側で3月2日へ繰り上がり、頼んだ覚えのない日として保存される。
+  if (
+    body.plannedDate != null &&
+    (typeof body.plannedDate !== "string" || !isRealDateKey(body.plannedDate))
+  ) {
+    return NextResponse.json(
+      {
+        error: "invalid_planned_date",
+        message: "購入予定日はYYYY-MM-DDの日付で指定してください。",
+      },
+      { status: 400 },
+    );
+  }
+
   return null;
 }
 

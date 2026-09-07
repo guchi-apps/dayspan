@@ -6,7 +6,13 @@ import type { Client } from "@notionhq/client";
 // どちらのアプリから足したものも両方に出る。タスク・日付リマインド・場所・勤務と同じく、
 // 一次情報源はNotion側でDaySpanのDBには保存しない。
 
-export type ShoppingField = "title" | "category" | "memo" | "priority" | "bought";
+export type ShoppingField =
+  | "title"
+  | "category"
+  | "memo"
+  | "priority"
+  | "plannedDate"
+  | "bought";
 
 export type ShoppingPropertyMap = Partial<Record<ShoppingField, string>>;
 
@@ -56,6 +62,21 @@ export const SHOPPING_FIELD_REQUIREMENTS: Requirement[] = [
     types: ["select"],
     required: false,
     hints: ["優先度", "優先", "priority"],
+    hintOnly: true,
+  },
+  {
+    field: "plannedDate",
+    label: "購入予定日",
+    types: ["date"],
+    required: false,
+    hints: ["購入予定日", "予定日", "購入日", "買う日", "planned"],
+    /**
+     * 名前が当たったときだけ対応付ける。
+     *
+     * 既存の買い物リストDBに「登録日」「最終更新日」のような日付の欄があると、型だけを見て
+     * 空いている欄へ割り当てた結果、購入予定日をそこへ書き込むことになる。書き換えられたことは
+     * DaySpanの画面からは読めない（場所DBの座標・勤務記録DBの出張と同じ扱い）。
+     */
     hintOnly: true,
   },
   {
@@ -141,6 +162,7 @@ export const SHOPPING_DATABASE_TEMPLATE = {
   category: "カテゴリ",
   memo: "メモ",
   priority: "優先度",
+  plannedDate: "購入予定日",
   bought: "購入済み",
 } as const satisfies Required<Record<ShoppingField, string>>;
 
@@ -197,6 +219,7 @@ export async function createShoppingDatabase(
         [SHOPPING_DATABASE_TEMPLATE.priority]: {
           select: { options: SHOPPING_PRIORITY_OPTIONS.map((option) => ({ ...option })) },
         },
+        [SHOPPING_DATABASE_TEMPLATE.plannedDate]: { date: {} },
         [SHOPPING_DATABASE_TEMPLATE.bought]: { checkbox: {} },
       },
     },
@@ -212,4 +235,35 @@ export async function createShoppingDatabase(
     title,
     propertyMap: { ...SHOPPING_DATABASE_TEMPLATE },
   };
+}
+
+/**
+ * すでに使っている買い物リストDBへ、あとから増えた「購入予定日」を足す。
+ *
+ * 購入予定日（docs/spec.md §36）より前に作ったDB、および shopping-list アプリが作ったDBには
+ * 置き場所が無い。Notion側で手で足してDBを選び直させると、どの型で何という名前にすればよいのかが
+ * 画面のどこにも出ていないため、設定画面から実行できるようにする（場所DBの座標・勤務記録DBの
+ * 出張と同じ形）。
+ *
+ * すでに同じ名前のプロパティがあるときは作らない（対応付けだけ取り直す）。型が違っていても
+ * 作り直さないのは、利用者が別の用途で使っている欄を黙って壊さないため。
+ */
+export async function addShoppingDateProperty(
+  notion: Client,
+  dataSourceId: string,
+): Promise<ShoppingValidation & { title: string; databaseId: string | null }> {
+  const name = SHOPPING_DATABASE_TEMPLATE.plannedDate;
+  const source = await notion.dataSources.retrieve({ data_source_id: dataSourceId });
+  const properties = source.properties as Record<string, PropertyConfig>;
+  const existing = Object.values(properties).find((property) => property.name === name);
+
+  if (!existing) {
+    await notion.dataSources.update({
+      data_source_id: dataSourceId,
+      properties: { [name]: { date: {} } } as never,
+    });
+  }
+
+  // 足したあとの構成で対応付けを取り直す。作っただけでは propertyMap に載らない。
+  return validateShoppingDataSource(notion, dataSourceId);
 }

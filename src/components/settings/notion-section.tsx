@@ -358,6 +358,30 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
     }
   };
 
+  /**
+   * 使用中の買い物リストDBへ「購入予定日」を足す（docs/spec.md §36）。
+   * 購入予定日より前に作ったDB・shopping-listアプリが作ったDBには置き場所が無い。
+   * 名前が当たったときだけ対応付けるため、Notion側で足す名前も画面に出ていない。
+   */
+  const addShoppingDateProperty = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/shopping-database/property", { method: "POST" });
+      if (!response.ok) {
+        setMessage({
+          text: await errorText(response, "「購入予定日」プロパティを追加できませんでした。"),
+          tone: "error",
+        });
+        return;
+      }
+      setMessage({ text: "買い物リストDBに「購入予定日」プロパティを追加しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createDatabase = async (kind: DatabaseKind) => {
     setBusy(true);
     setMissing(null);
@@ -751,8 +775,9 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
               <span className="text-sm font-medium">買い物リストDBを選択</span>
               <p className="text-xs text-muted-foreground">
                 買うものを記録します。項目（タイトル）だけが必須で、メモ・購入済みは型から、
-                カテゴリ・優先度は名前が一致したときだけ対応付けます（どちらもセレクトのため、
-                型だけで割り当てると入れ替わります）。shopping-listアプリと同じDBを選べば、
+                カテゴリ・優先度・購入予定日は名前が一致したときだけ対応付けます（カテゴリと優先度は
+                どちらもセレクト、購入予定日は「登録日」のような別の日付と取り違えうるため、
+                型だけでは割り当てません）。shopping-listアプリと同じDBを選べば、
                 どちらから足したものも両方に出ます。
               </p>
               {state.shoppingDataSourceId && (
@@ -769,6 +794,25 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                       </div>
                     ))}
                   </dl>
+
+                  {!state.shoppingPropertyMap?.plannedDate && (
+                    <div className="flex flex-col items-start gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        購入予定日のプロパティがありません。足すと、いつ買うかを項目ごとに決められ、
+                        その日の買い物がカレンダーにも1件でまとまって出ます。
+                        無いままでも買い物リストは使えます。
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={addShoppingDateProperty}
+                      >
+                        <Plus className="size-4" />
+                        購入予定日プロパティを追加
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
               <ul className="flex flex-wrap gap-2">
