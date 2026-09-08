@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
 import { useState, useTransition } from "react";
-import { Clock3, Settings2, Square, Timer } from "lucide-react";
+import { Clock3, Moon, Settings2, Square, Timer } from "lucide-react";
 
 import { invalidEnd, invalidStartAt, savedRangeLabel } from "@/components/activity/activity-time";
 import { formatElapsed } from "@/components/calendar/activity-format";
@@ -259,6 +259,15 @@ export function ActivityScreen({
         </div>
 
         <span className="flex-1" />
+
+        {/* 睡眠は日をまたぐため、時間グリッドでは0時で切り詰められて2本の帯に割れる。
+            何時間眠ったかを読むための面は別に置く（docs/spec.md §39）。 */}
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/activity/sleep">
+            <Moon className="size-4" />
+            <span className="hidden sm:inline">睡眠</span>
+          </Link>
+        </Button>
 
         <Button variant="ghost" size="sm" asChild>
           <Link href="/settings/activities">

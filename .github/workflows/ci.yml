@@ -47,6 +47,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Test
+        run: pnpm test:unit
+
       - name: Build
         run: pnpm build:ci
         env:

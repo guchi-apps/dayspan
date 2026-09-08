@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { DEFAULT_SLEEP_TARGET_MINUTES, DEFAULT_SLEEP_TITLE } from "@/lib/sleep";
 
 /**
  * 活動記録の保存先カレンダー（docs/spec.md §27）。
@@ -64,4 +65,73 @@ export async function setActivityCalendarId(
   });
 
   return { ok: true, calendarId: setting.activityCalendarId };
+}
+
+export type SleepSettings = { title: string; targetMinutes: number };
+
+/** 目標睡眠時間として受け付ける幅（分）。1時間〜16時間。 */
+const SLEEP_TARGET_MIN = 60;
+const SLEEP_TARGET_MAX = 16 * 60;
+
+/**
+ * 睡眠の横通し表示の設定（docs/spec.md §39）。
+ *
+ * 睡眠かどうかは活動記録の項目名で決まる。ActivityPreset 側に印を持たせないのは、
+ * 項目を消したり作り直したりすると、その名前で残っている過去の記録が数えられなくなるため。
+ */
+export async function getSleepSettings(userId: string): Promise<SleepSettings> {
+  const setting = await db.uiSetting.findUnique({
+    where: { userId },
+    select: { sleepActivityTitle: true, sleepTargetMinutes: true },
+  });
+
+  return {
+    title: setting?.sleepActivityTitle?.trim() || DEFAULT_SLEEP_TITLE,
+    targetMinutes: normalizeSleepTarget(setting?.sleepTargetMinutes),
+  };
+}
+
+/**
+ * 睡眠の設定を変える。
+ *
+ * UiSetting は初回ログイン時に作られるが、無いまま画面が既定値で描かれている場合もある。
+ * 更新ではなく upsert で受ける（setActivityCalendarId と同じ扱い）。
+ */
+export async function setSleepSettings(
+  userId: string,
+  input: Partial<SleepSettings>,
+): Promise<SleepSettings> {
+  const title = input.title?.trim();
+  const targetMinutes =
+    input.targetMinutes === undefined ? undefined : normalizeSleepTarget(input.targetMinutes);
+
+  const setting = await db.uiSetting.upsert({
+    where: { userId },
+    create: {
+      userId,
+      ...(title ? { sleepActivityTitle: title } : {}),
+      ...(targetMinutes === undefined ? {} : { sleepTargetMinutes: targetMinutes }),
+    },
+    update: {
+      ...(title ? { sleepActivityTitle: title } : {}),
+      ...(targetMinutes === undefined ? {} : { sleepTargetMinutes: targetMinutes }),
+    },
+    select: { sleepActivityTitle: true, sleepTargetMinutes: true },
+  });
+
+  return {
+    title: setting.sleepActivityTitle.trim() || DEFAULT_SLEEP_TITLE,
+    targetMinutes: normalizeSleepTarget(setting.sleepTargetMinutes),
+  };
+}
+
+/**
+ * 目標睡眠時間を扱える値へ丸める。
+ *
+ * 画面の欄は時と分に分かれているが、DaySpanのAPIや将来のMCPから直接呼ばれた要求は
+ * そこを通らない。0分や100時間が入ると、平均との差も帯の比率も読めない数字になる。
+ */
+export function normalizeSleepTarget(value: number | null | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_SLEEP_TARGET_MINUTES;
+  return Math.min(SLEEP_TARGET_MAX, Math.max(SLEEP_TARGET_MIN, Math.round(value)));
 }
