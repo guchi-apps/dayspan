@@ -35,7 +35,17 @@ export async function dispatchDueNotifications(now: Date = new Date()): Promise<
   for (const job of jobs) {
     // 送ったかどうかの印は、送る前に立てる。送信が長引いて次のタイマーが重なっても、
     // 同じ通知を2回送らないため。送信に失敗しても送り直さない（時刻を過ぎた通知のため）。
-    await db.notificationJob.update({ where: { id: job.id }, data: { sentAt: now } });
+    // where に sentAt: null も含めた updateMany にするのは、findMany で拾った直後に
+    // 別の実行（手動実行・cronとの重なり）が同じ行を先に更新していた場合、count が 0 に
+    // なるようにするため。where: { id } の update はレコードの有無しか見ず、印が
+    // すでに立っているかを確かめないまま上書きして二重送信する（issue #598）。
+    const { count } = await db.notificationJob.updateMany({
+      where: { id: job.id, sentAt: null },
+      data: { sentAt: now },
+    });
+    if (count === 0) {
+      continue;
+    }
 
     if (job.scheduledAt < staleBefore) {
       result.skipped += 1;
