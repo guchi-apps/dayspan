@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
@@ -40,14 +41,36 @@ export async function POST(request: Request) {
   const connection = await db.notionConnection.upsert({
     where: { userId },
     create: { userId, accessToken: encrypted, workspaceName },
-    // トークンを入れ替えたら、以前のワークスペースのタスクDB選択は無効になる可能性が高いので落とす。
+    // トークンを入れ替えたら、以前のワークスペースの各DB選択は無効になる可能性が高いので
+    // すべて落とす。propertyMapはJSONのnullableフィールドで、undefinedでは「更新しない」
+    // 扱いになりクリアされないため、消すにはPrisma.DbNullを使う。
     update: {
       accessToken: encrypted,
       workspaceName,
       taskDataSourceId: null,
       taskDatabaseId: null,
       taskTitle: null,
-      propertyMap: undefined,
+      propertyMap: Prisma.DbNull,
+      reminderDataSourceId: null,
+      reminderDatabaseId: null,
+      reminderTitle: null,
+      reminderPropertyMap: Prisma.DbNull,
+      placeDataSourceId: null,
+      placeDatabaseId: null,
+      placeTitle: null,
+      placePropertyMap: Prisma.DbNull,
+      garbageDataSourceId: null,
+      garbageDatabaseId: null,
+      garbageTitle: null,
+      garbagePropertyMap: Prisma.DbNull,
+      workDataSourceId: null,
+      workDatabaseId: null,
+      workTitle: null,
+      workPropertyMap: Prisma.DbNull,
+      shoppingDataSourceId: null,
+      shoppingDatabaseId: null,
+      shoppingTitle: null,
+      shoppingPropertyMap: Prisma.DbNull,
       lastValidatedAt: null,
     },
   });
