@@ -37,6 +37,18 @@ export const MINUTES_PER_NIGHT = 24 * 60;
  */
 export const NIGHT_START_MINUTES = 12 * 60;
 
+/**
+ * 「その夜の睡眠」として扱う帯の始まり（行の12:00から数えた分）。18:00。
+ *
+ * 1行は24時間あるので、昼寝もこの行の左側へ入る。量（合計）には昼寝も含めてよいが、
+ * 「何時に寝ているか」を昼寝の時刻から求めると、昼寝をした日の就寝時刻が 14:30 になる。
+ * 就寝・起床の中央値は、18:00以降に始まった帯だけから求める。
+ *
+ * 中途で目が覚めて記録が2本に分かれた夜も、この範囲の帯の両端を取れば
+ * 床に就いた時刻と最後に起きた時刻になる。
+ */
+export const NIGHT_SEGMENT_START = 18 * 60 - NIGHT_START_MINUTES;
+
 /** 1行の中で睡眠が占める帯。`from` / `to` はその行の12:00から数えた分（0〜1440）。 */
 export type SleepSegment = {
   from: number;
@@ -50,17 +62,31 @@ export type SleepNight = {
   /** 行の始まり（12:00）が属する日付キー。「9/7の夜」の 9/7。 */
   dateKey: string;
   segments: SleepSegment[];
-  /** その行に入った睡眠の合計（分）。 */
+  /** その行に入った睡眠の合計（分）。昼寝も含む。 */
   minutes: number;
-  /** 行の終わり（翌12:00）を過ぎているか。今夜の行だけ false。 */
-  complete: boolean;
+  /**
+   * その夜の結果が出ているか。集計に入れてよい行かどうかを表す。
+   *
+   * 条件は「その行の0時を回っていること」と「記録中の睡眠を含まないこと」の両方。
+   *
+   * 行の終わり（翌12:00）を過ぎたかどうかで決めてはいけない。行が
+   * `[D 12:00, D+1 12:00)` である以上、朝の 00:00〜12:00 に進行中なのは**今夜の行ではなく
+   * 昨夜の行**で、そこを未完了として落とすと、起きた直後にこの画面を開いたときに
+   * 昨夜の睡眠だけが平均からも中央値からも抜ける（issue #607 計画レビューG1の指摘）。
+   *
+   * 0時を境にするのは、まだ寝ていない今夜の行を数えないため。「記録中でなければ確定」だけに
+   * すると、昼寝を1件入れただけの今夜の行が「40分しか眠らなかった夜」として平均へ入る。
+   * 引き換えに、昼寝をした日に0時を回っても寝ていない場合は、その短い記録がいったん
+   * 1晩ぶんとして数えられる。
+   */
+  settled: boolean;
 };
 
 export type SleepSummary = {
-  /** 集計に入れた夜の数（記録があり、かつ終わっている夜）。 */
+  /** 集計に入れた夜の数（記録があり、かつ結果の出ている夜）。 */
   recordedCount: number;
-  /** 集計の対象になりえた夜の数（終わっている夜）。分母として画面に出す。 */
-  completedCount: number;
+  /** 集計の対象になりえた夜の数（結果の出ている夜）。分母として画面に出す。 */
+  settledCount: number;
   /** 1晩あたりの平均（分）。記録が1晩も無ければ null。 */
   averageMinutes: number | null;
   /** 平均と目標の差（分）。負なら足りていない。 */
@@ -156,8 +182,10 @@ export function buildSleepNights(input: {
       dateKey,
       segments,
       minutes,
-      // 行の終わり（翌12:00）を過ぎているか。過ぎていない行はまだ結果が出ていない。
-      complete: nowOffset >= rowTo,
+      // その夜の結果が出ているか（型の定義に理由を置いてある）。
+      settled:
+        nowOffset >= rowFrom + MINUTES_PER_NIGHT / 2 &&
+        !segments.some((segment) => segment.running),
     };
   });
 }
@@ -175,20 +203,31 @@ export function summarizeSleepNights(
   nights: SleepNight[],
   targetMinutes: number,
 ): SleepSummary {
-  const completed = nights.filter((night) => night.complete);
-  const recorded = completed.filter((night) => night.minutes > 0);
+  const settled = nights.filter((night) => night.settled);
+  const recorded = settled.filter((night) => night.minutes > 0);
 
   const total = recorded.reduce((sum, night) => sum + night.minutes, 0);
   const averageMinutes = recorded.length > 0 ? Math.round(total / recorded.length) : null;
 
-  // 就寝・起床は、その夜のいちばん早い帯の始まりといちばん遅い帯の終わりで見る。
-  // 中途で目が覚めて記録が分かれても、床に就いた時刻と起きた時刻はその両端になる。
-  const beds = recorded.map((night) => night.segments[0].from);
-  const wakes = recorded.map((night) => night.segments[night.segments.length - 1].to);
+  // 就寝・起床は「夜の帯」（18:00以降に始まったもの）の両端で見る。行の左側に入る昼寝を
+  // 混ぜると、昼寝をした日の就寝時刻が 14:30 になる（issue #607 計画レビューG2の指摘）。
+  // 中途で目が覚めて帯が分かれた夜も、両端を取れば床に就いた時刻と最後に起きた時刻になる。
+  // 量（minutes）のほうは昼寝も含めたその日の合計にする。読みたいのは「その日どれだけ
+  // 眠れたか」で、そこは昼寝も足されているほうが実際に近い。
+  const beds: number[] = [];
+  const wakes: number[] = [];
+
+  for (const night of recorded) {
+    const atNight = night.segments.filter((segment) => segment.from >= NIGHT_SEGMENT_START);
+    if (atNight.length === 0) continue;
+
+    beds.push(atNight[0].from);
+    wakes.push(atNight[atNight.length - 1].to);
+  }
 
   return {
     recordedCount: recorded.length,
-    completedCount: completed.length,
+    settledCount: settled.length,
     averageMinutes,
     diffMinutes: averageMinutes === null ? null : averageMinutes - targetMinutes,
     belowTargetCount: recorded.filter((night) => night.minutes < targetMinutes).length,

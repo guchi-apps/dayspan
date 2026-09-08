@@ -181,9 +181,9 @@ function NightRow({
       {/* 帯そのものは読み上げられないため、行の内容を1文にして添える。 */}
       <span className="sr-only">
         {night.minutes === 0
-          ? night.complete
+          ? night.settled
             ? "記録なし"
-            : "今夜はこれから"
+            : "これから"
           : `${formatSleepMinutes(night.minutes)}。${
               night.segments.length > 0
                 ? `${offsetToClock(night.segments[0].from)}から${offsetToClock(night.segments[night.segments.length - 1].to)}まで。`

@@ -82,7 +82,7 @@ export function SleepScreen({
               {/* 平均は記録のある夜だけで割る。分母を出さないと、何夜から出した数字なのかが読めない。 */}
               {summary.recordedCount === 0
                 ? `直近${days}日に記録なし`
-                : `記録のある${summary.recordedCount}夜 / ${summary.completedCount}夜`}
+                : `記録のある${summary.recordedCount}夜 / ${summary.settledCount}夜`}
             </span>
           </div>
 
