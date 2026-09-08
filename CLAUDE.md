@@ -13,7 +13,7 @@
 | ORM / DB | Prisma 6 + MariaDB（`app_dayspan`） |
 | 認証 | Supabase Auth + Google OAuth（`@supabase/ssr`。ミドルウェアは `src/proxy.ts`） |
 | パッケージマネージャ | pnpm 10 系（`packageManager` で固定） |
-| 検証コマンド | `pnpm lint` / `pnpm typecheck` / `pnpm build`（`pnpm test` は lint + typecheck） |
+| 検証コマンド | `pnpm lint` / `pnpm typecheck` / `pnpm build`（`pnpm test` は lint + typecheck + test:unit〔`node --test`の回帰テスト〕） |
 | 開発サーバー | `pnpm dev`（既定ポート3000。`PORT` で変更可） |
 | デプロイ | `main` への push で `deploy.yml` が VPS へ SSH デプロイ（PM2、プロセス名 `dayspan`、ポート3113） |
 
