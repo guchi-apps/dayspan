@@ -1,0 +1,47 @@
+import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
+
+/**
+ * 睡眠の横通し表示の骨組み。
+ *
+ * ルートの `loading.tsx` へ落とすと全面のアイコン（起動画面と同じ面）が挟まる（docs/spec.md §33）。
+ * 枠は `SettingsShell` と同じ「戻るボタン付きのヘッダー」。
+ */
+export default function Loading() {
+  return (
+    <div className="flex min-h-dvh flex-col">
+      <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
+        <SkeletonBlock className="h-8 w-20 rounded-full" />
+        <SkeletonBlock className="h-6 w-16" />
+      </header>
+
+      <div className="h-1 w-full overflow-hidden bg-secondary-container">
+        <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+      </div>
+
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
+        {/* 平均と3つの数字。 */}
+        <div className="flex flex-col gap-3 rounded-xl bg-surface-container-low p-4">
+          <SkeletonBlock className="h-8 w-40" />
+          <div className="flex gap-2">
+            <SkeletonBlock className="h-9 flex-1" />
+            <SkeletonBlock className="h-9 flex-1" />
+            <SkeletonBlock className="h-9 flex-1" />
+          </div>
+        </div>
+
+        {/* 期間のチップ。 */}
+        <div className="flex gap-1.5">
+          <SkeletonBlock className="h-8 w-16 rounded-full" />
+          <SkeletonBlock className="h-8 w-16 rounded-full" />
+        </div>
+
+        {/* 夜ごとの行。 */}
+        <div className="flex flex-col gap-1.5">
+          {Array.from({ length: 14 }, (_, index) => (
+            <SkeletonBlock key={index} className="h-4 w-full" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
