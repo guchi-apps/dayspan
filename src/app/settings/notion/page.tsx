@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { NotionSection, type NotionSectionState } from "@/components/settings/notion-section";
 import { SettingsShell } from "@/components/settings/settings-shell";
+import { externalApiMessage } from "@/lib/api-error";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
@@ -77,7 +78,10 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
       listCandidateDataSources(notion),
       listSharedPages(notion),
     ]);
-  } catch {
+  } catch (error) {
+    // 設定画面自体は開けるようにするため、握りつぶす代わりにログへ全文を残す
+    // （CLAUDE.md「外部APIの扱い」）。
+    externalApiMessage("notion", "データソース・共有ページ一覧の取得", error);
     dataSourcesFailed = true;
   }
 
