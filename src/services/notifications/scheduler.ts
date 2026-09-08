@@ -50,7 +50,14 @@ export async function runTick(now: Date = new Date()): Promise<void> {
   try {
     const userIds = await listUsersToPlan(now);
     for (const userId of userIds) {
-      await planUserNotifications(userId, now);
+      // ユーザーごとに catch し、1人の下書き作成が例外で落ちても残りのユーザーへ進む。
+      // planUserNotifications() 自体は markPlanned() を try/finally で必ず通すため、
+      // ここで拾った例外がそのユーザーを毎分取り直させ続けることも無い。
+      try {
+        await planUserNotifications(userId, now);
+      } catch (error) {
+        console.error(`[dayspan] notification plan failed (userId=${userId}):`, error);
+      }
     }
   } catch (error) {
     console.error("[dayspan] notification plan failed:", error);

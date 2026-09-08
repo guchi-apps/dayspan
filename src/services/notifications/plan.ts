@@ -30,6 +30,18 @@ const PLAN_WINDOW_HOURS = 36;
 /** まとめ通知の本文に並べるタスク名の数。 */
 const DIGEST_TITLE_LIMIT = 3;
 
+/**
+ * NotificationJob.title の上限。Prismaの String は VarChar(255) で作られるため、これを
+ * 超えるタイトルをそのまま入れると保存そのものが失敗する（Google Calendarのタイトル上限は
+ * 1024文字で、この範囲に収まらない予定がありうる）。表示のためだけに持っている値なので、
+ * 切って通す。`TaskEventLink.eventTitle` の EVENT_TITLE_LIMIT と同じ配慮。
+ */
+const TITLE_LIMIT = 255;
+
+function toDraftTitle(title: string): string {
+  return title.length > TITLE_LIMIT ? title.slice(0, TITLE_LIMIT) : title;
+}
+
 /** 下書きの元になる、通知1件ぶんの内容。 */
 type JobDraft = {
   kind: NotificationKind;
@@ -82,55 +94,60 @@ export async function listUsersToPlan(now: Date): Promise<string[]> {
 }
 
 export async function planUserNotifications(userId: string, now: Date): Promise<PlanResult> {
-  const settings = await getNotificationSettings(userId);
-  const uiSetting = await db.uiSetting.findUnique({
-    where: { userId },
-    select: { timeZone: true },
-  });
-  const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
-  const utils = createCalendarDateUtils(timeZone);
+  // 途中で例外が起きても markPlanned() は必ず通す（finally）。ここを抜けると
+  // listUsersToPlan() は plannedAt が30分より古いユーザーを対象に選ぶため、更新しないまま
+  // 例外で落ちると、次のtick（毎分）から窓を出るまでGoogle・Notionへの取得が走り続ける。
+  try {
+    const settings = await getNotificationSettings(userId);
+    const uiSetting = await db.uiSetting.findUnique({
+      where: { userId },
+      select: { timeZone: true },
+    });
+    const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
+    const utils = createCalendarDateUtils(timeZone);
 
-  const windowEnd = new Date(now.getTime() + PLAN_WINDOW_HOURS * 3_600_000);
+    const windowEnd = new Date(now.getTime() + PLAN_WINDOW_HOURS * 3_600_000);
 
-  // どちらも切っているなら、作ってある下書きを消して終わる。残すと、切ったあとも
-  // 時刻が来たぶんが送られる。外部APIへは取りにいかない（送る先が無い）。
-  if (!settings.eventEnabled && !settings.taskEnabled) {
-    const removed = await replacePendingJobs(userId, [], now, null);
+    // どちらも切っているなら、作ってある下書きを消して終わる。残すと、切ったあとも
+    // 時刻が来たぶんが送られる。外部APIへは取りにいかない（送る先が無い）。
+    if (!settings.eventEnabled && !settings.taskEnabled) {
+      const removed = await replacePendingJobs(userId, [], now, null);
+      return { planned: 0, removed, degraded: false };
+    }
+
+    const [eventResult, taskResult] = await Promise.all([
+      settings.eventEnabled
+        ? loadGoogleEvents(userId, { timeMin: now.toISOString(), timeMax: windowEnd.toISOString() })
+        : Promise.resolve(null),
+      // タスクの通知を切っていても取りにいく。アイコンのバッジの件数はここでしか数えられず、
+      // 予定の通知に添えて送るため（docs/spec.md §32）。
+      loadTasks(userId),
+    ]);
+
+    const drafts: JobDraft[] = [];
+
+    if (eventResult) {
+      drafts.push(...planEvents(eventResult.items, settings.eventLeadMinutes, now, windowEnd, utils));
+    }
+
+    if (settings.taskEnabled && taskResult) {
+      drafts.push(...planTasks(taskResult, now, windowEnd, utils));
+      drafts.push(...planTaskDigests(taskResult, settings.taskDigestTime, now, windowEnd, utils, timeZone));
+    }
+
+    // バッジの件数は下書きを作った時点のもの。送る瞬間に数え直すとNotionへの往復が増える。
+    const badgeCount = taskResult ? countDueTasks(taskResult, timeZone) : null;
+
+    const removed = await replacePendingJobs(userId, drafts, now, badgeCount);
+
+    return {
+      planned: drafts.length,
+      removed,
+      degraded: Boolean(eventResult?.errors.length) || (settings.taskEnabled && taskResult === null),
+    };
+  } finally {
     await markPlanned(userId, now);
-    return { planned: 0, removed, degraded: false };
   }
-
-  const [eventResult, taskResult] = await Promise.all([
-    settings.eventEnabled
-      ? loadGoogleEvents(userId, { timeMin: now.toISOString(), timeMax: windowEnd.toISOString() })
-      : Promise.resolve(null),
-    // タスクの通知を切っていても取りにいく。アイコンのバッジの件数はここでしか数えられず、
-    // 予定の通知に添えて送るため（docs/spec.md §32）。
-    loadTasks(userId),
-  ]);
-
-  const drafts: JobDraft[] = [];
-
-  if (eventResult) {
-    drafts.push(...planEvents(eventResult.items, settings.eventLeadMinutes, now, windowEnd, utils));
-  }
-
-  if (settings.taskEnabled && taskResult) {
-    drafts.push(...planTasks(taskResult, now, windowEnd, utils));
-    drafts.push(...planTaskDigests(taskResult, settings.taskDigestTime, now, windowEnd, utils, timeZone));
-  }
-
-  // バッジの件数は下書きを作った時点のもの。送る瞬間に数え直すとNotionへの往復が増える。
-  const badgeCount = taskResult ? countDueTasks(taskResult, timeZone) : null;
-
-  const removed = await replacePendingJobs(userId, drafts, now, badgeCount);
-  await markPlanned(userId, now);
-
-  return {
-    planned: drafts.length,
-    removed,
-    degraded: Boolean(eventResult?.errors.length) || (settings.taskEnabled && taskResult === null),
-  };
 }
 
 /** 作り直した印を付ける。次に作り直すまでの間隔（PLAN_INTERVAL_MINUTES）はここから数える。 */
@@ -191,7 +208,7 @@ function planEvents(
       // 予定が動けば別の下書きになるよう、開始時刻まで鍵に含める。
       dedupeKey: `event:${event.id}:${event.start}`,
       scheduledAt,
-      title: leadMinutes === 0 ? event.title : `まもなく ${event.title}`,
+      title: toDraftTitle(leadMinutes === 0 ? event.title : `まもなく ${event.title}`),
       body: event.location ? `${timeRange} ・ ${event.location}` : timeRange,
       url: `/calendar?date=${utils.itemDateKey(event.start)}`,
     });
@@ -220,7 +237,7 @@ function planTasks(
       kind: "TASK",
       dedupeKey: `task:${task.id}:${task.due}`,
       scheduledAt: due,
-      title: `期限: ${task.title}`,
+      title: toDraftTitle(`期限: ${task.title}`),
       body: `${utils.formatTime(task.due)} が期限です。`,
       url: "/tasks",
     });
