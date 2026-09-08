@@ -133,7 +133,7 @@ export async function createPlace(
   if (!map.name) throw new Error("Place name property is not configured");
 
   const notion = createNotionClient(connection);
-  const existing = (await loadPlaces(connection)).find((place) => place.name === input.name);
+  const existing = (await listPlaces(connection)).find((place) => place.name === input.name);
 
   if (existing) {
     const filled: Record<string, unknown> = {};
