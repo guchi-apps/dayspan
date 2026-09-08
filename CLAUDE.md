@@ -412,6 +412,30 @@ GitHub Secretsに無い値は空文字としてワークフローへ渡り、`up
 PR・pushでは届いていない値があればCIを落とす**（#476）。deploy側は警告のままにする（VAPID鍵の
 ように、無くても他の機能は動く値が含まれるため）。
 
+## 自動テスト
+
+外部I/Oを持たない純粋関数（`annual-leave.ts`・`japanese-holidays.ts`・`yahoo-transit-route.ts`・
+`place-text.ts` など）は、`<対象ファイル>.test.mts` を同じディレクトリへ置き `node:test` +
+`node:assert/strict` で回帰テストを書く。`pnpm test:unit`（`pnpm test` に含まれる）が実行する。
+vitest / jest を足さないのは、新規依存の追加にユーザー確認が要る運用があり、CI・ローカルとも
+Node 24（`.github/workflows/ci.yml` と揃えている）なら `node --test` がTypeScriptをそのまま
+（型だけ剥がして）実行できるため。
+
+テストファイルの拡張子は `.test.ts` ではなく **`.test.mts`** にする。`package.json` に
+`"type": "module"` が無い状態で `.ts` を直接読ませると、NodeがCommonJSかESMかを内容から
+判定し直す（`MODULE_TYPELESS_PACKAGE_JSON` 警告がテストのたびに出る）。`.mts` は拡張子自体が
+「ESMのTypeScript」を明示するため、判定が要らず警告も出ない。プロジェクト全体を
+`"type": "module"` にしないのは、他のCommonJS前提のファイルへの影響を確かめていないため。
+
+`@/` パスエイリアス（tsconfig の `paths`）はNext.jsのバンドラーの中でしか効かず、素の
+`node --test` では解決できない。`scripts/test-register-path-alias.mjs`（`--import` で読む）が
+`node:module` の `register()` で `scripts/test-path-alias-hooks.mjs` の `resolve` フックを登録し、
+`@/xxx` → `src/xxx.ts` へ解決する。フックの戻り値で `format: "module-typescript"` を明示するのも
+上と同じ理由（Nodeに中身の判定をさせない）。新しいテストファイルで `@/` を使う実行時importを
+足す場合、対象モジュールが辿る先（type-only importは対象外）も含めてこの解決経路に乗るため、
+追加のパッケージ（`@notionhq/client` など）に依存する重いモジュールへは実行時importを
+向けないよう気をつける（`place-text.ts` が `PlaceItem` を `import type` にしているのはこのため）。
+
 ## 外部APIの扱い
 
 - Google Calendar / Notion への呼び出しは `src/services/` を経由し、UIコンポーネントから直接叩かない（`docs/spec.md` §22）。
