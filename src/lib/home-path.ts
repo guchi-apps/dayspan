@@ -13,11 +13,14 @@ export const DEFAULT_HOME_PATH = "/activity";
 /**
  * ログイン後の戻り先（`next` / `callbackUrl`）を、外部へ飛ばされない形に整える。
  *
- * `//` 始まりを弾くのは、`//example.com` がプロトコル相対URLとして外部サイトを指すため。
+ * `/` で始まっても2文字目が `/` か `\` なら弾くのは、WHATWG URLの解析では特殊スキームの
+ * ホストで `\` が `/` と等価に扱われるため。`//example.com` はプロトコル相対URL、
+ * `/\evil.com` も `new URL()` に渡すと `https://evil.com/` になり、どちらも外部サイトを指す
+ * （guchi-apps/dayspan#596）。
  * 判定を1か所に置くのは、`/auth/signin`・`/auth/callback`・`/login`・ミドルウェアの4経路で
  * 同じ既定値を使う必要があり、`start_url` とずれるとiPhoneウィジェットの着地点の前提
  * （docs/spec.md §28）まで崩れるため。
  */
 export function resolveInternalPath(param: string | null | undefined): string {
-  return param && param.startsWith("/") && !param.startsWith("//") ? param : DEFAULT_HOME_PATH;
+  return param && param.startsWith("/") && !/^\/[/\\]/.test(param) ? param : DEFAULT_HOME_PATH;
 }
