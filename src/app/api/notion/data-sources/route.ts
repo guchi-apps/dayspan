@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
@@ -21,7 +22,7 @@ export async function GET() {
     const notion = createNotionClient(connection);
     const dataSources = await listCandidateDataSources(notion);
     return NextResponse.json({ dataSources });
-  } catch {
-    return NextResponse.json({ error: "notion_request_failed" }, { status: 502 });
+  } catch (error) {
+    return externalApiError("notion", "データソース一覧の取得", error);
   }
 }

@@ -1,3 +1,4 @@
+import { externalApiMessage } from "@/lib/api-error";
 import { db } from "@/lib/db";
 import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
 import { listCalendars } from "@/services/google-calendar/calendars";
@@ -59,8 +60,10 @@ export async function loadWritableCalendars(userId: string): Promise<WritableCal
           });
         }
       });
-    } catch {
-      // 1つのアカウントで失敗してもカレンダー一覧の読み込みは続ける
+    } catch (error) {
+      // 1つのアカウントで失敗してもカレンダー一覧の読み込みは続ける。ただし理由は残す
+      // （CLAUDE.md「外部APIの扱い」）。
+      externalApiMessage("google", `${account.email} の書き込み可能なカレンダー一覧の取得`, error);
       continue;
     }
   }
@@ -179,7 +182,12 @@ export async function loadGoogleEvents(
     const fetchEvents = (calendarId: string): Promise<EventsFetchResult> =>
       listEvents(account, calendarId, range).then(
         (events) => ({ ok: true, events }),
-        () => ({ ok: false }),
+        (error) => {
+          // 個別カレンダーの失敗でアカウント全体は落とさないが、理由はログへ残す
+          // （画面のreasonは呼び出し側でカレンダー名を添えて別途組み立てる）。
+          externalApiMessage("google", `${account.email} の「${calendarId}」の予定取得`, error);
+          return { ok: false };
+        },
       );
 
     let entries;
@@ -191,13 +199,20 @@ export async function loadGoogleEvents(
         Promise.all(visibleSettings.map((setting) => fetchEvents(setting.calendarId))),
       ]);
     } catch (error) {
-      errors.push({
-        source: "google",
-        reason:
-          error instanceof GoogleReauthRequiredError
-            ? `${account.email} の認可が失効しました。設定画面から再接続してください。`
-            : `${account.email} の予定を取得できませんでした。`,
-      });
+      if (error instanceof GoogleReauthRequiredError) {
+        errors.push({
+          source: "google",
+          reason: `${account.email} の認可が失効しました。設定画面から再接続してください。`,
+        });
+      } else {
+        errors.push({
+          source: "google",
+          reason: `${account.email} の予定を取得できませんでした。`,
+        });
+        // 再認可以外の失敗（カレンダー一覧の取得失敗等）は、画面には定型文しか出せないため
+        // 原因の切り分けにログが要る（CLAUDE.md「外部APIの扱い」）。
+        externalApiMessage("google", `${account.email} の予定・カレンダー一覧の取得`, error);
+      }
       continue;
     }
 
@@ -304,7 +319,15 @@ async function loadNotionItems(
       reminderReady: Boolean(connection.reminderDataSourceId),
       errors: [],
     };
-  } catch {
+  } catch (error) {
+    // タスク・日付リマインド・ゴミの日・勤務・買い物を1つのPromise.allで取っているため、
+    // どれが失敗したのかは画面の定型文だけでは切り分けられない。ログには全文を残す
+    // （CLAUDE.md「外部APIの扱い」）。
+    const message = externalApiMessage(
+      "notion",
+      "タスク・日付リマインド・ゴミの日・勤務場所・買い物の取得",
+      error,
+    );
     return {
       tasks: [],
       reminders: [],
@@ -314,8 +337,7 @@ async function loadNotionItems(
       errors: [
         {
           source: "notion",
-          reason:
-            "Notionのタスク・日付リマインド・ゴミの日・勤務場所・買い物を取得できませんでした。",
+          reason: `Notionのタスク・日付リマインド・ゴミの日・勤務場所・買い物を取得できませんでした（${message}）。`,
         },
       ],
     };

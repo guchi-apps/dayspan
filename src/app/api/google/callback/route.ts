@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { externalApiMessage } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { encryptSecret } from "@/lib/crypto/secret-cipher";
 import { db } from "@/lib/db";
@@ -37,7 +38,10 @@ export async function GET(request: NextRequest) {
   let tokens;
   try {
     tokens = await exchangeCodeForTokens({ code, origin });
-  } catch {
+  } catch (error) {
+    // リダイレクト先には定型のクエリ値しか渡せないため、理由はログにだけ残す
+    // （CLAUDE.md「外部APIの扱い」）。
+    externalApiMessage("google", "OAuthトークン交換", error);
     return settingsRedirect(origin, "exchange_failed");
   }
 
