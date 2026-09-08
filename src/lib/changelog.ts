@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.5.4",
+    date: "2026-09-09",
+    changes: [
+      "通知が同時に実行された場合などに、同じ通知が二重に届くことがある不具合を修正しました。",
+    ],
+  },
+  {
     version: "3.5.2",
     date: "2026-09-08",
     changes: [
