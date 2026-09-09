@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BellRing, ChevronRight, History, MapPin, Menu, Settings } from "lucide-react";
+import { BellRing, ChevronRight, History, MapPin, Menu, Moon, Settings } from "lucide-react";
 
 import { NAV_ITEMS, type NavKey } from "@/components/nav/nav-items";
 import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
@@ -115,6 +115,16 @@ export function AppMenuButton({
           ))}
 
           <DrawerGroup>そのほか</DrawerGroup>
+          {/* 睡眠（docs/spec.md §39）は記録（/activity）の下位画面で、この区画の中でも
+              いちばん「記録」に近い性質を持つため先頭に置く。以前は /activity のヘッダーの
+              ボタンからしか開けず、ドロワーには出ていなかった（issue #620）。あちらのボタンは
+              記録画面からの最短経路として残す。 */}
+          <DrawerItem
+            href="/activity/sleep"
+            icon={Moon}
+            label="睡眠"
+            onClick={handleClick("/activity/sleep")}
+          />
           {/* 日付リマインドは以前ここが「勤務」だった（issue #508）。勤務は出張・年休の申請漏れを
               気にする画面で開く頻度が高く、下部ナビへ移した。日付リマインドは一度登録すれば
               数年触らないため、毎日押さないこちらの区画へ入れ替えた。 */}
