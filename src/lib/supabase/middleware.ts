@@ -16,6 +16,7 @@ function isPublicPath(pathname: string): boolean {
  * Supabaseのセッションではなく、それぞれ専用のトークン・APIキーで認証するAPI。
  *
  * - `/api/widget/` … iPhoneウィジェット用（docs/spec.md §28）
+ * - `/api/shortcuts/` … iPhoneショートカット用（docs/spec.md §40）
  * - `/api/internal/` … サーバー間参照用（docs/internal-api.md）
  *
  * ここを通常の経路に通すと、呼ばれるたびにSupabase Authへ往復が1回増えるうえ、Supabaseへ
@@ -23,7 +24,11 @@ function isPublicPath(pathname: string): boolean {
  * matcherから外さずここで分けるのは、外すと詐称されたユーザーIDヘッダーがそのまま後段へ届くため。
  */
 function isTokenAuthApiPath(pathname: string): boolean {
-  return pathname.startsWith("/api/widget/") || pathname.startsWith("/api/internal/");
+  return (
+    pathname.startsWith("/api/widget/") ||
+    pathname.startsWith("/api/shortcuts/") ||
+    pathname.startsWith("/api/internal/")
+  );
 }
 
 /**
