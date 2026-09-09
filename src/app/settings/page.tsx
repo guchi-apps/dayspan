@@ -13,6 +13,7 @@ import {
   Tags,
   Timer,
   UserRound,
+  Zap,
 } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
@@ -36,6 +37,7 @@ export default async function SettingsPage() {
     uiSetting,
     activityPresetCount,
     widgetToken,
+    shortcutToken,
     pushDeviceCount,
     notificationSettings,
   ] = await Promise.all([
@@ -45,6 +47,7 @@ export default async function SettingsPage() {
     db.activityPreset.count({ where: { userId: user.id } }),
     // 発行の有無だけを見る。復号は開いてからで足りる。
     db.widgetToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
+    db.shortcutToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
     db.pushSubscription.count({ where: { userId: user.id } }),
     getNotificationSettings(user.id),
   ]);
@@ -115,6 +118,14 @@ export default async function SettingsPage() {
           icon={Smartphone}
           label="iPhoneウィジェット"
           value={widgetToken ? "発行済み" : "未設定"}
+        />
+        {/* 睡眠の記録先はGoogle Calendar。ただしトークンの発行そのものは連携に依らず、
+            未接続でも先に手順を読める。ウィジェットと同じく常に出す。 */}
+        <MenuItem
+          href="/settings/shortcuts"
+          icon={Zap}
+          label="iPhoneショートカット"
+          value={shortcutToken ? "発行済み" : "未設定"}
         />
         {/* 通知はGoogle・Notionが未接続でも開ける。許可そのものは端末ごとに持つため、
             この行には「この端末で受け取っているか」ではなく登録済みの端末の数を出す。 */}
