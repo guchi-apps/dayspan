@@ -29,6 +29,18 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.6.0",
+    date: "2026-09-09",
+    changes: [
+      "睡眠の記録一覧を、これまでよりも少ない手順で開けるようになりました。",
+    ],
+    usage: [
+      "画面左上のメニューボタンを押してドロワーを開きます",
+      "「そのほか」の一覧の先頭にある「睡眠」を押します",
+      "睡眠の記録一覧画面が開けば成功です",
+    ],
+  },
+  {
     version: "3.5.4",
     date: "2026-09-09",
     changes: [
