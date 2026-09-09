@@ -12,7 +12,7 @@ import type { ActivitySavedRange, RunningActivityItem } from "@/types/activity";
  * 押し間違えてすぐ止めると開始と終了が同じ時刻になり、Googleは長さの無い予定を受け付けない。
  * 記録した事実は残したいので、断らずにこの長さまで伸ばす。
  */
-const MIN_ACTIVITY_MINUTES = 1;
+export const MIN_ACTIVITY_MINUTES = 1;
 
 /**
  * 指定された時刻が未来でも「いま」として受け入れる幅（ミリ秒）。
@@ -28,8 +28,11 @@ const FUTURE_TOLERANCE_MS = 60_000;
  *
  * 未来はこの幅までなら現在時刻へ丸め、それより先は断る。丸めた結果は経過時間0分として
  * 画面に出るため、指定が効いていないことは見て分かる。
+ *
+ * ショートカット経由の睡眠（docs/spec.md §40）もここを通す。写しを置くと、
+ * 押して記録した時刻とショートカットから送った時刻で、片方だけ規則が変わる。
  */
-function resolveRecordTime(at: Date, now: Date, label: "開始" | "終了"): Date {
+export function resolveRecordTime(at: Date, now: Date, label: "開始" | "終了"): Date {
   const ahead = at.getTime() - now.getTime();
   if (ahead <= 0) return at;
   if (ahead <= FUTURE_TOLERANCE_MS) return now;

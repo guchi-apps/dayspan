@@ -1,5 +1,5 @@
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
-import { dateKeyDiffDays } from "@/lib/calendar-range";
+import { addDays, dateKeyDiffDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import type { GoogleEvent } from "@/services/google-calendar/events";
 
 /**
@@ -48,6 +48,28 @@ export const NIGHT_START_MINUTES = 12 * 60;
  * 床に就いた時刻と最後に起きた時刻になる。
  */
 export const NIGHT_SEGMENT_START = 18 * 60 - NIGHT_START_MINUTES;
+
+/**
+ * その日時がどの夜の行に入るかを返す（行の始まり＝12:00が属する日付キー）。
+ *
+ * 朝6:00は「今日の夜」ではなく**昨夜の行**に入る。行が `[D 12:00, D+1 12:00)` である以上、
+ * 正午より前の時刻は前日のキーになる。
+ *
+ * ショートカットからの就寝（`/api/shortcuts/sleep/start`・docs/spec.md §40）が、記録中の睡眠を
+ * 「同じ夜のもの」と見なしてよいかの判定に使う。止め損ねて持ち越された前夜の記録まで
+ * 同じ夜として扱うと、その記録を終わらせる経路がどこにも無くなる。
+ *
+ * `createCalendarDateUtils()` を毎回作るのは、この関数が1回の要求につき数回しか呼ばれない
+ * ため（月表示のように数万回通る経路ではない）。
+ */
+export function sleepNightKey(iso: string, timeZone: string): string {
+  const utils = createCalendarDateUtils(timeZone);
+  const dateKey = utils.itemDateKey(iso);
+
+  if (utils.minutesFromMidnight(iso) >= NIGHT_START_MINUTES) return dateKey;
+
+  return toDateKey(addDays(parseDateKey(dateKey), -1));
+}
 
 /** 1行の中で睡眠が占める帯。`from` / `to` はその行の12:00から数えた分（0〜1440）。 */
 export type SleepSegment = {

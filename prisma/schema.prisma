@@ -31,6 +31,7 @@ model User {
   activityPresets   ActivityPreset[]
   runningActivity   RunningActivity?
   widgetToken       WidgetToken?
+  shortcutToken     ShortcutToken?
   travelPlans       TravelPlan[]
   taskEventLinks    TaskEventLink[]
   eventOutcomes     EventOutcome[]
@@ -369,6 +370,31 @@ model WidgetToken {
   token     String @db.Text // secret-cipher.ts でAES-256-GCM暗号化
 
   // 最後に使われた日時。ウィジェットが生きているか、古い端末が読み続けていないかを見るため。
+  lastUsedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// --- iPhoneショートカット連携 ---
+// iOSの個人用オートメーション・ヘルスケアから睡眠を記録するための専用トークン（docs/spec.md §40）。
+// オートメーションは利用者が操作していない時点（就寝時・アラームの停止時）でiOSが走らせるため、
+// ウィジェットと同じくSupabaseのセッションでは認証できない。
+//
+// WidgetToken とは分ける。あちらは台本ごと配る前提の読み取り専用の値で、書き込みを兼ねさせると
+// 漏れたときにできることが増える（INTERNAL_API_KEY / INTERNAL_EVENTS_API_KEY と同じ分け方）。
+model ShortcutToken {
+  id     String @id @default(cuid())
+  userId String @unique // 1ユーザー1本。複数の端末でも同じトークンを使い回す
+
+  // 暗号文はIVが毎回変わるため値では引けない。照合はハッシュ側で行い、
+  // 暗号文は設定画面での再表示（機種変更・オートメーションの作り直し）にだけ使う。
+  tokenHash String @unique @db.VarChar(64) // SHA-256（hex）
+  token     String @db.Text // secret-cipher.ts でAES-256-GCM暗号化
+
+  // 最後に使われた日時。オートメーションが効いているかを設定画面から読めるようにする。
   lastUsedAt DateTime?
 
   createdAt DateTime @default(now())
