@@ -21,11 +21,13 @@ import { cn } from "@/lib/utils";
  * ヘッダー左上のメニューボタンと、そこから左端に出るドロワー（issue #328・#463・#508）。
  *
  * 画面の移動（カレンダー・タスク・記録・勤務・買い物リスト）と、毎日は押さない日付・場所・設定を
- * ここへまとめる。どの画面幅でも出す。iPad・PCではこれらをヘッダーへ横一列に並べていたが、
+ * ここへまとめる。iPad・PCではこれらをヘッダーへ横一列に並べていたが、
  * カレンダーでは同じ帯に前へ・次へ・年月・今日・表示形式・再取得も乗るため、いま見ている期間が
  * 押しどころの列の中に埋もれていた。ヘッダーにはその画面の操作だけを残す。
  *
- * 中身は画面幅で変えない。同じアプリの中で、探す位置が幅によって入れ替わらないようにするため。
+ * 1024px以上では同じ中身を左端に開いたまま置く（app-sidebar.tsx・issue #636）ため、
+ * このボタンは出さない。中身は画面幅で変えない。同じアプリの中で、探す位置が幅によって
+ * 入れ替わらないようにするため。
  */
 export function AppMenuButton({
   current,
@@ -39,37 +41,7 @@ export function AppMenuButton({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const navigateOffline = useOfflineNavigate();
-
-  // 手続きが残っている出張・年休の件数（docs/spec.md §34）。開いたときに1回だけ取りにいく。
-  // 各画面のサーバー側で数えると、勤務を開かない日もNotionへの往復が画面の数だけ増える
-  // （記録の長押しシートと同じ扱い）。取れなければ数字を出さないだけで、メニューは開ける。
-  // 勤務は下部ナビ（NAV_ITEMS）へ移ったが（issue #508）、ドロワーには「画面」グループの行として
-  // 引き続き出るため、この取得自体は変えていない。
-  const [workTodoCount, setWorkTodoCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    let alive = true;
-    fetch("/api/work/alerts")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((body: { count?: number } | null) => {
-        if (alive) setWorkTodoCount(body?.count ?? null);
-      })
-      .catch(() => {});
-
-    return () => {
-      alive = false;
-    };
-  }, [open]);
-
-  // ドロワーの行はソフトナビゲーションで移動する。オフラインでは保存済みがあれば
-  // ハードナビゲーションへ切り替える（issue #321。メインナビの項目と同じ扱い）。
-  const handleClick = (href: string) => (event: React.MouseEvent) => {
-    setOpen(false);
-    if (isPlainClick(event) && navigateOffline(href)) event.preventDefault();
-  };
+  const workTodoCount = useWorkTodoCount(open);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -78,7 +50,7 @@ export function AppMenuButton({
           variant="ghost"
           size="icon-sm"
           aria-label={activityRunning ? "メニュー（記録中）" : "メニュー"}
-          className={cn("relative shrink-0", className)}
+          className={cn("relative shrink-0 lg:hidden", className)}
         >
           <Menu />
           {/*
@@ -99,56 +71,132 @@ export function AppMenuButton({
         {/* 読み上げ用。見出しだけでは、ここが何の一覧なのかが読み上げでは伝わらない。 */}
         <DialogDescription className="sr-only">画面の切り替えと設定</DialogDescription>
 
-        <nav className="flex min-h-0 flex-col overflow-y-auto">
-          <DrawerGroup>画面</DrawerGroup>
-          {NAV_ITEMS.map((item) => (
-            <DrawerItem
-              key={item.href}
-              href={item.href}
-              icon={item.icon}
-              label={item.label}
-              active={item.key === current}
-              running={item.key === "activity" && activityRunning}
-              badge={item.key === "work" && workTodoCount && workTodoCount > 0 ? workTodoCount : null}
-              onClick={handleClick(item.href)}
-            />
-          ))}
+        <DrawerNavContent
+          current={current}
+          activityRunning={activityRunning}
+          workTodoCount={workTodoCount}
+          onNavigate={() => setOpen(false)}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-          <DrawerGroup>そのほか</DrawerGroup>
-          {/* 睡眠（docs/spec.md §39）は記録（/activity）の下位画面で、この区画の中でも
-              いちばん「記録」に近い性質を持つため先頭に置く。以前は /activity のヘッダーの
-              ボタンからしか開けず、ドロワーには出ていなかった（issue #620）。あちらのボタンは
-              記録画面からの最短経路として残す。 */}
+/**
+ * 手続きが残っている出張・年休の件数（docs/spec.md §34）。`active` になるたびに1回取りにいく。
+ *
+ * 各画面のサーバー側で数えると、勤務を開かない日もNotionへの往復が画面の数だけ増える
+ * （記録の長押しシートと同じ扱い）。そのためドロワーは開いたとき、1024px以上のサイドバーは
+ * ポインタが乗った・フォーカスが入ったときだけ読む（issue #636）。取れなければ数字を出さないだけで、
+ * メニューそのものは使える。勤務は下部ナビ（NAV_ITEMS）へ移ったが（issue #508）、ドロワーには
+ * 「画面」グループの行として引き続き出るため、この取得自体は変えていない。
+ */
+export function useWorkTodoCount(active: boolean): number | null {
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+
+    let alive = true;
+    fetch("/api/work/alerts")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { count?: number } | null) => {
+        if (alive) setCount(body?.count ?? null);
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, [active]);
+
+  return count;
+}
+
+/**
+ * ドロワーとサイドバー（app-sidebar.tsx）の中身。画面幅によって並びや項目が食い違わないよう、
+ * 1か所で持つ（issue #636）。
+ */
+export function DrawerNavContent({
+  current,
+  activityRunning,
+  workTodoCount = null,
+  footer,
+  onNavigate,
+}: {
+  current?: NavKey;
+  activityRunning: boolean;
+  /** 勤務の行に出す未対応の件数（`useWorkTodoCount`）。まだ読んでいなければ null。 */
+  workTodoCount?: number | null;
+  /** バージョンの行の上に置くもの（サイドバーの記録中カード）。 */
+  footer?: React.ReactNode;
+  /** 行を押したとき（ドロワーを閉じる）。 */
+  onNavigate?: () => void;
+}) {
+  const navigateOffline = useOfflineNavigate();
+
+  // 行はソフトナビゲーションで移動する。オフラインでは保存済みがあれば
+  // ハードナビゲーションへ切り替える（issue #321。メインナビの項目と同じ扱い）。
+  const handleClick = (href: string) => (event: React.MouseEvent) => {
+    onNavigate?.();
+    if (isPlainClick(event) && navigateOffline(href)) event.preventDefault();
+  };
+
+  return (
+    <>
+      <nav className="flex min-h-0 flex-col overflow-y-auto">
+        <DrawerGroup>画面</DrawerGroup>
+        {NAV_ITEMS.map((item) => (
           <DrawerItem
-            href="/activity/sleep"
-            icon={Moon}
-            label="睡眠"
-            onClick={handleClick("/activity/sleep")}
+            key={item.href}
+            href={item.href}
+            icon={item.icon}
+            label={item.label}
+            active={item.key === current}
+            running={item.key === "activity" && activityRunning}
+            badge={item.key === "work" && workTodoCount && workTodoCount > 0 ? workTodoCount : null}
+            onClick={handleClick(item.href)}
           />
-          {/* 日付リマインドは以前ここが「勤務」だった（issue #508）。勤務は出張・年休の申請漏れを
-              気にする画面で開く頻度が高く、下部ナビへ移した。日付リマインドは一度登録すれば
-              数年触らないため、毎日押さないこちらの区画へ入れ替えた。 */}
-          <DrawerItem
-            href="/reminders"
-            icon={BellRing}
-            label="日付"
-            onClick={handleClick("/reminders")}
-          />
-          {/* 場所（docs/spec.md §9）。登録した地点を直す・消すための画面で、毎日押すものでは
-              ないため下部ナビの5枠には入れない（設定を下部ナビから外したのと同じ理由）。 */}
-          <DrawerItem
-            href="/places"
-            icon={MapPin}
-            label="場所"
-            onClick={handleClick("/places")}
-          />
-          <DrawerItem
-            href="/settings"
-            icon={Settings}
-            label="設定"
-            onClick={handleClick("/settings")}
-          />
-        </nav>
+        ))}
+
+        <DrawerGroup>そのほか</DrawerGroup>
+        {/* 睡眠（docs/spec.md §39）は記録（/activity）の下位画面で、この区画の中でも
+            いちばん「記録」に近い性質を持つため先頭に置く。以前は /activity のヘッダーの
+            ボタンからしか開けず、ドロワーには出ていなかった（issue #620）。あちらのボタンは
+            記録画面からの最短経路として残す。 */}
+        <DrawerItem
+          href="/activity/sleep"
+          icon={Moon}
+          label="睡眠"
+          onClick={handleClick("/activity/sleep")}
+        />
+        {/* 日付リマインドは以前ここが「勤務」だった（issue #508）。勤務は出張・年休の申請漏れを
+            気にする画面で開く頻度が高く、下部ナビへ移した。日付リマインドは一度登録すれば
+            数年触らないため、毎日押さないこちらの区画へ入れ替えた。 */}
+        <DrawerItem
+          href="/reminders"
+          icon={BellRing}
+          label="日付"
+          onClick={handleClick("/reminders")}
+        />
+        {/* 場所（docs/spec.md §9）。登録した地点を直す・消すための画面で、毎日押すものでは
+            ないため下部ナビの5枠には入れない（設定を下部ナビから外したのと同じ理由）。 */}
+        <DrawerItem
+          href="/places"
+          icon={MapPin}
+          label="場所"
+          onClick={handleClick("/places")}
+        />
+        <DrawerItem
+          href="/settings"
+          icon={Settings}
+          label="設定"
+          onClick={handleClick("/settings")}
+        />
+      </nav>
+
+      <div className="mt-auto flex flex-col gap-3">
+        {footer}
 
         {/*
           バージョンはいちばん下に置く。押すとその版で何が変わったかを読める場所（更新履歴）へ入る。
@@ -157,15 +205,15 @@ export function AppMenuButton({
         <Link
           href="/settings/changelog"
           onClick={handleClick("/settings/changelog")}
-          className="mt-auto flex items-center gap-2 border-t border-outline-variant px-6 pt-3 text-on-surface-variant transition-colors hover:bg-on-surface/8"
+          className="flex items-center gap-2 border-t border-outline-variant px-6 pt-3 text-on-surface-variant transition-colors hover:bg-on-surface/8"
         >
           <History className="size-4 shrink-0" />
           <span className="type-body-small flex-1">v{APP_VERSION}</span>
           <span className="type-body-small">更新履歴</span>
           <ChevronRight className="size-4 shrink-0" />
         </Link>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </>
   );
 }
 
@@ -180,7 +228,7 @@ function DrawerGroup({ children }: { children: React.ReactNode }) {
 }
 
 /** 記録中であることを示す印（下部ナビの記録の円に出しているものと同じ）。 */
-function RunningDot({ className }: { className?: string }) {
+export function RunningDot({ className }: { className?: string }) {
   return (
     <span
       aria-hidden

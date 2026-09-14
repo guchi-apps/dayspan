@@ -19,7 +19,9 @@ import {
 
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { Card } from "@/components/ui/card";
+import { WIDE_TWO_COLUMN_ROW_CLASS } from "@/components/ui/wide-section";
 import { APP_VERSION } from "@/lib/app-version";
+import { cn } from "@/lib/utils";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { resolveInternalPath, START_PATH_COOKIE, startPathLabel } from "@/lib/home-path";
@@ -61,8 +63,9 @@ export default async function SettingsPage() {
   const startPath = resolveInternalPath(undefined, startPathCookieValue);
 
   return (
-    <SettingsShell title="設定" backHref={startPath} backLabel={startPathLabel(startPathCookieValue)}>
-      <Card className="gap-0 py-0">
+    // 広い画面では行を2列に並べる（issue #636）。各項目の中身の画面は入力欄が並ぶため従来の幅のまま。
+    <SettingsShell title="設定" backHref={startPath} backLabel={startPathLabel(startPathCookieValue)} wide>
+      <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
         <MenuItem
           href="/settings/google"
           icon={CalendarDays}
@@ -202,7 +205,10 @@ function MenuItem({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 px-4 py-3.5 transition-colors not-last:border-b not-last:border-outline-variant hover:bg-on-surface/8"
+      className={cn(
+        "flex items-center gap-3 px-4 py-3.5 transition-colors not-last:border-b not-last:border-outline-variant hover:bg-on-surface/8",
+        WIDE_TWO_COLUMN_ROW_CLASS,
+      )}
     >
       <Icon className="size-5 shrink-0 text-on-surface-variant" />
 
