@@ -14,7 +14,9 @@ import { TagChip } from "@/components/tags/tag-chip";
 import { tagColorOf } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { WIDE_TWO_COLUMN_ROW_CLASS } from "@/components/ui/wide-section";
 import { formatCoordinates } from "@/lib/coordinates";
+import { cn } from "@/lib/utils";
 import type { PlaceItem } from "@/services/notion/places";
 import type { TagOption } from "@/services/notion/tag-options";
 
@@ -95,6 +97,7 @@ export function PlacesScreen({
         title="場所"
         backHref="/activity"
         backLabel="記録"
+        wide
         actions={
           <Button
             variant="ghost"
@@ -137,13 +140,18 @@ export function PlacesScreen({
             「{query.trim()}」に当たる場所はありません。
           </p>
         ) : (
-          <Card className="gap-0 py-0">
+          // 広い画面では行を2列に並べる（issue #636）。1行が画面幅いっぱいに伸びても名前と住所の
+          // 間が空くだけで、読める件数は増えない。
+          <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
             {filtered.map((place) => (
               <button
                 key={place.id}
                 type="button"
                 onClick={() => setEditing(place)}
-                className="flex items-center gap-3 px-4 py-3 text-left transition-colors not-last:border-b not-last:border-outline-variant hover:bg-on-surface/8"
+                className={cn(
+                  "flex items-center gap-3 px-4 py-3 text-left transition-colors not-last:border-b not-last:border-outline-variant hover:bg-on-surface/8",
+                  WIDE_TWO_COLUMN_ROW_CLASS,
+                )}
               >
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="type-body-large truncate">{place.name}</span>

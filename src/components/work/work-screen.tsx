@@ -15,6 +15,7 @@ import {
 
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { AppMenuButton } from "@/components/nav/app-drawer";
+import { AppFrame } from "@/components/nav/app-frame";
 import { BottomNav } from "@/components/nav/main-nav";
 import { RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
@@ -258,11 +259,14 @@ export function WorkScreen({
   // 「事後登録がdueで事前申請がlater」の組み合わせは起きない。
   const openTodos = trips.due.flatMap((trip) => workTodos(trip, todayKey));
   const openLeaveCount = leaves.due.length;
+  // 出張・年休の区画を1つでも持つか。広い画面ではこの2つを左の列に、月の内容を右の列に置く。
+  const hasProcedures = capabilities.approval || capabilities.annualLeave;
 
   return (
-    <div className="flex h-dvh flex-col">
+    <AppFrame current="work" activityRunning={runningActivity !== null} running={runningActivity}>
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
+        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+            画面を移る（issue #636）。 */}
         <AppMenuButton current="work" activityRunning={runningActivity !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
@@ -274,73 +278,88 @@ export function WorkScreen({
       </header>
       <OfflineNotice />
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
+        {/*
+          広い画面では「片付ける手続き（出張・年休）」を左、「この月」を右に分ける（issue #636）。
+          縦に並べていたときは、月切替を2つの区画のあいだに置いて、上の手続きには月切替が
+          効かないことを位置で示していた（issue #510）。左右に分ければ同じことが列で示せる。
+        */}
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-2xl flex-col gap-6 p-6",
+            hasProcedures &&
+              "@4xl/main:grid @4xl/main:max-w-6xl @4xl/main:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @4xl/main:items-start @4xl/main:gap-x-8",
+          )}
+        >
           {/* 書き込みの失敗を先に出す。押した操作の結果のほうが、開いた時点の取得の失敗より新しい。 */}
           {(error ?? loadError) && (
-            <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container">
+            <p className="type-body-small rounded-xl bg-error-container px-4 py-3 text-on-error-container @4xl/main:col-span-full">
               {error ?? loadError}
             </p>
           )}
 
-          {/* 出張。残っている手続きだけを出す。事前申請・事後登録のプロパティが無いDBでは片付ける
-              手続きそのものが持てないため、区画ごと出さない。 */}
-          {capabilities.approval && (
-            <section className="flex flex-col gap-3">
-              <div className="flex items-baseline gap-2">
-                <h2 className="type-title-small">出張</h2>
-                {openTodos.length > 0 && (
-                  <span className="type-label-medium flex items-center gap-1 text-error">
-                    <CircleAlert className="size-3.5" />
-                    未対応 {openTodos.length}件
-                  </span>
-                )}
-              </div>
+          {hasProcedures && (
+            <div className="flex flex-col gap-6">
+              {/* 出張。残っている手続きだけを出す。事前申請・事後登録のプロパティが無いDBでは片付ける
+                  手続きそのものが持てないため、区画ごと出さない。 */}
+              {capabilities.approval && (
+                <section className="flex flex-col gap-3">
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="type-title-small">出張</h2>
+                    {openTodos.length > 0 && (
+                      <span className="type-label-medium flex items-center gap-1 text-error">
+                        <CircleAlert className="size-3.5" />
+                        未対応 {openTodos.length}件
+                      </span>
+                    )}
+                  </div>
 
-              <OpenRecords
-                split={trips}
-                todayKey={todayKey}
-                todos={["preApplied", "postRegistered"]}
-                emptyLabel="未対応の手続きはありません。"
-                writeDisabled={busy || pending || offline}
-                onToggle={toggleTodo}
-                onOpen={(record) => setDraft({ mode: "edit", record })}
-              />
-            </section>
-          )}
+                  <OpenRecords
+                    split={trips}
+                    todayKey={todayKey}
+                    todos={["preApplied", "postRegistered"]}
+                    emptyLabel="未対応の手続きはありません。"
+                    writeDisabled={busy || pending || offline}
+                    onToggle={toggleTodo}
+                    onOpen={(record) => setDraft({ mode: "edit", record })}
+                  />
+                </section>
+              )}
 
-          {/* 年休。出張と同じ形にする。開く理由の多くは「まだ申請していないものを片付けること」で、
-              日別の一覧を上から探すのでは見つからないため。 */}
-          {capabilities.annualLeave && (
-            <section className="flex flex-col gap-3">
-              <div className="flex items-baseline gap-2">
-                <h2 className="type-title-small">年休</h2>
-                {openLeaveCount > 0 && (
-                  <span className="type-label-medium flex items-center gap-1 text-error">
-                    <CircleAlert className="size-3.5" />
-                    未申請 {openLeaveCount}件
-                  </span>
-                )}
-                {/* 年度の取得状況（docs/spec.md §34）。あちらは「あと何日使えるか」を見る画面で、
-                    この区画（残っている申請を片付ける）とは開く理由が違う。入口はここ1つにし、
-                    ドロワーには行を足さない。 */}
-                <Link
-                  href="/work/leave"
-                  className="type-label-medium ml-auto text-primary underline"
-                >
-                  年度の取得状況
-                </Link>
-              </div>
+              {/* 年休。出張と同じ形にする。開く理由の多くは「まだ申請していないものを片付けること」で、
+                  日別の一覧を上から探すのでは見つからないため。 */}
+              {capabilities.annualLeave && (
+                <section className="flex flex-col gap-3">
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="type-title-small">年休</h2>
+                    {openLeaveCount > 0 && (
+                      <span className="type-label-medium flex items-center gap-1 text-error">
+                        <CircleAlert className="size-3.5" />
+                        未申請 {openLeaveCount}件
+                      </span>
+                    )}
+                    {/* 年度の取得状況（docs/spec.md §34）。あちらは「あと何日使えるか」を見る画面で、
+                        この区画（残っている申請を片付ける）とは開く理由が違う。入口はここ1つにし、
+                        ドロワーには行を足さない。 */}
+                    <Link
+                      href="/work/leave"
+                      className="type-label-medium ml-auto text-primary underline"
+                    >
+                      年度の取得状況
+                    </Link>
+                  </div>
 
-              <OpenRecords
-                split={leaves}
-                todayKey={todayKey}
-                todos={["preApplied"]}
-                emptyLabel="未申請の年休はありません。"
-                writeDisabled={busy || pending || offline}
-                onToggle={toggleTodo}
-                onOpen={(record) => setDraft({ mode: "edit", record })}
-              />
-            </section>
+                  <OpenRecords
+                    split={leaves}
+                    todayKey={todayKey}
+                    todos={["preApplied"]}
+                    emptyLabel="未申請の年休はありません。"
+                    writeDisabled={busy || pending || offline}
+                    onToggle={toggleTodo}
+                    onOpen={(record) => setDraft({ mode: "edit", record })}
+                  />
+                </section>
+              )}
+            </div>
           )}
 
           {/* この月の勤務場所。今日のぶんだけは選択肢を並べ、1押しで決められるようにする。
@@ -440,8 +459,20 @@ export function WorkScreen({
 
             <Tally records={records} days={days} />
 
-            <Card className="py-2">
-              <CardContent className="px-4">
+            {/*
+              日別の一覧は、カードの幅が36rem以上あれば前半・後半の2段に分け、1か月ぶんがスクロール
+              せずに入るようにする（issue #636）。列優先で流すため、段の中は上から日付順のまま。
+              1日1行・行の高さを揃える決まり（issue #521）は変えない。
+            */}
+            <Card className="@container/days py-2">
+              <CardContent
+                className="px-4 @xl/days:grid @xl/days:grid-flow-col @xl/days:grid-rows-(--work-day-rows) @xl/days:gap-x-6"
+                style={
+                  {
+                    "--work-day-rows": `repeat(${Math.ceil(days.length / 2)}, auto)`,
+                  } as React.CSSProperties
+                }
+              >
                 {days.map((dateKey) => {
                   const record = records.find((item) => coversDate(item, dateKey));
                   const holiday = japaneseHolidayName(dateKey);
@@ -638,7 +669,7 @@ export function WorkScreen({
           }}
         />
       )}
-    </div>
+    </AppFrame>
   );
 }
 

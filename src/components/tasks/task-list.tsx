@@ -15,6 +15,12 @@ import {
 } from "lucide-react";
 
 import { AppMenuButton } from "@/components/nav/app-drawer";
+import { AppFrame } from "@/components/nav/app-frame";
+import {
+  WIDE_SECTION_CARD_CLASS,
+  WIDE_SECTION_HEADING_CLASS,
+  WIDE_SECTION_LIST_CLASS,
+} from "@/components/ui/wide-section";
 import { BottomNav } from "@/components/nav/main-nav";
 import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
@@ -232,9 +238,14 @@ export function TaskList({
   );
 
   return (
-    <div className="flex h-dvh flex-col">
+    <AppFrame
+      current="tasks"
+      activityRunning={runningActivity !== null}
+      running={runningActivity}
+    >
       <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
-        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
+        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+            画面を移る（issue #636）。 */}
         <AppMenuButton current="tasks" activityRunning={runningActivity !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
@@ -290,74 +301,96 @@ export function TaskList({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24">
-        {sections.map((section) => {
-          if (section.tasks.length === 0) return null;
+        {/*
+          広い画面では区分をカードにして格子に並べ、全区分を一度に見せる（issue #636）。1列のままだと
+          「今後」が長い日は、その下の「期限未設定」までスクロールしないと何件あるかが読めない。
+          列の数は画面幅ではなく本文の幅（AppFrame の @container/main）で決める。
+        */}
+        <div className="@2xl/main:grid @2xl/main:grid-cols-2 @2xl/main:items-start @2xl/main:gap-3 @2xl/main:p-3 @5xl/main:grid-cols-4">
+          {sections.map((section) => {
+            if (section.tasks.length === 0) return null;
 
-          return (
-            <section key={section.key}>
-              <h2 className="sticky top-0 z-10 flex items-center gap-2 border-b border-rule bg-background/95 px-3 py-1 text-[11px] tracking-widest text-muted-foreground backdrop-blur">
-                {section.tagName ? (
-                  <TagChip
-                    name={section.tagName}
-                    color={tagColorOf(tagOptions, section.tagName)}
-                    className="tracking-normal"
-                  />
-                ) : (
-                  section.label
+            return (
+              <section key={section.key} className={WIDE_SECTION_CARD_CLASS}>
+                <h2
+                  className={cn(
+                    "sticky top-0 z-10 flex items-center gap-2 border-b border-rule bg-background/95 px-3 py-1 text-[11px] tracking-widest text-muted-foreground backdrop-blur",
+                    WIDE_SECTION_HEADING_CLASS,
+                  )}
+                >
+                  {section.tagName ? (
+                    <TagChip
+                      name={section.tagName}
+                      color={tagColorOf(tagOptions, section.tagName)}
+                      className="tracking-normal"
+                    />
+                  ) : (
+                    section.label
+                  )}
+                  <span className="text-[10px] opacity-70">{section.tasks.length}</span>
+                </h2>
+
+                <ul className={WIDE_SECTION_LIST_CLASS}>
+                  {section.tasks.map((task) => renderTask(task, section))}
+                </ul>
+              </section>
+            );
+          })}
+
+          {/* 完了は履歴として残るぶん件数が増え続ける（docs/spec.md §12）。既定では畳んでおき、
+              見出しを押したときだけ開く。分類の軸によらず末尾に1つだけ置く。広い画面でも
+              区分の列には混ぜず、格子の下に全幅の1段で置く。 */}
+          {doneTasks.length > 0 && (
+            <section className={cn(WIDE_SECTION_CARD_CLASS, "@2xl/main:col-span-full")}>
+              <h2
+                className={cn(
+                  "sticky top-0 z-10 border-b border-rule bg-background/95 backdrop-blur",
+                  WIDE_SECTION_HEADING_CLASS,
                 )}
-                <span className="text-[10px] opacity-70">{section.tasks.length}</span>
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-1.5 px-3 py-1 text-left text-[11px] tracking-widest text-muted-foreground"
+                  aria-expanded={doneOpen}
+                  onClick={() => setDoneOpen(!doneOpen)}
+                >
+                  {doneOpen ? (
+                    <ChevronDown className="size-3.5" />
+                  ) : (
+                    <ChevronRight className="size-3.5" />
+                  )}
+                  {bucketLabels.done}
+                  <span className="text-[10px] opacity-70">{doneTasks.length}</span>
+                </button>
               </h2>
 
-              <ul>{section.tasks.map((task) => renderTask(task, section))}</ul>
+              {doneOpen && (
+                <ul className={WIDE_SECTION_LIST_CLASS}>
+                  {doneTasks.map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      hideTagName={null}
+                      tagOptions={tagOptions}
+                      utils={utils}
+                      todayKey={todayKey}
+                      sort={sort}
+                      disabled={busyId === task.id || offline}
+                      onToggleDone={(done) => toggleDone(task, done)}
+                      onOpen={() => setViewingTask(task)}
+                    />
+                  ))}
+                </ul>
+              )}
             </section>
-          );
-        })}
+          )}
 
-        {/* 完了は履歴として残るぶん件数が増え続ける（docs/spec.md §12）。既定では畳んでおき、
-            見出しを押したときだけ開く。分類の軸によらず末尾に1つだけ置く。 */}
-        {doneTasks.length > 0 && (
-          <section>
-            <h2 className="sticky top-0 z-10 border-b border-rule bg-background/95 backdrop-blur">
-              <button
-                type="button"
-                className="flex w-full items-center gap-1.5 px-3 py-1 text-left text-[11px] tracking-widest text-muted-foreground"
-                aria-expanded={doneOpen}
-                onClick={() => setDoneOpen(!doneOpen)}
-              >
-                {doneOpen ? (
-                  <ChevronDown className="size-3.5" />
-                ) : (
-                  <ChevronRight className="size-3.5" />
-                )}
-                {bucketLabels.done}
-                <span className="text-[10px] opacity-70">{doneTasks.length}</span>
-              </button>
-            </h2>
-
-            {doneOpen && (
-              <ul>
-                {doneTasks.map((task) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    hideTagName={null}
-                    tagOptions={tagOptions}
-                    utils={utils}
-                    todayKey={todayKey}
-                    sort={sort}
-                    disabled={busyId === task.id || offline}
-                    onToggleDone={(done) => toggleDone(task, done)}
-                    onOpen={() => setViewingTask(task)}
-                  />
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
-
-        {tasks.length === 0 && !loadError && (
-          <p className="p-6 text-center text-sm text-muted-foreground">タスクがありません。</p>
-        )}
+          {tasks.length === 0 && !loadError && (
+            <p className="p-6 text-center text-sm text-muted-foreground @2xl/main:col-span-full">
+              タスクがありません。
+            </p>
+          )}
+        </div>
       </div>
 
       <Button
@@ -411,7 +444,7 @@ export function TaskList({
           onChanged={() => startTransition(() => router.refresh())}
         />
       )}
-    </div>
+    </AppFrame>
   );
 }
 

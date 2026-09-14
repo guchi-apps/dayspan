@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { AppMenuButton } from "@/components/nav/app-drawer";
+import { AppFrame } from "@/components/nav/app-frame";
 import { BottomNav } from "@/components/nav/main-nav";
 import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
@@ -680,9 +681,14 @@ export function CalendarShell({
   };
 
   return (
-    <div className="flex h-dvh flex-col">
+    <AppFrame
+      current="calendar"
+      activityRunning={initialRunningActivity !== null}
+      running={initialRunningActivity}
+    >
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
+        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+            画面を移る（issue #636）。 */}
         <AppMenuButton current="calendar" activityRunning={initialRunningActivity !== null} />
 
         {/*
@@ -900,7 +906,7 @@ export function CalendarShell({
         activityRunning={initialRunningActivity !== null}
         onCalendarClick={goToday}
       />
-    </div>
+    </AppFrame>
   );
 }
 

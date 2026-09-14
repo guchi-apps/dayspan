@@ -18,7 +18,7 @@ export default function Loading() {
         <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
       </div>
 
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6 lg:max-w-5xl">
         {/* 平均と3つの数字。 */}
         <div className="flex flex-col gap-3 rounded-xl bg-surface-container-low p-4">
           <SkeletonBlock className="h-8 w-40" />

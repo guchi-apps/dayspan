@@ -8,6 +8,12 @@ import { ArrowUpDown, Eye, EyeOff, Plus, RefreshCw, ShoppingCart } from "lucide-
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { AppMenuButton } from "@/components/nav/app-drawer";
+import { AppFrame } from "@/components/nav/app-frame";
+import {
+  WIDE_SECTION_CARD_CLASS,
+  WIDE_SECTION_HEADING_CLASS,
+  WIDE_SECTION_LIST_CLASS,
+} from "@/components/ui/wide-section";
 import { BottomNav } from "@/components/nav/main-nav";
 import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
@@ -164,9 +170,14 @@ export function ShoppingScreen({
   const nextSort = () => setSort(SHOPPING_SORTS[(SHOPPING_SORTS.indexOf(sort) + 1) % SHOPPING_SORTS.length]);
 
   return (
-    <div className="flex h-dvh flex-col">
+    <AppFrame
+      current="shopping"
+      activityRunning={runningActivity !== null}
+      running={runningActivity}
+    >
       <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
-        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
+        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+            画面を移る（issue #636）。 */}
         <AppMenuButton current="shopping" activityRunning={runningActivity !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
@@ -248,30 +259,62 @@ export function ShoppingScreen({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24">
-        {sections.map((section) => (
-          <section key={section.key}>
-            {/* カテゴリを選んでいるときは見出しを出さない。何のカテゴリかはタブが示している。 */}
-            {activeKey === "all" && (
-              <h2 className="sticky top-0 z-10 flex items-center gap-2 border-b border-rule bg-background/95 px-3 py-1 text-[11px] tracking-widest text-muted-foreground backdrop-blur">
-                {section.label}
-                <span className="text-[10px] opacity-70">{section.items.length}</span>
-              </h2>
-            )}
+        {/*
+          広い画面の「すべて」では、カテゴリの束をカードにして段組みに流す（issue #636）。1列のままだと
+          3つ目より下の売り場はスクロールしないと見えない。高さの違う束を段組みで詰めるため隙間が
+          空かず、読み順（左の段の上から下、次の段）でNotionの定義順も保たれる。段組みの中では
+          見出しの sticky が効かないため、広い画面では張り付かせない。
+          カテゴリを選んでいるときは束が1つだけなので、その項目を2段に並べる。
+        */}
+        <div
+          className={cn(
+            activeKey === "all" &&
+              "@2xl/main:columns-2 @2xl/main:gap-3 @2xl/main:p-3 @5xl/main:columns-3",
+          )}
+        >
+          {sections.map((section) => (
+            <section
+              key={section.key}
+              className={cn(
+                activeKey === "all" &&
+                  cn(WIDE_SECTION_CARD_CLASS, "@2xl/main:mb-3 @2xl/main:break-inside-avoid"),
+              )}
+            >
+              {/* カテゴリを選んでいるときは見出しを出さない。何のカテゴリかはタブが示している。 */}
+              {activeKey === "all" && (
+                <h2
+                  className={cn(
+                    "sticky top-0 z-10 flex items-center gap-2 border-b border-rule bg-background/95 px-3 py-1 text-[11px] tracking-widest text-muted-foreground backdrop-blur",
+                    WIDE_SECTION_HEADING_CLASS,
+                    "@2xl/main:static",
+                  )}
+                >
+                  {section.label}
+                  <span className="text-[10px] opacity-70">{section.items.length}</span>
+                </h2>
+              )}
 
-            <ul>
-              {section.items.map((item) => (
-                <ShoppingRow
-                  key={item.id}
-                  item={item}
-                  todayKey={todayKey}
-                  disabled={busyId === item.id || offline}
-                  onToggleBought={(bought) => toggleBought(item, bought)}
-                  onOpen={() => setDialog({ mode: "edit", item })}
-                />
-              ))}
-            </ul>
-          </section>
-        ))}
+              <ul
+                className={
+                  activeKey === "all"
+                    ? WIDE_SECTION_LIST_CLASS
+                    : "@2xl/main:grid @2xl/main:grid-cols-2 @2xl/main:gap-x-3 @2xl/main:px-3"
+                }
+              >
+                {section.items.map((item) => (
+                  <ShoppingRow
+                    key={item.id}
+                    item={item}
+                    todayKey={todayKey}
+                    disabled={busyId === item.id || offline}
+                    onToggleBought={(bought) => toggleBought(item, bought)}
+                    onOpen={() => setDialog({ mode: "edit", item })}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
 
         {sections.length === 0 && !loadError && (
           <p className="p-6 text-center text-sm text-muted-foreground">
@@ -315,7 +358,7 @@ export function ShoppingScreen({
           }}
         />
       )}
-    </div>
+    </AppFrame>
   );
 }
 

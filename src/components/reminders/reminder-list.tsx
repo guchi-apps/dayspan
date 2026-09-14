@@ -145,7 +145,10 @@ export function ReminderList({
       <LinearProgress active={pending} />
       <OfflineNotice />
       {loadError && <div className="bg-error-container/70 px-3 py-2 text-xs text-on-error-container">{loadError}</div>}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-6">
+      {/* 広い画面では一覧を48remの幅に収めて中央へ置く（issue #636）。行が画面の端から端まで伸びると、
+          日付と「あと5日」が両端へ離れて1行として読みにくい。スクロールの箱そのものは狭めず
+          （狭めるとスクロールバーが一覧の横に来て、余白の上でホイールが効かない）、左右の余白で寄せる。 */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-6 md:px-[max(0px,calc((100%_-_48rem)/2))]">
         {monthSections.map((section) => (
           <section key={section.key}>
             {section.showYear && (

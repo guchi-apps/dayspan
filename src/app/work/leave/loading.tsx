@@ -5,7 +5,7 @@ import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
  *
  * ルートの `loading.tsx` へ落とすと全面のアイコン（起動画面と同じ面）が挟まるため、
  * この画面の形をここに持つ（docs/spec.md §33）。枠は `SettingsShell` と同じ
- * 「戻るボタン付きのヘッダー」。
+ * 「戻るボタン付きのヘッダー」。1024px以上では実物と同じくカードを2列に並べる（issue #636）。
  */
 export default function Loading() {
   return (
@@ -19,8 +19,8 @@ export default function Loading() {
         <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
       </div>
 
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
-        <div className="flex items-center justify-between gap-2">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6 lg:grid lg:max-w-5xl lg:grid-cols-2 lg:content-start lg:items-start">
+        <div className="flex items-center justify-between gap-2 lg:col-span-2">
           <SkeletonBlock className="size-8 rounded-full" />
           <SkeletonBlock className="h-6 w-28" />
           <SkeletonBlock className="size-8 rounded-full" />
@@ -40,6 +40,12 @@ export default function Loading() {
         <div className="flex flex-col gap-3 rounded-xl bg-surface-container-low p-4">
           <SkeletonBlock className="h-4 w-24" />
           <SkeletonBlock className="h-16 w-full" />
+        </div>
+        <div className="flex flex-col gap-3 rounded-xl bg-surface-container-low p-4">
+          <SkeletonBlock className="h-4 w-24" />
+          {Array.from({ length: 3 }, (_, i) => (
+            <SkeletonBlock key={i} className="h-4 w-40" />
+          ))}
         </div>
       </div>
     </div>
