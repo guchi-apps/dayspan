@@ -16,6 +16,7 @@ import {
 
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav } from "@/components/nav/main-nav";
+import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -49,6 +50,7 @@ import {
 import type { TagCatalog, TagOption } from "@/services/notion/tag-options";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { TaskItem, TaskPriority, WritableCalendar } from "@/types/calendar";
+import type { RunningActivitySummary } from "@/types/activity";
 import { dateKeyPlusMinutes } from "@/components/calendar/datetime-fields";
 
 /** 期限での分類の並び。完了は分類の軸によらず末尾へ別に置くため含めない。 */
@@ -74,7 +76,7 @@ export function TaskList({
   calendars = [],
   placeCatalog = { ready: false, places: [] },
   weekStartsOn = 0,
-  activityRunning = false,
+  runningActivity = null,
 }: {
   tasks: TaskItem[];
   /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
@@ -84,8 +86,11 @@ export function TaskList({
   calendars?: WritableCalendar[];
   placeCatalog?: PlaceCatalog;
   weekStartsOn?: number;
-  /** 活動を記録中かどうか。ナビの記録の項目へ印を出すためだけに使う（docs/spec.md §27）。 */
-  activityRunning?: boolean;
+  /**
+   * 記録中の項目（issue #629）。ナビの記録の項目へ印を出し、下部ナビの直上に記録中バーを
+   * 出すために使う（docs/spec.md §27）。
+   */
+  runningActivity?: RunningActivitySummary | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -230,7 +235,7 @@ export function TaskList({
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
         {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
-        <AppMenuButton current="tasks" activityRunning={activityRunning} />
+        <AppMenuButton current="tasks" activityRunning={runningActivity !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
         <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
@@ -357,7 +362,10 @@ export function TaskList({
 
       <Button
         size="icon"
-        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
+        className={cn(
+          "elevation-3 fixed right-4 z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95",
+          fabBottomOffsetClass(runningActivity !== null),
+        )}
         aria-label="タスクを追加"
         disabled={offline}
         onClick={openAdd}
@@ -365,7 +373,8 @@ export function TaskList({
         <Plus className="size-6" />
       </Button>
 
-      <BottomNav current="tasks" activityRunning={activityRunning} timeZone={timeZone} />
+      <RunningActivityBar running={runningActivity} />
+      <BottomNav current="tasks" activityRunning={runningActivity !== null} timeZone={timeZone} />
 
       {itemDialog && (
         <ItemDialog

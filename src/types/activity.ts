@@ -20,6 +20,13 @@ export type RunningActivityItem = {
   startedAt: string;
 };
 
+/**
+ * どの画面からでも記録中を示すための最小限の情報（issue #629）。
+ *
+ * ナビの点は真偽値だけで足りるが、何を記録しているか・どれだけ経ったかを出すにはこの2つが要る。
+ */
+export type RunningActivitySummary = Pick<RunningActivityItem, "title" | "startedAt">;
+
 /** 記録の停止で作られた予定がかかる時間帯。呼び出し側がその範囲だけ取り直すために返す。 */
 export type ActivitySavedRange = { start: string; end: string };
 
