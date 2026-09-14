@@ -1,8 +1,10 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { DEFAULT_HOME_PATH } from "@/lib/home-path";
+import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
 
-export default function Home() {
+export default async function Home() {
   // 未ログインの場合は proxy.ts のミドルウェアが /login へ送る。
-  redirect(DEFAULT_HOME_PATH);
+  const cookieStore = await cookies();
+  redirect(resolveInternalPath(undefined, cookieStore.get(START_PATH_COOKIE)?.value));
 }

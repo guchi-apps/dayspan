@@ -1,14 +1,17 @@
 import type { MetadataRoute } from "next";
 
 import { APP_ICON_BACKGROUND } from "@/lib/app-icon-glyph";
-import { DEFAULT_HOME_PATH } from "@/lib/home-path";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "DaySpan",
     short_name: "DaySpan",
     description: "Google CalendarとNotionタスクを統合表示するカレンダー",
-    start_url: DEFAULT_HOME_PATH,
+    // 起動画面は設定 ▸ 表示で選べる（`START_PATH_COOKIE`・issue #637）。ここを固定パスに
+    // すると選んだ画面へ振り分けられないため、判定を挟む `/`（src/app/page.tsx）にする。
+    // ホーム画面へ追加済みの端末では、この値がいつ新しく反映されるかをこちらから決められない
+    // （iOS側の都合。docs/spec.md §28）。
+    start_url: "/",
     display: "standalone",
     // OSが出す起動画面の地の色。iOSは apple-touch-startup-image が無いとき、この色と
     // アイコンから起動画面を作る。アイコンの背景と同じ紫にすると角丸の器が背景に溶け、
