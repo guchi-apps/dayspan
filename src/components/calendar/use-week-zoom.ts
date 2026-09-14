@@ -101,6 +101,11 @@ export type WeekZoom = {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   /** ピンチ直後のclickかどうか。trueなら押された扱いにしない。 */
   consumePinchClick: () => boolean;
+  /**
+   * ピンチ以外で高さが変わったときに、位置を保つ軸（画面の高さに対する割合。0＝上端・0.5＝中央）。
+   * 最後に位置合わせした基準に合わせて、呼び出し側が書き換える（issue #642）。
+   */
+  resizeAxisRef: React.RefObject<number>;
 };
 
 export function useWeekZoom({
@@ -120,6 +125,9 @@ export function useWeekZoom({
 
   /** 高さを変えたあとに合わせるスクロール位置。描画のあとで当てる。 */
   const pendingScrollRef = useRef<number | null>(null);
+  /** 直前の描画で使った高さ。ピンチ以外で高さが変わったことを見分けるために持つ。 */
+  const prevHeightRef = useRef(weekHeight);
+  const resizeAxisRef = useRef(0.5);
   const pinchEndedAtRef = useRef(0);
 
   useEffect(() => {
@@ -137,13 +145,28 @@ export function useWeekZoom({
   // 高さが変わったあと、ブラウザが描き直す前にスクロール位置を合わせる。
   // 描画後に回すと、一瞬だけ指の下と違う週が見える。
   useLayoutEffect(() => {
-    const pending = pendingScrollRef.current;
-    if (pending === null) return;
+    const prev = prevHeightRef.current;
+    prevHeightRef.current = weekHeight;
 
-    pendingScrollRef.current = null;
     const element = scrollRef.current;
-    // 上下の端は、ブラウザが範囲内へ収めてくれる。
-    if (element) element.scrollTop = pending;
+    const pending = pendingScrollRef.current;
+
+    if (pending !== null) {
+      pendingScrollRef.current = null;
+      // 上下の端は、ブラウザが範囲内へ収めてくれる。
+      if (element) element.scrollTop = pending;
+      return;
+    }
+
+    // ピンチ以外で高さが変わったとき（issue #642）。サーバー描画と水和は既定の高さで描き、
+    // 直後にこの端末で保存した高さへ切り替わる。月表示は既定の高さのまま初期の位置合わせを
+    // 済ませているため、px のままだと別の週を指す（保存した高さが大きいほど前の週になる）。
+    // 位置合わせの基準（今月なら今日の週を中央・別の月なら先頭週を上端）と同じ軸で、
+    // その軸が指していた中身の位置を保って換算する。軸がずれると上端にそろえた週まで動く。
+    if (prev === weekHeight || !element) return;
+
+    const axisY = element.clientHeight * resizeAxisRef.current;
+    element.scrollTop = ((element.scrollTop + axisY) * weekHeight) / prev - axisY;
   });
 
   useEffect(() => {
@@ -251,5 +274,5 @@ export function useWeekZoom({
     [pinching],
   );
 
-  return { weekHeight, pinching, scrollRef, consumePinchClick };
+  return { weekHeight, pinching, scrollRef, consumePinchClick, resizeAxisRef };
 }

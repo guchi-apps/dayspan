@@ -218,7 +218,9 @@ export function ContinuousMonthView({
     },
   });
 
-  const { weekHeight, scrollRef, consumePinchClick } = useWeekZoom({ onPinchStart: NOOP });
+  const { weekHeight, scrollRef, consumePinchClick, resizeAxisRef } = useWeekZoom({
+    onPinchStart: NOOP,
+  });
   useIsomorphicLayoutEffect(() => {
     consumePinchClickRef.current = consumePinchClick;
   });
@@ -488,6 +490,9 @@ export function ContinuousMonthView({
         container.scrollTop = day
           ? (geometry.lead + target) * weekHeight - (container.clientHeight - weekHeight) / 2
           : (geometry.lead + target) * weekHeight;
+        // 水和の直後に週の高さが端末の保存値へ切り替わったとき、同じ基準で位置を保たせる
+        // （issue #642）。中央へ置いた週は中央を、上端にそろえた週は上端を軸に換算する。
+        resizeAxisRef.current = day ? 0.5 : 0;
         rememberAnchor(container);
         return;
       }
