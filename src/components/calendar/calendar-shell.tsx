@@ -17,6 +17,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Keyboard,
   Plus,
   RefreshCw,
 } from "lucide-react";
@@ -69,6 +70,7 @@ import { EventDetailDialog } from "./event-detail-dialog";
 import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
 import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./item-dialog";
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
+import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
 import { ContinuousMonthView } from "./continuous-month-view";
 import { QuickEventSheet, toQuickEventDraft, type QuickEventDraft } from "./quick-event-sheet";
 import { ReminderDetailDialog } from "./reminder-detail-dialog";
@@ -85,6 +87,7 @@ import {
   useCalendarChunks,
   type TouchedRange,
 } from "./use-calendar-chunks";
+import { useCalendarShortcuts, type CalendarShortcutActions } from "./use-calendar-shortcuts";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 import type { SlotRangeCommit } from "./use-slot-range";
 
@@ -278,6 +281,9 @@ export function CalendarShell({
   const [viewingTravel, setViewingTravel] = useState<TravelItem | null>(null);
   // タスクを紐づける相手の予定（docs/spec.md §31）。予定の詳細から開く。
   const [linkingEvent, setLinkingEvent] = useState<CalendarEventItem | null>(null);
+
+  // キーボードショートカット一覧（issue #635）。`?` キーとヘッダーのアイコンの両方から開く。
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   /**
    * 記録中の帯を押したとき。開始・停止は記録の画面で行う（docs/spec.md §27）。
@@ -679,6 +685,25 @@ export function CalendarShell({
     return toDateKey(addDays(weekStart, offset));
   };
 
+  /**
+   * 表示形式の切り替え。セグメンテッドボタンの押下とキーボードショートカット（issue #635）の
+   * 両方から呼ぶため、月表示への特別な分岐を含めてここへまとめている。
+   */
+  const switchView = (view: CalendarView) => {
+    if (view === "month") {
+      // 月表示のまま押しても、以前の位置合わせを乱さないよう何もしない。
+      if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey());
+      return;
+    }
+
+    if (nav.view === "month" && view !== "day7") {
+      navigate(view, viewSwitchDayAnchorKey());
+      return;
+    }
+
+    navigate(view, viewSwitchAnchorKey());
+  };
+
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
@@ -780,20 +805,7 @@ export function CalendarShell({
                 nav.view === item.view && "text-on-secondary-container",
                 item.desktopOnly && "hidden md:inline-flex",
               )}
-              onClick={() => {
-                if (item.view === "month") {
-                  // 月表示のまま押しても、以前の位置合わせを乱さないよう何もしない。
-                  if (nav.view !== "month") enterMonthView(viewSwitchAnchorKey());
-                  return;
-                }
-
-                if (nav.view === "month" && item.view !== "day7") {
-                  navigate(item.view, viewSwitchDayAnchorKey());
-                  return;
-                }
-
-                navigate(item.view, viewSwitchAnchorKey());
-              }}
+              onClick={() => switchView(item.view)}
             >
               {item.label}
             </Button>
@@ -811,6 +823,20 @@ export function CalendarShell({
           onClick={() => startTransition(() => router.refresh())}
         >
           <RefreshCw className="size-5" />
+        </Button>
+
+        {/*
+          PCのキーボードショートカット（issue #635）。マウス操作が前提のスマートフォンでは
+          そもそも押す機会が無いため、ほかのPC限定のボタンと同じく `hidden md:flex` にする。
+        */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden size-9 md:flex"
+          aria-label="キーボードショートカット"
+          onClick={() => setShortcutsOpen(true)}
+        >
+          <Keyboard className="size-5" />
         </Button>
         {/* 勤務・場所・設定はヘッダーに置かない（issue #463）。どの画面幅でもドロワーが開くように
             なったため、この帯に3つ並べる理由が無くなった（docs/spec.md §4・§9・§34）。 */}
@@ -891,6 +917,10 @@ export function CalendarShell({
           activityCalendars={activityCalendars}
           onOpenActivity={openActivity}
           work={work}
+          onGoToday={goToday}
+          onMove={move}
+          onSwitchView={switchView}
+          onOpenShortcuts={() => setShortcutsOpen(true)}
         />
       </Suspense>
 
@@ -900,6 +930,9 @@ export function CalendarShell({
         activityRunning={initialRunningActivity !== null}
         onCalendarClick={goToday}
       />
+
+      {/* Suspenseの外に置く。取得中でもショートカット一覧はいつでも開けてよいため。 */}
+      <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </div>
   );
 }
@@ -970,6 +1003,10 @@ function CalendarBody({
   activityCalendars,
   onOpenActivity,
   work,
+  onGoToday,
+  onMove,
+  onSwitchView,
+  onOpenShortcuts,
 }: {
   dataPromise: Promise<CalendarLoadResult>;
   tagCatalogPromise: Promise<TagCatalog>;
@@ -1038,6 +1075,11 @@ function CalendarBody({
   onOpenActivity: () => void;
   /** 勤務記録の入力に要るもの（issue #532）。 */
   work: CalendarWorkContext;
+  /** キーボードショートカット（issue #635）。 */
+  onGoToday: () => void;
+  onMove: (direction: 1 | -1) => void;
+  onSwitchView: (view: CalendarView) => void;
+  onOpenShortcuts: () => void;
 }) {
   const initial = use(dataPromise);
   const tagCatalog = use(tagCatalogPromise);
@@ -1161,6 +1203,32 @@ function CalendarBody({
     data.invalidate(monthsOfRanges(taskRanges(task)));
   };
 
+  // 右下の「＋」で作れる種類。キーボードショートカットの `c`（issue #635）も同じ条件で判定する。
+  const addAvailable: Record<AddableKind, boolean> = {
+    event: !offline && data.calendars.length > 0,
+    task: !offline && data.notionReady,
+    // 移動の本体はDaySpanのDBにあるため、外部連携が済んでいなくても作れる。
+    travel: !offline,
+  };
+
+  const shortcutActions: CalendarShortcutActions = {
+    onGoToday,
+    onMove,
+    onSwitchView,
+    onRefresh: onRefreshAll,
+    onAdd,
+    onOpenHelp: onOpenShortcuts,
+  };
+
+  // ダイアログが開いているかどうかの判定はフックの内側でDOMを見て行う（issue #635 計画
+  // レビューG1の指摘）。ドロワー・下部ナビのシート等、このコンポーネントが状態を持たない
+  // ダイアログも含めて、新しいダイアログが増えるたびに列挙し直す必要が無い。
+  useCalendarShortcuts({
+    offline,
+    available: addAvailable,
+    actions: shortcutActions,
+  });
+
   return (
     <>
       {(data.errors.length > 0 || data.loadError || dragError) && (
@@ -1225,12 +1293,7 @@ function CalendarBody({
       )}
 
       <AddButton
-        available={{
-          event: !offline && data.calendars.length > 0,
-          task: !offline && data.notionReady,
-          // 移動の本体はDaySpanのDBにあるため、外部連携が済んでいなくても作れる。
-          travel: !offline,
-        }}
+        available={addAvailable}
         onAdd={onAdd}
         hasRunningBar={runningActivity !== null}
       />
