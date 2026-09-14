@@ -1,16 +1,19 @@
-import { BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
+import { AppFrameSkeleton, BottomNavSkeleton, SkeletonBlock } from "@/components/calendar/calendar-skeleton";
+import { WIDE_SECTION_CARD_CLASS } from "@/components/ui/wide-section";
+import { cn } from "@/lib/utils";
 
 /**
  * 買い物リストの骨組み（docs/spec.md §36）。
  *
  * この画面はNotionへ取りにいくため、下部ナビから移ったときに待ちが入る。独自の骨組みを
  * 持たせないと、根の loading.tsx（面とプログレスバーだけ）に落ちる。
+ * 広い画面では実物の「すべて」と同じく、サイドバーとカテゴリのカードの段組みにする（issue #636）。
  */
 export default function Loading() {
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <AppFrameSkeleton>
       <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="size-8 rounded-full" />
+        <SkeletonBlock className="size-8 rounded-full lg:hidden" />
         <span className="flex-1" />
         <SkeletonBlock className="h-8 w-20 rounded-full" />
         <SkeletonBlock className="h-8 w-8 rounded-full" />
@@ -27,10 +30,13 @@ export default function Loading() {
         <SkeletonBlock className="h-7 w-24 rounded-full" />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden @2xl/main:columns-2 @2xl/main:gap-3 @2xl/main:p-3 @5xl/main:columns-3">
         {/* カテゴリの見出しと、その下に並ぶ項目。件数はカテゴリによって違う。 */}
         {Array.from({ length: 3 }, (_, section) => (
-          <div key={section}>
+          <div
+            key={section}
+            className={cn(WIDE_SECTION_CARD_CLASS, "@2xl/main:mb-3 @2xl/main:break-inside-avoid")}
+          >
             <div className="border-b border-rule px-3 py-1.5">
               <SkeletonBlock className="h-3 w-16" />
             </div>
@@ -47,6 +53,6 @@ export default function Loading() {
       </div>
 
       <BottomNavSkeleton />
-    </div>
+    </AppFrameSkeleton>
   );
 }

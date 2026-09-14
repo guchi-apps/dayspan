@@ -51,10 +51,13 @@ export function SleepScreen({
   const summary = summarizeSleepNights(nights, targetMinutes);
 
   return (
+    // 広い画面では幅を広げる（issue #636）。1行が24時間の横軸のため、幅がそのまま時刻の目盛りの
+    // 細かさになる。
     <SettingsShell
       title="睡眠"
       backHref="/activity"
       backLabel="記録"
+      wide
       actions={
         <Button variant="ghost" size="sm" asChild>
           <Link href="/settings/activities">
@@ -71,9 +74,10 @@ export function SleepScreen({
       )}
 
       <Card>
-        <CardContent className="flex flex-col gap-4">
+        {/* 広い画面では平均と3つの数字を横1段に並べ、グラフを上へ詰める（issue #636）。 */}
+        <CardContent className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-8">
           {/* この画面を開く理由のほとんどが「足りているか」のため、平均をいちばん大きい字にする。 */}
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 lg:shrink-0">
             <span className="type-headline-small font-bold tabular-nums">
               {summary.averageMinutes === null ? "—" : formatSleepMinutes(summary.averageMinutes)}
             </span>
@@ -86,7 +90,7 @@ export function SleepScreen({
             </span>
           </div>
 
-          <dl className="flex gap-2 border-t border-outline-variant pt-3">
+          <dl className="flex gap-2 border-t border-outline-variant pt-3 lg:flex-1 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-8">
             <Stat
               label="目標との差"
               value={summary.diffMinutes === null ? "—" : formatSleepDiff(summary.diffMinutes)}

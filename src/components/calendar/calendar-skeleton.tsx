@@ -6,9 +6,9 @@ import { cn } from "@/lib/utils";
  */
 export function CalendarSkeleton() {
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <AppFrameSkeleton>
       <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="h-8 w-8 rounded-full" />
+        <SkeletonBlock className="h-8 w-8 rounded-full lg:hidden" />
         <SkeletonBlock className="h-8 w-8 rounded-full" />
         <SkeletonBlock className="h-6 w-32" />
         <span className="flex-1" />
@@ -23,6 +23,38 @@ export function CalendarSkeleton() {
       <CalendarGridSkeleton />
 
       <BottomNavSkeleton />
+    </AppFrameSkeleton>
+  );
+}
+
+/**
+ * 下部ナビから開く5画面の骨組みの外枠（issue #636）。実物の `AppFrame` と同じく、
+ * 1024px以上では左端にサイドバーの帯を置き、本文の列を `@container/main` にする。
+ * 骨組みだけ1列のままだと、読み込みが終わった瞬間に割り付けが跳ねる。
+ */
+export function AppFrameSkeleton({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-dvh overflow-hidden">
+      <SidebarSkeleton />
+      <div className="@container/main flex min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
+    </div>
+  );
+}
+
+/** サイドバー（app-sidebar.tsx）と同じ幅・同じ行数の帯。 */
+function SidebarSkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="hidden w-56 shrink-0 flex-col gap-1 border-r border-outline-variant bg-surface-container-low px-3 pt-4 lg:flex"
+    >
+      <SkeletonBlock className="mx-3 mb-3 h-5 w-20" />
+      {Array.from({ length: 9 }, (_, i) => (
+        <div key={i} className={cn("flex items-center gap-3 px-4 py-3", i === 5 && "mt-6")}>
+          <SkeletonBlock className="size-5 rounded-sm" />
+          <SkeletonBlock className="h-4 w-16" />
+        </div>
+      ))}
     </div>
   );
 }

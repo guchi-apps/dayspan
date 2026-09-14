@@ -20,7 +20,7 @@ export default function Loading() {
         <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden md:px-[max(0px,calc((100%_-_48rem)/2))]">
         {/* 月の見出しと、その下に並ぶ項目。件数は月によって違うため同じ本数を並べない。 */}
         {Array.from({ length: 3 }, (_, section) => (
           <div key={section}>

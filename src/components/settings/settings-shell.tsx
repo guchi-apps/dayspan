@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { OfflineNotice } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /**
  * 設定画面の枠。
@@ -18,6 +19,8 @@ export function SettingsShell({
   backHref,
   backLabel,
   actions,
+  wide = false,
+  columns = false,
   children,
 }: {
   title: string;
@@ -26,6 +29,16 @@ export function SettingsShell({
   backLabel: string;
   /** 見出しの右へ置く操作（場所の「＋」など）。持たない画面がほとんどなので任意にする。 */
   actions?: ReactNode;
+  /**
+   * 1024px以上で本文の最大幅を広げる（issue #636）。一覧・グラフのように幅を使える画面だけに付ける。
+   * 入力欄が並ぶ設定の各画面は、欄が横に伸びても読みやすくならないため従来の幅のままにする。
+   */
+  wide?: boolean;
+  /**
+   * 1024px以上で本文の子を2列に並べる（`wide` と組み合わせて使う）。全幅にしたい子には
+   * `lg:col-span-2` を付ける。
+   */
+  columns?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -43,8 +56,18 @@ export function SettingsShell({
 
       <OfflineNotice />
 
-      <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
-        {description && <p className="type-body-medium text-on-surface-variant">{description}</p>}
+      <div
+        className={cn(
+          "mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6",
+          wide && "lg:max-w-5xl",
+          columns && "lg:grid lg:grid-cols-2 lg:content-start lg:items-start",
+        )}
+      >
+        {description && (
+          <p className={cn("type-body-medium text-on-surface-variant", columns && "lg:col-span-2")}>
+            {description}
+          </p>
+        )}
         {children}
       </div>
     </div>

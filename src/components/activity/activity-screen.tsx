@@ -13,6 +13,7 @@ import { isoToLocalInput, localInputToIso } from "@/components/calendar/datetime
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { useNowIso } from "@/components/calendar/use-clock";
 import { AppMenuButton } from "@/components/nav/app-drawer";
+import { AppFrame } from "@/components/nav/app-frame";
 import { BottomNav } from "@/components/nav/main-nav";
 import { closeActivityNotification } from "@/components/notifications/activity-notification";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
@@ -247,9 +248,11 @@ export function ActivityScreen({
   const startDisabled = disabled || startAtInvalid !== null;
 
   return (
-    <div className="flex h-dvh flex-col">
+    // 記録中のカードは本文にあるため、サイドバーの下端には出さない（記録中の帯を出さないのと同じ）。
+    <AppFrame current="activity" activityRunning={running !== null}>
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
+        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+            画面を移る（issue #636）。 */}
         <AppMenuButton current="activity" activityRunning={running !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
@@ -286,45 +289,57 @@ export function ActivityScreen({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4">
-          {running ? (
-            <RunningCard
-              running={running}
-              nowIso={nowIso}
-              timeZone={timeZone}
-              disabled={disabled}
-              editingStart={editingStart}
-              startInput={startInput}
-              onStartInputChange={setStartInput}
-              onBeginEditStart={beginEditStart}
-              onCancelEditStart={() => setEditingStart(false)}
-              onSaveStart={saveStart}
-              editingEnd={editingEnd}
-              endInput={endInput}
-              endTouched={endTouched}
-              nowInput={nowInput}
-              onEndInputChange={(value) => {
-                setEndInput(value);
-                setEndTouched(true);
-              }}
-              onBeginEditEnd={beginEditEnd}
-              onCancelEditEnd={() => setEditingEnd(false)}
-              onStop={stop}
-              onDiscard={discard}
-            />
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-1 py-8 text-center">
-                <Timer className="size-8 text-on-surface-variant" />
-                <p className="type-title-medium">いま記録しているものはありません</p>
-                <p className="type-body-small text-on-surface-variant">
-                  下から項目を押すと、その時点から記録が始まります。
-                </p>
-              </CardContent>
-            </Card>
-          )}
+        {/*
+          広い画面では、経過時間のカードを左に据えたまま右で項目を押す（issue #636）。
+          この画面を開く理由のほとんどは「どれくらい経ったか」と「止めること」で、項目を探して
+          下へ動かしてもカードが視界から外れないようにする。右の3つを1つの箱にまとめないのは、
+          狭い画面の縦の並び（gap-4）を変えないため。左のカードが右の合計より高いときに、
+          右の行の間が空かないよう最後の行を 1fr にしてそこで余りを受ける。
+        */}
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 @4xl/main:grid @4xl/main:max-w-6xl @4xl/main:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] @4xl/main:grid-rows-[auto_auto_1fr] @4xl/main:items-start @4xl/main:gap-6 @4xl/main:p-6">
+          <div className="@4xl/main:sticky @4xl/main:top-0 @4xl/main:row-span-3">
+            {running ? (
+              <RunningCard
+                running={running}
+                nowIso={nowIso}
+                timeZone={timeZone}
+                disabled={disabled}
+                editingStart={editingStart}
+                startInput={startInput}
+                onStartInputChange={setStartInput}
+                onBeginEditStart={beginEditStart}
+                onCancelEditStart={() => setEditingStart(false)}
+                onSaveStart={saveStart}
+                editingEnd={editingEnd}
+                endInput={endInput}
+                endTouched={endTouched}
+                nowInput={nowInput}
+                onEndInputChange={(value) => {
+                  setEndInput(value);
+                  setEndTouched(true);
+                }}
+                onBeginEditEnd={beginEditEnd}
+                onCancelEditEnd={() => setEditingEnd(false)}
+                onStop={stop}
+                onDiscard={discard}
+              />
+            ) : (
+              <Card>
+                <CardContent className="flex flex-col items-center gap-1 py-8 text-center">
+                  <Timer className="size-8 text-on-surface-variant" />
+                  <p className="type-title-medium">いま記録しているものはありません</p>
+                  <p className="type-body-small text-on-surface-variant">
+                    {/* 広い画面では項目は右に並ぶ。「下から」のままだと押す場所を探させる。 */}
+                    <span className="@4xl/main:hidden">下から</span>
+                    <span className="hidden @4xl/main:inline">右から</span>
+                    項目を押すと、その時点から記録が始まります。
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="@container/start flex flex-col gap-2 @4xl/main:col-start-2">
             <div className="flex items-center justify-between gap-2">
               <h2 className="type-title-small text-on-surface-variant">
                 {running ? "切り替える" : "記録を始める"}
@@ -374,7 +389,8 @@ export function ActivityScreen({
             ) : (
               // 押す対象は指の幅で確保する。記録は歩きながら・作業を切り替えながら押すことが
               // 多く、狙って押さなければならない大きさだと、その場で押すのをやめてしまう。
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              // 1段に並ぶ数は右の列の幅で増やす（issue #636）。768px未満では従来どおり2〜3列。
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:@lg/start:grid-cols-4">
                 {presets.map((preset) => {
                   // 記録中の項目そのものを押しても、同じ内容で開始し直すだけになる。
                   const current = running?.title === preset.name;
@@ -399,7 +415,7 @@ export function ActivityScreen({
             選択肢に無いことを1回だけ記録する欄。
             設定画面へ項目を足しに行かせると、いま始めたい記録がその間ずっと止まる。
           */}
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 @4xl/main:col-start-2">
             {/* ラベル付きの入力欄は枠（fieldShell）が幅を持つため、伸ばすのは外側の箱にする。 */}
             <div className="min-w-0 flex-1">
               <Input
@@ -423,14 +439,14 @@ export function ActivityScreen({
             </Button>
           </div>
 
-          <p className="type-body-small text-on-surface-variant">
+          <p className="type-body-small text-on-surface-variant @4xl/main:col-start-2">
             止めた時点までがGoogle Calendarの予定になります。保存先のカレンダーは「項目を編集」から選べます。
           </p>
         </div>
       </div>
 
       <BottomNav current="activity" activityRunning={running !== null} timeZone={timeZone} />
-    </div>
+    </AppFrame>
   );
 }
 
