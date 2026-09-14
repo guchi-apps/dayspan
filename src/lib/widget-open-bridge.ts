@@ -1,5 +1,4 @@
 import { APP_ICON_BACKGROUND, APP_ICON_FOREGROUND } from "@/lib/app-icon-glyph";
-import { DEFAULT_HOME_PATH } from "@/lib/home-path";
 
 /**
  * iPhoneウィジェットの飛び先になる受け渡しページのパス（docs/spec.md §28・issue #562）。
@@ -89,7 +88,7 @@ export function buildWidgetOpenBridgeHtml(): string {
       -->
       <div class="actions">
         <a class="primary" id="app-link" href="#" hidden>ホーム画面の DaySpan を開く</a>
-        <a id="browser-link" href="${DEFAULT_HOME_PATH}">このままブラウザで開く</a>
+        <a id="browser-link" href="/">このままブラウザで開く</a>
       </div>
 
       <p id="note" hidden></p>
@@ -107,13 +106,13 @@ export function buildWidgetOpenBridgeHtml(): string {
         }
 
         // すでにホーム画面の DaySpan の中で開かれていたら、渡す相手は自分自身になる。
-        // そのまま選ばせても行き先が同じなので、記録の画面へ送って終わる。
+        // そのまま選ばせても行き先が同じなので、起動画面へ送って終わる。
         var standalone =
           window.navigator.standalone === true ||
           (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
 
         if (standalone) {
-          location.replace(${JSON.stringify(DEFAULT_HOME_PATH)});
+          location.replace("/");
           return;
         }
 

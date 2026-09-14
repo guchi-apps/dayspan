@@ -6,7 +6,6 @@ import { useOffline } from "next/offline";
 
 import { dropOfflinePage } from "@/components/offline/offline-page-cache";
 import { Button } from "@/components/ui/button";
-import { DEFAULT_HOME_PATH } from "@/lib/home-path";
 
 /**
  * 画面を描く途中で例外が出たときの面（issue #407）。
@@ -77,9 +76,11 @@ export default function ErrorScreen({
           Linkではなく素のリンクにする。ここへ来ている時点でこのルートの描画は失敗しており、
           ソフトナビゲーションで移ると壊れた側の状態を引き継いだまま次の画面を描くことになる。
           文書ごと作り直せば、起動・再読み込みと同じ経路（Service Workerを含む）に乗る。
+          `/` はオフライン・5xxでもService Workerが記録の画面へ倒す（issue #637・public/sw.js）。
         */}
         <Button asChild variant="ghost">
-          <a href={DEFAULT_HOME_PATH}>記録へ戻る</a>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/">はじめの画面へ戻る</a>
         </Button>
       </div>
     </div>

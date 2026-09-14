@@ -6,7 +6,6 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import "./globals.css";
 
 import { Button } from "@/components/ui/button";
-import { DEFAULT_HOME_PATH } from "@/lib/home-path";
 
 /**
  * ルートレイアウトそのものが失敗したときの面（issue #407）。
@@ -55,8 +54,14 @@ export default function GlobalError({
               もう一度試す
             </Button>
 
+            {/*
+              Linkは使えない（レイアウトごと失敗しているここでは next/link のルーターが動く前提に
+              乗れない）。`/` はオフライン・5xxでもService Workerが記録の画面へ倒す
+              （issue #637・public/sw.js）。
+            */}
             <Button asChild variant="ghost">
-              <a href={DEFAULT_HOME_PATH}>記録へ戻る</a>
+              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+              <a href="/">はじめの画面へ戻る</a>
             </Button>
           </div>
         </div>
