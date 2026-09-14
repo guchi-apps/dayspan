@@ -41,29 +41,7 @@ export function AppMenuButton({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-
-  // 手続きが残っている出張・年休の件数（docs/spec.md §34）。開いたときに1回だけ取りにいく。
-  // 各画面のサーバー側で数えると、勤務を開かない日もNotionへの往復が画面の数だけ増える
-  // （記録の長押しシートと同じ扱い）。取れなければ数字を出さないだけで、メニューは開ける。
-  // 勤務は下部ナビ（NAV_ITEMS）へ移ったが（issue #508）、ドロワーには「画面」グループの行として
-  // 引き続き出るため、この取得自体は変えていない。
-  const [workTodoCount, setWorkTodoCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    let alive = true;
-    fetch("/api/work/alerts")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((body: { count?: number } | null) => {
-        if (alive) setWorkTodoCount(body?.count ?? null);
-      })
-      .catch(() => {});
-
-    return () => {
-      alive = false;
-    };
-  }, [open]);
+  const workTodoCount = useWorkTodoCount(open);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -105,6 +83,37 @@ export function AppMenuButton({
 }
 
 /**
+ * 手続きが残っている出張・年休の件数（docs/spec.md §34）。`active` になるたびに1回取りにいく。
+ *
+ * 各画面のサーバー側で数えると、勤務を開かない日もNotionへの往復が画面の数だけ増える
+ * （記録の長押しシートと同じ扱い）。そのためドロワーは開いたとき、1024px以上のサイドバーは
+ * ポインタが乗った・フォーカスが入ったときだけ読む（issue #636）。取れなければ数字を出さないだけで、
+ * メニューそのものは使える。勤務は下部ナビ（NAV_ITEMS）へ移ったが（issue #508）、ドロワーには
+ * 「画面」グループの行として引き続き出るため、この取得自体は変えていない。
+ */
+export function useWorkTodoCount(active: boolean): number | null {
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+
+    let alive = true;
+    fetch("/api/work/alerts")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { count?: number } | null) => {
+        if (alive) setCount(body?.count ?? null);
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, [active]);
+
+  return count;
+}
+
+/**
  * ドロワーとサイドバー（app-sidebar.tsx）の中身。画面幅によって並びや項目が食い違わないよう、
  * 1か所で持つ（issue #636）。
  */
@@ -117,7 +126,7 @@ export function DrawerNavContent({
 }: {
   current?: NavKey;
   activityRunning: boolean;
-  /** 勤務の行に出す未対応の件数。サイドバーでは取りにいかないため渡さない。 */
+  /** 勤務の行に出す未対応の件数（`useWorkTodoCount`）。まだ読んでいなければ null。 */
   workTodoCount?: number | null;
   /** バージョンの行の上に置くもの（サイドバーの記録中カード）。 */
   footer?: React.ReactNode;
