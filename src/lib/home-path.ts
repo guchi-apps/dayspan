@@ -44,7 +44,7 @@ export const START_PATH_COOKIE = "dayspan_start_path";
 /**
  * 起動画面の記憶の有効期間（400日・主要ブラウザのCookie上限）。
  *
- * カレンダーの表示形式・日付の記憶（1時間）と違い、こちらは「選んだらしばらく効き続ける
+ * カレンダーの表示形式・日付の記憶（3分）と違い、こちらは「選んだらしばらく効き続ける
  * 設定」のため長期間にする。切れたら選び直すまで既定（`DEFAULT_HOME_PATH`）へ戻る。
  */
 export const START_PATH_MAX_AGE_SECONDS = 60 * 60 * 24 * 400;

@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.9.1",
+    date: "2026-09-15",
+    changes: [
+      "スマートフォンでカレンダーを開いた際に、実際とは違う数週間前の月表示が出てしまうことがある不具合を修正しました。",
+    ],
+  },
+  {
     version: "3.9.0",
     date: "2026-09-14",
     changes: [

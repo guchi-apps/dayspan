@@ -17,8 +17,12 @@ export const CALENDAR_VIEW_COOKIE = "dayspan_calendar_view";
  * 「基本は今日を月表示」を既定に保つため、少し前に見ていた続きだけを復元する。
  * 期限はCookieの max-age で表し、サーバー側に時刻の判定を持たない
  * （持つと保存時刻の解釈がタイムゾーンに依存する）。
+ *
+ * 3分にしている（issue #642）。以前の1時間では、CalendarShell がマウントのたびに書き戻すため
+ * 開き直すたびに期限が延び、起動時の破棄（resetCalendarMemoryOnLaunch）をすり抜けた端末では
+ * 何週間も前に見ていた月が開き続けた。3分なら、少し間を置いて開けば今日から始まる。
  */
-export const CALENDAR_VIEW_MAX_AGE_SECONDS = 60 * 60;
+export const CALENDAR_VIEW_MAX_AGE_SECONDS = 3 * 60;
 
 /** Cookieに入れる値。`day3:2026-08-21` の形。 */
 export function formatCalendarMemory(view: CalendarView, dateKey: string): string {
@@ -48,7 +52,7 @@ export function parseCalendarMemory(
  * 「サーバーが描いた状態」をそのまま書き戻すため、/calendar から起動した場合はこの書き込みと
  * CalendarLaunchReset の破棄のどちらが先に走るか決まらない（/calendar は loading.tsx の
  * Suspense境界の内側にあり、水和の順序は保証されない）。書き込みが後になると、捨てた直後に
- * 前回の状態が同じ値で書き直され、1時間の期限まで延びて記憶が終わらなくなる。
+ * 前回の状態が同じ値で書き直され、期限まで延びて記憶が終わらなくなる。
  */
 export function rememberCalendarView(view: CalendarView, dateKey: string): void {
   if (typeof document === "undefined") return;
