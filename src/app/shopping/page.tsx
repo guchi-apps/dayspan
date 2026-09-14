@@ -12,6 +12,7 @@ import { createNotionClient } from "@/services/notion/client";
 import { listShoppingItems, shoppingDatabaseReady } from "@/services/notion/shopping-items";
 import { loadTagOptions } from "@/services/notion/tag-options";
 import type { ShoppingItem } from "@/types/shopping";
+import { getRunningActivity } from "@/services/activity/running";
 
 export default async function ShoppingPage() {
   const user = await getCurrentUser();
@@ -20,8 +21,9 @@ export default async function ShoppingPage() {
   const [uiSetting, connection, runningActivity] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
-    // ナビの記録の項目へ印を出すためだけに読む（docs/spec.md §27）。
-    db.runningActivity.findUnique({ where: { userId: user.id }, select: { id: true } }),
+    // ナビの記録の項目へ印を出し、記録中バー（issue #629）に項目名・開始時刻を出すために読む
+    // （docs/spec.md §27）。DaySpanのDBだけで完結するため、外部APIの往復は増えない。
+    getRunningActivity(user.id),
   ]);
 
   // データソースと項目名のプロパティが揃っていないと、読むことも書くこともできない。
@@ -47,7 +49,7 @@ export default async function ShoppingPage() {
       categoryOptions={categoryOptions ?? []}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
       loadError={loadError}
-      activityRunning={runningActivity !== null}
+      runningActivity={runningActivity}
     />
   );
 }

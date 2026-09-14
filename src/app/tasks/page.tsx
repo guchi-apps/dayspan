@@ -15,6 +15,7 @@ import { loadPlaceCatalog } from "@/services/notion/places";
 import { listAllTasks } from "@/services/notion/tasks";
 import { loadWritableCalendars } from "@/services/calendar/load";
 import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
+import { getRunningActivity } from "@/services/activity/running";
 import type { TaskItem } from "@/types/calendar";
 
 export default async function TasksPage() {
@@ -24,9 +25,10 @@ export default async function TasksPage() {
   const [uiSetting, connection, runningActivity] = await Promise.all([
     db.uiSetting.findUnique({ where: { userId: user.id } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
-    // ナビの記録の項目へ印を出すためだけに読む（docs/spec.md §27）。
-    // 止め忘れたまま別の画面で作業していると、その間ずっと同じ項目を記録し続けてしまう。
-    db.runningActivity.findUnique({ where: { userId: user.id }, select: { id: true } }),
+    // ナビの記録の項目へ印を出し、記録中バー（issue #629）に項目名・開始時刻を出すために読む
+    // （docs/spec.md §27）。止め忘れたまま別の画面で作業していると、その間ずっと同じ項目を
+    // 記録し続けてしまう。DaySpanのDBだけで完結するため、外部APIの往復は増えない。
+    getRunningActivity(user.id),
   ]);
 
   if (!connection?.taskDataSourceId) return <ConnectPrompt />;
@@ -63,7 +65,7 @@ export default async function TasksPage() {
         weekStartsOn={uiSetting?.weekStartsOn ?? 0}
         timeZone={timeZone}
         loadError={loadError}
-        activityRunning={runningActivity !== null}
+        runningActivity={runningActivity}
       />
     </>
   );

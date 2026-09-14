@@ -9,7 +9,7 @@ import { Square } from "lucide-react";
 import { formatElapsed } from "@/components/calendar/activity-format";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { useNowIso } from "@/components/calendar/use-clock";
-import { closeActivityNotification } from "@/components/notifications/activity-notification";
+import { stopRunningActivityNow } from "@/components/nav/stop-running-activity";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import {
@@ -127,13 +127,24 @@ export function ActivityQuickSheet({
     startTransition(() => router.refresh());
   };
 
+  // 記録中バー（running-activity-bar.tsx・issue #629）と同じ最短経路（stopRunningActivityNow）
+  // を使う。どの画面からでも「押した時点で止める」の意味を1か所にまとめておくため。
   const stop = async () => {
-    const ok = await send("/api/activities/stop", { method: "POST" }, "記録を保存できませんでした。");
-    if (!ok) return;
+    if (offline) {
+      setError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    const result = await stopRunningActivityNow();
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
 
     onOpenChange(false);
-    // 「記録中」の通知は止めた時点で事実と違う（docs/spec.md §32）。この端末のぶんを消す。
-    void closeActivityNotification();
     startTransition(() => router.refresh());
   };
 
