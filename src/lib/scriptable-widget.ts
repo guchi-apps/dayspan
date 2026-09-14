@@ -107,7 +107,7 @@ export function toBridgeUrl(origin: string): string {
  * しかない。台本と同じく、値はこちらで作って渡す。
  *
  * 面ごとに変えられない。iOSは `webapp://` のパスを無視してWebアプリの最初の画面から開くため、
- * 買い物リストの枠を押しても着くのは記録の画面になる。
+ * 買い物リストの枠を押しても着くのはこの端末の起動画面になる（既定は記録・issue #637）。
  *
  * - `bridge` … 既定。HTTPSの受け渡しページ（`/open`）を経由してホーム画面のDaySpanへ渡す。
  *   ウィジェットから `webapp://` を直接開けない端末があり、そこでは押しても何も起きない
@@ -137,19 +137,20 @@ export function buildWidgetOpenUrls(origin: string): {
  *
  * importせず写しを置くのは、このファイルが他のモジュールを一切importしない前提で作られているため。
  * `scripts/preview-widget.mjs` はtscでこの1ファイルだけをJSへ落として読み込む（importを足すと、
- * ビルドは通るのにその道具だけが動かなくなる）。`/activity` を `DEFAULT_HOME_PATH` からではなく
- * `WIDGET_OPEN_PATH` として持っているのと同じ扱い。値を変えるときは両方直す。
+ * ビルドは通るのにその道具だけが動かなくなる）。`WIDGET_OPEN_PATH` も同じ扱いで値を複製している。
  */
 const WIDGET_OPEN_BRIDGE_PATH = "/open";
 
 /**
- * 開く先のパス。記録の画面。
+ * 開く先のパス。起動画面の判定ページ（issue #637）。
  *
- * `webapp://` ではiOSがパスを無視して最初の画面（`start_url`）から開くが、その最初の画面が
- * 記録のため同じ所へ着く（issue #299）。ブラウザで開くときはこのパスが効く。
- * 同じ組み立てで両方をまかなうため、どちらにも付ける。
+ * `webapp://` ではiOSがパスを無視して最初の画面（`start_url`）から開くため、このパスを
+ * 付けても`app`では実質効かない（`start_url` 自体が `/` になっている・§4）。それでも付けるのは
+ * `browser`（ブラウザで直接開く）ではこのパスがそのまま使われるため。どちらの経路でも
+ * 最終的にこの端末の起動画面（Cookie・既定は記録）へ着く、という結果を揃えられる。
+ * `src/lib/home-path.ts` の `/`（`src/app/page.tsx`）と同じ値。変えるときは両方直す。
  */
-const WIDGET_OPEN_PATH = "/activity";
+const WIDGET_OPEN_PATH = "/";
 
 /**
  * JavaScriptの文字列リテラルの中身として安全な形にする。
@@ -230,15 +231,16 @@ const IS_ACCESSORY = FAMILY.indexOf("accessory") === 0;
 // Scriptableが開くだけで先へ進まないため、ページ側でホーム画面のDaySpanかブラウザかを選びます。
 //
 // "app-direct" は webapp:// を直接開きます。iOSはこのスキームのパスを無視し、Webアプリの
-// 最初の画面から開きます。その最初の画面が記録の画面なので、どの経路でも同じ所へ着きます
-// （すでに開いていたときは前の画面のまま）。それでも /activity を付けているのは、
-// ブラウザで開くときにはこのパスが効くためです。
+// 最初の画面（起動画面の判定ページ）から開きます。その画面はこの端末で設定した起動画面
+// （既定は記録）へ振り分けるため、どの経路でも同じ所へ着きます（すでに開いていたときは
+// 前の画面のまま）。それでも /（ルート）を付けているのは、ブラウザで開くときにはこのパスが
+// 効くためです。
 const OPEN_URL = resolveOpenUrl();
 
 function resolveOpenUrl() {
   if (OPEN_IN === "app" && BRIDGE_URL) return BRIDGE_URL;
-  if (OPEN_IN === "app-direct" && WEBAPP_URL) return WEBAPP_URL + "/activity";
-  return APP_URL + "/activity";
+  if (OPEN_IN === "app-direct" && WEBAPP_URL) return WEBAPP_URL + "/";
+  return APP_URL + "/";
 }
 
 // 出す面。空欄は活動記録（貼り替えていない枠を今までどおり動かすため）。

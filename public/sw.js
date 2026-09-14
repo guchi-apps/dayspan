@@ -238,6 +238,18 @@ self.addEventListener("fetch", (event) => {
   // 応答の中身が Next-Router-State-Tree や先読みかどうかで変わり、
   // 別の状況で再生すると描画が壊れるため、保存したものを使い回せない。
   if (request.mode === "navigate" && !request.headers.has("RSC")) {
+    // `/`（起動画面の判定・issue #637）は専用の扱いにする。networkFirst に混ぜないのは、
+    // `/` の応答がredirectだけで自分のHTMLを持たず、isCacheable() の
+    // `!response.redirected` により保存できないため（保存しないこと自体は正しい。redirect後の
+    // 中身を`/`のキーで持つと、選んだ起動画面を変えても古い画面が返り続ける）。保存が無いぶん
+    // オフライン・5xxのときに networkFirst の「保存済みへ倒す」が効かず、素通しだと
+    // ブラウザのオフラインエラー画面に落ちてホーム画面のDaySpan自体が開けなくなる
+    // （計画レビュー指摘）。
+    if (url.pathname === "/") {
+      event.respondWith(handleRootNavigate(request));
+      return;
+    }
+
     event.respondWith(networkFirst(request, PAGE_CACHE, PAGE_LIMIT, true));
     return;
   }
@@ -250,6 +262,41 @@ self.addEventListener("fetch", (event) => {
 /** 保存してよい応答か。リダイレクトの結果と部分応答は、そのまま返すと状態を取り違える。 */
 function isCacheable(response) {
   return Boolean(response) && response.status === 200 && response.type === "basic" && !response.redirected;
+}
+
+/**
+ * この端末のCookie（起動画面の記憶）が読めないときに倒す先（issue #637）。
+ *
+ * `src/lib/home-path.ts` の `DEFAULT_HOME_PATH` と同じ値。値を変えるときは両方直す
+ * （`WIDGET_OPEN_BRIDGE_PATH` の写しと同じ扱い）。
+ */
+const DEFAULT_START_PATH = "/activity";
+
+/**
+ * `/`（起動画面の判定）専用のfetch処理（issue #637）。
+ *
+ * オンラインで届けば、そのままredirect応答を返す（ブラウザが `/activity` 等へ自動で
+ * 移り、その要求は通常の networkFirst 経路を通る）。
+ *
+ * オフライン・5xxのときは、Cookieを読めない（fetchイベントの Request.headers から
+ * Cookie ヘッダーは仕様上除かれる）ため、選んだ起動画面そのものへは倒せない。代わりに
+ * `DEFAULT_START_PATH` への redirect 応答を返す。ブラウザはその応答を受けて改めて
+ * `/activity` へナビゲートし、そちらは保存済みページ（`useWarmOfflinePage("/activity")`）を
+ * 持っていれば開ける。持っていなければ、そこで初めてオフラインエラーになる
+ * （従来どおり `/activity` が起動時の唯一の画面だったときと同じ挙動）。
+ */
+async function handleRootNavigate(request) {
+  try {
+    const response = await fetch(request);
+    if (response.status >= 500) return redirectToDefaultStartPath();
+    return response;
+  } catch {
+    return redirectToDefaultStartPath();
+  }
+}
+
+function redirectToDefaultStartPath() {
+  return Response.redirect(new URL(DEFAULT_START_PATH, self.location.origin).href, 302);
 }
 
 async function cacheFirst(request, cacheName) {

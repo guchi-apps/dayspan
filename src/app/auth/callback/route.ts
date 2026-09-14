@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isAllowedEmail } from "@/lib/allowed-users";
 import { CALENDAR_VIEW_COOKIE } from "@/lib/calendar-view-memory";
 import { db } from "@/lib/db";
-import { resolveInternalPath } from "@/lib/home-path";
+import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -11,7 +11,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const origin = getRequestOrigin(request);
   const code = searchParams.get("code");
-  const next = resolveInternalPath(searchParams.get("next"));
+  const next = resolveInternalPath(
+    searchParams.get("next"),
+    request.cookies.get(START_PATH_COOKIE)?.value,
+  );
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=auth_failed`);

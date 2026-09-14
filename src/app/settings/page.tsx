@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
@@ -21,6 +22,7 @@ import { Card } from "@/components/ui/card";
 import { APP_VERSION } from "@/lib/app-version";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
+import { resolveInternalPath, START_PATH_COOKIE, startPathLabel } from "@/lib/home-path";
 import { getNotificationSettings } from "@/services/notifications/settings";
 import { weekStartLabel } from "@/lib/week-start";
 import { TRAVEL_MODE_LABELS } from "@/types/calendar";
@@ -40,6 +42,7 @@ export default async function SettingsPage() {
     shortcutToken,
     pushDeviceCount,
     notificationSettings,
+    cookieStore,
   ] = await Promise.all([
     db.googleAccount.findMany({ where: { userId: user.id }, select: { email: true } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
@@ -50,10 +53,15 @@ export default async function SettingsPage() {
     db.shortcutToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
     db.pushSubscription.count({ where: { userId: user.id } }),
     getNotificationSettings(user.id),
+    cookies(),
   ]);
 
+  const startPathCookieValue = cookieStore.get(START_PATH_COOKIE)?.value;
+  // 設定画面の戻り先はアプリの起点（起動画面）で揃える（docs/spec.md §4）。
+  const startPath = resolveInternalPath(undefined, startPathCookieValue);
+
   return (
-    <SettingsShell title="設定" backHref="/activity" backLabel="記録">
+    <SettingsShell title="設定" backHref={startPath} backLabel={startPathLabel(startPathCookieValue)}>
       <Card className="gap-0 py-0">
         <MenuItem
           href="/settings/google"
@@ -143,7 +151,7 @@ export default async function SettingsPage() {
           href="/settings/display"
           icon={LayoutGrid}
           label="表示"
-          value={`週の開始日: ${weekStartLabel(uiSetting?.weekStartsOn ?? 0)}`}
+          value={`起動画面: ${startPathLabel(startPathCookieValue)} / 週の開始日: ${weekStartLabel(uiSetting?.weekStartsOn ?? 0)}`}
         />
         <MenuItem
           href="/settings/account"

@@ -1,9 +1,10 @@
 import { CalendarDays } from "lucide-react";
+import { cookies } from "next/headers";
 
 import { ClearOfflineCache } from "@/components/offline/clear-offline-cache";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { resolveInternalPath } from "@/lib/home-path";
+import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
 
 export default async function LoginPage({
   searchParams,
@@ -12,7 +13,8 @@ export default async function LoginPage({
 }) {
   const { error, callbackUrl } = await searchParams;
 
-  const next = resolveInternalPath(callbackUrl);
+  const cookieStore = await cookies();
+  const next = resolveInternalPath(callbackUrl, cookieStore.get(START_PATH_COOKIE)?.value);
 
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-8 bg-surface-container-low p-4">
