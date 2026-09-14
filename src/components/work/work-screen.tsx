@@ -16,6 +16,7 @@ import {
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav } from "@/components/nav/main-nav";
+import { RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -48,6 +49,7 @@ import {
   type WorkRecordItem,
   type WorkTodo,
 } from "@/types/work";
+import type { RunningActivitySummary } from "@/types/activity";
 
 /**
  * 勤務場所・出張・年休・会社休業日の画面（docs/spec.md §34）。
@@ -66,7 +68,7 @@ export function WorkScreen({
   loadError = null,
   tripPlaces,
   capabilities,
-  activityRunning = false,
+  runningActivity = null,
   timeZone,
   workMinutesPerDay = DEFAULT_WORK_MINUTES_PER_DAY,
 }: {
@@ -85,8 +87,11 @@ export function WorkScreen({
   /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
   tripPlaces: string[];
   capabilities: WorkCapabilities;
-  /** 活動を記録中かどうか。ナビの記録の項目へ印を出すためだけに使う（docs/spec.md §27）。 */
-  activityRunning?: boolean;
+  /**
+   * 記録中の項目（issue #629）。ナビの記録の項目へ印を出し、下部ナビの直上に記録中バーを
+   * 出すために使う（docs/spec.md §27）。
+   */
+  runningActivity?: RunningActivitySummary | null;
   /** 下部ナビの「今日へ」に使うタイムゾーン（`UiSetting.timeZone`）。 */
   timeZone: string;
   /** 1日の所定労働時間（分）。入力ダイアログの時間休の上限に使う（issue #537）。 */
@@ -258,7 +263,7 @@ export function WorkScreen({
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
         {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
-        <AppMenuButton current="work" activityRunning={activityRunning} />
+        <AppMenuButton current="work" activityRunning={runningActivity !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
         <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
@@ -615,7 +620,8 @@ export function WorkScreen({
         </div>
       </div>
 
-      <BottomNav current="work" activityRunning={activityRunning} timeZone={timeZone} />
+      <RunningActivityBar running={runningActivity} />
+      <BottomNav current="work" activityRunning={runningActivity !== null} timeZone={timeZone} />
 
       {draft && (
         <WorkRecordDialog

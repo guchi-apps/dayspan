@@ -23,6 +23,7 @@ import {
 
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav } from "@/components/nav/main-nav";
+import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -893,6 +894,7 @@ export function CalendarShell({
         />
       </Suspense>
 
+      <RunningActivityBar running={initialRunningActivity} />
       <BottomNav
         current="calendar"
         activityRunning={initialRunningActivity !== null}
@@ -1230,6 +1232,7 @@ function CalendarBody({
           travel: !offline,
         }}
         onAdd={onAdd}
+        hasRunningBar={runningActivity !== null}
       />
 
       {/*
@@ -1373,14 +1376,17 @@ function shiftDateKey(dateKey: string, days: number): string {
 function AddButton({
   available,
   onAdd,
+  hasRunningBar,
 }: {
   available: Record<AddableKind, boolean>;
   onAdd: (available: Record<AddableKind, boolean>) => void;
+  /** 記録中バー（issue #629）が下部ナビの直上に出ているか。出ていれば重ならない位置まで逃がす。 */
+  hasRunningBar: boolean;
 }) {
   if (!available.event && !available.task && !available.travel) return null;
 
   return (
-    <div className="fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-30 md:bottom-6">
+    <div className={cn("fixed right-4 z-30", fabBottomOffsetClass(hasRunningBar))}>
       {/* M3のFAB。角は完全な丸ではなく大きめの角丸で、面として置かれていることを示す。 */}
       <Button
         size="icon"

@@ -9,6 +9,7 @@ import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { BottomNav } from "@/components/nav/main-nav";
+import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -30,6 +31,7 @@ import {
   unboughtCounts,
   type ShoppingItem,
 } from "@/types/shopping";
+import type { RunningActivitySummary } from "@/types/activity";
 
 /**
  * 買い物リストの画面（docs/spec.md §36）。
@@ -42,7 +44,7 @@ export function ShoppingScreen({
   categoryOptions,
   timeZone,
   loadError,
-  activityRunning = false,
+  runningActivity = null,
 }: {
   items: ShoppingItem[];
   /** 登録済みのカテゴリ。タブの並び順もこの定義順に従う。 */
@@ -50,8 +52,11 @@ export function ShoppingScreen({
   /** ナビの「カレンダー」が今日へ移るのに使う（端末の時計任せにしない）。 */
   timeZone: string;
   loadError: string | null;
-  /** 活動を記録中かどうか。ナビの記録の項目へ印を出すためだけに使う（docs/spec.md §27）。 */
-  activityRunning?: boolean;
+  /**
+   * 記録中の項目（issue #629）。ナビの記録の項目へ印を出し、下部ナビの直上に記録中バーを
+   * 出すために使う（docs/spec.md §27）。
+   */
+  runningActivity?: RunningActivitySummary | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -162,7 +167,7 @@ export function ShoppingScreen({
     <div className="flex h-dvh flex-col">
       <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
         {/* どの画面幅でも左上をメニューにする（issue #328・#463）。画面の移動はすべてここから。 */}
-        <AppMenuButton current="shopping" activityRunning={activityRunning} />
+        <AppMenuButton current="shopping" activityRunning={runningActivity !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
             狭い画面では下部ナビが同じことを示すため、PCだけに出す。 */}
         <div className="hidden shrink-0 items-center gap-1.5 font-semibold md:flex">
@@ -281,7 +286,10 @@ export function ShoppingScreen({
 
       <Button
         size="icon"
-        className="elevation-3 fixed right-4 bottom-[calc(6rem_+_env(safe-area-inset-bottom))] z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95 md:bottom-6"
+        className={cn(
+          "elevation-3 fixed right-4 z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95",
+          fabBottomOffsetClass(runningActivity !== null),
+        )}
         aria-label="買うものを追加"
         disabled={offline}
         onClick={openAdd}
@@ -289,7 +297,8 @@ export function ShoppingScreen({
         <Plus className="size-6" />
       </Button>
 
-      <BottomNav current="shopping" activityRunning={activityRunning} timeZone={timeZone} />
+      <RunningActivityBar running={runningActivity} />
+      <BottomNav current="shopping" activityRunning={runningActivity !== null} timeZone={timeZone} />
 
       {dialog && (
         <ShoppingItemDialog
