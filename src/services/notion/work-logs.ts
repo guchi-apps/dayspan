@@ -389,16 +389,17 @@ export class WorkRecordNotEditableError extends Error {
 }
 
 /**
- * 対象ページが勤務記録DBのものか確かめる。
+ * 対象ページが勤務記録DBのものか確かめ、取得したページをそのまま返す。
  *
  * UIで入口を隠すだけだと、DaySpanのAPIや将来のMCPから直接呼ばれた要求が素通りする。
  * 日付リマインドの `assertReminderPage` と同じ考え方で、経路によらずここで断る。
+ * 戻り値は `updateWorkRecord` が「変更前の記録」を読むのにも使う（往復を増やさないため）。
  */
 async function assertWorkPage(
   notion: Client,
   connection: NotionConnection,
   pageId: string,
-): Promise<void> {
+): Promise<WorkPage> {
   if (!connection.workDataSourceId) throw new WorkRecordNotEditableError();
 
   const page = await notion.pages.retrieve({ page_id: pageId });
@@ -411,6 +412,58 @@ async function assertWorkPage(
     a.replaceAll("-", "").toLowerCase() === b.replaceAll("-", "").toLowerCase();
 
   if (!sameId(dataSourceId, connection.workDataSourceId)) throw new WorkRecordNotEditableError();
+  return page as WorkPage;
+}
+
+/** 出張・年休のどちらか、またはどちらでもないか。 */
+type WorkKindFlag = "trip" | "leave" | null;
+
+/**
+ * 出張か年休かを1つに決める。
+ *
+ * 年休を先に見るのは `kindOf()`（`work-record-dialog.tsx`）・`workTodos()`（`types/work.ts`）と
+ * 同じ順序。両方が立ちうる中間状態（inputが片方だけを書き換え、もう片方が変更前の値のまま
+ * 残っている場合）でも、既存の判定と同じ答えを返す必要があるため揃える。
+ */
+export function workKindFlag(businessTrip: boolean, annualLeave: string | null): WorkKindFlag {
+  if (annualLeave) return "leave";
+  if (businessTrip) return "trip";
+  return null;
+}
+
+/**
+ * 出張・年休への切り替えでは、済んでいた事前申請を未申請へ戻す（issue #648）。
+ *
+ * 出張と年休は別々の申請だが、事前申請のcheckboxを共用している（`workCapabilities()` の
+ * コメント参照）。種類を切り替えただけでは古い申請状態がそのまま引き継がれ、実際には
+ * 済んでいない申請が「済み」のまま残ってしまう。
+ *
+ * 「inputを重ねた変更後の種類」が出張・年休のどちらかで、かつ「変更前の種類」と異なるときは
+ * 常に `preApplied` を false へ強制する。変更前が勤務・休みだった（＝出張・年休として一度も
+ * 事前申請していない）場合も対象に含める。勤務をいったん経由させてから出張・年休へ切り替える
+ * ことで、事前申請の持ち越しを回避できてしまうため（計画レビュー指摘）。出張・年休から抜ける
+ * 遷移（出張→勤務など）は対象外（`nextKind` がnullになり、そもそも事前申請の概念が無い）。
+ * inputに無い項目は `toProperties()` と同じ「触らない」規則で、変更前の値のまま扱う。
+ *
+ * UIでチェックボックス自体を押せなくしているため、通常の保存では `input.preApplied` は
+ * すでにfalseで送られてくる。ここでは無条件にfalseへ上書きし、DaySpanのAPIや将来のMCPから
+ * 直接呼ばれてpreApplied:trueが送られてきた要求も同じ規則で断つ。
+ */
+export function resetPreAppliedOnKindChange(
+  previous: WorkRecordItem | null,
+  input: WorkWriteInput,
+): WorkWriteInput {
+  if (!previous) return input;
+
+  const previousKind = workKindFlag(previous.businessTrip, previous.annualLeave);
+  const nextBusinessTrip = input.businessTrip ?? previous.businessTrip;
+  const nextAnnualLeave = input.annualLeave !== undefined ? input.annualLeave : previous.annualLeave;
+  const nextKind = workKindFlag(nextBusinessTrip, nextAnnualLeave);
+
+  if (nextKind && nextKind !== previousKind) {
+    return { ...input, preApplied: false };
+  }
+  return input;
 }
 
 /** 同じ日にすでに登録がある（1日1件）ときのエラー。API側で409に変える。 */
@@ -492,7 +545,7 @@ export async function updateWorkRecord(
   pageId: string,
   input: WorkWriteInput,
 ): Promise<void> {
-  await assertWorkPage(notion, connection, pageId);
+  const page = await assertWorkPage(notion, connection, pageId);
 
   // 日付を動かすときだけ重なりを見る。申請のチェックだけを切り替える操作で
   // Notionへの往復を増やさないため。
@@ -507,9 +560,11 @@ export async function updateWorkRecord(
   }
 
   const map = workPropertyMap(connection);
+  const previous = normalizeWorkPage(page, map);
+  const effectiveInput = resetPreAppliedOnKindChange(previous, input);
   await notion.pages.update({
     page_id: pageId,
-    properties: toProperties(input, map) as never,
+    properties: toProperties(effectiveInput, map) as never,
   });
 }
 
