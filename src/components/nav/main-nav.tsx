@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useOffline } from "next/offline";
 import { useRouter } from "next/navigation";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { useLongPress } from "@/components/calendar/use-long-press";
 import { ActivityQuickSheet } from "@/components/nav/activity-quick-sheet";
+import { CalendarQuickSheet } from "@/components/nav/calendar-quick-sheet";
 import { NAV_ITEMS, type NavKey } from "@/components/nav/nav-items";
 import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
 import { cn } from "@/lib/utils";
@@ -53,6 +55,7 @@ export function BottomNav({
   current,
   activityRunning = false,
   onCalendarClick,
+  onLongPressCalendar,
   timeZone,
 }: {
   current: NavKey;
@@ -66,6 +69,14 @@ export function BottomNav({
    */
   onCalendarClick?: () => void;
   /**
+   * カレンダーを長押ししたときの予定追加（issue #652）。
+   *
+   * カレンダー画面はすでにcalendars/timeZoneを持っているため、画面側の既存フロー
+   * （変更範囲だけ取り直す）へ合流させる。指定が無い他画面では、下部ナビ自身が
+   * 自己完結のCalendarQuickSheetを開き、長押しされた時点で取りにいく。
+   */
+  onLongPressCalendar?: () => void;
+  /**
    * 日付の解釈に使うタイムゾーン（`UiSetting.timeZone`）。「今日」をここから決める。
    * 端末の時計任せにすると、設定と違うタイムゾーンの端末で別の日が開く。
    */
@@ -73,9 +84,12 @@ export function BottomNav({
 }) {
   const router = useRouter();
   const navigateOffline = useOfflineNavigate();
+  const offline = useOffline();
 
   // 記録の長押しで出すシート（issue #328）。開くまで中身は取りにいかない。
   const [quickOpen, setQuickOpen] = useState(false);
+  // カレンダーの長押しで出すシート（issue #652）。onLongPressCalendarが無い画面でだけ使う。
+  const [calendarQuickOpen, setCalendarQuickOpen] = useState(false);
 
   /**
    * カレンダーの項目は「今日へ移動」も兼ねる（issue #175）。
@@ -115,6 +129,25 @@ export function BottomNav({
       router.push("/activity");
     },
     onLongPress: () => setQuickOpen(true),
+  });
+
+  /**
+   * カレンダーは押せば今日へ移動し、長押しなら予定の簡易入力を出す（issue #652）。
+   * オフライン中は長押ししても何も起きない（カレンダー画面の空き枠タップ等と同じ、
+   * 事前ガードで黙って何もしない方式）。useOffline()はオフラインのままPWAを起動した
+   * 直後はfalseのままのため、navigator.onLine === falseも合わせて見る
+   * （CLAUDE.md「オフラインかの判定はuseOffline()にnavigator.onLine === falseを足す」）。
+   */
+  const calendarHandlers = useLongPress<null>({
+    onPress: handleCalendarClick,
+    onLongPress: () => {
+      if (offline || navigator.onLine === false) return;
+      if (onLongPressCalendar) {
+        onLongPressCalendar();
+        return;
+      }
+      setCalendarQuickOpen(true);
+    },
   });
 
   return (
@@ -170,9 +203,10 @@ export function BottomNav({
           return (
             <button
               key={item.href}
-              onClick={handleCalendarClick}
+              {...calendarHandlers(null)}
               aria-current={active ? "page" : undefined}
-              className={ITEM_CLASS}
+              aria-label="カレンダー（長押しで予定を追加）"
+              className={cn(ITEM_CLASS, "touch-none select-none")}
             >
               <span
                 className={cn(
@@ -215,6 +249,7 @@ export function BottomNav({
       })}
 
       <ActivityQuickSheet open={quickOpen} onOpenChange={setQuickOpen} />
+      <CalendarQuickSheet open={calendarQuickOpen} onOpenChange={setCalendarQuickOpen} />
     </nav>
   );
 }

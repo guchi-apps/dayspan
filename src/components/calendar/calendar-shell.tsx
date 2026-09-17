@@ -73,7 +73,12 @@ import { ItemDialog, type AddableKind, type ItemDrafts, type ItemKind } from "./
 import { createCalendarDateUtils, type CalendarDateUtils } from "./item-layout";
 import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
 import { ContinuousMonthView } from "./continuous-month-view";
-import { QuickEventSheet, toQuickEventDraft, type QuickEventDraft } from "./quick-event-sheet";
+import {
+  DEFAULT_START_MINUTES,
+  QuickEventSheet,
+  toQuickEventDraft,
+  type QuickEventDraft,
+} from "./quick-event-sheet";
 import { ReminderDetailDialog } from "./reminder-detail-dialog";
 import { toReminderDraft } from "./reminder-form";
 import { TaskDetailDialog } from "./task-detail-dialog";
@@ -91,9 +96,6 @@ import {
 import { useCalendarShortcuts, type CalendarShortcutActions } from "./use-calendar-shortcuts";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 import type { SlotRangeCommit } from "./use-slot-range";
-
-// 日付だけが決まっている追加（右下の「＋」・月表示の長押し）で使う開始時刻。
-const DEFAULT_START_MINUTES = 9 * 60;
 
 // タスクの期限は、その日のうちに片付ける想定の時刻から始める（予定の既定より遅い）。
 const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
@@ -935,6 +937,13 @@ export function CalendarShell({
         current="calendar"
         activityRunning={initialRunningActivity !== null}
         onCalendarClick={goToday}
+        // カレンダー画面ではすでにcalendars/timeZoneを持っているため、他画面向けの
+        // 自己完結シート（取得を伴う）を使わず、既存のquickDraftへそのまま合流させる。
+        // 保存後の再取得も変更範囲だけに絞られた既存のhandleSavedへ乗る。
+        onLongPressCalendar={() => {
+          if (offline || navigator.onLine === false) return;
+          setQuickDraft(toQuickEventDraft(utils.todayKey(), DEFAULT_START_MINUTES));
+        }}
       />
 
       {/* Suspenseの外に置く。取得中でもショートカット一覧はいつでも開けてよいため。 */}
