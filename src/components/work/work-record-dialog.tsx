@@ -221,6 +221,20 @@ export function WorkRecordDialog({
     }
   };
 
+  // 事前申請のcheckboxは出張と年休で共用している（docs/spec.md §34）。出張⇔年休の切り替えは
+  // 別々の申請への切り替えで、切り替わった時点でどちらの申請も実際には済んでいない。
+  // サーバー側（`resetPreAppliedOnKindChange`）が保存時に強制的に未申請へ戻すため、ここでは
+  // 「済ませた」への再チェックそのものを押せなくする。押せるままにすると、その場でもう一度
+  // チェックを入れて保存したのに、サーバーが黙って外す体験になる（issue #648 計画レビュー
+  // 指摘）。押し直しは保存して画面を開き直してから行う。
+  //
+  // 判定は「保存すると新しく出張・年休として書き込まれる種類が、元の記録の種類と違うか」。
+  // 元が勤務・休みだった記録を初めて出張・年休へ切り替える場合も対象に含める（勤務を1回
+  // 経由させるだけでリセットを回避できてしまうため・同計画レビュー指摘）。
+  const originalKind = existing ? kindOf(existing) : null;
+  const preApplyLockedByKindChange =
+    Boolean(existing) && (kind === "trip" || kind === "leave") && kind !== originalKind;
+
   const close = () => {
     setOpen(false);
     setTimeout(onClose, 150);
@@ -281,6 +295,10 @@ export function WorkRecordDialog({
         : businessTrip
           ? destination.trim()
           : place;
+    // 出張⇔年休の切り替えではpreAppliedのチェック自体を押せなくしているため、状態変数を
+    // そのまま送ってよい。サーバー側（`resetPreAppliedOnKindChange`）でも同じ判定で強制する
+    // （issue #648）。
+    const nextPreApplied = preApplyLockedByKindChange ? false : preApplied;
     const body = {
       title,
       startDate,
@@ -306,8 +324,10 @@ export function WorkRecordDialog({
       ...(capabilities.businessTrip ? { businessTrip } : {}),
       ...(capabilities.annualLeave ? { annualLeave: isLeave ? annualLeave : null } : {}),
       ...(capabilities.companyHoliday ? { companyHoliday: isHoliday } : {}),
-      ...(capabilities.approval && businessTrip ? { preApplied, postRegistered } : {}),
-      ...(capabilities.annualLeave && isLeave ? { preApplied } : {}),
+      ...(capabilities.approval && businessTrip
+        ? { preApplied: nextPreApplied, postRegistered }
+        : {}),
+      ...(capabilities.annualLeave && isLeave ? { preApplied: nextPreApplied } : {}),
       ...(capabilities.memo ? { memo: memo.trim() || null } : {}),
     };
 
@@ -536,13 +556,28 @@ export function WorkRecordDialog({
 
         {/* 年休が持つのは事前申請だけ。休んだことを後から届け出る手続きは無い。 */}
         {isLeave && capabilities.annualLeave && (
-          <label className="flex items-center gap-3 py-1.5">
-            <Checkbox
-              checked={preApplied}
-              onCheckedChange={(next) => setPreApplied(next === true)}
-            />
-            <span className="type-body-medium">{WORK_TODO_LABELS.preApplied}を済ませた</span>
-          </label>
+          <div className="flex flex-col gap-1">
+            <label className="flex items-center gap-3 py-1.5">
+              <Checkbox
+                checked={preApplyLockedByKindChange ? false : preApplied}
+                disabled={preApplyLockedByKindChange}
+                onCheckedChange={(next) => setPreApplied(next === true)}
+              />
+              <span
+                className={cn(
+                  "type-body-medium",
+                  preApplyLockedByKindChange && "text-on-surface-variant",
+                )}
+              >
+                {WORK_TODO_LABELS.preApplied}を済ませた
+              </span>
+            </label>
+            {preApplyLockedByKindChange && (
+              <p className="type-body-small pl-[30px] text-on-surface-variant">
+                種類を変更したため、保存後に改めて事前申請してください
+              </p>
+            )}
+          </div>
         )}
 
         {businessTrip && capabilities.approval && (
@@ -550,11 +585,14 @@ export function WorkRecordDialog({
             {(["preApplied", "postRegistered"] as const).map((todo) => {
               const checked = todo === "preApplied" ? preApplied : postRegistered;
               const setChecked = todo === "preApplied" ? setPreApplied : setPostRegistered;
-              const todoDisabled = todo === "postRegistered" && postRegisterDisabled;
+              // 事前申請は出張⇔年休の切り替え直後は押せない（下記）。事後登録は出張の翌日
+              // 以降にしかできない（issue #509）。
+              const todoDisabled =
+                todo === "preApplied" ? preApplyLockedByKindChange : postRegisterDisabled;
               return (
                 <label key={todo} className="flex items-center gap-3 py-1.5">
                   <Checkbox
-                    checked={checked}
+                    checked={todo === "preApplied" && preApplyLockedByKindChange ? false : checked}
                     disabled={todoDisabled}
                     onCheckedChange={(next) => setChecked(next === true)}
                   />
@@ -570,6 +608,11 @@ export function WorkRecordDialog({
               );
             })}
             {/* 押せない理由が伝わるよう添える。押せないだけでは、いつ押せるようになるか分からない。 */}
+            {preApplyLockedByKindChange && (
+              <p className="type-body-small pl-[30px] text-on-surface-variant">
+                種類を変更したため、保存後に改めて事前申請してください
+              </p>
+            )}
             {postRegisterDisabled && (
               <p className="type-body-small pl-[30px] text-on-surface-variant">
                 出張終了後に登録できます
