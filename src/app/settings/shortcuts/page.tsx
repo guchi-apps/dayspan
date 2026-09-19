@@ -7,7 +7,10 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { getOriginFromHeaders } from "@/lib/request-origin";
 import { getSleepSettings } from "@/services/activity/settings";
-import { getShortcutToken } from "@/services/activity/shortcut-token";
+import {
+  getShortcutToken,
+  getSleepHealthExportedUntil,
+} from "@/services/activity/shortcut-token";
 
 /**
  * iPhoneショートカットの設定（docs/spec.md §40）。
@@ -22,11 +25,12 @@ export default async function ShortcutsSettingsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [info, origin, uiSetting, sleep] = await Promise.all([
+  const [info, origin, uiSetting, sleep, healthExportedUntil] = await Promise.all([
     getShortcutToken(user.id),
     getOriginFromHeaders(),
     db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),
     getSleepSettings(user.id),
+    getSleepHealthExportedUntil(user.id),
   ]);
 
   const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
@@ -34,7 +38,7 @@ export default async function ShortcutsSettingsPage() {
   return (
     <SettingsShell
       title="iPhoneショートカット"
-      description="iPhoneの個人用オートメーション（就寝時・アラームの停止時）とヘルスケアの睡眠分析から、睡眠を活動記録として残します。"
+      description="iPhoneの個人用オートメーション（就寝時・アラームの停止時）とヘルスケアの睡眠分析から睡眠を活動記録として残し、DaySpanで付けた睡眠をヘルスケアへ送ります。"
       backHref="/settings"
       backLabel="設定"
     >
@@ -42,6 +46,11 @@ export default async function ShortcutsSettingsPage() {
         initialToken={info?.token ?? null}
         lastUsedLabel={
           info?.lastUsedAt ? isoToLocalInput(info.lastUsedAt, timeZone).replace("T", " ") : null
+        }
+        healthExportedLabel={
+          healthExportedUntil
+            ? isoToLocalInput(healthExportedUntil.toISOString(), timeZone).replace("T", " ")
+            : null
         }
         // 送り先は開いているアドレスから作る。利用者に値を組み立てさせると、打ち間違いに
         // 気付ける場所が実機のオートメーション（何も起きない）しかなくなる。

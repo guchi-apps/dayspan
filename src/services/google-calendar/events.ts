@@ -27,6 +27,11 @@ export type GoogleEvent = {
   originalStartTime?: GoogleEventDateTime;
   /** 繰り返し予定の親が持つ規則（RRULE・EXDATE など）。1回分の応答には含まれない。 */
   recurrence?: string[];
+  /**
+   * DaySpanが作った予定に残す目印（利用者には見えない）。いま使っているのは
+   * `private.dayspanSource`（睡眠をヘルスケアから取り込んだかどうか・docs/spec.md §40）だけ。
+   */
+  extendedProperties?: { private?: Record<string, string>; shared?: Record<string, string> };
 };
 
 type EventsResponse = {
@@ -173,6 +178,11 @@ export type EventWriteInput = {
   /** 例: "RRULE:FREQ=WEEKLY"。繰り返さない場合は null */
   recurrenceRule?: string | null;
   timeZone: string;
+  /**
+   * 利用者には見えない目印（`extendedProperties.private`）。作成時にだけ送る。
+   * 更新で送らないのは、PATCHが `extendedProperties.private` を丸ごと置き換えるため。
+   */
+  privateProperties?: Record<string, string>;
 };
 
 type EventTimeBody = {
@@ -227,6 +237,7 @@ function toRequestBody(input: EventWriteInput, { clearOther = false } = {}) {
     description: input.description ?? undefined,
     attendees: input.attendees?.length ? input.attendees.map((email) => ({ email })) : undefined,
     recurrence: input.recurrenceRule ? [input.recurrenceRule] : undefined,
+    extendedProperties: input.privateProperties ? { private: input.privateProperties } : undefined,
   };
 }
 
@@ -268,6 +279,8 @@ export async function updateEvent(
   const body = toRequestBody(input, { clearOther: true });
   // 繰り返し規則の変更はシリーズ全体に及ぶため、更新では送らない。
   delete (body as { recurrence?: unknown }).recurrence;
+  // 目印は作成時に付けたものを残す（送ると既存の目印ごと置き換わる）。
+  delete (body as { extendedProperties?: unknown }).extendedProperties;
 
   await googleCalendarFetch(
     account,

@@ -8,7 +8,8 @@ import { db } from "@/lib/db";
  *
  * 就寝時・アラームの停止時に走るオートメーションは、利用者が操作していない時点でiOSが起こす。
  * ブラウザのログインセッションを持てないのはウィジェットと同じで、このトークン1本で本人を
- * 特定する。できるのは睡眠の記録（`/api/shortcuts/`）だけで、予定・タスクの読み書きは持たない。
+ * 特定する。できるのは睡眠の記録と、ヘルスケアへ送るための睡眠の読み取り（`/api/shortcuts/`）
+ * だけで、予定・タスクの読み書きは持たない。
  *
  * ウィジェット用トークン（`widget-token.ts`）とは分ける。あちらは台本ごと配る前提の読み取り
  * 専用の値で、書き込みを兼ねさせると漏れたときにできることが増える。読み取りと書き込みで鍵を
@@ -86,6 +87,39 @@ export async function resolveUserIdByShortcutToken(token: string): Promise<strin
     .catch(() => null);
 
   return row.userId;
+}
+
+/**
+ * ヘルスケアへ送り終えた睡眠の終わり（docs/spec.md §40「ヘルスケアへ送る」）。未送信なら null。
+ *
+ * トークンの作り直しでは消さない（作り直しても送ったものは送ったままで、消すとその直近ぶんが
+ * ヘルスケアへもう一度入る）。トークンを削除したときは行ごと消え、次は直近2日から始まる。
+ */
+export async function getSleepHealthExportedUntil(userId: string): Promise<Date | null> {
+  const row = await db.shortcutToken.findUnique({
+    where: { userId },
+    select: { sleepHealthExportedUntil: true },
+  });
+
+  return row?.sleepHealthExportedUntil ?? null;
+}
+
+/**
+ * 送り終えた印を進める。戻しはしない（`until` が今の印より前なら何もしない）。
+ *
+ * 同じGETの結果でPOSTが2回走った・古いGETの結果が後から届いた、のどちらでも、
+ * 印が戻って送り済みの睡眠がもう一度返ることを避ける。
+ */
+export async function markSleepHealthExported(userId: string, until: Date): Promise<Date | null> {
+  await db.shortcutToken.updateMany({
+    where: {
+      userId,
+      OR: [{ sleepHealthExportedUntil: null }, { sleepHealthExportedUntil: { lt: until } }],
+    },
+    data: { sleepHealthExportedUntil: until },
+  });
+
+  return getSleepHealthExportedUntil(userId);
 }
 
 /** トークンを削除する。以後どの端末のオートメーションからも記録できなくなる。 */
