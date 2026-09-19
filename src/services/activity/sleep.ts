@@ -220,9 +220,17 @@ export type SleepHealthListResult =
 
 export async function listSleepForHealth(
   userId: string,
-  input: { now: Date; timeZone: string },
+  input: {
+    now: Date;
+    timeZone: string;
+    /**
+     * 過去の日を指定して送るときの範囲（`parseSleepHealthRange()`）。あれば印は見ず、その範囲に
+     * 終わった睡眠を返す。印との関係は route.ts の `until` を参照（一時的な機能・issue #665）。
+     */
+    range?: { after: Date; before: Date };
+  },
 ): Promise<SleepHealthListResult> {
-  const { now, timeZone } = input;
+  const { now, timeZone, range } = input;
 
   const calendarId = await getActivityCalendarId(userId);
   if (!calendarId) return { ok: false, reason: "calendar_not_selected", message: null };
@@ -233,18 +241,20 @@ export async function listSleepForHealth(
       include: { googleAccount: true },
     }),
     getSleepSettings(userId),
-    getSleepHealthExportedUntil(userId),
+    range ? Promise.resolve(null) : getSleepHealthExportedUntil(userId),
   ]);
   if (!setting) return { ok: false, reason: "calendar_not_selected", message: null };
 
-  const after = sleepHealthWindowStart(exportedUntil, now);
+  const after = range?.after ?? sleepHealthWindowStart(exportedUntil, now);
+  // 範囲の終わりが未来でも、まだ終わっていない睡眠は送らない。
+  const windowEnd = range ? new Date(Math.min(now.getTime(), range.before.getTime())) : now;
 
   let events: GoogleEvent[];
   try {
     // Googleは範囲に重なる予定を返す。印より前に始まり後に終わった睡眠もここに含まれる。
     events = await listEvents(setting.googleAccount, calendarId, {
       timeMin: after.toISOString(),
-      timeMax: now.toISOString(),
+      timeMax: windowEnd.toISOString(),
     });
   } catch (error) {
     return {
@@ -254,5 +264,9 @@ export async function listSleepForHealth(
     };
   }
 
-  return { ok: true, items: selectSleepForHealth(events, { title, after, now, timeZone }), after };
+  return {
+    ok: true,
+    items: selectSleepForHealth(events, { title, after, now: windowEnd, timeZone }),
+    after,
+  };
 }

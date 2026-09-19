@@ -6,7 +6,12 @@ import {
   shortcutJson,
 } from "@/app/api/shortcuts/shared";
 import { isoToLocalInput } from "@/components/calendar/datetime-fields";
-import { parseSleepHealthUntil, toOffsetIso } from "@/lib/sleep-health";
+import {
+  parseSleepHealthRange,
+  parseSleepHealthUntil,
+  SLEEP_HEALTH_UNTIL_SKIP,
+  toOffsetIso,
+} from "@/lib/sleep-health";
 import { getSleepSettings } from "@/services/activity/settings";
 import { markSleepHealthExported } from "@/services/activity/shortcut-token";
 import { listSleepForHealth } from "@/services/activity/sleep";
@@ -25,6 +30,12 @@ import { listSleepForHealth } from "@/services/activity/sleep";
  *
  * GETの時点で印を進めない。ヘルスケアの書き込みを許可していない・途中で止まった、の
  * どちらでもその夜が二度と返らなくなる。書けたあとに進めれば、失敗しても次回また返る。
+ *
+ * クエリ `from` / `to`（`YYYY-MM-DD`）を付けると、印を見ずにその期間に終わった睡眠を返す
+ * （過去の睡眠を送るための一時的な機能・issue #665）。この場合の `until` は
+ * `SLEEP_HEALTH_UNTIL_SKIP` を返し、POSTはそれを受けたら印に触れない。ショートカットの
+ * 「送り終えたと伝える」をそのまま流しても、通常の送信の範囲が動かないようにするため。
+ * 時刻を返す形にしない理由は `SLEEP_HEALTH_UNTIL_SKIP` の説明を参照。
  */
 export async function GET(request: Request) {
   const auth = await resolveShortcutUserId(request);
@@ -38,7 +49,12 @@ export async function GET(request: Request) {
     getShortcutTimeZone(userId),
   ]);
 
-  const result = await listSleepForHealth(userId, { now, timeZone });
+  const params = new URL(request.url).searchParams;
+  const parsedRange = parseSleepHealthRange(params.get("from"), params.get("to"), { timeZone });
+  if (!parsedRange.ok) return shortcutError(400, "invalid_range", parsedRange.message);
+  const { range } = parsedRange;
+
+  const result = await listSleepForHealth(userId, { now, timeZone, range: range ?? undefined });
 
   if (!result.ok) {
     if (result.reason === "calendar_not_selected") {
@@ -53,6 +69,33 @@ export async function GET(request: Request) {
 
   const items = result.items.map(({ start, end }) => ({ start, end }));
   const last = result.items[result.items.length - 1];
+
+  if (range) {
+    const label = range.from === range.to ? range.from : `${range.from}〜${range.to}`;
+    // 印は動かさない（`until` の説明は上）。
+    const until = SLEEP_HEALTH_UNTIL_SKIP;
+
+    if (!last) {
+      return shortcutJson({
+        ok: true,
+        status: "none",
+        count: 0,
+        items: [],
+        until,
+        message: `${label}に終わった${title}はありません。`,
+      });
+    }
+
+    return shortcutJson({
+      ok: true,
+      status: "pending",
+      count: items.length,
+      items,
+      until,
+      // 最大31件になるため、通常の送信のように時間帯は並べない。
+      message: `${label}に終わった${title}を${items.length}件ヘルスケアへ送ります。`,
+    });
+  }
 
   if (!last) {
     return shortcutJson({
@@ -91,6 +134,16 @@ export async function POST(request: Request) {
   const { userId } = auth;
 
   const body = ((await request.json().catch(() => ({}))) ?? {}) as PostBody;
+
+  // 範囲を指定して送ったときの応答（GET）が返した合図。印は動かさない。
+  if (body.until === SLEEP_HEALTH_UNTIL_SKIP) {
+    return shortcutJson({
+      ok: true,
+      status: "skipped",
+      exportedUntil: null,
+      message: "範囲を指定して送ったため、送り終えた印は動かしていません。",
+    });
+  }
 
   const parsed = parseSleepHealthUntil(body.until, new Date());
   if (!parsed.ok) return shortcutError(400, "invalid_until", parsed.message);

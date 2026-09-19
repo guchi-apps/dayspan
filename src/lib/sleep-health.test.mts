@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  MAX_RANGE_DAYS,
+  parseSleepHealthRange,
   parseSleepHealthUntil,
   selectSleepForHealth,
   sleepHealthWindowStart,
@@ -102,4 +104,60 @@ test("parseSleepHealthUntil: 欠け・読めない値・未来は断る", () => 
   assert.equal(parseSleepHealthUntil("きのう", NOW).ok, false);
   assert.equal(parseSleepHealthUntil("2026-09-19T00:05:00Z", NOW).ok, false);
   assert.equal(parseSleepHealthUntil("2026-09-19T00:00:30Z", NOW).ok, true);
+});
+
+test("parseSleepHealthRange: from・to が無ければ通常の送信（範囲なし）", () => {
+  assert.deepEqual(parseSleepHealthRange(null, null, { timeZone: TZ }), { ok: true, range: null });
+  assert.deepEqual(parseSleepHealthRange("", " ", { timeZone: TZ }), { ok: true, range: null });
+});
+
+test("parseSleepHealthRange: 片方だけ・形式違い・存在しない日付・逆順は断る", () => {
+  for (const [from, to] of [
+    ["2026-09-01", null],
+    [null, "2026-09-01"],
+    ["2026/09/01", "2026-09-02"],
+    ["2026-02-30", "2026-03-02"],
+    ["2026-09-10", "2026-09-01"],
+  ] as const) {
+    const result = parseSleepHealthRange(from, to, { timeZone: TZ });
+    assert.equal(result.ok, false, `${from} ${to}`);
+  }
+});
+
+test("parseSleepHealthRange: 日数の上限（31日）を超えたら断る", () => {
+  assert.equal(MAX_RANGE_DAYS, 31);
+  assert.equal(parseSleepHealthRange("2026-08-01", "2026-08-31", { timeZone: TZ }).ok, true);
+  assert.equal(parseSleepHealthRange("2026-08-01", "2026-09-01", { timeZone: TZ }).ok, false);
+});
+
+test("parseSleepHealthRange: 利用者のタイムゾーンで from の0:00〜to の翌0:00にする", () => {
+  const result = parseSleepHealthRange("2026-09-18", "2026-09-18", { timeZone: TZ });
+  assert.equal(result.ok, true);
+  if (!result.ok || !result.range) return;
+
+  assert.equal(result.range.after.toISOString(), "2026-09-17T15:00:00.000Z");
+  assert.equal(result.range.before.toISOString(), "2026-09-18T15:00:00.000Z");
+  assert.equal(result.range.from, "2026-09-18");
+  assert.equal(result.range.to, "2026-09-18");
+});
+
+test("parseSleepHealthRange: 範囲で選んだ睡眠は起床した日で決まる（selectSleepForHealth と組み合わせる）", () => {
+  const parsed = parseSleepHealthRange("2026-09-15", "2026-09-16", { timeZone: TZ });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || !parsed.range) return;
+
+  const items = selectSleepForHealth(
+    [
+      event("2026-09-13T14:00:00Z", "2026-09-13T21:00:00Z"), // 9/14 起床（範囲の前）
+      event("2026-09-14T15:30:00Z", "2026-09-14T22:30:00Z"), // 9/15 起床
+      event("2026-09-15T14:35:00Z", "2026-09-15T21:45:00Z"), // 9/16 起床
+      event("2026-09-16T14:00:00Z", "2026-09-16T21:00:00Z"), // 9/17 起床（範囲の後）
+    ],
+    { title: "睡眠", after: parsed.range.after, now: parsed.range.before, timeZone: TZ },
+  );
+
+  assert.deepEqual(
+    items.map((item) => item.end),
+    ["2026-09-15T07:30:00+09:00", "2026-09-16T06:45:00+09:00"],
+  );
 });

@@ -1,4 +1,5 @@
-import { zoneOffsetMinutes } from "@/components/calendar/datetime-fields";
+import { localInputToIso, zoneOffsetMinutes } from "@/components/calendar/datetime-fields";
+import { addDays, dateKeyDiffDays, isRealDateKey, parseDateKey, toDateKey } from "@/lib/calendar-range";
 
 /**
  * 睡眠をiPhoneのヘルスケアへ送るための絞り込み（docs/spec.md §40「ヘルスケアへ送る」）。
@@ -143,4 +144,86 @@ export function parseSleepHealthUntil(value: unknown, now: Date): SleepHealthUnt
   }
 
   return { ok: true, until };
+}
+
+/**
+ * 範囲指定で一度に送れる日数の上限。
+ *
+ * Googleへの往復は範囲の広さによらず1回だが、ヘルスケアへ書いたものを消すのは1件ずつに
+ * なる。取り違えた範囲を送ったときの後始末を、1か月ぶん（31件）までに収める。
+ */
+export const MAX_RANGE_DAYS = 31;
+
+/**
+ * 範囲指定で送ったときに `GET` が `until` として返す合図。`POST` はこれを受けたら印に触れない。
+ *
+ * 印を進める値を返すと、印がまだ無い（`null`）とき、その値が新しく印として保存され、通常の
+ * 送信の起点が「範囲を送った日の2日前」へ固定される（issue #665 計画レビューG1）。値を返さない
+ * （空にする）形にしないのは、ショートカットが取り出した値をそのまま流すため、空だと通常の送信で
+ * `until` を付け忘れた設定ミスと見分けが付かず、`invalid_until` の案内が出せなくなるから。
+ */
+export const SLEEP_HEALTH_UNTIL_SKIP = "skip";
+
+export type SleepHealthRange = {
+  /** 範囲の始まり（`from` の0:00）。これより後に終わった睡眠を返す。 */
+  after: Date;
+  /** 範囲の終わり（`to` の翌0:00）。 */
+  before: Date;
+  /** 画面・通知に出す日付（`from`・`to` そのまま）。 */
+  from: string;
+  to: string;
+};
+
+export type SleepHealthRangeParseResult =
+  | { ok: true; range: SleepHealthRange | null }
+  | { ok: false; message: string };
+
+/**
+ * `GET` のクエリ `from` / `to`（`YYYY-MM-DD`）を読む。一時的な機能のため、印を使う通常の
+ * 送信とは別に、過去の日を指定して送れるようにする（docs/spec.md §40）。
+ *
+ * - 両方無ければ `range: null`（通常の送信）
+ * - 睡眠は起床した日（終わった日）で数える。`from` の0:00より後〜`to` の翌0:00までに終わったもの
+ * - 未来の日付は断らない（`now` より後に終わるものは `selectSleepForHealth()` が外す）
+ */
+export function parseSleepHealthRange(
+  from: string | null,
+  to: string | null,
+  input: { timeZone: string },
+): SleepHealthRangeParseResult {
+  const fromKey = from?.trim() ?? "";
+  const toKey = to?.trim() ?? "";
+
+  if (!fromKey && !toKey) return { ok: true, range: null };
+
+  if (!fromKey || !toKey) {
+    return {
+      ok: false,
+      message: "過去の睡眠を送るには from と to の両方（YYYY-MM-DD）を指定してください。",
+    };
+  }
+  if (!isRealDateKey(fromKey) || !isRealDateKey(toKey)) {
+    return { ok: false, message: "from と to は YYYY-MM-DD の形の日付で指定してください。" };
+  }
+
+  const days = dateKeyDiffDays(fromKey, toKey) + 1;
+  if (days < 1) return { ok: false, message: "from は to と同じ日か、それより前にしてください。" };
+  if (days > MAX_RANGE_DAYS) {
+    return {
+      ok: false,
+      message: `一度に送れるのは${MAX_RANGE_DAYS}日までです（指定は${days}日）。範囲を分けてください。`,
+    };
+  }
+
+  const nextKey = toDateKey(addDays(parseDateKey(toKey), 1));
+
+  return {
+    ok: true,
+    range: {
+      after: new Date(localInputToIso(`${fromKey}T00:00`, input.timeZone)),
+      before: new Date(localInputToIso(`${nextKey}T00:00`, input.timeZone)),
+      from: fromKey,
+      to: toKey,
+    },
+  };
 }
