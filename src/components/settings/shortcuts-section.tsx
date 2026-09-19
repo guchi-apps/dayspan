@@ -522,6 +522,12 @@ export function ShortcutsSection({
                 ヘルスケアに2件並ばないように）。ただしこの仕組みより前に取り込んだものは
                 見分けが付かないため、初回に直近2日ぶんを送るときだけ重なることがあります。
               </p>
+              <p>
+                送ったあとにDaySpanで時刻を直しても、ヘルスケアの側は変わりません。終わりを
+                後ろへ直した{sleepTitle}は次の実行でもう一度送られ、送信済みの時刻より前に
+                終わる{sleepTitle}をあとから入れたものは送られません。そのときはヘルスケアの
+                睡眠分析で直接直してください。
+              </p>
             </div>
 
             <div className="type-body-small flex flex-col gap-1 text-on-surface-variant">
