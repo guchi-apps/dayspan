@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 /** コピーボタンの識別子。どのボタンで「コピーしました」を出すかを決めるために使う。 */
-type CopyTarget = "authorization" | "startUrl" | "stopUrl" | "sleepUrl";
+type CopyTarget = "authorization" | "startUrl" | "stopUrl" | "sleepUrl" | "healthUrl";
 
 /**
  * iPhoneショートカットの設定（docs/spec.md §40）。
@@ -23,6 +23,7 @@ type CopyTarget = "authorization" | "startUrl" | "stopUrl" | "sleepUrl";
 export function ShortcutsSection({
   initialToken,
   lastUsedLabel,
+  healthExportedLabel,
   endpointBase,
   sleepTitle,
 }: {
@@ -34,6 +35,11 @@ export function ShortcutsSection({
    * ハイドレーションが一致しない（CLAUDE.md）。
    */
   lastUsedLabel: string | null;
+  /**
+   * ヘルスケアへ送り終えた睡眠の終わり（整形済み）。まだ送っていなければ null。
+   * 整形をサーバーで済ませる理由は `lastUsedLabel` と同じ。
+   */
+  healthExportedLabel: string | null;
   /** 送り先のURLの共通部分（`https://…/api/shortcuts`）。 */
   endpointBase: string;
   /** 睡眠として数える活動記録の項目名。何という名前で記録されるのかを画面に出すため。 */
@@ -131,6 +137,7 @@ export function ShortcutsSection({
   const startUrl = `${endpointBase}/sleep/start`;
   const stopUrl = `${endpointBase}/sleep/stop`;
   const sleepUrl = `${endpointBase}/sleep`;
+  const healthUrl = `${endpointBase}/sleep/health`;
 
   /**
    * 送り先の一覧の1行。コピーボタンを持つのはこの一覧だけにする。
@@ -176,7 +183,8 @@ export function ShortcutsSection({
             <p className="type-body-medium text-on-surface-variant">
               トークンを発行すると、オートメーションに入れる値（送り先のURLと
               <code className="mx-1">Authorization</code>ヘッダー）をコピーできるようになります。
-              このトークンでできるのは睡眠の記録だけで、予定やタスクは読み書きできません。
+              このトークンでできるのは睡眠の記録と、ヘルスケアへ送るための睡眠の読み取りだけで、
+              予定やタスクは読み書きできません。
             </p>
             <div>
               <Button disabled={busy} onClick={() => issue(false)}>
@@ -243,13 +251,14 @@ export function ShortcutsSection({
             <dl className="flex flex-col gap-2">
               <SettingRow label="就寝時">{copyRow("startUrl", startUrl)}</SettingRow>
               <SettingRow label="起床時">{copyRow("stopUrl", stopUrl)}</SettingRow>
-              <SettingRow label="ヘルスケア">{copyRow("sleepUrl", sleepUrl)}</SettingRow>
+              <SettingRow label="ヘルスケアから">{copyRow("sleepUrl", sleepUrl)}</SettingRow>
+              <SettingRow label="ヘルスケアへ">{copyRow("healthUrl", healthUrl)}</SettingRow>
             </dl>
 
             <p className="type-body-small text-on-surface-variant">
-              どれも<code className="mx-1">POST</code>で呼び、ヘッダーに
+              どれもヘッダーに
               <code className="mx-1">Authorization</code>（値は上の「Authorization の値をコピー」）
-              を付けます。記録される項目名は「{sleepTitle}」です（設定 ▸ 活動記録 で変えられます）。
+              を付けます（方法は各手順を見てください）。記録される項目名は「{sleepTitle}」です（設定 ▸ 活動記録 で変えられます）。
             </p>
 
             {/*
@@ -358,7 +367,7 @@ export function ShortcutsSection({
               </span>
 
               <dl className="flex flex-col gap-2">
-                <SettingRow label="URL">{urlRow(sleepUrl)}（上の「送り先 ▸ ヘルスケア」）</SettingRow>
+                <SettingRow label="URL">{urlRow(sleepUrl)}（上の「送り先 ▸ ヘルスケアから」）</SettingRow>
                 <SettingRow label="方法">POST</SettingRow>
                 <SettingRow label="ヘッダ">
                   <span>
@@ -385,6 +394,140 @@ export function ShortcutsSection({
                   </div>
                 </SettingRow>
               </dl>
+            </div>
+
+            {/*
+              DaySpan → ヘルスケア（docs/spec.md §40「ヘルスケアへ送る」）。ショートカットの
+              ファイルは署名が要り（macOSかiCloudの共有でしか作れない）配れないため、
+              ほかの経路と同じく手順を日本語のアクション名で並べる。
+            */}
+            <span className="type-label-large text-on-surface-variant">
+              DaySpanの睡眠をヘルスケアへ送る（ショートカット）
+            </span>
+
+            <p className="type-body-medium text-on-surface-variant">
+              記録の画面や上のオートメーションで付けた「{sleepTitle}」を、iPhoneのヘルスケアの
+              睡眠分析へ書き込みます。Webアプリからはヘルスケアへ直接書けないため、
+              ショートカットがDaySpanから「まだ送っていない{sleepTitle}」を受け取って書き込みます。
+            </p>
+
+            <p className="type-body-small text-on-surface-variant">
+              {healthExportedLabel
+                ? `${healthExportedLabel} までに終わった${sleepTitle}は送信済みです。`
+                : `まだ送っていません。初回は直近2日ぶんの${sleepTitle}から送ります。`}
+            </p>
+
+            <ol className="type-body-medium flex list-decimal flex-col gap-1 pl-5 text-on-surface-variant">
+              <li>
+                ショートカットApp → <span className="text-on-surface">ショートカット</span> →
+                右上の ＋ で新しいショートカットを作る（名前は例えば「睡眠をヘルスケアへ」）
+              </li>
+              <li>
+                <span className="text-on-surface">URLの内容を取得</span> を足し、下の「受け取る」の
+                とおりに設定する
+              </li>
+              <li>
+                <span className="text-on-surface">辞書の値を取得</span> を足し、キーに
+                <code className="mx-1">items</code>、取得元に「URLの内容」を選ぶ
+              </li>
+              <li>
+                <span className="text-on-surface">各項目を繰り返す</span> を足し、対象に前の
+                「辞書の値」を選ぶ
+              </li>
+              <li>
+                繰り返しの中に <span className="text-on-surface">辞書の値を取得</span> を2つ足し、
+                取得元はどちらも「繰り返し項目」、キーはそれぞれ
+                <code className="mx-1">start</code>と<code className="mx-1">end</code>にする
+              </li>
+              <li>
+                続けて繰り返しの中に <span className="text-on-surface">ヘルスケアサンプルを記録</span>
+                を足し、種類 <span className="text-on-surface">睡眠分析</span>・値
+                <span className="text-on-surface">睡眠中</span>、開始日に
+                <code className="mx-1">start</code>の辞書の値、終了日に
+                <code className="mx-1">end</code>の辞書の値を選ぶ
+              </li>
+              <li>
+                繰り返しの後ろ（「繰り返しの終了」の下）に
+                <span className="text-on-surface">URLの内容を取得</span> をもう1つ足し、下の
+                「送り終えたと伝える」のとおりに設定する
+              </li>
+              <li>
+                最後に <span className="text-on-surface">辞書の値を取得</span>（キー
+                <code className="mx-1">message</code>）→{" "}
+                <span className="text-on-surface">通知を表示</span> を足す
+              </li>
+              <li>
+                一度ショートカットAppから手で実行し、ヘルスケアへの書き込みを許可する
+              </li>
+              <li>
+                毎朝自動で送るには、上の「起床時に記録を止める」オートメーションの最後に
+                <span className="text-on-surface">ショートカットを実行</span>
+                を足してこのショートカットを選ぶ（止めた直後の{sleepTitle}がそのまま送られます）
+              </li>
+            </ol>
+
+            <div className="flex flex-col gap-2 rounded-lg border border-outline-variant p-3">
+              <span className="type-label-large text-on-surface-variant">
+                URLの内容を取得（受け取る）
+              </span>
+
+              <dl className="flex flex-col gap-2">
+                <SettingRow label="URL">{urlRow(healthUrl)}（上の「送り先 ▸ ヘルスケアへ」）</SettingRow>
+                <SettingRow label="方法">GET</SettingRow>
+                <SettingRow label="ヘッダ">
+                  <span>
+                    就寝時と同じ（<code className="mx-1">Authorization</code>）
+                  </span>
+                </SettingRow>
+              </dl>
+            </div>
+
+            <div className="flex flex-col gap-2 rounded-lg border border-outline-variant p-3">
+              <span className="type-label-large text-on-surface-variant">
+                URLの内容を取得（送り終えたと伝える）
+              </span>
+
+              <dl className="flex flex-col gap-2">
+                <SettingRow label="URL">{urlRow(healthUrl)}（受け取ると同じ）</SettingRow>
+                <SettingRow label="方法">POST</SettingRow>
+                <SettingRow label="ヘッダ">
+                  <span>
+                    就寝時と同じ（<code className="mx-1">Authorization</code>）
+                  </span>
+                </SettingRow>
+                <SettingRow label="要求のボディ">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span>
+                      JSON。キー<code className="mx-1">until</code>・種類
+                      <span className="mx-1">テキスト</span>、値は最初の「URLの内容」から
+                      <span className="mx-1">辞書の値を取得</span>（キー
+                      <code className="mx-1">until</code>）で取り出したもの
+                    </span>
+                    <span className="type-body-small text-on-surface-variant">
+                      （「辞書の値を取得」をもう1つ、繰り返しの前に足しておくと選びやすくなります）
+                    </span>
+                  </div>
+                </SettingRow>
+              </dl>
+            </div>
+
+            <div className="type-body-small flex flex-col gap-1 text-on-surface-variant">
+              <p>
+                送り終えたと伝えるまでは、同じ{sleepTitle}が次の実行でも返ります。ヘルスケアへの
+                書き込みを許可していない・途中で止まったときでも、その夜のぶんが送られないまま
+                消えることはありません。
+              </p>
+              <p>
+                「ヘルスケアから」で取り込んだ{sleepTitle}は送り返しません（同じ睡眠が
+                ヘルスケアに2件並ばないように）。ただしこの仕組みより前に取り込んだものは
+                見分けが付かないため、初回に直近2日ぶんを送るときだけ重なることがあります。
+              </p>
+              <p>
+                送ったあとにDaySpanで時刻を直しても、ヘルスケアの側は変わりません。終わりを
+                後ろへ直した{sleepTitle}は次の実行でもう一度送られ、送信済みの時刻より前に
+                終わる{sleepTitle}をあとから入れたものは送られません。そのときはヘルスケアの
+                睡眠分析で直接直してください。
+              </p>
             </div>
 
             <div className="type-body-small flex flex-col gap-1 text-on-surface-variant">
