@@ -28,7 +28,7 @@ export function isoToLocalInput(iso: string, timeZone: string): string {
 }
 
 /** そのタイムゾーンのUTCからのオフセット（分）。夏時間のある地域でも日時ごとに正しく求まる。 */
-function zoneOffsetMinutes(date: Date, timeZone: string): number {
+export function zoneOffsetMinutes(date: Date, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",

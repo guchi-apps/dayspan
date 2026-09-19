@@ -397,6 +397,11 @@ model ShortcutToken {
   // 最後に使われた日時。オートメーションが効いているかを設定画面から読めるようにする。
   lastUsedAt DateTime?
 
+  // ヘルスケアへ送り終えた睡眠の終わり（docs/spec.md §40「ヘルスケアへ送る」）。
+  // これより後に終わった睡眠だけを次に返す。ショートカットが書き終えたあとの
+  // POST でだけ進める（取得した時点で進めると、途中で止まった夜が二度と返らない）。
+  sleepHealthExportedUntil DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

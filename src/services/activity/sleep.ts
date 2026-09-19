@@ -2,6 +2,13 @@ import { localInputToIso } from "@/components/calendar/datetime-fields";
 import { externalApiMessage } from "@/lib/api-error";
 import { db } from "@/lib/db";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
+import {
+  SLEEP_SOURCE_HEALTH,
+  SLEEP_SOURCE_PROPERTY,
+  selectSleepForHealth,
+  sleepHealthWindowStart,
+  type SleepHealthItem,
+} from "@/lib/sleep-health";
 import { findOverlappingSleepSpan } from "@/lib/sleep-shortcut";
 import {
   ActivityCalendarNotFoundError,
@@ -11,6 +18,7 @@ import {
   resolveRecordTime,
 } from "@/services/activity/running";
 import { getActivityCalendarId, getSleepSettings } from "@/services/activity/settings";
+import { getSleepHealthExportedUntil } from "@/services/activity/shortcut-token";
 import { clearTodayEventsCache } from "@/services/activity/today-cache";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
 import { createEvent, listEvents, type GoogleEvent } from "@/services/google-calendar/events";
@@ -179,6 +187,9 @@ export async function recordSleepRange(
     start: start.toISOString(),
     end: savedEnd.toISOString(),
     timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
+    // ヘルスケアから来た睡眠だと分かる目印。付けないと、ヘルスケアへ送るショートカット
+    // （`listSleepForHealth()`）がこれをショートカットを出どころとする2件目として送り返す。
+    privateProperties: { [SLEEP_SOURCE_PROPERTY]: SLEEP_SOURCE_HEALTH },
   });
 
   // ウィジェットの今日の合計は、Googleから取った予定を短時間持ち回して求めている
@@ -189,4 +200,59 @@ export async function recordSleepRange(
     status: "saved",
     range: { start: start.toISOString(), end: savedEnd.toISOString() },
   };
+}
+
+/**
+ * まだヘルスケアへ送っていない睡眠を選ぶ（docs/spec.md §40「ヘルスケアへ送る」）。
+ *
+ * 読むのは活動記録の保存先カレンダー1つで、外部APIへの往復はGoogle 1回（§20）。読み方は
+ * `loadSleepEvents()` と揃え、書き込み用の `resolveGoogleAccountForCalendar()` は使わない
+ * （「使用」をオフにしたあとも過去の記録は読めるように）。
+ *
+ * 送り終えた印はここでは進めない。ショートカットが書き終えたあとの POST
+ * （`markSleepHealthExported()`）でだけ進める。取得した時点で進めると、ヘルスケアの
+ * 書き込み許可を出していない等で途中で止まった夜が二度と返らない。
+ */
+export type SleepHealthListResult =
+  /** `after` は探した範囲の始まり（これより後に終わった睡眠を返した）。 */
+  | { ok: true; items: SleepHealthItem[]; after: Date }
+  | { ok: false; reason: SleepLoadUnavailable; message: string | null };
+
+export async function listSleepForHealth(
+  userId: string,
+  input: { now: Date; timeZone: string },
+): Promise<SleepHealthListResult> {
+  const { now, timeZone } = input;
+
+  const calendarId = await getActivityCalendarId(userId);
+  if (!calendarId) return { ok: false, reason: "calendar_not_selected", message: null };
+
+  const [setting, { title }, exportedUntil] = await Promise.all([
+    db.calendarSetting.findFirst({
+      where: { userId, calendarId },
+      include: { googleAccount: true },
+    }),
+    getSleepSettings(userId),
+    getSleepHealthExportedUntil(userId),
+  ]);
+  if (!setting) return { ok: false, reason: "calendar_not_selected", message: null };
+
+  const after = sleepHealthWindowStart(exportedUntil, now);
+
+  let events: GoogleEvent[];
+  try {
+    // Googleは範囲に重なる予定を返す。印より前に始まり後に終わった睡眠もここに含まれる。
+    events = await listEvents(setting.googleAccount, calendarId, {
+      timeMin: after.toISOString(),
+      timeMax: now.toISOString(),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "google_unavailable",
+      message: externalApiMessage("google", "睡眠の記録の取得", error),
+    };
+  }
+
+  return { ok: true, items: selectSleepForHealth(events, { title, after, now, timeZone }), after };
 }
