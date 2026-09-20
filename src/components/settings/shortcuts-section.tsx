@@ -6,9 +6,11 @@ import { Check, Copy, Eye, EyeOff, RefreshCw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { EDIT_LOOKBACK_DAYS, MAX_RANGE_DAYS, SLEEP_HEALTH_SHORTCUT_NAME } from "@/lib/sleep-health";
 
 /** コピーボタンの識別子。どのボタンで「コピーしました」を出すかを決めるために使う。 */
-type CopyTarget = "authorization" | "startUrl" | "stopUrl" | "sleepUrl" | "healthUrl";
+type CopyTarget = "authorization" | "startUrl" | "stopUrl" | "sleepUrl" | "healthUrl" | "healthRangeUrl";
 
 /**
  * iPhoneショートカットの設定（docs/spec.md §40）。
@@ -52,6 +54,9 @@ export function ShortcutsSection({
   const [copiedTarget, setCopiedTarget] = useState<CopyTarget | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 過去の睡眠を送る範囲（issue #665）。空のときはURLを作らない。
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
 
   const issue = async (regenerate: boolean) => {
     if (regenerate) {
@@ -138,6 +143,20 @@ export function ShortcutsSection({
   const stopUrl = `${endpointBase}/sleep/stop`;
   const sleepUrl = `${endpointBase}/sleep`;
   const healthUrl = `${endpointBase}/sleep/health`;
+  const rangeDays =
+    rangeFrom && rangeTo
+      ? Math.round((Date.parse(`${rangeTo}T00:00:00Z`) - Date.parse(`${rangeFrom}T00:00:00Z`)) / 86_400_000) + 1
+      : null;
+  const rangeError =
+    rangeDays === null
+      ? null
+      : rangeDays < 1
+        ? "開始日は終了日と同じ日か、それより前にしてください。"
+        : rangeDays > MAX_RANGE_DAYS
+          ? `一度に送れるのは${MAX_RANGE_DAYS}日までです（いまは${rangeDays}日）。`
+          : null;
+  const healthRangeUrl =
+    rangeDays !== null && !rangeError ? `${healthUrl}?from=${rangeFrom}&to=${rangeTo}` : null;
 
   /**
    * 送り先の一覧の1行。コピーボタンを持つのはこの一覧だけにする。
@@ -420,7 +439,10 @@ export function ShortcutsSection({
             <ol className="type-body-medium flex list-decimal flex-col gap-1 pl-5 text-on-surface-variant">
               <li>
                 ショートカットApp → <span className="text-on-surface">ショートカット</span> →
-                右上の ＋ で新しいショートカットを作る（名前は例えば「睡眠をヘルスケアへ」）
+                右上の ＋ で新しいショートカットを作り、名前を
+                <span className="text-on-surface">「{SLEEP_HEALTH_SHORTCUT_NAME}」</span>
+                にする（睡眠の画面の「ヘルスケアへ反映」は、この名前のショートカットを開きます。
+                別の名前にすると開けません）
               </li>
               <li>
                 <span className="text-on-surface">URLの内容を取得</span> を足し、下の「受け取る」の
@@ -523,10 +545,80 @@ export function ShortcutsSection({
                 見分けが付かないため、初回に直近2日ぶんを送るときだけ重なることがあります。
               </p>
               <p>
-                送ったあとにDaySpanで時刻を直しても、ヘルスケアの側は変わりません。終わりを
-                後ろへ直した{sleepTitle}は次の実行でもう一度送られ、送信済みの時刻より前に
-                終わる{sleepTitle}をあとから入れたものは送られません。そのときはヘルスケアの
-                睡眠分析で直接直してください。
+                送ったあとにDaySpanで時刻を直した・消した{sleepTitle}は、次の実行で
+                変更後の時間帯をもう一度送ります（直近{EDIT_LOOKBACK_DAYS}日ぶん）。
+                <span className="text-on-surface">
+                  ヘルスケアに送った時点の時間帯は残るため、通知に出る時間帯を睡眠分析で削除してください
+                </span>
+                （ショートカットからはヘルスケアの記録を消せません）。削除しないと、同じ夜が
+                2件並びます。消した{sleepTitle}も、通知で削除を案内します。
+              </p>
+              <p>
+                実行するのは毎朝の自動実行のほか、直した{sleepTitle}があるときに睡眠の画面へ出る
+                「ヘルスケアへ反映」から手で走らせることもできます。この仕組みより前に送った
+                {sleepTitle}は履歴が無いため、直してもヘルスケアへは反映されません。
+              </p>
+            </div>
+
+            {/*
+              過去の睡眠を送る（issue #665・一時的な機能）。新しいショートカットは要らず、
+              上の受け取るURLを範囲つきのものへ差し替えて実行する。
+            */}
+            <div className="flex flex-col gap-2 rounded-lg border border-outline-variant p-3">
+              <span className="type-label-large text-on-surface-variant">
+                過去の{sleepTitle}を選んで送る（一時的な機能）
+              </span>
+
+              <p className="type-body-small text-on-surface-variant">
+                送り終えた印より前の{sleepTitle}も、日付を選べばヘルスケアへ送れます。
+                起床した日で数え、一度に送れるのは{MAX_RANGE_DAYS}日までです。1日だけ送るときは
+                同じ日を選びます。
+              </p>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  type="date"
+                  label="開始日"
+                  variant="outlined"
+                  value={rangeFrom}
+                  onChange={(event) => setRangeFrom(event.target.value)}
+                />
+                <Input
+                  type="date"
+                  label="終了日"
+                  variant="outlined"
+                  value={rangeTo}
+                  onChange={(event) => setRangeTo(event.target.value)}
+                />
+              </div>
+
+              {rangeError && (
+                <p className="type-body-small text-error">{rangeError}</p>
+              )}
+
+              {healthRangeUrl && (
+                <dl className="flex flex-col gap-2">
+                  <SettingRow label="URL">{copyRow("healthRangeUrl", healthRangeUrl)}</SettingRow>
+                </dl>
+              )}
+
+              <ol className="type-body-small flex list-decimal flex-col gap-1 pl-5 text-on-surface-variant">
+                <li>
+                  上の「睡眠をヘルスケアへ」ショートカットで、最初の「URLの内容を取得（受け取る）」の
+                  URLだけを、ここのURLへ差し替える（元のURLは控えておく）
+                </li>
+                <li>ショートカットを手で実行する（通知に送った件数が出ます）</li>
+                <li>終わったら、URLを元に戻す</li>
+              </ol>
+
+              <p className="type-body-small text-on-surface-variant">
+                「送り終えたと伝える」の手順はそのままで構いません（この送り方では印は動かず、
+                毎朝の送信の範囲は変わりません）。ただし送った夜は記録されないため、
+                <span className="text-on-surface">同じ範囲をもう一度送ると、ヘルスケアに同じ夜が
+                2件並びます</span>。毎朝の送信ですでに送った夜や、Apple Watchで入っている夜と
+                重なる日も同様です。ヘルスケアの睡眠分析で1件ずつ消してください。
+                また、この送り方で送った夜は履歴に残らないため、あとでDaySpanで直してもヘルスケアへは
+                反映されません。
               </p>
             </div>
 
