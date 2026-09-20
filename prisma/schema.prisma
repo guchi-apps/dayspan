@@ -32,6 +32,7 @@ model User {
   runningActivity   RunningActivity?
   widgetToken       WidgetToken?
   shortcutToken     ShortcutToken?
+  sleepHealthSent   SleepHealthSent[]
   travelPlans       TravelPlan[]
   taskEventLinks    TaskEventLink[]
   eventOutcomes     EventOutcome[]
@@ -402,10 +403,37 @@ model ShortcutToken {
   // POST でだけ進める（取得した時点で進めると、途中で止まった夜が二度と返らない）。
   sleepHealthExportedUntil DateTime?
 
+  // 直近のGETが返した内容の控え（docs/spec.md §40「送ったあとの変更」）。POSTが `until` の一致を
+  // 確かめてから SleepHealthSent へ反映する。GETの時点で反映すると、ショートカットが途中で
+  // 止まったときに「送っていないのに送った」ことになる。
+  sleepHealthPending Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ヘルスケアへ**送った時点の**睡眠の時間帯（docs/spec.md §40「送ったあとの変更」）。
+//
+// ショートカットにはヘルスケアの既存サンプルを更新・削除するアクションが無く、追加しかできない。
+// 送ったあとに時刻を直した・消した睡眠を見つけて「変更後を追加で送る」「古い時間帯はヘルスケアで
+// 消してもらう」には、何をいつの時刻で送ったかを持つ必要がある。Googleの予定のIDで引く
+// （時刻を直してもIDは変わらない）。ヘルスケア側の実体は読めないため、これは送った履歴であって
+// ヘルスケアの中身そのものではない。
+model SleepHealthSent {
+  id      String @id @default(cuid())
+  userId  String
+  eventId String @db.VarChar(255) // Googleの予定ID
+
+  start  DateTime // 送った開始
+  end    DateTime // 送った終了
+  sentAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([userId, end])
 }
 
 // --- 予定に紐づくタスク ---

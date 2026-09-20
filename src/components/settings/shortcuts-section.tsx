@@ -7,7 +7,7 @@ import { Check, Copy, Eye, EyeOff, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { MAX_RANGE_DAYS } from "@/lib/sleep-health";
+import { EDIT_LOOKBACK_DAYS, MAX_RANGE_DAYS, SLEEP_HEALTH_SHORTCUT_NAME } from "@/lib/sleep-health";
 
 /** コピーボタンの識別子。どのボタンで「コピーしました」を出すかを決めるために使う。 */
 type CopyTarget = "authorization" | "startUrl" | "stopUrl" | "sleepUrl" | "healthUrl" | "healthRangeUrl";
@@ -439,7 +439,10 @@ export function ShortcutsSection({
             <ol className="type-body-medium flex list-decimal flex-col gap-1 pl-5 text-on-surface-variant">
               <li>
                 ショートカットApp → <span className="text-on-surface">ショートカット</span> →
-                右上の ＋ で新しいショートカットを作る（名前は例えば「睡眠をヘルスケアへ」）
+                右上の ＋ で新しいショートカットを作り、名前を
+                <span className="text-on-surface">「{SLEEP_HEALTH_SHORTCUT_NAME}」</span>
+                にする（睡眠の画面の「ヘルスケアへ反映」は、この名前のショートカットを開きます。
+                別の名前にすると開けません）
               </li>
               <li>
                 <span className="text-on-surface">URLの内容を取得</span> を足し、下の「受け取る」の
@@ -542,10 +545,18 @@ export function ShortcutsSection({
                 見分けが付かないため、初回に直近2日ぶんを送るときだけ重なることがあります。
               </p>
               <p>
-                送ったあとにDaySpanで時刻を直しても、ヘルスケアの側は変わりません。終わりを
-                後ろへ直した{sleepTitle}は次の実行でもう一度送られ、送信済みの時刻より前に
-                終わる{sleepTitle}をあとから入れたものは送られません。そのときはヘルスケアの
-                睡眠分析で直接直してください。
+                送ったあとにDaySpanで時刻を直した・消した{sleepTitle}は、次の実行で
+                変更後の時間帯をもう一度送ります（直近{EDIT_LOOKBACK_DAYS}日ぶん）。
+                <span className="text-on-surface">
+                  ヘルスケアに送った時点の時間帯は残るため、通知に出る時間帯を睡眠分析で削除してください
+                </span>
+                （ショートカットからはヘルスケアの記録を消せません）。削除しないと、同じ夜が
+                2件並びます。消した{sleepTitle}も、通知で削除を案内します。
+              </p>
+              <p>
+                実行するのは毎朝の自動実行のほか、直した{sleepTitle}があるときに睡眠の画面へ出る
+                「ヘルスケアへ反映」から手で走らせることもできます。この仕組みより前に送った
+                {sleepTitle}は履歴が無いため、直してもヘルスケアへは反映されません。
               </p>
             </div>
 
@@ -606,6 +617,8 @@ export function ShortcutsSection({
                 <span className="text-on-surface">同じ範囲をもう一度送ると、ヘルスケアに同じ夜が
                 2件並びます</span>。毎朝の送信ですでに送った夜や、Apple Watchで入っている夜と
                 重なる日も同様です。ヘルスケアの睡眠分析で1件ずつ消してください。
+                また、この送り方で送った夜は履歴に残らないため、あとでDaySpanで直してもヘルスケアへは
+                反映されません。
               </p>
             </div>
 

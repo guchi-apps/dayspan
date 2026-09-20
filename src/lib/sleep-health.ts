@@ -32,6 +32,21 @@ export const INITIAL_LOOKBACK_DAYS = 2;
  */
 export const MAX_LOOKBACK_DAYS = 30;
 
+/**
+ * 送ったあとの変更（時刻の修正・削除）を探す日数（docs/spec.md §40「送ったあとの変更」）。
+ *
+ * 印より前に終わった睡眠も、送った履歴（`SleepHealthSent`）と突き合わせるために読む。
+ * Googleへの往復は1回のままで、読む範囲だけが広がる。睡眠を直すのは「昨夜・数日前」が
+ * ほとんどで、それより古い記録まで遡ると読む予定の数が増える割に、直す場面が無い。
+ */
+export const EDIT_LOOKBACK_DAYS = 14;
+
+/**
+ * 睡眠画面から実行するショートカットの名前（`shortcuts://run-shortcut?name=`）。
+ * 設定画面の手順例と同じ名前にしておけば、手順どおり作った利用者はそのまま押せる。
+ */
+export const SLEEP_HEALTH_SHORTCUT_NAME = "睡眠をヘルスケアへ";
+
 const DAY_MS = 24 * 60 * 60_000;
 
 /** 睡眠を探す範囲の始まり。これより後に**終わった**睡眠を返す。 */
@@ -44,9 +59,10 @@ export function sleepHealthWindowStart(exportedUntil: Date | null, now: Date): D
 
 /** 読むのに要るGoogleの予定の形（`GoogleEvent` の部分集合）。 */
 export type SleepHealthEvent = {
+  id?: string;
   summary?: string;
-  start?: { dateTime?: string };
-  end?: { dateTime?: string };
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
   extendedProperties?: { private?: Record<string, string> };
 };
 
@@ -59,13 +75,39 @@ export type SleepHealthItem = {
 };
 
 /**
+ * 送る対象になりうる睡眠の時間帯を読む。対象でなければ null。
+ *
+ * - 項目名が睡眠の項目名（`UiSetting.sleepActivityTitle`）と一致する
+ * - ヘルスケアから取り込んだもの（目印付き）ではない
+ * - 時刻付きで、終わりが開始より後
+ */
+function readSleepSpan(
+  event: SleepHealthEvent,
+  title: string,
+): { startMs: number; endMs: number } | null {
+  if ((event.summary ?? "").trim() !== title) return null;
+  if (event.extendedProperties?.private?.[SLEEP_SOURCE_PROPERTY] === SLEEP_SOURCE_HEALTH) return null;
+
+  const startIso = event.start?.dateTime;
+  const endIso = event.end?.dateTime;
+  // 終日の予定は時間帯を持たない。記録は必ず時刻付きで作られる（lib/sleep.ts と同じ扱い）。
+  if (!startIso || !endIso) return null;
+
+  const startMs = new Date(startIso).getTime();
+  const endMs = new Date(endIso).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
+
+  return { startMs, endMs };
+}
+
+/**
  * 送る睡眠を選ぶ。
  *
- * - 項目名が睡眠の項目名（`UiSetting.sleepActivityTitle`）と一致する時刻付きの予定
- * - ヘルスケアから取り込んだもの（目印付き）は除く
+ * - `readSleepSpan()` の条件を満たす時刻付きの予定
  * - 終わりが `after` より後で、`now` より前（まだ終わっていないものは送らない）
  *
  * 終わった順に並べる。ショートカットが途中で止まっても、送れたぶんが古いほうから揃う。
+ * 範囲を指定して送るとき（送った履歴を見ない・issue #665）はこちらを使う。
  */
 export function selectSleepForHealth(
   events: SleepHealthEvent[],
@@ -74,27 +116,118 @@ export function selectSleepForHealth(
   const items: SleepHealthItem[] = [];
 
   for (const event of events) {
-    if ((event.summary ?? "").trim() !== input.title) continue;
-    if (event.extendedProperties?.private?.[SLEEP_SOURCE_PROPERTY] === SLEEP_SOURCE_HEALTH) continue;
-
-    const startIso = event.start?.dateTime;
-    const endIso = event.end?.dateTime;
-    // 終日の予定は時間帯を持たない。記録は必ず時刻付きで作られる（lib/sleep.ts と同じ扱い）。
-    if (!startIso || !endIso) continue;
-
-    const startMs = new Date(startIso).getTime();
-    const endMs = new Date(endIso).getTime();
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) continue;
-    if (endMs <= input.after.getTime() || endMs > input.now.getTime()) continue;
+    const span = readSleepSpan(event, input.title);
+    if (!span) continue;
+    if (span.endMs <= input.after.getTime() || span.endMs > input.now.getTime()) continue;
 
     items.push({
-      start: toOffsetIso(new Date(startMs), input.timeZone),
-      end: toOffsetIso(new Date(endMs), input.timeZone),
-      endMs,
+      start: toOffsetIso(new Date(span.startMs), input.timeZone),
+      end: toOffsetIso(new Date(span.endMs), input.timeZone),
+      endMs: span.endMs,
     });
   }
 
   return items.sort((a, b) => a.endMs - b.endMs);
+}
+
+/** ヘルスケアへ送った時点の時間帯（`SleepHealthSent` の1行）。 */
+export type SleepHealthSentRecord = { eventId: string; start: Date; end: Date };
+
+/** 追加で送る睡眠。どの予定のものかを持つ（送り終えたときに履歴へ書くため）。 */
+export type SleepHealthPlanItem = SleepHealthItem & { eventId: string; startMs: number };
+
+/** ヘルスケアに残っていて、利用者に消してもらう時間帯（送った時点の値）。 */
+export type SleepHealthStaleItem = { eventId: string; start: string; end: string; startMs: number };
+
+export type SleepHealthPlan = {
+  /** 追加で送る睡眠（新しいもの＋時刻を直したものの変更後）。終わった順。 */
+  items: SleepHealthPlanItem[];
+  /** ヘルスケアに残っている古い時間帯（時刻を直した・消した・項目名を変えた睡眠の、送った時点の値）。 */
+  stale: SleepHealthStaleItem[];
+};
+
+/**
+ * 送る睡眠と、ヘルスケアに残る古い時間帯を求める（docs/spec.md §40「送ったあとの変更」）。
+ *
+ * ショートカットにはヘルスケアの既存サンプルを更新・削除するアクションが無く、追加しかできない。
+ * そのため、時刻を直した睡眠は「変更後を追加で送る」ことと「送った古い時間帯を利用者に消して
+ * もらう」ことの2つに分ける。
+ *
+ * | 送った履歴 | 予定の状態 | 結果 |
+ * |---|---|---|
+ * | 無い | 終わりが `after` より後 | 追加で送る（従来どおり） |
+ * | 無い | 終わりが `after` 以前 | 何もしない（この仕組みより前に送った分は追跡できない） |
+ * | ある | 時刻が同じ | 何もしない |
+ * | ある | 時刻が違う | 変更後を送り、古い時間帯を消してもらう |
+ * | ある | 削除・項目名の変更・ヘルスケア由来へ変わった | 古い時間帯を消してもらう |
+ * | ある | まだ終わっていない | 何もしない（終わってから比べる） |
+ *
+ * 履歴のうち終わりが `editSince` 以前のものは見ない（読んだ範囲の外にあるため、予定が無いのか
+ * 読んでいないのか区別できない）。
+ */
+export function planSleepHealthSync(
+  events: SleepHealthEvent[],
+  sent: SleepHealthSentRecord[],
+  input: { title: string; after: Date; editSince: Date; now: Date; timeZone: string },
+): SleepHealthPlan {
+  const sentById = new Map(sent.map((record) => [record.eventId, record]));
+  const items: SleepHealthPlanItem[] = [];
+  const stale: SleepHealthStaleItem[] = [];
+  /** いまも睡眠として存在する予定（終わっているかを問わない）。 */
+  const alive = new Set<string>();
+
+  const toStale = (record: SleepHealthSentRecord): SleepHealthStaleItem => ({
+    eventId: record.eventId,
+    start: toOffsetIso(record.start, input.timeZone),
+    end: toOffsetIso(record.end, input.timeZone),
+    startMs: record.start.getTime(),
+  });
+
+  for (const event of events) {
+    const span = readSleepSpan(event, input.title);
+    if (!span || !event.id) continue;
+
+    alive.add(event.id);
+    // まだ終わっていない睡眠は送らず、履歴があっても比べない。
+    if (span.endMs > input.now.getTime()) continue;
+
+    const record = sentById.get(event.id);
+    const item: SleepHealthPlanItem = {
+      eventId: event.id,
+      startMs: span.startMs,
+      start: toOffsetIso(new Date(span.startMs), input.timeZone),
+      end: toOffsetIso(new Date(span.endMs), input.timeZone),
+      endMs: span.endMs,
+    };
+
+    if (!record) {
+      if (span.endMs > input.after.getTime()) items.push(item);
+      continue;
+    }
+
+    const same =
+      record.start.getTime() === span.startMs && record.end.getTime() === span.endMs;
+    if (same) continue;
+
+    items.push(item);
+    stale.push(toStale(record));
+  }
+
+  for (const record of sent) {
+    if (alive.has(record.eventId)) continue;
+    if (record.end.getTime() <= input.editSince.getTime()) continue;
+    stale.push(toStale(record));
+  }
+
+  return {
+    items: items.sort((a, b) => a.endMs - b.endMs),
+    stale: stale.sort((a, b) => a.startMs - b.startMs),
+  };
+}
+
+/** 編集を探す範囲の始まり（`EDIT_LOOKBACK_DAYS` 日前）。 */
+export function sleepHealthEditSince(now: Date): Date {
+  return new Date(now.getTime() - EDIT_LOOKBACK_DAYS * DAY_MS);
 }
 
 /**

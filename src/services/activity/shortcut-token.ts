@@ -122,9 +122,18 @@ export async function markSleepHealthExported(userId: string, until: Date): Prom
   return getSleepHealthExportedUntil(userId);
 }
 
-/** トークンを削除する。以後どの端末のオートメーションからも記録できなくなる。 */
+/**
+ * トークンを削除する。以後どの端末のオートメーションからも記録できなくなる。
+ *
+ * ヘルスケアへ送った履歴（`SleepHealthSent`）も消す。送り終えた印と同じく、削除したあとは
+ * 「何も送っていない」状態から始まる（次は直近2日から）。履歴だけ残すと、印が無いのに
+ * 送った扱いの睡眠があることになる。
+ */
 export async function deleteShortcutToken(userId: string): Promise<boolean> {
-  const result = await db.shortcutToken.deleteMany({ where: { userId } });
+  const [, result] = await db.$transaction([
+    db.sleepHealthSent.deleteMany({ where: { userId } }),
+    db.shortcutToken.deleteMany({ where: { userId } }),
+  ]);
   return result.count > 0;
 }
 

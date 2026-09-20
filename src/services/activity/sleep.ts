@@ -5,9 +5,13 @@ import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import {
   SLEEP_SOURCE_HEALTH,
   SLEEP_SOURCE_PROPERTY,
+  planSleepHealthSync,
   selectSleepForHealth,
+  sleepHealthEditSince,
   sleepHealthWindowStart,
   type SleepHealthItem,
+  type SleepHealthPlan,
+  type SleepHealthStaleItem,
 } from "@/lib/sleep-health";
 import { findOverlappingSleepSpan } from "@/lib/sleep-shortcut";
 import {
@@ -19,6 +23,7 @@ import {
 } from "@/services/activity/running";
 import { getActivityCalendarId, getSleepSettings } from "@/services/activity/settings";
 import { getSleepHealthExportedUntil } from "@/services/activity/shortcut-token";
+import { listSleepHealthSent } from "@/services/activity/sleep-health-sent";
 import { clearTodayEventsCache } from "@/services/activity/today-cache";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
 import { createEvent, listEvents, type GoogleEvent } from "@/services/google-calendar/events";
@@ -203,19 +208,31 @@ export async function recordSleepRange(
 }
 
 /**
- * まだヘルスケアへ送っていない睡眠を選ぶ（docs/spec.md §40「ヘルスケアへ送る」）。
+ * まだヘルスケアへ送っていない睡眠と、送ったあとに変わった睡眠を選ぶ
+ * （docs/spec.md §40「ヘルスケアへ送る」「送ったあとの変更」）。
  *
  * 読むのは活動記録の保存先カレンダー1つで、外部APIへの往復はGoogle 1回（§20）。読み方は
  * `loadSleepEvents()` と揃え、書き込み用の `resolveGoogleAccountForCalendar()` は使わない
  * （「使用」をオフにしたあとも過去の記録は読めるように）。
  *
- * 送り終えた印はここでは進めない。ショートカットが書き終えたあとの POST
- * （`markSleepHealthExported()`）でだけ進める。取得した時点で進めると、ヘルスケアの
- * 書き込み許可を出していない等で途中で止まった夜が二度と返らない。
+ * 送り終えた印・送った履歴はここでは進めない。ショートカットが書き終えたあとの POST
+ * （`markSleepHealthExported()`・`commitPendingSleepHealth()`）でだけ進める。取得した時点で
+ * 進めると、ヘルスケアの書き込み許可を出していない等で途中で止まった夜が二度と返らない。
  */
 export type SleepHealthListResult =
-  /** `after` は探した範囲の始まり（これより後に終わった睡眠を返した）。 */
-  | { ok: true; items: SleepHealthItem[]; after: Date }
+  | {
+      ok: true;
+      /** 追加で送る睡眠。 */
+      items: SleepHealthItem[];
+      /** ヘルスケアに残る古い時間帯。範囲を指定したときは常に空。 */
+      stale: SleepHealthStaleItem[];
+      /** 送った履歴との突き合わせの結果。範囲を指定したとき（履歴を見ない）は null。 */
+      plan: SleepHealthPlan | null;
+      /** 新しい睡眠を探した範囲の始まり（これより後に終わった睡眠を返した）。 */
+      after: Date;
+      /** 送ったあとの変更を探した範囲の始まり。これより前に終わった履歴は見ない。 */
+      editSince: Date;
+    }
   | { ok: false; reason: SleepLoadUnavailable; message: string | null };
 
 export async function listSleepForHealth(
@@ -224,8 +241,8 @@ export async function listSleepForHealth(
     now: Date;
     timeZone: string;
     /**
-     * 過去の日を指定して送るときの範囲（`parseSleepHealthRange()`）。あれば印は見ず、その範囲に
-     * 終わった睡眠を返す。印との関係は route.ts の `until` を参照（一時的な機能・issue #665）。
+     * 過去の日を指定して送るときの範囲（`parseSleepHealthRange()`）。あれば印も送った履歴も見ず、
+     * その範囲に終わった睡眠を返す。印との関係は route.ts の `until` を参照（一時的な機能・issue #665）。
      */
     range?: { after: Date; before: Date };
   },
@@ -235,25 +252,30 @@ export async function listSleepForHealth(
   const calendarId = await getActivityCalendarId(userId);
   if (!calendarId) return { ok: false, reason: "calendar_not_selected", message: null };
 
-  const [setting, { title }, exportedUntil] = await Promise.all([
+  const editSince = sleepHealthEditSince(now);
+
+  const [setting, { title }, exportedUntil, sent] = await Promise.all([
     db.calendarSetting.findFirst({
       where: { userId, calendarId },
       include: { googleAccount: true },
     }),
     getSleepSettings(userId),
     range ? Promise.resolve(null) : getSleepHealthExportedUntil(userId),
+    range ? Promise.resolve([]) : listSleepHealthSent(userId, editSince),
   ]);
   if (!setting) return { ok: false, reason: "calendar_not_selected", message: null };
 
   const after = range?.after ?? sleepHealthWindowStart(exportedUntil, now);
   // 範囲の終わりが未来でも、まだ終わっていない睡眠は送らない。
   const windowEnd = range ? new Date(Math.min(now.getTime(), range.before.getTime())) : now;
+  // 印より前に終わった睡眠も、送った履歴と突き合わせるために読む。
+  const readFrom = range ? after : new Date(Math.min(after.getTime(), editSince.getTime()));
 
   let events: GoogleEvent[];
   try {
     // Googleは範囲に重なる予定を返す。印より前に始まり後に終わった睡眠もここに含まれる。
     events = await listEvents(setting.googleAccount, calendarId, {
-      timeMin: after.toISOString(),
+      timeMin: readFrom.toISOString(),
       timeMax: windowEnd.toISOString(),
     });
   } catch (error) {
@@ -264,9 +286,59 @@ export async function listSleepForHealth(
     };
   }
 
-  return {
-    ok: true,
-    items: selectSleepForHealth(events, { title, after, now: windowEnd, timeZone }),
-    after,
-  };
+  if (range) {
+    return {
+      ok: true,
+      items: selectSleepForHealth(events, { title, after, now: windowEnd, timeZone }),
+      stale: [],
+      plan: null,
+      after,
+      editSince,
+    };
+  }
+
+  const plan = planSleepHealthSync(events, sent, { title, after, editSince, now, timeZone });
+
+  return { ok: true, items: plan.items, stale: plan.stale, plan, after, editSince };
+}
+
+/**
+ * 睡眠画面のために、送ったあとに変わった睡眠の数を数える（docs/spec.md §40「送ったあとの変更」）。
+ *
+ * すでに画面が読んでいる予定（`loadSleepEvents()`）と送った履歴を突き合わせるだけで、Googleへの
+ * 往復は増えない。新しい睡眠（まだ送っていないもの）は数えない。それは毎朝の送信が拾うもので、
+ * ここで知らせたいのは「送ったあとに直したので、ヘルスケアとずれている」ものだけ。
+ */
+export async function countSleepHealthOutdated(
+  userId: string,
+  input: {
+    events: GoogleEvent[];
+    title: string;
+    /** 画面が読んだ範囲の始まり。これより前の履歴は、予定を読んでいないため見ない。 */
+    since: Date;
+    now: Date;
+    timeZone: string;
+  },
+): Promise<number> {
+  const { events, title, now, timeZone } = input;
+
+  // 画面の日数（14日・30日）が `EDIT_LOOKBACK_DAYS` より広くても、数えるのは送信側（GET）が
+  // 見る範囲まで。それより前に直した睡眠まで数えると、ショートカットを走らせても
+  // 何も送られず、押しても件数が減らない帯が残る（issue #667 計画レビューG2）。
+  const apiSince = sleepHealthEditSince(now);
+  const editSince = input.since.getTime() > apiSince.getTime() ? input.since : apiSince;
+
+  const sent = await listSleepHealthSent(userId, editSince);
+  if (sent.length === 0) return 0;
+
+  // `after` を `now` にして新しい睡眠を数えない（終わりが `now` より後のものは元から対象外）。
+  const plan = planSleepHealthSync(events, sent, {
+    title,
+    after: now,
+    editSince,
+    now,
+    timeZone,
+  });
+
+  return plan.stale.length;
 }
