@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.12.1",
+    date: "2026-09-20",
+    changes: [
+      "買い物リストの項目を編集するとき、開いた直後にキーボードが自動で表示されてしまう不具合を修正しました。",
+    ],
+  },
+  {
     version: "3.12.0",
     date: "2026-09-20",
     changes: [
