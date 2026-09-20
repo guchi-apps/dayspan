@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useOffline } from "next/offline";
 import { Check, Plus, Trash2 } from "lucide-react";
 
@@ -49,6 +49,7 @@ export function ShoppingItemDialog({
   onSaved: () => void;
 }) {
   const existing = draft.mode === "edit" ? draft.item : null;
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -183,7 +184,21 @@ export function ShoppingItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
-      <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
+      <DialogContent
+        ref={contentRef}
+        position="bottom"
+        className="max-h-[85dvh] gap-3 overflow-y-auto"
+        // 編集では項目名や予定日が埋まっており、開いてすぐ文字を打つとは限らない。Radixの既定で
+        // 最初の入力欄へ移すとスマートフォンでキーボードが開くため、シート自身へフォーカスを置く。
+        onOpenAutoFocus={
+          existing
+            ? (event) => {
+                event.preventDefault();
+                contentRef.current?.focus();
+              }
+            : undefined
+        }
+      >
         <DialogTitle>{existing ? "買い物リストの項目" : "買い物リストに追加"}</DialogTitle>
         <DialogDescription className="sr-only">
           アイテム名・メモ・カテゴリ・購入予定日・優先度を入力します。
