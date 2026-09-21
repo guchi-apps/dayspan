@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { createClient } from "@/lib/supabase/server";
+import { signOutThisApp } from "@/lib/supabase/sign-out";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
   // 初期リリースは許可されたユーザーのみ利用可能（docs/spec.md §3）。
   // 許可外のアカウントはDaySpan側のユーザーを作らず、Supabaseのセッションも破棄する。
   if (!isAllowedEmail(user.email)) {
-    await supabase.auth.signOut();
+    await signOutThisApp(supabase);
     return NextResponse.redirect(`${origin}/login?error=not_allowed`);
   }
 
