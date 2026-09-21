@@ -3,10 +3,9 @@
 // portfolio の ai-project-summary.ts と同じく、`CLAUDE_CODE_OAUTH_TOKEN`（user:inferenceスコープ）で
 // /v1/messages を直接呼ぶ。新しい依存を増やさずに済ませるため、SDKは使わない。
 // 呼び出しごとにプラン枠を消費するため、呼び出し元は候補が無いときのボタン操作に限る。
+// 呼び出しの共通部分と使用量の記録は anthropic-messages.ts（issue #680）。
 
-const ANTHROPIC_API = "https://api.anthropic.com";
-const ANTHROPIC_VERSION = "2023-06-01";
-const OAUTH_BETA = "oauth-2025-04-20";
+import { requestAnthropicMessage } from "@/lib/anthropic-messages";
 
 /** 生成に使うモデル。プラン枠の消費を抑えるため軽量なモデルを使う。 */
 const MODEL = "claude-haiku-4-5";
@@ -59,10 +58,6 @@ ${input.eventTitle?.trim() || "(未入力)"}
 ${hints || "(なし)"}`;
 }
 
-type AnthropicMessageResponse = {
-  content?: { type: string; text?: string }[];
-};
-
 function extractJsonText(text: string): string {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
@@ -73,28 +68,14 @@ export async function suggestPlaces(
   token: string,
   input: PlaceSuggestInput,
 ): Promise<PlaceSuggestion[]> {
-  const res = await fetch(`${ANTHROPIC_API}/v1/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "anthropic-beta": OAUTH_BETA,
-      "anthropic-version": ANTHROPIC_VERSION,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1024,
-      messages: [{ role: "user", content: buildPlaceSuggestPrompt(input) }],
-    }),
-    cache: "no-store",
+  const { text } = await requestAnthropicMessage({
+    feature: "place-suggest",
+    token,
+    model: MODEL,
+    maxTokens: 1024,
+    prompt: buildPlaceSuggestPrompt(input),
+    failureMessage: "Claudeでの場所の提案に失敗しました",
   });
-
-  if (!res.ok) {
-    throw new Error(`Claudeでの場所の提案に失敗しました (${res.status})`);
-  }
-
-  const json = (await res.json()) as AnthropicMessageResponse;
-  const text = json.content?.find((block) => block.type === "text")?.text?.trim();
   if (!text) {
     throw new Error("Claudeの応答からテキストを取得できませんでした");
   }
