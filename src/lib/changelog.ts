@@ -29,6 +29,18 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.12.2",
+    date: "2026-09-21",
+    changes: [
+      "ログアウトすると、同じGoogleアカウントを使う他のアプリからもログアウトされてしまう不具合を修正しました。DaySpanからログアウトしても、他のアプリのログイン状態はそのまま維持されます。",
+    ],
+    usage: [
+      "これまでどおり、DaySpanのメニューから「ログアウト」を実行します。",
+      "ログアウト後にログイン画面へ戻ることを確認します。",
+      "他のguchi-appsアプリを開いても、ログインし直す必要がないことを確認できれば修正が効いています。",
+    ],
+  },
+  {
     version: "3.12.1",
     date: "2026-09-20",
     changes: [
