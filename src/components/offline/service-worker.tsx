@@ -6,7 +6,7 @@ import { useEffect } from "react";
  * public/sw.js を登録する（docs/spec.md §21）。
  *
  * オフラインでの再読み込みは、ブラウザがHTMLを取りにいく時点で失敗する。
- * next.config.ts の experimental.useOffline はソフトナビゲーションしか肩代わりしないため、
+ * next.config.mjs の experimental.useOffline はソフトナビゲーションしか肩代わりしないため、
  * 起動・再読み込みを賄うにはService Workerが要る。
  *
  * 描画するものは無い。ログイン後の画面（レイアウト）に1つ置いておけばよい。

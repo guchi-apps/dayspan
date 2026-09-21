@@ -101,7 +101,7 @@ Supabaseの Redirect URLs に未登録なら追加してください:
 
 表示されたURLの `/auth/callback` をSupabaseの Redirect URLs に登録してからアクセスしてください。Windows側のLAN IPが変わった場合は、新しいURLの登録が必要です。
 
-`next.config.ts` の `allowedDevOrigins` は `**.sslip.io` を指定しています。`*` は1ラベルにしか一致せず、`192.168.2.114.sslip.io` のようにIPがラベルとして並ぶホスト名には届きません。ここが一致しないと dev サーバーがJavaScriptチャンクをブロックし、画面は表示されるのにボタンが一切反応しない状態になります。
+`next.config.mjs` の `allowedDevOrigins` は `**.sslip.io` を指定しています。`*` は1ラベルにしか一致せず、`192.168.2.114.sslip.io` のようにIPがラベルとして並ぶホスト名には届きません。ここが一致しないと dev サーバーがJavaScriptチャンクをブロックし、画面は表示されるのにボタンが一切反応しない状態になります。
 
 ### 検証コマンド
 

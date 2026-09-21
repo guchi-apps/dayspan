@@ -1,6 +1,11 @@
-import type { NextConfig } from "next";
+// @ts-check
 
-const nextConfig: NextConfig = {
+// 設定ファイルは .mjs にする（TypeScriptに戻さない）。next.config.ts だと、本番の `next start` が
+// 設定ファイルをトランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐して
+// PM2の常駐メモリ（VmHWM）とスレッド数が増える。型は下のJSDocで付ける（issue #675）。
+
+/** @type {import("next").NextConfig} */
+const nextConfig = {
   // スマートフォンからは <IP>.sslip.io で開く。IPは変わりうるためホスト名を直書きしない。
   //
   // ワイルドカードは "*" が1ラベル、"**" が複数ラベルに対応する。sslip.ioのホスト名は

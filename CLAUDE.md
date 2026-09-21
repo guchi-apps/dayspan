@@ -54,6 +54,7 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | 決定 | 理由 |
 |---|---|
 | Prisma は 6 系を使う | 7 系は `datasource url` が廃止され driver adapter が必須。他アプリの構成から外れる |
+| 設定ファイルは `next.config.mjs` にし、TypeScriptに戻さない | `next.config.ts` だと本番の `next start` が設定ファイルをトランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐する。`.mjs` なら読み込まれない。ローカルで本番と同じ形（`node --max-old-space-size=128 next start`）に起動して測ると、`next-swc` のマップは4→0、`Threads` は35→23、`VmHWM` は164MB→138MBだった（issue #675。ops-dashboardのカナリアの横展開）。型は先頭の `// @ts-check` とJSDocで付け、`tsconfig.json` の `include` に `next.config.mjs` を足して `tsc --noEmit` の対象に入れている。`deploy.yml` の掃除の `rm -rf` に `next.config.ts` も残すのは、本番に既にある古いファイルを消す手段を無くさないため |
 | `prisma.config.ts` の `loadEnv()` には `quiet: true` を付ける | dotenv v17は読み込み結果の案内文を **stdout** へ出す。`prisma migrate dev` / `migrate diff --script` が生成するSQLも同じstdoutへ流れるため、案内文が `migration.sql` の1行目へ混ざる。本番の `prisma migrate deploy` がその行で構文エラー（MariaDB 1064 → P3018）になり、さらに `_prisma_migrations` へ失敗が記録されて以後のデプロイがP3009で止まる（VPS上での `migrate resolve --rolled-back` が要る）。実例は `guchi-apps/aide-bot#10` |
 | Notion は `taskDataSourceId` を一次キーにする | API 2025-09-03 以降、プロパティとクエリの対象はデータベースではなくデータソース |
 | 日付・時刻の解釈は `UiSetting.timeZone` で固定する | 実行環境のローカル時刻に依存させると、サーバー（UTC）とブラウザ（JST）で描画がずれてハイドレーションが一致しない |
