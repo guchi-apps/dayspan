@@ -270,6 +270,88 @@ curl -s -X POST -H "Authorization: Bearer $INTERNAL_API_KEY" \
   "http://127.0.0.1:3113/api/internal/notifications/dispatch"
 ```
 
+## `GET /api/internal/ai-usage`
+
+ops-dashboard の「アプリ別のAI利用」（[guchi-apps/ops-dashboard#325](https://github.com/guchi-apps/ops-dashboard/issues/325)）が、
+DaySpanのAI利用（どの機能が、どのモデルで、どれだけ使ったか）を読むための口（issue #680）。
+連携の向きは **ops-dashboard のサーバーがDaySpanを読みにくる**形で、DaySpanから送りつけはしない。
+応答の形の正は ops-dashboard の README「アプリ別のAI利用」と `src/lib/ai-app-usage/parse.ts`。
+
+**認証は他の `/api/internal/*` と別の鍵（`OPS_API_TOKEN`）。** ops-dashboard と同じ値（1Password の
+`op://apps/ops-dashboard/ops-api-token`）で、`Authorization: Bearer <OPS_API_TOKEN>` で受ける。
+**`OPS_API_TOKEN` が未設定のときも、不一致と同じ `401` を返す**（他の鍵が未設定を `503` にしているのと違う。
+呼び出し元との取り決めが「未設定・不一致は401」のため。未設定を素通りにしない点は同じで、空文字同士の一致も通さない）。
+判定は `src/lib/ops-api-auth.ts`。
+
+### 何を記録するか
+
+Anthropic API を呼ぶ箇所は `src/lib/anthropic-messages.ts` の `requestAnthropicMessage` 1つに集約されている。
+**成功した応答1件につき1行**を `AiUsageLog` へ書く（`src/lib/ai-usage-log.ts` の `saveAiUsage`）。
+
+| 列 | 内容 |
+| --- | --- |
+| `feature` | 機能の識別子（下表）。表示名は集計時に引くので、名前を直しても過去の行が割れない |
+| `model` | **応答が返したモデルID**（`claude-haiku-4-5-20251001` のように日付付きのことがある）。応答に無ければ要求したID |
+| `inputTokens` | **キャッシュに載らなかった**入力トークン（`usage.input_tokens` をそのまま） |
+| `outputTokens` | `usage.output_tokens` |
+| `cacheReadTokens` | `usage.cache_read_input_tokens` |
+| `cacheWriteTokens` | `usage.cache_creation_input_tokens` |
+| `createdAt` | 記録時刻 |
+
+| 識別子 | ops-dashboard に出す名前 | 呼び出し元 |
+| --- | --- | --- |
+| `place-suggest` | 場所の候補の提案 | `suggestPlaces`（`src/lib/ai-place-suggest.ts`。docs/spec.md §9） |
+| `travel-estimate` | 移動の所要時間の見積もり | `estimateTravel`（`src/lib/ai-travel-estimate.ts`。docs/spec.md §29） |
+
+- **記録するのは回数とトークン数だけ。** プロンプト本文・応答・入力した場所名・ユーザーは持たない（`userId` も無い。アプリ全体の使用量）
+- **失敗した呼び出しは数えない。** HTTPエラー・通信不達には `usage` が無く、課金もされない前提のため。
+  応答は返ったが解析に失敗した（JSONが壊れていた・テキストが無かった）呼び出しは、トークンを使っているので数える
+- **記録に失敗しても、AIの結果は返す。** すでに課金された結果を、記録できなかっただけで捨てない。
+  失敗はサーバーログに `[dayspan] AI usage log failed:` で出る（このとき使用量が実際より少なく出る）
+- 呼び出し箇所を足すときは `src/lib/ai-usage.ts` の `AI_FEATURES` と `AI_FEATURE_LABELS` に足し、
+  `requestAnthropicMessage` の `feature` を必ず指定する（型で漏れない）
+- 行は消していない。1回の呼び出しが1行で、量は多くない（AIを呼ぶのはどちらもボタン操作だけ）
+
+### レスポンス
+
+```json
+{ "features": [
+  { "label": "場所の候補の提案", "model": "claude-haiku-4-5-20251001",
+    "last24h": { "calls": 2, "inputTokens": 1500, "outputTokens": 150, "cacheReadTokens": 0, "cacheWriteTokens": 0 },
+    "last7d":  { "calls": 3, "inputTokens": 2200, "outputTokens": 220, "cacheReadTokens": 0, "cacheWriteTokens": 0 } } ] }
+```
+
+- 機能×モデルごとに1行。同じ機能でモデルを切り替えていれば2行になる（日付付きのIDと日付なしのIDも別の行になる）
+- 直近24時間・7日間は、**同じ「いま」を上限**に切った集計（`getAiUsageResponse`）
+- 7日間にだけ呼び出しがある行は、24時間側を `0` で埋める（ops-dashboard は両方の期間を必須にしている）
+- 呼び出しが無ければ `{ "features": [] }`（エラーにしない）
+- 数値はすべて負でない整数。**1行でも形が違うと、ops-dashboard は応答全体を「取得不可」にする**ため、
+  形を変えるときは ops-dashboard 側の `parse.ts` と突き合わせる
+- `Cache-Control: no-store`。集計に失敗したときは `500`（`aggregation_failed`）
+
+### 連携させるには
+
+ops-dashboard の `AI_APP_USAGE_SOURCES`（JSON配列）に、DaySpanのURLを足す（ops-dashboard 側の設定）。
+ops-dashboard は `url` に https か同じホスト内のループバックの http だけを受け付ける。
+
+```json
+[{"app":"dayspan","url":"https://dayspan.gucchii.com/api/internal/ai-usage"}]
+```
+
+### 動作確認
+
+```bash
+# 使用量（ローカルなら .env.local の OPS_API_TOKEN と同じ値）
+curl -s -H "Authorization: Bearer $OPS_API_TOKEN" "http://127.0.0.1:3113/api/internal/ai-usage" | jq .
+
+# 認証エラー（401 が返る。サーバー側の OPS_API_TOKEN が未設定でも同じ）
+curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:3113/api/internal/ai-usage"
+```
+
+テストは `src/lib/ai-usage.test.mts`（集計・応答の形）、`src/lib/anthropic-messages.test.mts`
+（記録・失敗時の扱い）、`src/lib/ops-api-auth.test.mts`（認証）。**テストは記録先を
+`setAiUsageRecorder` で差し替える**。差し替え忘れると `fetch` をスタブしたテストが開発DBへ行を書く。
+
 ## 動作確認
 
 ```bash
@@ -294,8 +376,8 @@ curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:3113/api/internal/sch
 
 | 場所 | 設定 |
 | --- | --- |
-| 1Password | `apps/dayspan` の `internal-api-key`（読み取り用） / `internal-events-api-key`（書き込み用）フィールド（**正**） |
-| GitHub Secret | `INTERNAL_API_KEY` / `INTERNAL_EVENTS_API_KEY`。`scripts/sync-github-secrets.sh --only INTERNAL_API_KEY,INTERNAL_EVENTS_API_KEY` で1Passwordから同期する |
+| 1Password | `apps/dayspan` の `internal-api-key`（読み取り用） / `internal-events-api-key`（書き込み用）フィールド（**正**）。`ai-usage` 用の `OPS_API_TOKEN` だけは `apps/ops-dashboard` の `ops-api-token`（ops-dashboard側が正） |
+| GitHub Secret | `INTERNAL_API_KEY` / `INTERNAL_EVENTS_API_KEY` / `OPS_API_TOKEN`。`scripts/sync-github-secrets.sh --only INTERNAL_API_KEY,INTERNAL_EVENTS_API_KEY,OPS_API_TOKEN` で1Passwordから同期する（`gh workflow run sync-secrets.yml -f only=OPS_API_TOKEN` でも可） |
 | 対応表 | `.github/secrets-manifest.tsv` |
 | 本番 `.env` | `.github/workflows/deploy.yml` が `update_env` で書き込む |
 
