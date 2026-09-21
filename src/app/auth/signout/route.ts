@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getRequestOrigin } from "@/lib/request-origin";
 import { createClient } from "@/lib/supabase/server";
+import { signOutThisApp } from "@/lib/supabase/sign-out";
 
 /**
  * ログアウトする。
@@ -13,7 +14,7 @@ import { createClient } from "@/lib/supabase/server";
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signOut();
+  const { error } = await signOutThisApp(supabase);
   if (error) {
     console.error("[dayspan] ログアウトに失敗:", error.message);
   }
