@@ -2,7 +2,7 @@
  * DaySpan の Service Worker（docs/spec.md §21）。
  *
  * 役割は「オンラインのときに開いた画面を、オフラインでも開けるようにする」ことだけに絞る。
- * next.config.ts の experimental.useOffline は、ソフトナビゲーションと Server Actions を
+ * next.config.mjs の experimental.useOffline は、ソフトナビゲーションと Server Actions を
  * オフライン中に保留して再接続後に送り直してくれるが、ページの再読み込み（コールドスタート）は
  * ブラウザがHTMLを取りにいくため、Service Worker が無いと必ず失敗する。そこを埋める。
  *
