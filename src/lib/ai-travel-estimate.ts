@@ -5,12 +5,10 @@
 //
 // ここで出るのはあくまで目安で、時刻表や道路状況は見ていない。画面でもそう伝える。
 // 呼び出しごとにプラン枠を消費するため、呼び出し元はボタン操作に限る。
+// 呼び出しの共通部分と使用量の記録は anthropic-messages.ts（issue #680）。
 
+import { requestAnthropicMessage } from "@/lib/anthropic-messages";
 import { TRAVEL_MODE_LABELS, TRAVEL_MODES, isTravelMode, type TravelMode } from "@/types/calendar";
-
-const ANTHROPIC_API = "https://api.anthropic.com";
-const ANTHROPIC_VERSION = "2023-06-01";
-const OAUTH_BETA = "oauth-2025-04-20";
 
 /** 生成に使うモデル。プラン枠の消費を抑えるため軽量なモデルを使う。 */
 const MODEL = "claude-haiku-4-5";
@@ -87,10 +85,6 @@ ${input.origin}
 ${input.destination}`;
 }
 
-type AnthropicMessageResponse = {
-  content?: { type: string; text?: string }[];
-};
-
 function extractJsonText(text: string): string {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
@@ -101,28 +95,14 @@ export async function estimateTravel(
   token: string,
   input: TravelEstimateInput,
 ): Promise<TravelEstimate[]> {
-  const res = await fetch(`${ANTHROPIC_API}/v1/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "anthropic-beta": OAUTH_BETA,
-      "anthropic-version": ANTHROPIC_VERSION,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1024,
-      messages: [{ role: "user", content: buildTravelEstimatePrompt(input) }],
-    }),
-    cache: "no-store",
+  const { text } = await requestAnthropicMessage({
+    feature: "travel-estimate",
+    token,
+    model: MODEL,
+    maxTokens: 1024,
+    prompt: buildTravelEstimatePrompt(input),
+    failureMessage: "Claudeでの所要時間の見積もりに失敗しました",
   });
-
-  if (!res.ok) {
-    throw new Error(`Claudeでの所要時間の見積もりに失敗しました (${res.status})`);
-  }
-
-  const json = (await res.json()) as AnthropicMessageResponse;
-  const text = json.content?.find((block) => block.type === "text")?.text?.trim();
   if (!text) {
     throw new Error("Claudeの応答からテキストを取得できませんでした");
   }
