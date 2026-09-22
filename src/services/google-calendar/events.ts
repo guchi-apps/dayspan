@@ -189,6 +189,9 @@ export type EventWriteInput = {
   /**
    * 仮の予定かどうか（issue #688）。GoogleのEvent.statusフィールドをそのまま使う
    * （tentative | confirmed。cancelledは削除相当で別の意味のためここでは使わない）。
+   * 未指定（undefined）なら status を送らず、Google側の既存の状態に触らない
+   * （location/description と同じ扱い。ドラッグのように仮/確定の判断を持たない更新から
+   * 呼ばれても、黙って確定へ変えてしまわないため）。
    */
   tentative?: boolean;
 };
@@ -246,9 +249,11 @@ function toRequestBody(input: EventWriteInput, { clearOther = false } = {}) {
     attendees: input.attendees?.length ? input.attendees.map((email) => ({ email })) : undefined,
     recurrence: input.recurrenceRule ? [input.recurrenceRule] : undefined,
     extendedProperties: input.privateProperties ? { private: input.privateProperties } : undefined,
-    // 仮の予定（issue #688）。PATCHは部分更新のため、送らないと既存の値が残る。
-    // 終日/時刻ありの date/dateTime と違い clearOther を待たず常に明示する。
-    status: input.tentative ? "tentative" : "confirmed",
+    // 仮の予定（issue #688）。tentative を明示的に指定したときだけ status を送る。
+    // location/description と同じ「送らなければ既存の値に触らない」扱いにする。
+    // 未指定のまま常に confirmed を送ると、ドラッグ（tentative を持たないPATCH）で
+    // 仮の予定が黙って確定してしまう（PRレビューの指摘。#691）。
+    status: input.tentative === undefined ? undefined : input.tentative ? "tentative" : "confirmed",
   };
 }
 
