@@ -427,6 +427,8 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | 「ダイアログが開いているか」はShell/Bodyの状態を列挙せず、DOMを`document.querySelector('[role="dialog"], [role="alertdialog"]')`で見て判定する（`use-calendar-shortcuts.ts`） | アプリ内のダイアログ（ドロワー・下部ナビのシート・入力/詳細/確認ダイアログ）はすべて共通の`Dialog`（Radix）を通り、開くとroleがDOMに立つ。状態を列挙する形だと、`CalendarBody`自身が持つ`workDraft`のように親（`CalendarShell`）から見えない状態を取りこぼしたり、新しいダイアログが増えるたびに列挙し直す必要が生まれる（issue #635 計画レビューG1の指摘） |
 | キーボードショートカットのリスナーは最新の引数をrefで読み、初回マウント時に1度だけ登録する（`use-calendar-shortcuts.ts`） | 渡すコールバックはShell/Bodyの再レンダリングのたびに作り直されるため、素直に依存配列へ含めるとレンダーのたびにaddEventListener/removeEventListenerを繰り返す。ドラッグ追従をReactのstateにせずDOMへ直接書いているのと同じ考え方（issue #635） |
 | `w`（週表示）キーは押した時点の`matchMedia("(min-width: 768px)")`で判定する | 週表示のセグメンテッドボタンはPCの幅（`desktopOnly`）でしか出ない。ウィンドウを狭めたPCでそのまま`w`を受け付けると、画面上では選べない表示形式に切り替わる。サーバー描画時ではなく押した時点で読むためハイドレーションの不一致は起きない（issue #635 計画レビューG1の指摘） |
+| 仮の予定はDaySpan独自DBを持たず、Google CalendarのEvent.status（tentative）をそのまま使う | 移動・タスクの紐づけ・予定の中止/不参加は「相手のDBに欄が無いものは線だけDaySpanが持つ」設計だが、仮の予定はGoogleにもともとstatusという欄があるため、この原則の対象にならない。Googleの欄をそのまま使えばPrismaスキーマ変更・マイグレーションが不要になる（issue #688） |
+| 仮の予定の確定は専用の軽量PATCH（`confirmEvent()`）にし、フルの`updateEvent()`を経由させない | 確定操作はGoogleのstatusフィールドだけを`confirmed`へ変える。タイトル・日時など他の項目を毎回送らせる理由が無い。削除と違い確認は挟まない（編集フォームでいつでも「仮の予定」へ戻せるため。issue #688） |
 
 ## デプロイ
 

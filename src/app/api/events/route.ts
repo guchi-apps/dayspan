@@ -41,6 +41,7 @@ export async function POST(request: Request) {
       attendees: body.attendees ?? [],
       recurrenceRule: body.recurrenceRule ?? null,
       timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
+      tentative: body.tentative ?? false,
     });
     return NextResponse.json({ id: created.id });
   } catch (error) {

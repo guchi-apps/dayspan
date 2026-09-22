@@ -81,6 +81,7 @@ export async function PATCH(
       description: body.description ?? null,
       attendees: body.attendees ?? [],
       timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
+      tentative: body.tentative ?? false,
     });
 
     // 紐づいたタスクの日付（期限・予定日）を、動かした先へ合わせる（docs/spec.md §31）。編集画面からの保存も

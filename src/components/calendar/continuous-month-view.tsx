@@ -816,6 +816,10 @@ function EventChip({
   const colors = tintedEventColors(event.color);
   // 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。
   const outcome = event.outcome ?? null;
+  // 仮の予定・中止/不参加の両方が付いていることもあるため、まとめて添える（issue #688）。
+  const statusPrefix = [event.tentative && "仮", outcome && EVENT_OUTCOME_KIND_LABELS[outcome.kind]]
+    .filter(Boolean)
+    .join("・");
 
   return (
     <button
@@ -834,6 +838,8 @@ function EventChip({
         // 続きの側は左の色帯も持てないため、カレンダー色は面だけが伝える。
         continuesBefore && "rounded-l-none border-l-0",
         continuesAfter && "rounded-r-none border-r-0",
+        // 仮の予定（issue #688）は枠線を破線にする（タスクの予定日枠と同じ表現）。
+        event.tentative && "border-dashed",
       )}
       style={{
         backgroundColor: colors.background,
@@ -845,9 +851,7 @@ function EventChip({
           ? null
           : { borderLeftWidth: "3px", borderLeftColor: colors.accent, paddingLeft: "2px" }),
       }}
-      title={
-        outcome ? `${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}: ${event.title}` : event.title
-      }
+      title={statusPrefix ? `${statusPrefix}: ${event.title}` : event.title}
     >
       {/* 印は名前の直前。狭い列では時刻（sm:inline）の側が先に落ちる。 */}
       {outcome && !continuesBefore && <EventOutcomeMark className="size-[9px] sm:size-2.5" />}
@@ -866,6 +870,7 @@ function EventChip({
       */}
       <span className={cn("clip-nowrap", outcome && "line-through")}>{event.title}</span>
       {/* 色と線だけに意味を持たせない。中止か不参加かは読み上げにも残す。 */}
+      {event.tentative && <span className="sr-only">（仮の予定）</span>}
       {outcome && <span className="sr-only">（{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}）</span>}
     </button>
   );
