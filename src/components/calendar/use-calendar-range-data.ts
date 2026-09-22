@@ -135,6 +135,13 @@ export function useCalendarRangeData({
   // 「いつ・どの期間まで取得できたか」は外部の記録（ref）として扱う。
   const inFlightKeyRef = useRef<string | null>(null);
   const fetchedRef = useRef<{ key: string | null; fetchedAt: number }>({ key: null, fetchedAt: 0 });
+  // 表示形式・日付の連続切り替えでは、古い期間への要求が新しい期間への要求より後に
+  // 届くことがある（ネットワークの遅延順は要求順と限らない）。単調増加するIDを
+  // 要求ごとに発行し、応答が届いた時点で「自分が最後に発行した要求か」を確認してから
+  // state/fetchedRef を更新する。一致しなければ、すでに用済みの古い応答として捨てる
+  // （追い越された要求の分は fetchedRef も更新しないため、あとで同じ期間へ戻ってきたときは
+  // 改めて取り直しになり、「上書きされたまま空表示に固定される」ことが無い。issue #702）。
+  const latestRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (seedView === "month") return;
@@ -165,6 +172,7 @@ export function useCalendarRangeData({
 
   const fetchRange = useCallback(async (targetView: CalendarView, targetAnchorKey: string) => {
     const targetKey = rangeKey(targetView, targetAnchorKey);
+    const requestId = ++latestRequestIdRef.current;
     inFlightKeyRef.current = targetKey;
     onLoadingChangeRef.current(true);
 
@@ -174,10 +182,14 @@ export function useCalendarRangeData({
       if (!response.ok) throw new Error(`status ${response.status}`);
 
       const data = (await response.json()) as CalendarLoadResult;
+      // 自分より後に発行された要求があれば、追い越された古い応答として捨てる。
+      if (latestRequestIdRef.current !== requestId) return;
       fetchedRef.current = { key: targetKey, fetchedAt: Date.now() };
       setState({ key: targetKey, data: normalize(data) });
       setLoadError(null);
     } catch {
+      if (latestRequestIdRef.current !== requestId) return;
+
       // 取得できなくても期間そのものは「試した」ことにする。刻まないと、
       // 取得できないまま同じ期間へ要求を出し続けることになる。
       fetchedRef.current = { key: targetKey, fetchedAt: Date.now() };
@@ -187,8 +199,12 @@ export function useCalendarRangeData({
         isOfflineNow(offlineRef.current) ? null : "表示範囲の予定とタスクを取得できませんでした。",
       );
     } finally {
-      if (inFlightKeyRef.current === targetKey) inFlightKeyRef.current = null;
-      onLoadingChangeRef.current(false);
+      // 追い越された要求は、自分がin-flightの主でなくなっている（新しい要求が
+      // inFlightKeyRef・ローディング表示を引き継いでいる）ため、ここで下ろさない。
+      if (latestRequestIdRef.current === requestId) {
+        if (inFlightKeyRef.current === targetKey) inFlightKeyRef.current = null;
+        onLoadingChangeRef.current(false);
+      }
     }
   }, []);
 

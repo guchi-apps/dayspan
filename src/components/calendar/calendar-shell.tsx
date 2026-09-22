@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
 import {
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -64,7 +63,6 @@ import type { TravelSettings } from "@/services/travel/settings";
 import { coversDate, type WorkCapabilities } from "@/types/work";
 import { dayTone, weekdayLabel } from "@/lib/day-tone";
 
-import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { EventDetailDialog } from "./event-detail-dialog";
 import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
@@ -198,8 +196,9 @@ export function CalendarShell({
   // ナビからの移動はソフトナビゲーションで、Service Worker が保存できないため。
   useWarmOfflinePage("/calendar");
 
-  // 月のデータを取りにいっているか。取得はSuspense境界の内側で起きるが、
-  // 進行の表示はヘッダー直下（境界の外）にあるため、ここまで上げてもらう。
+  // 月・日/3日/週いずれかのデータを取りにいっているか。取得自体は `CalendarBody`
+  // 配下（`useCalendarChunks`/`useCalendarRangeData`）の中で起きるが、進行の表示は
+  // ヘッダー直下にあるため、`onLoadingChange` 経由でここまで上げてもらう。
   const [windowLoading, setWindowLoading] = useState(false);
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
 
@@ -891,87 +890,88 @@ export function CalendarShell({
       <OfflineNotice />
 
       {/*
-        予定とタスクの到着を待つ必要があるのはグリッドだけ。どの期間を見ているかは
-        取得前から決まっているため、ヘッダーは待たせずに描く。
-        なお前へ・次へは startTransition の中で遷移するため、ここは骨組みへ戻らず、
-        表示中の内容を保ったまま差し替わる（操作のたびに画面が消えることはない）。
+        グリッドの枠組み（どちらのコンポーネントを、どんな日付/週の並びで描くか）は
+        `nav`（useOptimistic の楽観値）だけで決まり、予定・タスクの取得を待たない
+        （issue #697）。`CalendarBody` はもう `use()` でPromiseを消費しないため、
+        ここをSuspenseで包む必要は無い。取得中かどうかは `onLoadingChange` で
+        上のヘッダー直下（LinearProgress）へ伝える。
+        なお前へ・次へは startTransition の中で遷移するため、表示中の内容を保った
+        まま差し替わる（操作のたびに画面が消えることはない）。
       */}
-      <Suspense fallback={<CalendarGridSkeleton />}>
-        <CalendarBody
-          dataPromise={dataPromise}
-          tagCatalogPromise={tagCatalogPromise}
-          placeCatalogPromise={placeCatalogPromise}
-          view={nav.view}
-          anchorKey={nav.anchorKey}
-          seedView={view}
-          seedAnchorKey={anchorKey}
-          days={gridDays}
-          weeks={nav.view === "month" ? monthWeeks : weeks}
-          weekStartsOn={weekStartsOn}
-          utils={utils}
-          timeZone={timeZone}
-          windowMonths={windowMonths}
-          serverMonths={serverMonths}
-          scrollTarget={scrollTarget}
-          autoRefreshSeconds={autoRefreshSeconds}
-          offline={offline}
-          dragError={dragError}
-          itemDialog={itemDialog}
-          quickDraft={quickDraft}
-          viewingEvent={viewingEvent}
-          viewingTask={viewingTask}
-          viewingReminder={viewingReminder}
-          viewingTravel={viewingTravel}
-          linkingEvent={linkingEvent}
-          virtual={virtual}
-          onVisibleMonthChange={handleVisibleMonthChange}
-          onVisibleWeekChange={handleVisibleWeekChange}
-          onSwipe={moveDays}
-          onSelectDay={(dateKey) => navigate("day1", dateKey)}
-          onOpenEvent={openEvent}
-          onOpenTask={openTask}
-          onOpenReminder={openReminder}
-          onOpenTravel={openTravel}
-          onOpenTravelForEvent={openTravelFromEvent}
-          onEditEvent={editEvent}
-          onDuplicateEvent={duplicateEvent}
-          onEditTask={editTask}
-          onEditReminder={editReminder}
-          onEditTravel={editTravel}
-          onAddTravelForEvent={addTravelForEvent}
-          onLinkTaskForEvent={linkTaskForEvent}
-          onCreateTaskForEvent={createTaskForEvent}
-          onSelectSlot={(dateKey, minutes) => {
-            if (offline) return;
-            setQuickDraft(toQuickEventDraft(dateKey, minutes));
-          }}
-          onSelectRange={({ dateKey, startMinutes, endMinutes }) => {
-            if (offline) return;
-            setQuickDraft(toQuickEventDraft(dateKey, startMinutes, endMinutes));
-          }}
-          onQuickAddOnDay={(dateKey) => {
-            if (offline) return;
-            setQuickDraft(toQuickEventDraft(dateKey, DEFAULT_START_MINUTES));
-          }}
-          onOpenEventForm={openEventForm}
-          onDragCommit={commitDrag}
-          onAllDayDragCommit={commitAllDayDrag}
-          onAdd={openAdd}
-          onCloseDialogs={closeDialogs}
-          onRefreshAll={refreshAll}
-          registerInvalidate={registerInvalidate}
-          onLoadingChange={setWindowLoading}
-          runningActivity={initialRunningActivity}
-          activityCalendars={activityCalendars}
-          holidayCalendars={holidayCalendars}
-          onOpenActivity={openActivity}
-          work={work}
-          onGoToday={goToday}
-          onMove={move}
-          onSwitchView={switchView}
-          onOpenShortcuts={() => setShortcutsOpen(true)}
-        />
-      </Suspense>
+      <CalendarBody
+        dataPromise={dataPromise}
+        tagCatalogPromise={tagCatalogPromise}
+        placeCatalogPromise={placeCatalogPromise}
+        view={nav.view}
+        anchorKey={nav.anchorKey}
+        seedView={view}
+        seedAnchorKey={anchorKey}
+        days={gridDays}
+        weeks={nav.view === "month" ? monthWeeks : weeks}
+        weekStartsOn={weekStartsOn}
+        utils={utils}
+        timeZone={timeZone}
+        windowMonths={windowMonths}
+        serverMonths={serverMonths}
+        scrollTarget={scrollTarget}
+        autoRefreshSeconds={autoRefreshSeconds}
+        offline={offline}
+        dragError={dragError}
+        itemDialog={itemDialog}
+        quickDraft={quickDraft}
+        viewingEvent={viewingEvent}
+        viewingTask={viewingTask}
+        viewingReminder={viewingReminder}
+        viewingTravel={viewingTravel}
+        linkingEvent={linkingEvent}
+        virtual={virtual}
+        onVisibleMonthChange={handleVisibleMonthChange}
+        onVisibleWeekChange={handleVisibleWeekChange}
+        onSwipe={moveDays}
+        onSelectDay={(dateKey) => navigate("day1", dateKey)}
+        onOpenEvent={openEvent}
+        onOpenTask={openTask}
+        onOpenReminder={openReminder}
+        onOpenTravel={openTravel}
+        onOpenTravelForEvent={openTravelFromEvent}
+        onEditEvent={editEvent}
+        onDuplicateEvent={duplicateEvent}
+        onEditTask={editTask}
+        onEditReminder={editReminder}
+        onEditTravel={editTravel}
+        onAddTravelForEvent={addTravelForEvent}
+        onLinkTaskForEvent={linkTaskForEvent}
+        onCreateTaskForEvent={createTaskForEvent}
+        onSelectSlot={(dateKey, minutes) => {
+          if (offline) return;
+          setQuickDraft(toQuickEventDraft(dateKey, minutes));
+        }}
+        onSelectRange={({ dateKey, startMinutes, endMinutes }) => {
+          if (offline) return;
+          setQuickDraft(toQuickEventDraft(dateKey, startMinutes, endMinutes));
+        }}
+        onQuickAddOnDay={(dateKey) => {
+          if (offline) return;
+          setQuickDraft(toQuickEventDraft(dateKey, DEFAULT_START_MINUTES));
+        }}
+        onOpenEventForm={openEventForm}
+        onDragCommit={commitDrag}
+        onAllDayDragCommit={commitAllDayDrag}
+        onAdd={openAdd}
+        onCloseDialogs={closeDialogs}
+        onRefreshAll={refreshAll}
+        registerInvalidate={registerInvalidate}
+        onLoadingChange={setWindowLoading}
+        runningActivity={initialRunningActivity}
+        activityCalendars={activityCalendars}
+        holidayCalendars={holidayCalendars}
+        onOpenActivity={openActivity}
+        work={work}
+        onGoToday={goToday}
+        onMove={move}
+        onSwitchView={switchView}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
+      />
 
       <RunningActivityBar running={initialRunningActivity} />
       <BottomNav
