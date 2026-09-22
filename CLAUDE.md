@@ -431,6 +431,9 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | 仮の予定はDaySpan独自DBを持たず、Google CalendarのEvent.status（tentative）をそのまま使う | 移動・タスクの紐づけ・予定の中止/不参加は「相手のDBに欄が無いものは線だけDaySpanが持つ」設計だが、仮の予定はGoogleにもともとstatusという欄があるため、この原則の対象にならない。Googleの欄をそのまま使えばPrismaスキーマ変更・マイグレーションが不要になる（issue #688） |
 | 仮の予定の確定は専用の軽量PATCH（`confirmEvent()`）にし、フルの`updateEvent()`を経由させない | 確定操作はGoogleのstatusフィールドだけを`confirmed`へ変える。タイトル・日時など他の項目を毎回送らせる理由が無い。削除と違い確認は挟まない（編集フォームでいつでも「仮の予定」へ戻せるため。issue #688） |
 | `EventWriteInput.tentative`が未指定（undefined）なら`toRequestBody()`はstatusを送らない | 当初は`status: input.tentative ? "tentative" : "confirmed"`と常に明示していたが、`commitDrag()`/`commitAllDayDrag()`（時間グリッド・終日エリアのドラッグ）はtentativeを持たずにPATCHするため、`PATCH /api/events/[eventId]`側の`tentative: body.tentative ?? false`と合わさって、仮の予定をドラッグしただけで黙って確定してしまっていた（PR #691レビュー指摘）。`location`/`description`と同じ「送らなければ既存の値に触らない」扱いに揃え、未指定はundefinedのまま渡す。`event-form.tsx`（編集フォーム）は引き続き常にtentativeを明示するため、通常の編集・確定ボタンの挙動には影響しない（issue #688・#692） |
+| 祝日として扱うカレンダーは固定IDをハードコードせず、設定（`UiSetting.holidayCalendarId`）で選ばせる | Googleの「日本の祝日」等の公開カレンダーは読み取り専用（`accessRole: reader`）で購読されるのが通常で、書き込み可能なカレンダーだけを集める`WritableCalendar`（`loadWritableCalendars`・活動記録/移動の保存先と同じ枠組み）には乗らない。固定IDを埋め込むと、利用者が別IDで祝日カレンダーを追加している場合に対応できない。選択肢は`loadCalendarSettings()`が返す表示オン（`visible`）のカレンダー全体から選ぶ（issue #699） |
+| 祝日カレンダーの予定は、終日の並び（月表示の週の帯・時間グリッドの終日エリア）で常に最上部（lane 0）に表示する | 事前ソートに「対象カレンダーの予定を最優先」という条件を足すだけで実現する。lane割り当ては早い者勝ちのforループ（既存のまま）のため、ソート順を変えるだけで対象の予定が確実にlane 0を取れる。新しい`kind`は追加せず、祝日の予定も通常の`CalendarEventItem`（`kind: "event"`）のまま扱う（見た目は変えず並び順だけを変える最小差分・issue #699） |
+| 日付の色（`dayTone()`）が使うローカルの祝日計算と、終日エリアの祝日カレンダー判定は独立させる | 前者は`japanese-holidays.ts`による全利用者共通の計算で、勤務画面の祝日名表示にも使われている。後者は利用者がGoogleで購読している祝日カレンダーの有無に依存する。祝日カレンダーを設定していない利用者でも、日付の色分けは従来どおり動く必要がある（issue #699） |
 
 ## デプロイ
 
