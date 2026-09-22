@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CalendarClock,
   ChevronRight,
+  CircleDashed,
   Copy,
   ExternalLink,
   MapPin,
@@ -41,6 +42,7 @@ import { DeleteItemDialog } from "./delete-item-dialog";
 import { EventOutcomeDialog } from "./event-outcome-dialog";
 import { EventOutcomeMark } from "./event-outcome-mark";
 import { placeCoordinates } from "./location-input";
+import { readErrorMessage } from "./response-error";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelMark } from "./travel-mark";
 import type { TouchedRange } from "./use-calendar-chunks";
@@ -69,6 +71,7 @@ export function EventDetailDialog({
   places = [],
   onDeleted,
   onOutcomeChanged,
+  onConfirmed,
 }: {
   event: CalendarEventItem;
   timeZone: string;
@@ -103,6 +106,8 @@ export function EventDetailDialog({
    * ダイアログは開いたままにするため、削除（onDeleted）とは別に受ける。
    */
   onOutcomeChanged: (outcome: EventOutcomeItem | null) => void;
+  /** 「仮の予定を確定する」が成功したときの処理（issue #688）。ダイアログは閉じない。 */
+  onConfirmed: () => void;
 }) {
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
@@ -111,6 +116,9 @@ export function EventDetailDialog({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // 中止・不参加の記録（docs/spec.md §37）。表示画面を閉じずに重ねて開く。
   const [editingOutcome, setEditingOutcome] = useState(false);
+  // 仮の予定の確定（issue #688）。確認は挟まない（編集フォームでいつでも仮へ戻せるため）。
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const close = () => {
     setOpen(false);
@@ -144,6 +152,27 @@ export function EventDetailDialog({
   const linkTask = () => {
     setOpen(false);
     setTimeout(onLinkTask, 150);
+  };
+
+  const confirmTentative = async () => {
+    setConfirmBusy(true);
+    setConfirmError(null);
+    try {
+      const response = await fetch(`/api/events/${encodeURIComponent(event.id)}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ calendarId: event.calendarId }),
+      });
+      if (!response.ok) {
+        setConfirmError(await readErrorMessage(response, "確定できませんでした。"));
+        return;
+      }
+      onConfirmed();
+    } catch (cause) {
+      setConfirmError(cause instanceof Error ? cause.message : "確定に失敗しました。");
+    } finally {
+      setConfirmBusy(false);
+    }
   };
 
   /*
@@ -232,6 +261,20 @@ export function EventDetailDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3 text-sm">
+          {/*
+            仮の予定（issue #688）。まだ本決まりでないという状態を、日時より先に伝える
+            （中止・不参加の帯と同じ考え方）。
+          */}
+          {event.tentative && (
+            <div className="flex items-start gap-2.5 rounded-md border border-tertiary/40 bg-tertiary-container px-3 py-2.5 text-on-tertiary-container">
+              <CircleDashed className="mt-0.5 size-4" />
+              <div className="flex min-w-0 flex-col">
+                <span className="font-bold">仮の予定です</span>
+                {confirmError && <span className="text-destructive">{confirmError}</span>}
+              </div>
+            </div>
+          )}
+
           {/*
             記録は日時より先に出す。この予定が起こらなかったことは、いつだったかより先に
             伝わっている必要がある（同じ予定を見返す理由がそこにあるため）。
@@ -352,6 +395,23 @@ export function EventDetailDialog({
             押してみるまで分からないため、名前を添えたボタンとして並べる。
           */}
           <div className="flex flex-wrap gap-2">
+            {/*
+              仮の予定を確定する（issue #688）。確認は挟まない。編集フォームでいつでも
+              「仮の予定」を選び直せるため、削除のような戻せない操作ではない。
+            */}
+            {event.tentative && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-tertiary-container text-on-tertiary-container"
+                disabled={readOnly || confirmBusy}
+                onClick={confirmTentative}
+              >
+                <CircleDashed className="size-4" />
+                仮の予定を確定する
+              </Button>
+            )}
+
             {canAddTravel && (
               <Button
                 variant="outline"

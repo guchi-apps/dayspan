@@ -922,6 +922,9 @@ function DayColumn({
                 // は、面が淡くなった以上（issue #573）掛けると面も文字も消える。「起こらなかった」
                 // は文字色・打ち消し線・印で示す。
                 outcome ? "text-on-surface-variant" : "text-on-surface",
+                // 仮の予定（issue #688）は、タスクの予定日枠と同じく枠線を破線にして
+                // 「まだ本決まりでない」を示す。
+                event.tentative && "border-dashed",
               )}
               style={{
                 backgroundColor: colors.background,
@@ -931,12 +934,13 @@ function DayColumn({
                 borderLeftColor: colors.accent,
                 paddingLeft: "4px",
               }}
-              title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${outcome ? `[${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}] ` : ""}${event.title}`}
+              title={`${utils.formatTime(event.start)}–${utils.formatTime(event.end)} ${event.tentative ? "[仮] " : ""}${outcome ? `[${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}] ` : ""}${event.title}`}
             >
               <div className="clip-nowrap flex shrink-0 items-center gap-1 font-semibold">
                 {outcome && <EventOutcomeMark className="size-2.5" />}
                 {/* 打ち消し線は名前にだけ引く。時刻・場所まで引くと枠の全行に線が乗る。 */}
                 <span className={cn("clip-nowrap", outcome && "line-through")}>{event.title}</span>
+                {event.tentative && <span className="sr-only">（仮の予定）</span>}
                 {outcome && (
                   <span className="sr-only">（{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}）</span>
                 )}
@@ -1641,6 +1645,10 @@ function AllDayEventChip({
   const quiet = subdued ? subduedEventColors(event.color) : null;
   // 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。
   const outcome = event.outcome ?? null;
+  // 仮の予定・中止/不参加の両方が付いていることもあるため、まとめて添える（issue #688）。
+  const statusPrefix = [event.tentative && "仮", outcome && EVENT_OUTCOME_KIND_LABELS[outcome.kind]]
+    .filter(Boolean)
+    .join("・");
 
   return (
     <button
@@ -1656,6 +1664,8 @@ function AllDayEventChip({
         continuesBefore && "rounded-l-none border-l-0",
         continuesAfter && "rounded-r-none border-r-0",
         dragging && "ring-2 ring-foreground/50",
+        // 仮の予定（issue #688）は枠線を破線にする。
+        event.tentative && "border-dashed",
       )}
       style={{
         // 活動記録だけ面ごと外す。予定が淡い面を持つようになったため（上のコメント）。
@@ -1670,13 +1680,12 @@ function AllDayEventChip({
               paddingLeft: "4px",
             }),
       }}
-      title={
-        outcome ? `${EVENT_OUTCOME_KIND_LABELS[outcome.kind]}: ${event.title}` : event.title
-      }
+      title={statusPrefix ? `${statusPrefix}: ${event.title}` : event.title}
     >
       {quiet && !continuesBefore && <ActivityMark className="size-1.5" />}
       {outcome && !continuesBefore && <EventOutcomeMark className="size-2.5" />}
       <span className={cn("clip-nowrap", outcome && "line-through")}>{event.title}</span>
+      {event.tentative && <span className="sr-only">（仮の予定）</span>}
       {outcome && <span className="sr-only">（{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}）</span>}
     </button>
   );

@@ -85,6 +85,7 @@ export async function POST(request: Request) {
       end,
       location: body.location?.trim() || null,
       timeZone,
+      tentative: body.tentative ?? false,
     });
 
     const response: InternalCreateEventResponse = { id: created.id, url: created.url };

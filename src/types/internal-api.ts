@@ -25,6 +25,12 @@ export type InternalEvent = {
   /** 繰り返し予定の1回分かどうか */
   recurring: boolean;
   /**
+   * 仮の予定かどうか（issue #688）。Google Calendarの status フィールド（tentative）を
+   * そのまま使う。落とさず添えるのは、AIDE側が「まだ確定していない予定」として
+   * 案内を変えられるようにするため。
+   */
+  tentative: boolean;
+  /**
    * 中止・不参加の記録（docs/spec.md §37）。付いていなければ null。
    *
    * 落とさず添えるのは、記録の付いた予定を黙って消すと呼び出し元では「その予定は無かった」
@@ -161,6 +167,11 @@ export type InternalCreateEventRequest = {
   location?: string | null;
   /** 省略時は予定新規作成の既定の保存先（CalendarSetting.isCreateDefault） */
   calendarId?: string | null;
+  /**
+   * 仮の予定として作成するか（issue #688）。省略時は false（確定した予定）。
+   * 「多分この時間に」のような曖昧な発話のときだけ true を指定する想定。
+   */
+  tentative?: boolean;
 };
 
 /** 秘書（AIDE）が「入れました」の根拠として案内できるよう、作成した予定のURLを返す。 */

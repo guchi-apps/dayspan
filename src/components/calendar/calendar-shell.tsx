@@ -1385,6 +1385,12 @@ function CalendarBody({
             onOpenEvent({ ...viewingEvent, outcome });
             handleChanged([{ start: viewingEvent.start, end: viewingEvent.end }]);
           }}
+          // 仮の予定の確定（issue #688）。続けて直せるようダイアログは閉じず、
+          // 開いている予定だけ差し替えてから、その予定がかかる月を取り直す。
+          onConfirmed={() => {
+            onOpenEvent({ ...viewingEvent, tentative: false });
+            handleChanged([{ start: viewingEvent.start, end: viewingEvent.end }]);
+          }}
         />
       )}
 
