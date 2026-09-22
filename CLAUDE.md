@@ -429,6 +429,7 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | `w`（週表示）キーは押した時点の`matchMedia("(min-width: 768px)")`で判定する | 週表示のセグメンテッドボタンはPCの幅（`desktopOnly`）でしか出ない。ウィンドウを狭めたPCでそのまま`w`を受け付けると、画面上では選べない表示形式に切り替わる。サーバー描画時ではなく押した時点で読むためハイドレーションの不一致は起きない（issue #635 計画レビューG1の指摘） |
 | 仮の予定はDaySpan独自DBを持たず、Google CalendarのEvent.status（tentative）をそのまま使う | 移動・タスクの紐づけ・予定の中止/不参加は「相手のDBに欄が無いものは線だけDaySpanが持つ」設計だが、仮の予定はGoogleにもともとstatusという欄があるため、この原則の対象にならない。Googleの欄をそのまま使えばPrismaスキーマ変更・マイグレーションが不要になる（issue #688） |
 | 仮の予定の確定は専用の軽量PATCH（`confirmEvent()`）にし、フルの`updateEvent()`を経由させない | 確定操作はGoogleのstatusフィールドだけを`confirmed`へ変える。タイトル・日時など他の項目を毎回送らせる理由が無い。削除と違い確認は挟まない（編集フォームでいつでも「仮の予定」へ戻せるため。issue #688） |
+| `EventWriteInput.tentative`が未指定（undefined）なら`toRequestBody()`はstatusを送らない | 当初は`status: input.tentative ? "tentative" : "confirmed"`と常に明示していたが、`commitDrag()`/`commitAllDayDrag()`（時間グリッド・終日エリアのドラッグ）はtentativeを持たずにPATCHするため、`PATCH /api/events/[eventId]`側の`tentative: body.tentative ?? false`と合わさって、仮の予定をドラッグしただけで黙って確定してしまっていた（PR #691レビュー指摘）。`location`/`description`と同じ「送らなければ既存の値に触らない」扱いに揃え、未指定はundefinedのまま渡す。`event-form.tsx`（編集フォーム）は引き続き常にtentativeを明示するため、通常の編集・確定ボタンの挙動には影響しない（issue #688・#692） |
 
 ## デプロイ
 
