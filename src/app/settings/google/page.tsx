@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { GoogleCalendarSection } from "@/components/settings/google-calendar-section";
+import { HolidayCalendarSection } from "@/components/settings/holiday-calendar-section";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { getCurrentUser } from "@/lib/auth-user";
+import { getHolidayCalendarId } from "@/services/calendar/holiday-settings";
 import { loadCalendarSettings } from "@/services/google-calendar/settings";
 
 export default async function GoogleSettingsPage({
@@ -13,7 +15,11 @@ export default async function GoogleSettingsPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [{ google }, result] = await Promise.all([searchParams, loadCalendarSettings(user.id)]);
+  const [{ google }, result, holidayCalendarId] = await Promise.all([
+    searchParams,
+    loadCalendarSettings(user.id),
+    getHolidayCalendarId(user.id),
+  ]);
 
   return (
     <SettingsShell
@@ -23,6 +29,7 @@ export default async function GoogleSettingsPage({
       backLabel="設定"
     >
       <GoogleCalendarSection result={result} connectResult={google} />
+      <HolidayCalendarSection result={result} holidayCalendarId={holidayCalendarId} />
     </SettingsShell>
   );
 }

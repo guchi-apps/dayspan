@@ -101,6 +101,7 @@ export function TimeGridView({
   onOpenWork,
   runningActivity,
   activityCalendarIds,
+  holidayCalendarIds,
   utils,
   onOpenEvent,
   onOpenTask,
@@ -135,6 +136,11 @@ export function TimeGridView({
    * 毎回作り直すと全ての列が描き直しになる。
    */
   activityCalendarIds: ReadonlySet<string>;
+  /**
+   * 祝日として扱うカレンダー（issue #699）。ここに入っている予定は、終日エリアで
+   * 他の予定より上（最上部）に並べる。呼び出し側で参照を保つこと。
+   */
+  holidayCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
   onOpenEvent: (event: CalendarEventItem) => void;
   onOpenTask: (task: TaskItem) => void;
@@ -313,6 +319,7 @@ export function TimeGridView({
         tasks={tasks}
         reminders={reminders}
         activityCalendarIds={activityCalendarIds}
+        holidayCalendarIds={holidayCalendarIds}
         utils={utils}
         rowRef={allDayRowRef}
         preview={allDayPreview}
@@ -1277,6 +1284,7 @@ function AllDayArea({
   tasks,
   reminders,
   activityCalendarIds,
+  holidayCalendarIds,
   utils,
   rowRef,
   preview,
@@ -1296,6 +1304,7 @@ function AllDayArea({
   tasks: TaskItem[];
   reminders: ReminderItem[];
   activityCalendarIds: ReadonlySet<string>;
+  holidayCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
   rowRef: React.Ref<HTMLDivElement>;
   preview: AllDayDragPreview | null;
@@ -1330,6 +1339,7 @@ function AllDayArea({
             tasks={tasks}
             reminders={reminders}
             activityCalendarIds={activityCalendarIds}
+            holidayCalendarIds={holidayCalendarIds}
             utils={utils}
             preview={isCenter ? preview : null}
             onStartDrag={onStartDrag}
@@ -1395,6 +1405,7 @@ const AllDayPane = memo(function AllDayPane({
   tasks,
   reminders,
   activityCalendarIds,
+  holidayCalendarIds,
   utils,
   preview,
   onStartDrag,
@@ -1408,6 +1419,7 @@ const AllDayPane = memo(function AllDayPane({
   tasks: TaskItem[];
   reminders: ReminderItem[];
   activityCalendarIds: ReadonlySet<string>;
+  holidayCalendarIds: ReadonlySet<string>;
   utils: CalendarDateUtils;
   preview: AllDayDragPreview | null;
   onStartDrag: (event: React.PointerEvent, target: AllDayDragTarget) => void;
@@ -1495,9 +1507,16 @@ const AllDayPane = memo(function AllDayPane({
       raw.push({ kind: "reminder", item: reminder, column, span: 1, continuesBefore: false, continuesAfter: false });
     }
 
+    // 祝日カレンダーの予定を最優先で上の段へ置く（issue #699）。lane割り当ては早い者勝ちの
+    // for ループ（下記）のため、ここでの並び順だけで祝日を常に lane 0（最上部）にできる。
+    const isHoliday = (segment: WithoutLane<AllDaySegment>) =>
+      segment.kind === "event" && holidayCalendarIds.has(segment.item.calendarId);
+
     // 日をまたぐ帯を先に上の段へ置く。後から来た1日ぶんの項目が、帯の空いている段へ
     // 潜り込んで帯を分断しないようにするため（continuous-month-view.tsx と同じ考え方）。
     raw.sort((a, b) => {
+      const holidayDiff = Number(isHoliday(b)) - Number(isHoliday(a));
+      if (holidayDiff !== 0) return holidayDiff;
       const barDiff = Number(b.span > 1) - Number(a.span > 1);
       if (barDiff !== 0) return barDiff;
       if (a.column !== b.column) return a.column - b.column;
@@ -1537,7 +1556,7 @@ const AllDayPane = memo(function AllDayPane({
     }
 
     return { segments, laneCount: occupied.length };
-  }, [days, events, tasks, reminders, preview, utils]);
+  }, [days, events, tasks, reminders, preview, utils, holidayCalendarIds]);
 
   return (
     <div className="relative min-h-9 w-full">

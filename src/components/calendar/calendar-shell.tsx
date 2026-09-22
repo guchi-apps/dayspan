@@ -144,6 +144,7 @@ export function CalendarShell({
   placeCatalogPromise,
   initialRunningActivity,
   activityCalendarIds,
+  holidayCalendarIds,
   travelSettings,
   work,
   weekStartsOn,
@@ -172,6 +173,11 @@ export function CalendarShell({
    * ここに入っている予定は、時間グリッドでは塗りを落として描き、月表示には出さない。
    */
   activityCalendarIds: string[];
+  /**
+   * 祝日として扱うカレンダー（issue #699）。ここに入っている予定は、カレンダー画面の
+   * 終日の並びで他の予定より上に表示される。
+   */
+  holidayCalendarIds: string[];
   /** 移動の既定値（docs/spec.md §29）。予定から移動を足すときの初期値に使う。 */
   travelSettings: TravelSettings;
   /** 勤務記録の入力に要るもの（issue #532）。 */
@@ -211,6 +217,9 @@ export function CalendarShell({
     () => new Set(activityCalendarIds),
     [activityCalendarIds],
   );
+
+  // 祝日カレンダーの判定も同じ理由でSet化しておく（issue #699）。
+  const holidayCalendars = useMemo(() => new Set(holidayCalendarIds), [holidayCalendarIds]);
 
   // 押した直後に見出しが変わるよう、遷移中は指定した期間を先に表示する。
   const [nav, setNav] = useOptimistic({ view, anchorKey });
@@ -954,6 +963,7 @@ export function CalendarShell({
           onLoadingChange={setWindowLoading}
           runningActivity={initialRunningActivity}
           activityCalendars={activityCalendars}
+          holidayCalendars={holidayCalendars}
           onOpenActivity={openActivity}
           work={work}
           onGoToday={goToday}
@@ -1051,6 +1061,7 @@ function CalendarBody({
   onLoadingChange,
   runningActivity,
   activityCalendars,
+  holidayCalendars,
   onOpenActivity,
   work,
   onGoToday,
@@ -1137,6 +1148,8 @@ function CalendarBody({
   runningActivity: RunningActivityItem | null;
   /** 活動記録の保存先に選ばれているカレンダー（issue #241）。 */
   activityCalendars: ReadonlySet<string>;
+  /** 祝日として扱うカレンダー（issue #699）。終日の並びで他の予定より上に表示する。 */
+  holidayCalendars: ReadonlySet<string>;
   /** 記録中の帯を押したとき。開始・停止は記録の画面で行う。 */
   onOpenActivity: () => void;
   /** 勤務記録の入力に要るもの（issue #532）。 */
@@ -1363,6 +1376,7 @@ function CalendarBody({
           travels={data.travels}
           workRecords={data.workRecords}
           workPlaceOptions={workPlaceOptions}
+          holidayCalendarIds={holidayCalendars}
           weekStartsOn={weekStartsOn}
           utils={utils}
           scrollTarget={scrollTarget}
@@ -1390,6 +1404,7 @@ function CalendarBody({
           onOpenWork={openWork}
           runningActivity={runningActivity}
           activityCalendarIds={activityCalendars}
+          holidayCalendarIds={holidayCalendars}
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}
