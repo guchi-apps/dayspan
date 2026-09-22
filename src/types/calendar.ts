@@ -20,6 +20,15 @@ export type CalendarEventItem = {
   attendees: string[];
   /** 繰り返し予定の1回分かどうか。編集時に「この回だけ変わる」ことを伝えるために持つ。 */
   recurring: boolean;
+  /**
+   * 仮の予定かどうか（issue #688）。Google Calendarの Event.status（tentative）をそのまま使う。
+   * DaySpan独自DBは持たない（Googleにもともとある欄のため、移動・中止/不参加のような
+   * 「相手のDBに欄が無いものは線だけ持つ」原則の対象にならない）。
+   *
+   * Service Workerが保存した古い応答にはこの項目が無い。読む側は必ず `?? false` で受ける
+   * （outcomeと同じ扱い）。
+   */
+  tentative: boolean;
   color: string | null;
   /**
    * このカレンダーへ書き込めないかどうか。設定で「使用」をオフにしたカレンダーと、

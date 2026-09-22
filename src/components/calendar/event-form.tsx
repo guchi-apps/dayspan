@@ -40,6 +40,8 @@ export type EventDraft = {
   /** 複製から引き継ぐ場所・説明。新規作成のときだけ意味を持つ。 */
   location?: string;
   description?: string;
+  /** 複製から引き継ぐ「仮の予定」かどうか（issue #688）。新規作成のときだけ意味を持つ。 */
+  tentative?: boolean;
 };
 
 /**
@@ -81,6 +83,8 @@ export function EventForm({
   const [end, setEnd] = useState(draft.end);
   const [location, setLocation] = useState(editing?.location ?? draft.location ?? "");
   const [description, setDescription] = useState(editing?.description ?? draft.description ?? "");
+  // 仮の予定（issue #688）。Googleのstatusフィールドをそのまま使うため、DaySpan独自DBは無い。
+  const [tentative, setTentative] = useState(editing?.tentative ?? draft.tentative ?? false);
   const [recurrence, setRecurrence] = useState<RecurrenceInput>(NO_RECURRENCE);
   const [calendarId, setCalendarId] = useState(
     editing?.calendarId ??
@@ -162,6 +166,7 @@ export function EventForm({
         end: allDay ? end : localInputToIso(end, timeZone),
         location: location.trim() || null,
         description: description.trim() || null,
+        tentative,
         ...(editing
           ? { previousCalendarId: editing.calendarId }
           : { recurrenceRule }),
@@ -224,6 +229,16 @@ export function EventForm({
         <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
           <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
           終日
+        </label>
+
+        {/*
+          仮の予定（issue #688）。Google Calendarの status フィールドをそのまま使う
+          （DaySpan独自のDBは持たない）。まだ本決まりでない予定を、削除せず区別して
+          置いておけるようにするため。
+        */}
+        <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
+          <Checkbox checked={tentative} onCheckedChange={(v) => setTentative(v === true)} />
+          仮の予定
         </label>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
@@ -352,6 +367,7 @@ export function duplicateEventDraft(event: CalendarEventItem, timeZone: string):
     calendarId: event.readOnly ? undefined : event.calendarId,
     location: event.location ?? undefined,
     description: event.description ?? undefined,
+    tentative: event.tentative,
   };
 }
 

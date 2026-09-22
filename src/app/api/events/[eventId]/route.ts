@@ -81,6 +81,11 @@ export async function PATCH(
       description: body.description ?? null,
       attendees: body.attendees ?? [],
       timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
+      // ドラッグ（commitDrag/commitAllDayDrag）はtentativeを送らずこのPATCHを呼ぶ。
+      // ?? false にすると、仮の予定をドラッグしただけで黙って確定してしまう
+      // （PRレビューの指摘。#691）。未指定は undefined のまま渡し、Google側の
+      // 既存の状態に触らない（toRequestBody() 側の扱い）。
+      tentative: body.tentative,
     });
 
     // 紐づいたタスクの日付（期限・予定日）を、動かした先へ合わせる（docs/spec.md §31）。編集画面からの保存も

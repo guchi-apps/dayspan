@@ -71,6 +71,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
           "description": null,
           "calendarName": "仕事",
           "recurring": true,
+          "tentative": false,                 // 仮の予定かどうか（Googleのstatus:tentative）
           "outcome": null,                    // 中止・不参加の記録。CANCELED | ABSENT | null
           "url": "https://www.google.com/calendar/event?eid=..."
         }
@@ -160,6 +161,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
 - **1つのタスクは期限と予定日で2枠に現れる**（`field` で区別する）。日時が完全に同じときは期限の1枠にまとめる（docs/spec.md §5）
 - **完了済みのタスクは返らない。** 取得元（`listTasksInRange()`）が除いている
 - **中止・不参加を記録した予定も返る**（`outcome` に `CANCELED` / `ABSENT` が入る。docs/spec.md §37）。黙って落とすと呼び出し元では「その予定は無かった」ことになるため、扱いは呼び出し元が決める
+- **仮の予定も通常の予定と同じ枠に含まれる**（`tentative: true`。issue #688）。まだ本決まりでない予定として案内を変えるかは呼び出し元が決める
 
 ### 期限切れタスク（`overdueTasks`）
 
@@ -203,7 +205,8 @@ DaySpan自身のDBを引けなかったときだけは、取れたぶんとい�
   "startTime": "10:00",         // HH:MM。省略（endTimeも省略）で終日
   "endTime": "11:00",
   "location": "〇〇歯科",        // 任意
-  "calendarId": "primary"       // 任意。省略で予定新規作成の既定の保存先（CalendarSetting.isCreateDefault）
+  "calendarId": "primary",      // 任意。省略で予定新規作成の既定の保存先（CalendarSetting.isCreateDefault）
+  "tentative": false            // 任意。省略時 false（確定した予定）。true で仮の予定として作成する
 }
 ```
 
@@ -214,6 +217,7 @@ DaySpan自身のDBを引けなかったときだけは、取れたぶんとい�
 | `startTime` / `endTime` | - | `HH:MM`。**両方指定するか、両方省略するかのどちらかのみ。** 片方だけの指定、`endTime <= startTime`、形式不正はいずれも `400`（時刻ありか終日かが決まらない・所要時間が0以下になるため） |
 | `location` | - | 省略可 |
 | `calendarId` | - | 省略時は書き込み可能な既定のカレンダーを解決する。書き込めるカレンダーが1つも無ければ `404`（`no_writable_calendar`） |
+| `tentative` | - | 省略時 `false`。`true` で仮の予定（Googleの `status: tentative`）として作成する（issue #688）。「多分この時間に」のような曖昧な発話のときだけ秘書側が付ける想定。確定・仮への戻しはDaySpanの画面から行う（このAPIは作成のみのため） |
 
 日付の解釈は `GET /api/internal/schedule` と同じく `UiSetting.timeZone`（既定 `Asia/Tokyo`）で行う。呼び出し側でJSTの時刻へ変換する必要はない。
 
@@ -250,6 +254,12 @@ curl -s -X POST -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" \
 curl -s -X POST -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"title":"出張","date":"2026-09-10"}' \
+  "http://127.0.0.1:3113/api/internal/events" | jq .
+
+# 仮の予定（issue #688）
+curl -s -X POST -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"多分この時間","date":"2026-09-07","startTime":"14:00","endTime":"15:00","tentative":true}' \
   "http://127.0.0.1:3113/api/internal/events" | jq .
 ```
 

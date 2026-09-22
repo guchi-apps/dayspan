@@ -132,6 +132,8 @@ function normalizeEvent(event: GoogleEvent, calendar: CalendarDisplay): Calendar
       description: event.description ?? null,
       attendees: (event.attendees ?? []).map((a) => a.email ?? "").filter(Boolean),
       recurring: Boolean(event.recurringEventId),
+      // 仮の予定（issue #688）。Googleの status フィールドをそのまま使う。
+      tentative: event.status === "tentative",
       color: calendar.color,
       readOnly: calendar.readOnly,
       url: event.htmlLink ?? null,
@@ -156,6 +158,7 @@ function normalizeEvent(event: GoogleEvent, calendar: CalendarDisplay): Calendar
     description: event.description ?? null,
     attendees: (event.attendees ?? []).map((a) => a.email ?? "").filter(Boolean),
     recurring: Boolean(event.recurringEventId),
+    tentative: event.status === "tentative",
     color: calendar.color,
     readOnly: calendar.readOnly,
     url: event.htmlLink ?? null,
@@ -183,6 +186,14 @@ export type EventWriteInput = {
    * 更新で送らないのは、PATCHが `extendedProperties.private` を丸ごと置き換えるため。
    */
   privateProperties?: Record<string, string>;
+  /**
+   * 仮の予定かどうか（issue #688）。GoogleのEvent.statusフィールドをそのまま使う
+   * （tentative | confirmed。cancelledは削除相当で別の意味のためここでは使わない）。
+   * 未指定（undefined）なら status を送らず、Google側の既存の状態に触らない
+   * （location/description と同じ扱い。ドラッグのように仮/確定の判断を持たない更新から
+   * 呼ばれても、黙って確定へ変えてしまわないため）。
+   */
+  tentative?: boolean;
 };
 
 type EventTimeBody = {
@@ -238,6 +249,11 @@ function toRequestBody(input: EventWriteInput, { clearOther = false } = {}) {
     attendees: input.attendees?.length ? input.attendees.map((email) => ({ email })) : undefined,
     recurrence: input.recurrenceRule ? [input.recurrenceRule] : undefined,
     extendedProperties: input.privateProperties ? { private: input.privateProperties } : undefined,
+    // 仮の予定（issue #688）。tentative を明示的に指定したときだけ status を送る。
+    // location/description と同じ「送らなければ既存の値に触らない」扱いにする。
+    // 未指定のまま常に confirmed を送ると、ドラッグ（tentative を持たないPATCH）で
+    // 仮の予定が黙って確定してしまう（PRレビューの指摘。#691）。
+    status: input.tentative === undefined ? undefined : input.tentative ? "tentative" : "confirmed",
   };
 }
 
@@ -286,6 +302,23 @@ export async function updateEvent(
     account,
     `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
     { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+/**
+ * 仮の予定を確定する（issue #688）。「仮の予定を確定する」ボタン専用の軽量PATCHで、
+ * status だけを送る。フルの updateEvent() を経由させないのは、確定操作では
+ * タイトル・日時など他の項目を毎回送らせる理由が無いため。
+ */
+export async function confirmEvent(
+  account: GoogleAccount,
+  calendarId: string,
+  eventId: string,
+): Promise<void> {
+  await googleCalendarFetch(
+    account,
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    { method: "PATCH", body: JSON.stringify({ status: "confirmed" }) },
   );
 }
 
