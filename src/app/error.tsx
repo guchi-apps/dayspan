@@ -46,7 +46,7 @@ export default function ErrorScreen({
   }, [error]);
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background p-6">
+    <div className="flex min-h-app flex-col items-center justify-center gap-6 bg-background p-6">
       <div className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
         <div className="flex size-14 items-center justify-center rounded-full bg-error-container text-on-error-container">
           {offline ? <CloudOff className="size-7" /> : <AlertTriangle className="size-7" />}
