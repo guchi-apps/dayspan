@@ -129,7 +129,7 @@ export function ReminderList({
   };
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="flex h-app flex-col">
       {/* 日付リマインドは下部ナビの5枠から外れ、ドロワーの「そのほか」に移った（issue #508）。
           一度登録すれば数年触らないため、勤務・場所・設定と同じ「戻るボタン付き」の骨格にする。 */}
       <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">

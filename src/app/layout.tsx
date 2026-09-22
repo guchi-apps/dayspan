@@ -25,9 +25,13 @@ export const viewport: Viewport = {
   // カレンダーの時間グリッドは画面の高さいっぱいに使うため、モバイルのアドレスバー分を含む
   // 実際の表示領域（dvh）を基準にレイアウトする。
   viewportFit: "cover",
+  // ステータスバーの領域の色。各画面のヘッダー（surface-container-low）と同じ値にする。
+  // ずれていると、iOS 27のホーム画面Webアプリがステータスバーの下に重ねる半透明の
+  // グラデーションで2色が混ざり、モザイク状に見える（issue #696）。globals.css の
+  // --md-surface-container-low をライト・ダークとも写しているので、変えるときは両方直す。
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+    { media: "(prefers-color-scheme: light)", color: "#f7f2fa" },
+    { media: "(prefers-color-scheme: dark)", color: "#1d1b20" },
   ],
 };
 

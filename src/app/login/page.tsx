@@ -17,7 +17,7 @@ export default async function LoginPage({
   const next = resolveInternalPath(callbackUrl, cookieStore.get(START_PATH_COOKIE)?.value);
 
   return (
-    <div className="flex h-dvh flex-col items-center justify-center gap-8 bg-surface-container-low p-4">
+    <div className="flex h-app flex-col items-center justify-center gap-8 bg-surface-container-low p-4">
       <ClearOfflineCache />
 
       <div className="type-headline-small flex items-center gap-2">

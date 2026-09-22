@@ -253,12 +253,39 @@
   }
   body {
     @apply bg-background text-foreground overscroll-none;
+    /* 本文はステータスバーの下から始める（issue #696）。セーフエリアの外へ描かない端末では0。 */
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  /* ステータスバーの下の帯を、各画面のヘッダーと同じ色で塗りつぶす（issue #696）。
+     iOS 27のホーム画面Webアプリはステータスバーの下まで描かせ、その上に下の中身を
+     ぼかした半透明のグラデーションを重ねる。スクロールした中身がそこへ入り込むと
+     モザイク状に見えるため、不透明な単色で覆い、ぼかしても色が変わらないようにする。
+     ダイアログ（z-50）より下に置き、開いたダイアログの暗幕は帯の上にも掛ける。 */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: 40;
+    height: env(safe-area-inset-top, 0px);
+    background-color: var(--md-surface-container-low);
+    pointer-events: none;
   }
   html {
     @apply font-sans overscroll-none;
+    /* ステータスバーの領域・端での引っ張りで見える地の色も、ヘッダーと同じ色にそろえる。 */
+    background-color: var(--md-surface-container-low);
     /* 日付・時刻が縦にも横にも揃うことが、カレンダーの読みやすさの前提になる。 */
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* 画面の高さいっぱいを使う枠の高さ（issue #696）。100dvh はステータスバーの下の帯まで含むため、
+   body の padding-top（セーフエリア）ぶんを引かないと、帯の高さだけページごとスクロールする。 */
+@utility h-app {
+  height: calc(100dvh - env(safe-area-inset-top, 0px));
+}
+@utility min-h-app {
+  min-height: calc(100dvh - env(safe-area-inset-top, 0px));
 }
 
 /* --- M3 タイプスケール ---
