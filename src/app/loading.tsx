@@ -16,7 +16,7 @@ import { LinearProgress } from "@/components/ui/linear-progress";
  */
 export default function Loading() {
   return (
-    <div className="flex h-dvh flex-col bg-background">
+    <div className="flex h-app flex-col bg-background">
       <LinearProgress active />
     </div>
   );

@@ -25,7 +25,7 @@ export function AppFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="flex h-dvh">
+    <div className="flex h-app">
       <AppSidebar current={current} activityRunning={activityRunning} running={running} />
       <div className="@container/main flex min-w-0 flex-1 flex-col">{children}</div>
     </div>

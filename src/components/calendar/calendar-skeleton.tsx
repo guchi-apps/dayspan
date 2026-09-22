@@ -34,7 +34,7 @@ export function CalendarSkeleton() {
  */
 export function AppFrameSkeleton({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-dvh overflow-hidden">
+    <div className="flex h-app overflow-hidden">
       <SidebarSkeleton />
       <div className="@container/main flex min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
     </div>
