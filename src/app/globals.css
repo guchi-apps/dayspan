@@ -268,7 +268,9 @@
      iOS 27のホーム画面Webアプリはステータスバーの下まで描かせ、その上に下の中身を
      ぼかした半透明のグラデーションを重ねる。スクロールした中身がそこへ入り込むと
      モザイク状に見えるため、不透明な単色で覆い、ぼかしても色が変わらないようにする。
-     ダイアログ（z-50）より下に置き、開いたダイアログの暗幕は帯の上にも掛ける。 */
+     ダイアログ（z-50）より下に置き、開いたダイアログの暗幕は帯の上にも掛ける。
+     ブラーの発生自体は止めていない遮蔽策のため、下の .ios-status-bar-blur-fix と役割が違う
+     （issue #711）。 */
   body::before {
     content: "";
     position: fixed;
@@ -277,6 +279,26 @@
     height: env(safe-area-inset-top, 0px);
     background-color: var(--md-surface-container-low);
     pointer-events: none;
+  }
+  /* iOS 27のブラーそのものの発生を止めるダミー要素（issue #711）。WebKitは画面上端に
+     固定ヘッダーがあるかどうかを、実際の描画結果ではなくCSSのスタイル設定（position: fixed・
+     10pxを超える高さ）だけで判定し、無いと判断した場合にだけ上記のブラーを自動で付ける
+     （https://qiita.com/na-trium-144/items/0add98a80ca2391e3f17）。opacity: 0 /
+     visibility: hidden / display: none はこの判定から外れて無効なため、
+     background-clip: text で「有効な背景を持つ固定要素として認識されるが、テキストが
+     無いため何も描画されない」要素にする。::before のような生成コンテンツが同じ判定に
+     乗る保証が無いため、layout.tsx側に実DOM要素として置く（このクラスはそこから参照する）。 */
+  .ios-status-bar-blur-fix {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 11px;
+    z-index: 2147483647;
+    pointer-events: none;
+    background-color: var(--md-surface-container-low);
+    -webkit-background-clip: text;
+    background-clip: text;
   }
   html {
     @apply font-sans overscroll-none;

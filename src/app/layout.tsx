@@ -43,6 +43,9 @@ export default function RootLayout({
   return (
     <html lang="ja" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
+        {/* iOS 27のブラー自体を止めるダミー要素（issue #711・globals.css参照）。
+            何も描画しないため位置は先頭でなくてよいが、起動画面より前にしておく。 */}
+        <div aria-hidden="true" className="ios-status-bar-blur-fix" />
         {/* 起動画面は本文より先に置く。ページの描画を待つあいだにシェルだけが先に流れるため、
             ここに置いておくと最初のチャンクで描かれる（docs/spec.md §33）。 */}
         <AppLaunchScreen />
