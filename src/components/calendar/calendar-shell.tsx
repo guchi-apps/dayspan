@@ -27,6 +27,7 @@ import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/runni
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
+import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
 import { Button } from "@/components/ui/button";
 import { LinearProgress } from "@/components/ui/linear-progress";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
@@ -1357,6 +1358,9 @@ function CalendarBody({
 
   return (
     <>
+      {/* オフラインならすでに OfflineNotice が出ているため、二重に出さない（issue #718）。 */}
+      {!offline && data.stale && <SlowNetworkNotice />}
+
       {(data.errors.length > 0 || data.loadError || dragError) && (
         <div className="flex flex-col gap-1 bg-error-container/70 text-on-error-container px-3 py-2 text-xs">
           {data.errors.map((error) => (
