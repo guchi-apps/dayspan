@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useOffline } from "next/offline";
 import {
   ArrowUpDown,
+  Ban,
   CalendarClock,
   ChevronDown,
   ChevronRight,
@@ -182,14 +183,14 @@ export function TaskList({
 
   const nextSort = () => setSort(TASK_SORTS[(TASK_SORTS.indexOf(sort) + 1) % TASK_SORTS.length]);
 
-  const patchTaskDone = async (task: TaskItem, done: boolean) => {
+  const patchTaskDone = async (task: TaskItem, done: boolean, skipped = false) => {
     if (offline) throw new Error(OFFLINE_WRITE_MESSAGE);
 
     const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       // 繰り返しタスクは完了時に次回分が作られるため、通常の更新とは別の経路で送る。
-      body: JSON.stringify({ done, completeAction: true }),
+      body: JSON.stringify({ done, completeAction: true, ...(skipped ? { skipped: true } : {}) }),
     });
 
     if (!response.ok) {
@@ -212,8 +213,8 @@ export function TaskList({
   };
 
   /** 表示画面からの完了切り替え。表示画面は自前で完了状態を持つため、ここでは取り直すだけでよい。 */
-  const toggleDoneFromDetail = async (task: TaskItem, done: boolean) => {
-    await patchTaskDone(task, done);
+  const toggleDoneFromDetail = async (task: TaskItem, done: boolean, skipped = false) => {
+    await patchTaskDone(task, done, skipped);
     reload();
   };
 
@@ -552,6 +553,12 @@ function TaskRow({
         </div>
 
         <div className="type-label-small flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-normal text-on-surface-variant">
+          {task.skipped && (
+            <span className="inline-flex items-center gap-0.5">
+              <Ban className="size-3" aria-hidden />
+              対応しない
+            </span>
+          )}
           {task.due && (
             <span className={cn(!overdueOnPlanned && overdue && "text-destructive")}>
               {formatTaskDate(task.due, task.hasTime, utils, todayKey)}
