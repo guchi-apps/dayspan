@@ -102,14 +102,18 @@
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 28px;
-  --radius-2xl: 28px;
+  /* M3 Expressive の large-increased 〜 extra-large の間。カード・記録中の帯など、
+     本文の中に置く面の角丸に使う（issue #705）。 */
+  --radius-2xl: 24px;
   --radius-3xl: 28px;
   --radius-4xl: 28px;
 
   /* カレンダーの面に置く項目（予定・タスク・日付リマインド・移動・記録）の角丸。
      種類ごとに値を書くと、同じ面に複数の丸みが並び、項目の種類の違いなのか意味の違いなのかが
      読めなくなる（issue #316 では 12px・8px・4px が混在していた）。1か所で持って全部を揃える。 */
-  --radius-item: 4px;
+  /* M3 Expressive へ更新したとき（issue #705）に 4px → 6px。0px にしない理由（時間の罫線と
+     輪郭が同じ直線になる）は変わらない。 */
+  --radius-item: 6px;
 
   /* --- 書体 --- */
   --font-sans: var(--font-sans-stack);
@@ -126,21 +130,25 @@
   --font-mono-stack:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-  /* --- M3 ベースラインのトーナルパレット（ライト） --- */
-  --md-primary: #6750a4;
+  /* --- M3 のトーナルパレット（ライト） ---
+     M3 Expressive へ更新したとき（issue #705）に、既定のベースライン紫（#6750a4）から
+     インディゴのシード（#4b44b5）へ作り直した。各ロールのトーン（primary=40・container=90・
+     on-container=10・surface=98 …）はM3の割り当てのまま。トーンはCIELABのL*で揃え、
+     色相はOKLCHで固定して求めている（Labの色相は青紫で暗くするほど青へ流れるため）。 */
+  --md-primary: #544fc1;
   --md-on-primary: #ffffff;
-  --md-primary-container: #eaddff;
-  --md-on-primary-container: #21005d;
+  --md-primary-container: #dde1ff;
+  --md-on-primary-container: #1b0062;
 
-  --md-secondary: #625b71;
+  --md-secondary: #595c7b;
   --md-on-secondary: #ffffff;
-  --md-secondary-container: #e8def8;
-  --md-on-secondary-container: #1d192b;
+  --md-secondary-container: #dde1fe;
+  --md-on-secondary-container: #181933;
 
-  --md-tertiary: #7d5260;
+  --md-tertiary: #834c72;
   --md-on-tertiary: #ffffff;
-  --md-tertiary-container: #ffd8e4;
-  --md-on-tertiary-container: #31111d;
+  --md-tertiary-container: #ffd7f0;
+  --md-on-tertiary-container: #37062b;
 
   --md-travel: #00696d;
   --md-on-travel: #ffffff;
@@ -152,22 +160,22 @@
   --md-error-container: #f9dedc;
   --md-on-error-container: #410e0b;
 
-  --md-surface: #fef7ff;
-  --md-on-surface: #1d1b20;
-  --md-surface-variant: #e7e0ec;
-  --md-on-surface-variant: #49454f;
+  --md-surface: #f8f9fe;
+  --md-on-surface: #1b1b1e;
+  --md-surface-variant: #e0e2f0;
+  --md-on-surface-variant: #454652;
 
   --md-surface-container-lowest: #ffffff;
-  --md-surface-container-low: #f7f2fa;
-  --md-surface-container: #f3edf7;
-  --md-surface-container-high: #ece6f0;
-  --md-surface-container-highest: #e6e0e9;
+  --md-surface-container-low: #f3f3f8;
+  --md-surface-container: #edeef2;
+  --md-surface-container-high: #e7e8ec;
+  --md-surface-container-highest: #e2e2e7;
 
-  --md-outline: #79747e;
-  --md-outline-variant: #cac4d0;
+  --md-outline: #757683;
+  --md-outline-variant: #c4c6d4;
 
-  --md-inverse-surface: #322f35;
-  --md-inverse-on-surface: #f5eff7;
+  --md-inverse-surface: #303033;
+  --md-inverse-on-surface: #f0f0f5;
 
   /* shadcn/ui が参照するトークンをM3ロールへ寄せる */
   --background: var(--md-surface);
@@ -203,20 +211,20 @@
 /* OSの配色設定（prefers-color-scheme）に自動追従。手動切り替えは実装しない。 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --md-primary: #d0bcff;
-    --md-on-primary: #381e72;
-    --md-primary-container: #4f378b;
-    --md-on-primary-container: #eaddff;
+    --md-primary: #bcc2ff;
+    --md-on-primary: #2d1789;
+    --md-primary-container: #3f34a5;
+    --md-on-primary-container: #dde1ff;
 
-    --md-secondary: #ccc2dc;
-    --md-on-secondary: #332d41;
-    --md-secondary-container: #4a4458;
-    --md-on-secondary-container: #e8def8;
+    --md-secondary: #c0c4e8;
+    --md-on-secondary: #2c2e4a;
+    --md-secondary-container: #424562;
+    --md-on-secondary-container: #dde1fe;
 
-    --md-tertiary: #efb8c8;
-    --md-on-tertiary: #492532;
-    --md-tertiary-container: #633b48;
-    --md-on-tertiary-container: #ffd8e4;
+    --md-tertiary: #f3b4dd;
+    --md-on-tertiary: #501d42;
+    --md-tertiary-container: #693459;
+    --md-on-tertiary-container: #ffd7f0;
 
     --md-travel: #80d5d7;
     --md-on-travel: #003739;
@@ -228,22 +236,22 @@
     --md-error-container: #8c1d18;
     --md-on-error-container: #f9dedc;
 
-    --md-surface: #141218;
-    --md-on-surface: #e6e0e9;
-    --md-surface-variant: #49454f;
-    --md-on-surface-variant: #cac4d0;
+    --md-surface: #131316;
+    --md-on-surface: #e2e2e7;
+    --md-surface-variant: #454652;
+    --md-on-surface-variant: #c4c6d4;
 
-    --md-surface-container-lowest: #0f0d13;
-    --md-surface-container-low: #1d1b20;
-    --md-surface-container: #211f26;
-    --md-surface-container-high: #2b2930;
-    --md-surface-container-highest: #36343b;
+    --md-surface-container-lowest: #0e0e11;
+    --md-surface-container-low: #1b1b1e;
+    --md-surface-container: #1f1f22;
+    --md-surface-container-high: #292a2d;
+    --md-surface-container-highest: #343438;
 
-    --md-outline: #938f99;
-    --md-outline-variant: #49454f;
+    --md-outline: #8e909d;
+    --md-outline-variant: #454652;
 
-    --md-inverse-surface: #e6e0e9;
-    --md-inverse-on-surface: #322f35;
+    --md-inverse-surface: #e2e2e7;
+    --md-inverse-on-surface: #303033;
   }
 }
 
@@ -292,15 +300,23 @@
    役割ごとにサイズ・行間・字間が決まっている。見出しと本文とラベルを混ぜないための土台。
    @layer components ではなく @utility で定義する。前者では sm: などのバリアントが生成されず、
    画面幅に応じて字の大きさを変えられないため。 */
+/* 見出し・画面名は M3 Expressive の emphasized（太字）で組む（issue #705）。
+   既定の 400 のままだと日本語は細く見え、画面の中で何が見出しなのかが字の大きさだけに頼ることになる。 */
+@utility type-display-small {
+  font-size: 36px;
+  line-height: 44px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
 @utility type-headline-small {
   font-size: 24px;
   line-height: 32px;
-  font-weight: 400;
+  font-weight: 700;
 }
 @utility type-title-large {
   font-size: 22px;
   line-height: 28px;
-  font-weight: 400;
+  font-weight: 700;
 }
 @utility type-title-medium {
   font-size: 16px;

@@ -6,7 +6,9 @@ import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
   // M3のボタン。角は完全な丸（フルシェイプ）、押下時は状態レイヤーで反応を示す。
-  "group/button relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-transparent text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:ring-3 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-38 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px]",
+  // 押している間だけ角丸を詰める（M3 Expressive のシェイプモーフ・issue #705）。押した手応えを
+  // 色の変化だけでなく形でも返す。`rounded-*` を上書きしている呼び出し側には効かない。
+  "group/button relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full active:rounded-[12px] border border-transparent text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:ring-3 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-38 aria-invalid:border-destructive [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[18px]",
   {
     variants: {
       variant: {

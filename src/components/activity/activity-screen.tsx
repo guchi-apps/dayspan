@@ -513,9 +513,10 @@ function RunningCard({
         </div>
 
         {/* この画面を開く理由のほとんどは「どれくらい経ったか」と「止めること」。
-            経過時間は画面で最も大きい字にする（用意してある中で一番大きいのが headline-small）。 */}
+            経過時間は画面で最も大きい字にする（M3 Expressive へ更新したとき〈issue #705〉に
+            display-small を足し、headline-small から上げた）。 */}
         {nowIso && (
-          <div className="type-headline-small tabular-nums">
+          <div className="type-display-small tabular-nums">
             {formatElapsed(running.startedAt, nowIso)}
           </div>
         )}
