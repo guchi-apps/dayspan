@@ -499,20 +499,27 @@ function PlannedDateChip({ dateKey, todayKey }: { dateKey: string; todayKey: str
 }
 
 /**
- * 行の左端に出す優先度の帯。
+ * 行の左端に出す優先度の印。高＝3本・中＝2本・低＝1本の短い横線を縦に積む（issue #741）。
  *
- * タスク画面（`task-list.tsx`）とまったく同じ形にする。同じアプリの中で同じ意味（急ぐかどうか）
- * が別の形で出ると、読むたびに対応づけ直すことになる。色だけに意味を持たせないよう、
- * 読み上げ用の文字を添える。
+ * 色だけだと「高」と「中」の差が読み取りにくいため、本数でも分ける。幅は6pxに収め、
+ * 従来の縦帯（3px）に近い細さを保つ。色は従来のまま（高=error・中=tertiary）で、低だけ
+ * 控えめな outline にする。読み上げ用の文字も添える。
+ * タスク画面の帯とは形が分かれるが、対象はIssueの範囲どおり買い物リストのみ。
  */
-function PriorityBar({ priority }: { priority: ShoppingItem["priority"] }) {
-  const tone = priority === "高" ? "bg-destructive" : priority === "中" ? "bg-tertiary" : null;
+const PRIORITY_LINES = { 高: 3, 中: 2, 低: 1 } as const;
 
-  if (!tone) return <span className="w-[3px] shrink-0" aria-hidden />;
+function PriorityBar({ priority }: { priority: ShoppingItem["priority"] }) {
+  if (!priority) return <span className="w-1.5 shrink-0" aria-hidden />;
+
+  const tone = priority === "高" ? "bg-destructive" : priority === "中" ? "bg-tertiary" : "bg-outline";
 
   return (
     <>
-      <span className={cn("w-[3px] shrink-0 self-stretch rounded-full", tone)} aria-hidden />
+      <span className="mt-[5px] flex w-1.5 shrink-0 flex-col gap-[2px]" aria-hidden>
+        {Array.from({ length: PRIORITY_LINES[priority] }, (_, i) => (
+          <span key={i} className={cn("h-[2px] w-full rounded-full", tone)} />
+        ))}
+      </span>
       <span className="sr-only">優先度 {priority}</span>
     </>
   );

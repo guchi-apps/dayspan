@@ -15,7 +15,7 @@ export type ShoppingPriority = (typeof SHOPPING_PRIORITIES)[number] | null;
 export type ShoppingItem = {
   id: string;
   name: string;
-  /** Notionのカテゴリ（select）。未設定のものもそのまま持ち、束ねるときに「その他」へ入れる。 */
+  /** Notionのカテゴリ（select）。未設定のものもそのまま持ち、束ねるときに「未設定」へ入れる。 */
   category: string | null;
   memo: string | null;
   priority: ShoppingPriority;
@@ -50,7 +50,7 @@ export const SHOPPING_SORT_LABELS: Record<ShoppingSort, string> = {
  * 「残っているものが全部見える」ことが前提の一覧なので、必ずどこかに出す。
  */
 export const UNCATEGORIZED_KEY = "__uncategorized__";
-export const UNCATEGORIZED_LABEL = "その他";
+export const UNCATEGORIZED_LABEL = "未設定";
 
 /** タブと区分のキー。カテゴリ名そのものをキーにし、未設定だけ専用のキーへ寄せる。 */
 export function categoryKeyOf(item: ShoppingItem): string {
@@ -100,7 +100,7 @@ export function sortShoppingItems(items: ShoppingItem[], sort: ShoppingSort): Sh
  *
  * 並び順の正はNotionのプロパティ定義（`categories`）。そこに無いカテゴリが項目に付いている
  * ときは末尾へ足す（選択肢の取得に失敗した場合も、項目だけで一覧を組み立てられる）。
- * 未設定の項目があるときだけ「その他」を最後に置く。
+ * 未設定の項目があるときだけ「未設定」を最後に置く。
  */
 export function shoppingCategoryKeys(items: ShoppingItem[], categories: string[]): string[] {
   const keys = categories.filter((name) => name.length > 0);

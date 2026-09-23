@@ -48,6 +48,8 @@ export type EventDraft = {
   tentative?: boolean;
   /** 複製から引き継ぐ通知の上書き設定（issue #708）。新規作成のときだけ意味を持つ。 */
   notification?: EventNotificationOverride | null;
+  /** 簡易入力から移ってきた入力。通知の設定ボタンを出さない（issue #739）。 */
+  fromQuick?: boolean;
 };
 
 /**
@@ -270,51 +272,22 @@ export function EventForm({
           autoFocus={autoFocusTitle}
         />
 
-        <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-          <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
-          終日
-        </label>
-
         {/*
           仮の予定（issue #688）。Google Calendarの status フィールドをそのまま使う
           （DaySpan独自のDBは持たない）。まだ本決まりでない予定を、削除せず区別して
-          置いておけるようにするため。
+          置いておけるようにするため。終日と同じ「予定の性質」のチェックなので横に並べる
+          （issue #739）。
         */}
-        <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-          <Checkbox checked={tentative} onCheckedChange={(v) => setTentative(v === true)} />
-          仮の予定
-        </label>
-
-        {/*
-          予定ごとの通知設定（issue #708）。新規作成のときだけこのフォームから選べる
-          （編集時は表示画面の専用ボタンから即座に保存する）。終日は通知の対象外
-          （event-detail-dialog.tsxと同じ判断）。繰り返しを選んでいる間は保存後のeventIdが
-          「シリーズ親ID」になり、展開後の1回分のIDとは異なるため設定できない。
-        */}
-        {!editing && !allDay && (
-          <div className="flex flex-wrap items-center gap-2 px-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="bg-primary-container text-on-primary-container"
-              disabled={recurrence.frequency !== "none"}
-              onClick={() => setEditingNotification(true)}
-            >
-              {notification?.enabled === false ? (
-                <BellOff className="size-4" />
-              ) : (
-                <Bell className="size-4" />
-              )}
-              通知
-            </Button>
-            {recurrence.frequency !== "none" && (
-              <span className="type-label-small text-on-surface-variant">
-                繰り返し予定は保存してから設定できます
-              </span>
-            )}
-          </div>
-        )}
+        <div className="-my-1 flex flex-wrap items-center gap-x-2">
+          <label className="flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
+            <Checkbox checked={allDay} onCheckedChange={(v) => toggleAllDay(v === true)} />
+            終日
+          </label>
+          <label className="flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
+            <Checkbox checked={tentative} onCheckedChange={(v) => setTentative(v === true)} />
+            仮の予定
+          </label>
+        </div>
 
         {editingNotification && (
           <EventNotificationDialog
@@ -372,6 +345,38 @@ export function EventForm({
           calendars={calendars}
           onChange={setCalendarId}
         />
+
+        {/*
+          予定ごとの通知設定（issue #708）。新規作成のときだけこのフォームから選べる
+          （編集時は表示画面の専用ボタンから即座に保存する）。簡易入力から
+          移ってきたときは出さない（issue #739）。終日は通知の対象外
+          （event-detail-dialog.tsxと同じ判断）。繰り返しを選んでいる間は保存後のeventIdが
+          「シリーズ親ID」になり、展開後の1回分のIDとは異なるため設定できない。
+        */}
+        {!editing && !allDay && !draft.fromQuick && (
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="bg-primary-container text-on-primary-container"
+              disabled={recurrence.frequency !== "none"}
+              onClick={() => setEditingNotification(true)}
+            >
+              {notification?.enabled === false ? (
+                <BellOff className="size-4" />
+              ) : (
+                <Bell className="size-4" />
+              )}
+              通知
+            </Button>
+            {recurrence.frequency !== "none" && (
+              <span className="type-label-small text-on-surface-variant">
+                繰り返し予定は保存してから設定できます
+              </span>
+            )}
+          </div>
+        )}
 
         {!editing && (
           <RecurrenceFields

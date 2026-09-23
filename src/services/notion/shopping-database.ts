@@ -169,7 +169,7 @@ export const SHOPPING_DATABASE_TEMPLATE = {
 /**
  * カテゴリの初期の選択肢。
  *
- * 空のselectから始めると、カテゴリを1つ足すまで一覧が「その他」だけになる。よくある売り場を
+ * 空のselectから始めると、カテゴリを1つ足すまで一覧が「未設定」だけになる。よくある売り場を
  * 入れておき、要らないものは設定（タグ）から消してもらう。色はNotionの既定の10色から選ぶ。
  */
 const DEFAULT_CATEGORY_OPTIONS = [
