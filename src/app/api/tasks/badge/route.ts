@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
-import { loadBadgeCount } from "@/services/notifications/badge";
+import { loadBadgeCounts } from "@/services/notifications/badge";
 
 /**
  * アプリアイコンのバッジに出す件数（docs/spec.md §32）。
  *
- * 期限が今日以前の未完了タスクの数。数え方はタスク画面の分類と同じ関数を通すため、
+ * 件数は tasks（期限が今日以前の未完了タスク）と shopping（購入予定日が今日以前の未購入）、
+ * count はその合計。タスクの数え方はタスク画面の分類と同じ関数を通すため、
  * 見出しの「期限切れ」「今日」の合計と必ず一致する。
  *
  * 呼ぶのは画面側（AppBadgeSync）で、10分に1回までに絞っている。Notionへの往復が
@@ -18,8 +19,12 @@ export async function GET() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const count = await loadBadgeCount(userId);
+  const counts = await loadBadgeCounts(userId);
 
-  // 取れなかったときは null。0（タスクが1件も無い）と区別できる必要がある。
-  return NextResponse.json({ count }, { headers: { "Cache-Control": "no-store" } });
+  // 取れなかったときは null。0（1件も無い）と区別できる必要がある。
+  // count は合計（アイコンのバッジ）で、従来の形のまま残す。
+  return NextResponse.json(
+    { count: counts.total, tasks: counts.tasks, shopping: counts.shopping },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

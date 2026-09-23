@@ -6,6 +6,7 @@ import { ArrowUpDown, Eye, EyeOff, Plus, RefreshCw, ShoppingCart } from "lucide-
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
+import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { AppFrame } from "@/components/nav/app-frame";
 import {
@@ -19,6 +20,7 @@ import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offli
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
 import { useApiResource } from "@/components/offline/use-api-resource";
+import { countDueShopping } from "@/services/notifications/badge-count";
 import { ShoppingItemDialog, type ShoppingDraft } from "@/components/shopping/shopping-item-dialog";
 import { useShoppingViewPrefs } from "@/components/shopping/use-shopping-view-prefs";
 import { Button } from "@/components/ui/button";
@@ -97,6 +99,8 @@ export function ShoppingScreen({
   // 「今日」「明日」の判定は設定タイムゾーンで行う。端末の時計に任せると、サーバー（UTC）と
   // ブラウザ（JST）で日付が食い違い、最初の描画がハイドレーションと一致しない。
   const todayKey = useMemo(() => createCalendarDateUtils(timeZone).todayKey(), [timeZone]);
+  // アイコン・下部ナビのバッジに出す件数。取得した一覧から数え、別に取り直さない（docs/spec.md §32）。
+  const dueCount = useMemo(() => countDueShopping(items, todayKey), [items, todayKey]);
 
   // 楽観更新ぶんを重ねた一覧。以降の集計・区分はすべてこれを見る。
   const shown = useMemo(
@@ -348,6 +352,8 @@ export function ShoppingScreen({
       >
         <Plus className="size-6" />
       </Button>
+
+      {data && <AppBadgeSync shopping={dueCount} />}
 
       <RunningActivityBar running={runningActivity} />
       <BottomNav current="shopping" activityRunning={runningActivity !== null} timeZone={timeZone} />
