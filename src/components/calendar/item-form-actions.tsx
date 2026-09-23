@@ -15,6 +15,11 @@ import { Button } from "@/components/ui/button";
  * 削除に塗りを持たせないのは、保存との差を塗りの有無で付けるため。並べたときに
  * 目が向く先が保存側になり、押し間違いの向きもそちらへ寄る。
  *
+ * 中身が長くてダイアログがスクロールするときも、この帯は画面の下端に留まる（sticky）。
+ * 保存のためだけに末尾までスクロールさせない。ダイアログ下端の余白（p-6 とホームバーを
+ * 避ける分）は負の余白で帯の側に取り込み、余白の上へ入力欄が透けて見えないようにする。
+ * 上の罫線は、入力欄が帯の下へ潜っていることを示す。
+ *
  * 外枠に DialogFooter を使わないのは、その基底が
  * `flex-col-reverse ... sm:flex-row sm:justify-end` で、縦積み・全幅にするには
  * 3つとも className で打ち消すことになり潰し合うため（ダイアログの位置を className では
@@ -42,7 +47,7 @@ export function ItemFormActions({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 pt-2">
+    <div className="sticky bottom-0 z-10 -mx-6 -mb-[calc(1.5rem_+_env(safe-area-inset-bottom))] flex flex-col gap-2 border-t border-outline-variant bg-surface-container-high px-6 pt-3 pb-[calc(1.5rem_+_env(safe-area-inset-bottom))]">
       <Button className="w-full" disabled={saveDisabled} onClick={onSave}>
         {saveLabel}
       </Button>
