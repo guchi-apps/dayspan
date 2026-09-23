@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useOffline } from "next/offline";
-import { Check, Plus, Trash2 } from "lucide-react";
+import { Check, Plus, Sparkles, Trash2 } from "lucide-react";
 
 import { ItemFormActions } from "@/components/calendar/item-form-actions";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { shouldAutoPickCategory } from "@/lib/ai-shopping-category";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
@@ -89,6 +90,58 @@ export function ShoppingItemDialog({
   const categories = addedCategories ?? categoryOptions;
 
   const offline = useOffline();
+
+  // アイテム名の入力が終わったとき、カテゴリをJevに選ばせる（issue #725・docs/spec.md §36）。
+  // 利用者が選んだ・名前を打ち直したときは、遅れて届いた答えで書き換えないよう番号で捨てる。
+  const lastAskedName = useRef<string | null>(null);
+  const pickRequestId = useRef(0);
+  const [picking, setPicking] = useState(false);
+  const [aiPicked, setAiPicked] = useState(false);
+
+  /** 利用者が選んだとき。飛んでいる判定は捨てる。 */
+  const chooseCategory = (next: string | null) => {
+    pickRequestId.current += 1;
+    setPicking(false);
+    setAiPicked(false);
+    setCategory(next);
+  };
+
+  const autoPickCategory = async () => {
+    const trimmed = name.trim();
+    if (
+      !shouldAutoPickCategory({
+        name,
+        // AIが選んだだけのカテゴリは、名前を打ち直したあとなら選び直させる。
+        category: aiPicked ? null : category,
+        lastAskedName: lastAskedName.current,
+        categoryCount: categories.length,
+        offline,
+      })
+    ) {
+      return;
+    }
+
+    lastAskedName.current = trimmed;
+    const id = ++pickRequestId.current;
+    setPicking(true);
+    try {
+      const response = await fetch("/api/shopping/category-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed, categories: categories.map((option) => option.name) }),
+      });
+      // 手で選べば済むので、失敗はエラー帯に出さない（入力のたびに出ると邪魔になる）。
+      if (!response.ok) return;
+      const result = (await response.json()) as { category?: string | null };
+      if (id !== pickRequestId.current || !result.category) return;
+      setCategory(result.category);
+      setAiPicked(true);
+    } catch {
+      // 通信できないときも手動選択のまま続ける
+    } finally {
+      if (id === pickRequestId.current) setPicking(false);
+    }
+  };
 
   const close = () => {
     setOpen(false);
@@ -184,7 +237,7 @@ export function ShoppingItemDialog({
       }
       const body = (await response.json()) as { options?: TagOption[] };
       setCategories(body.options ?? categories);
-      setCategory(trimmed);
+      chooseCategory(trimmed);
       setNewCategory("");
       setAddingCategory(false);
     } catch {
@@ -226,7 +279,12 @@ export function ShoppingItemDialog({
           label="アイテム名"
           value={name}
           autoFocus={!existing}
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => {
+            pickRequestId.current += 1;
+            setPicking(false);
+            setName(event.target.value);
+          }}
+          onBlur={autoPickCategory}
         />
 
         <Textarea
@@ -238,9 +296,22 @@ export function ShoppingItemDialog({
         />
 
         <div className="flex flex-col gap-2">
-          <span className="type-label-large text-on-surface-variant">カテゴリ</span>
+          <div className="flex items-center gap-2">
+            <span className="type-label-large text-on-surface-variant">カテゴリ</span>
+            {picking && (
+              <span className="type-label-small text-on-surface-variant" role="status">
+                判定中…
+              </span>
+            )}
+            {!picking && aiPicked && (
+              <span className="type-label-small flex items-center gap-1 text-on-surface-variant">
+                <Sparkles className="size-3" aria-hidden />
+                AIが選びました
+              </span>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1.5">
-            <ChoiceChip selected={category === null} onClick={() => setCategory(null)}>
+            <ChoiceChip selected={category === null} onClick={() => chooseCategory(null)}>
               未設定
             </ChoiceChip>
             {categories.map((option) => (
@@ -248,7 +319,7 @@ export function ShoppingItemDialog({
                 key={option.id}
                 selected={category === option.name}
                 colorClass={tagChipClass(option.color)}
-                onClick={() => setCategory(option.name)}
+                onClick={() => chooseCategory(option.name)}
               >
                 {option.name}
               </ChoiceChip>
@@ -256,7 +327,7 @@ export function ShoppingItemDialog({
             {/* 一覧に無い名前が付いたままの項目を編集したとき、その名前も選べる状態で出す。
                 出さないと、保存し直しただけでカテゴリが外れる。 */}
             {category !== null && !categories.some((option) => option.name === category) && (
-              <ChoiceChip selected onClick={() => setCategory(category)}>
+              <ChoiceChip selected onClick={() => chooseCategory(category)}>
                 {category}
               </ChoiceChip>
             )}
