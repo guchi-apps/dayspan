@@ -30,8 +30,8 @@ export const viewport: Viewport = {
   // グラデーションで2色が混ざり、モザイク状に見える（issue #696）。globals.css の
   // --md-surface-container-low をライト・ダークとも写しているので、変えるときは両方直す。
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f7f2fa" },
-    { media: "(prefers-color-scheme: dark)", color: "#1d1b20" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f3f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#1b1b1e" },
   ],
 };
 

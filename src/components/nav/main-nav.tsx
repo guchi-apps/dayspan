@@ -155,7 +155,8 @@ export function BottomNav({
     // 広がるため、その分を内側へ確保しないとタップがブラウザ側に取られる。
     //
     // 等分の格子にするのは、記録を必ず中央に置くため。5項目でちょうど3番目が中央に来る。
-    <nav className="relative grid shrink-0 grid-cols-5 items-start bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+    // 上端だけを大きく丸め、本文の上に置かれた面として見せる（M3 Expressive・issue #705）。
+    <nav className="relative grid shrink-0 grid-cols-5 items-start rounded-t-[28px] bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
       {NAV_ITEMS.map((item) => {
         const active = item.key === current;
         const Icon = item.icon;
@@ -174,10 +175,12 @@ export function BottomNav({
               <span className={cn(ICON_SLOT_CLASS, "relative")}>
                 <span
                   className={cn(
-                    "absolute bottom-0 flex size-14 items-center justify-center rounded-full border-4 border-surface-container elevation-1 transition-colors",
+                    "absolute bottom-0 flex size-14 items-center justify-center border-4 border-surface-container elevation-1 transition-[border-radius,background-color,color]",
+                    // 選ばれているときは円から角丸の四角へ形を変える（M3 Expressive のシェイプモーフ・
+                    // issue #705）。色だけでなく形でも「いまここ」を示す。
                     active
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-primary-container text-on-primary-container",
+                      ? "rounded-[20px] bg-primary text-primary-foreground"
+                      : "rounded-full bg-primary-container text-on-primary-container",
                   )}
                 >
                   <Icon className="size-7" />

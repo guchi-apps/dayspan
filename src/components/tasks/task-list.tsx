@@ -396,7 +396,7 @@ export function TaskList({
       <Button
         size="icon"
         className={cn(
-          "elevation-3 fixed right-4 z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95",
+          "elevation-3 fixed right-4 z-20 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]",
           fabBottomOffsetClass(runningActivity !== null),
         )}
         aria-label="タスクを追加"

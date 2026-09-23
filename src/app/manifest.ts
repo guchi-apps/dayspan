@@ -21,7 +21,7 @@ export default function manifest(): MetadataRoute.Manifest {
     // テーマ色はアイコンの紫ではなく、ライトのヘッダーの色（surface-container-low）にする。
     // 紫のままだと、ステータスバーの領域でヘッダーの淡い色と混ざってにじむ（issue #696）。
     // ダークでは layout.tsx の <meta name="theme-color"> が media ごとに上書きする。
-    theme_color: "#f7f2fa",
+    theme_color: "#f3f3f8",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
