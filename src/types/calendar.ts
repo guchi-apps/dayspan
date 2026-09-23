@@ -121,7 +121,19 @@ export type TaskItem = {
    */
   planned: string | null;
   plannedHasTime: boolean;
+  /**
+   * 片付いたか。完了か「対応しない」（`skipped`）のどちらかなら true。
+   * カレンダー・通知・バッジ・ウィジェットは「まだ手を付けるべきか」しか見ないため、
+   * 2つを区別せず1つの印で読めるようにしてある（issue #750）。
+   */
   done: boolean;
+  /** 完了ではなく「対応しない」にしたか（issue #750）。`done` も true になる。 */
+  skipped: boolean;
+  /**
+   * 「対応しない」にできるか。対応状況のプロパティ（`PropertyMap.outcome`）がタスクDBに無いと
+   * 書き込む先が無い。画面が選択肢を出すかどうかを、追加の取得なしで決めるために持たせる。
+   */
+  canSkip: boolean;
   priority: TaskPriority;
   tags: string[];
   memo: string | null;

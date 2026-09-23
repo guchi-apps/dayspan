@@ -1287,14 +1287,14 @@ function CalendarBody({
   };
 
   /** 表示画面のままの完了切り替え。編集フォームを経由しないため保存とは別経路で送る。 */
-  const handleToggleTaskDone = async (task: TaskItem, done: boolean) => {
+  const handleToggleTaskDone = async (task: TaskItem, done: boolean, skipped = false) => {
     if (offline) throw new Error(OFFLINE_WRITE_MESSAGE);
 
     const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       // 繰り返しタスクは完了時に次回分が作られるため、通常の更新とは別の経路で送る。
-      body: JSON.stringify({ done, completeAction: true }),
+      body: JSON.stringify({ done, completeAction: true, ...(skipped ? { skipped: true } : {}) }),
     });
 
     if (!response.ok) {

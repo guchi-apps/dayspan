@@ -53,7 +53,7 @@ export function TaskDetailDialog({
   /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onDeleted: (touched: TouchedRange[] | null) => void;
   /** 完了状態の切り替え。表示画面のままでも設定できるようにするため、保存とは別経路で呼ぶ。 */
-  onToggleDone: (task: TaskItem, done: boolean) => Promise<void>;
+  onToggleDone: (task: TaskItem, done: boolean, skipped?: boolean) => Promise<void>;
   /** 画面を開いたまま内容が変わったときの通知（紐づけの操作）。変わった期間だけ取り直す。 */
   onChanged: (touched: TouchedRange[] | null) => void;
 }) {
@@ -61,6 +61,8 @@ export function TaskDetailDialog({
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
   const [done, setDone] = useState(task.done);
+  // 「対応しない」は完了と別の状態（issue #750）。どちらか一方だけが立つ。
+  const [skipped, setSkipped] = useState(task.skipped);
   // 予定への紐づけ（docs/spec.md §31）。段階の変更・ずれの解消・解除はこの画面で行う。
   // 保存を挟まずその場で効かせるのは、完了の切り替えと同じく、押した結果が期限・予定日という
   // 別の項目に現れるため。編集画面まで往復させると何が変わったのか追いにくい。
@@ -157,14 +159,33 @@ export function TaskDetailDialog({
   const dueLink = links.find((link) => link.target === "DUE") ?? null;
   const plannedLink = links.find((link) => link.target === "PLANNED") ?? null;
 
-  const toggleDone = async (value: boolean) => {
+  const toggleSkipped = async (value: boolean) => {
     setDone(value);
+    setSkipped(value);
+    setBusy(true);
+    setError(null);
+    try {
+      await onToggleDone(task, value, true);
+    } catch (cause) {
+      setDone(!value);
+      setSkipped(!value);
+      setError(cause instanceof Error ? cause.message : "更新できませんでした。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleDone = async (value: boolean) => {
+    const wasSkipped = skipped;
+    setDone(value);
+    setSkipped(false);
     setBusy(true);
     setError(null);
     try {
       await onToggleDone(task, value);
     } catch (cause) {
       setDone(!value);
+      setSkipped(wasSkipped);
       setError(cause instanceof Error ? cause.message : "更新できませんでした。");
     } finally {
       setBusy(false);
@@ -213,12 +234,24 @@ export function TaskDetailDialog({
         <div className="flex flex-col gap-4 text-sm">
           <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
             <Checkbox
-              checked={done}
+              checked={done && !skipped}
               disabled={busy || readOnly}
               onCheckedChange={(v) => toggleDone(v === true)}
             />
             完了
           </label>
+
+          {/* 対応状況のプロパティが無いDBでは書き込む先が無いため出さない（issue #750）。 */}
+          {(task.canSkip || skipped) && (
+            <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
+              <Checkbox
+                checked={skipped}
+                disabled={busy || readOnly}
+                onCheckedChange={(v) => toggleSkipped(v === true)}
+              />
+              対応しない
+            </label>
+          )}
 
           {readOnly && <p className="px-4 text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
 

@@ -152,7 +152,7 @@ export function ActivityQuickSheet({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent position="bottom" className="gap-3">
+      <DialogContent position="bottom" className="gap-3 pb-[calc(1.5rem_+_env(safe-area-inset-bottom))]">
         <DialogHeader>
           <DialogTitle>{running ? "記録中" : "記録を始める"}</DialogTitle>
           <DialogDescription>

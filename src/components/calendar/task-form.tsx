@@ -238,6 +238,8 @@ export function TaskForm({
         ...(nextDue === undefined ? {} : { due: nextDue }),
         ...(nextPlanned === undefined ? {} : { planned: nextPlanned }),
         done,
+        // 「対応しない」のタスクを未完了へ戻すときは対応状況も外す。残すと読み取りが片付いた扱いのままになる。
+        ...(editing?.skipped && !done ? { outcome: null } : {}),
         priority: priority === NO_VALUE ? null : priority,
         memo: memo.trim() || null,
         tags,

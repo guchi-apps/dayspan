@@ -11,7 +11,8 @@ export type TaskField =
   | "memo"
   | "priority"
   | "recurrence"
-  | "tags";
+  | "tags"
+  | "outcome";
 
 type FieldRequirement = {
   field: TaskField;
@@ -33,6 +34,9 @@ export const TASK_FIELD_REQUIREMENTS: FieldRequirement[] = [
   { field: "priority", label: "優先度", types: ["select", "status"], required: false, nameHints: ["優先度", "priority", "重要度"] },
   { field: "recurrence", label: "繰り返し", types: ["select"], required: false, nameHints: ["繰り返し", "repeat", "recurrence", "リピート"] },
   { field: "tags", label: "タグ", types: ["multi_select"], required: false, nameHints: ["タグ", "tag", "tags", "カテゴリ", "category"] },
+  // 「対応しない」の置き場（issue #750）。完了状態がcheckboxでも使えるよう、完了とは別のselectにする。
+  // 名前が当たったときだけ対応付ける。型だけで割り当てると優先度・繰り返しと取り違える。
+  { field: "outcome", label: "対応状況", types: ["select"], required: false, nameHints: ["対応状況", "対応", "outcome", "resolution"] },
 ];
 
 export type PropertyMap = Partial<Record<TaskField, string>>;
@@ -191,10 +195,13 @@ export const TASK_DATABASE_TEMPLATE = {
   priority: "優先度",
   recurrence: "繰り返し",
   tags: "タグ",
+  outcome: "対応状況",
 } as const satisfies Required<Record<TaskField, string>>;
 
 export const PRIORITY_OPTIONS = ["高", "中", "低"];
 export const RECURRENCE_OPTIONS = ["なし", "毎日", "毎週", "毎月", "毎年"];
+/** 「対応しない」にしたタスクの対応状況の値。この名前のときだけ対応しないとして読む（issue #750）。 */
+export const SKIPPED_OUTCOME = "対応しない";
 
 export type SharedPageSummary = {
   pageId: string;
@@ -266,6 +273,7 @@ export async function createTaskDatabase(
         },
         // タグの選択肢はユーザーが自由に増やすものなので、初期値は作らない。
         [TASK_DATABASE_TEMPLATE.tags]: { multi_select: {} },
+        [TASK_DATABASE_TEMPLATE.outcome]: { select: { options: [{ name: SKIPPED_OUTCOME }] } },
       },
     },
   });

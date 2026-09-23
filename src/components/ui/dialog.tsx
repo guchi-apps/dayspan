@@ -54,13 +54,14 @@ const DIALOG_POSITIONS = {
   center:
     "top-1/2 left-1/2 max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl sm:max-w-sm data-open:zoom-in-95 data-closed:zoom-out-95",
   // 画面の下側を使い、入力欄と保存ボタンを指の届く範囲へ置く。
-  // 下端の余白はホームバーの領域を避けて確保する。
+  // 下端の余白はホームバーの領域（セーフエリア）だけにする。保存ボタンの帯が画面の下端へ接し、
+  // その下に余計な隙間を作らないため（ボタンの下の余白は帯の側が持つ）。
   // 縦積みの flex にしているのは、中身が長くてスクロールするとき、末尾の保存ボタン
   // （`ItemFormActions`）を `sticky` で下端へ留めるため。grid のままだと子の含有ブロックが
   // 自分の1行分の領域になり、sticky が動く余地を持てない。flex では子が縮んで
   // スクロールが起きなくなるので `*:shrink-0` で縮みを止める。
   bottom:
-    "flex flex-col *:shrink-0 bottom-0 left-1/2 max-w-full -translate-x-1/2 rounded-t-2xl pb-[calc(1.5rem_+_env(safe-area-inset-bottom))] sm:max-w-lg data-open:slide-in-from-bottom-8 data-closed:slide-out-to-bottom-8",
+    "flex flex-col *:shrink-0 bottom-0 left-1/2 max-w-full -translate-x-1/2 rounded-t-2xl pb-[env(safe-area-inset-bottom)] sm:max-w-lg data-open:slide-in-from-bottom-8 data-closed:slide-out-to-bottom-8",
   // 画面の左端から出すドロワー（ナビゲーションドロワー）。高さは画面いっぱいで、
   // 右側だけ角を丸める。行を上から下へ並べるため、格子ではなく縦積みにする。
   left:

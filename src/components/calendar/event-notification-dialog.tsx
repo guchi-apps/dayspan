@@ -5,6 +5,8 @@ import { useState } from "react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -13,18 +15,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { eventLeadLabel } from "@/lib/event-notification";
-import { cn } from "@/lib/utils";
 import type { EventNotificationOverride } from "@/types/calendar";
 import { EVENT_LEAD_MINUTES } from "@/types/notification";
 
 import { readErrorMessage } from "./response-error";
-
-type Mode = "default" | "off" | "custom";
-
-function modeOf(value: EventNotificationOverride | null): Mode {
-  if (!value) return "default";
-  return value.enabled ? "custom" : "off";
-}
 
 /**
  * 予定ごとの通知設定（issue #708）。
@@ -53,9 +47,9 @@ export function EventNotificationDialog({
   onSaved: (next: EventNotificationOverride | null) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const [mode, setMode] = useState<Mode>(modeOf(initial));
-  // 通知しないを選んでいる間も、選んでいた分数は残す（次にカスタムへ戻したときに
-  // 選び直させないため。通知設定画面の既存の扱いと同じ）。
+  // 予定は既定では通知しない（issue #746）。入れた予定だけが通知の対象になる。
+  const [enabled, setEnabled] = useState(initial?.enabled === true);
+  // 切っている間も、選んでいた分数は残す（次に入れ直したときに選び直させないため）。
   const [leadMinutes, setLeadMinutes] = useState<number[]>(initial?.leadMinutes ?? [10]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,13 +75,13 @@ export function EventNotificationDialog({
     );
   };
 
-  const invalid = mode === "custom" && leadMinutes.length === 0;
+  const invalid = enabled && leadMinutes.length === 0;
 
   const save = async () => {
     if (invalid) return;
 
     const next: EventNotificationOverride | null =
-      mode === "default" ? null : { enabled: mode === "custom", leadMinutes };
+      enabled ? { enabled: true, leadMinutes } : null;
 
     // 新規作成フォームではまだ eventId が無いため、ここでは保存せず値だけ返す。
     // フォームの保存（予定の作成）が成功したあとに呼び出し側がまとめて送る。
@@ -107,14 +101,14 @@ export function EventNotificationDialog({
       const url = `/api/events/${encodeURIComponent(persist.eventId)}/notification`;
 
       const response =
-        mode === "default"
+        !enabled
           ? await fetch(url, { method: "DELETE" })
           : await fetch(url, {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 calendarId: persist.calendarId,
-                enabled: mode === "custom",
+                enabled: true,
                 leadMinutes,
               }),
             });
@@ -140,47 +134,44 @@ export function EventNotificationDialog({
           <DialogDescription>{title}</DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-2">
-          <ModeOption
-            label="アカウントの設定に従う"
-            description="通知の設定でまとめて決めた内容がそのまま使われます。"
-            selected={mode === "default"}
+        <div className="flex items-center justify-between gap-3 rounded-md border border-outline-variant bg-surface-container-lowest px-3 py-3">
+          <div className="flex flex-col gap-0.5">
+            <Label htmlFor="event-notify">この予定を通知する</Label>
+            <p className="type-label-small leading-snug text-on-surface-variant">
+              入れた予定だけが通知されます。
+            </p>
+          </div>
+          <Switch
+            id="event-notify"
+            checked={enabled}
             disabled={busy}
-            onClick={() => setMode("default")}
-          />
-          <ModeOption
-            label="通知しない"
-            description="この予定だけ通知を出しません。"
-            selected={mode === "off"}
-            disabled={busy}
-            onClick={() => setMode("off")}
-          />
-          <ModeOption
-            label="この予定だけ設定する"
-            description="何分前に知らせるかを選びます。複数選ぶと、その回数ぶん通知します。"
-            selected={mode === "custom"}
-            disabled={busy}
-            onClick={() => setMode("custom")}
+            onCheckedChange={setEnabled}
           />
         </div>
 
-        {mode === "custom" && (
-          <div className="flex flex-wrap gap-2 pl-1">
-            {EVENT_LEAD_MINUTES.map((minutes) => {
-              const selected = leadMinutes.includes(minutes);
-              return (
-                <Button
-                  key={minutes}
-                  type="button"
-                  size="sm"
-                  variant={selected ? "secondary" : "outline"}
-                  disabled={busy}
-                  onClick={() => toggleMinutes(minutes)}
-                >
-                  {eventLeadLabel(minutes)}
-                </Button>
-              );
-            })}
+        {enabled && (
+          <div className="flex flex-col gap-2">
+            <p className="type-label-medium text-on-surface-variant">
+              何分前に知らせるか（複数選ぶと、その回数ぶん通知します）
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {EVENT_LEAD_MINUTES.map((minutes) => {
+                const selected = leadMinutes.includes(minutes);
+                return (
+                  <Button
+                    key={minutes}
+                    type="button"
+                    size="sm"
+                    variant={selected ? "secondary" : "outline"}
+                    aria-pressed={selected}
+                    disabled={busy}
+                    onClick={() => toggleMinutes(minutes)}
+                  >
+                    {eventLeadLabel(minutes)}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -195,44 +186,5 @@ export function EventNotificationDialog({
         </Button>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function ModeOption({
-  label,
-  description,
-  selected,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  description: string;
-  selected: boolean;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "flex flex-col items-start gap-0.5 rounded-md border px-3 py-2.5 text-left transition-colors disabled:opacity-38",
-        selected
-          ? "border-primary bg-primary-container text-on-primary-container"
-          : "border-outline-variant bg-surface-container-lowest hover:bg-primary/8",
-      )}
-    >
-      <span className="text-sm font-bold">{label}</span>
-      <span
-        className={cn(
-          "type-label-small leading-snug",
-          selected ? "opacity-85" : "text-on-surface-variant",
-        )}
-      >
-        {description}
-      </span>
-    </button>
   );
 }
