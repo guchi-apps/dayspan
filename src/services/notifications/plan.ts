@@ -202,7 +202,6 @@ function planEvents(
     const leadList = resolveEventLeadMinutes(
       event.notification,
       defaultSettings.eventEnabled,
-      defaultSettings.eventLeadMinutes,
     );
     if (leadList.length === 0) continue;
 

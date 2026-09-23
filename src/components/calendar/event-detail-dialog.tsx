@@ -458,11 +458,13 @@ export function EventDetailDialog({
               <Button
                 variant="outline"
                 size="sm"
-                className="bg-primary-container text-on-primary-container"
+                className={
+                  event.notification?.enabled ? "bg-primary-container text-on-primary-container" : undefined
+                }
                 disabled={readOnly}
                 onClick={() => setEditingNotification(true)}
               >
-                {event.notification?.enabled === false ? (
+                {!event.notification?.enabled ? (
                   <BellOff className="size-4" />
                 ) : (
                   <Bell className="size-4" />

@@ -359,11 +359,11 @@ export function EventForm({
               type="button"
               variant="outline"
               size="sm"
-              className="bg-primary-container text-on-primary-container"
+              className={notification?.enabled ? "bg-primary-container text-on-primary-container" : undefined}
               disabled={recurrence.frequency !== "none"}
               onClick={() => setEditingNotification(true)}
             >
-              {notification?.enabled === false ? (
+              {!notification?.enabled ? (
                 <BellOff className="size-4" />
               ) : (
                 <Bell className="size-4" />
