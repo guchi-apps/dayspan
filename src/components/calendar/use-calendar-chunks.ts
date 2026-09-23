@@ -218,6 +218,12 @@ export type CalendarWindowData = {
   /** まだ一度も取得できていない月。予定が無いのか読み込み中なのかを描き分けるために使う。 */
   pendingMonths: ReadonlySet<string>;
   /**
+   * 直近の取得が、通信が遅くてService Workerが代わりに返した保存済みだったか（issue #718）。
+   * `X-Dayspan-Stale` ヘッダーで判定する。オフラインとは別に、画面へ「保存済みを表示中」の
+   * 印を出すために使う。
+   */
+  stale: boolean;
+  /**
    * 指定した月を取り直す。null を渡すと保持しているすべての月が対象。
    * 予定やタスクを保存したあと、変わった月だけを取り直すために呼ぶ。
    */
@@ -264,6 +270,7 @@ export function useCalendarChunks({
     errors: [] as CalendarLoadResult["errors"],
   });
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
 
   const inFlight = useRef(new Set<string>());
 
@@ -334,6 +341,10 @@ export function useCalendarChunks({
       const params = new URLSearchParams({ months: months.join(",") });
       const response = await fetch(`/api/calendar?${params.toString()}`);
       if (!response.ok) throw new Error(`status ${response.status}`);
+
+      // 通信が遅くてService Workerがタイムアウトで保存済みを代わりに返したとき（issue #718）。
+      // 届いた応答ごとに毎回上書きする（loadError と同じ扱い）。
+      setStale(response.headers.get("X-Dayspan-Stale") === "1");
 
       const data = (await response.json()) as CalendarLoadResult;
       const fresh = splitByMonth(
@@ -506,6 +517,7 @@ export function useCalendarChunks({
     reminderReady: meta.reminderReady,
     errors: meta.errors,
     loadError,
+    stale,
     pendingMonths,
     invalidate,
   };
