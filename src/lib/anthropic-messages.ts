@@ -54,6 +54,15 @@ async function recordUsage(feature: AiFeature, requestedModel: string, json: Ant
   }
 }
 
+/** Anthropic以外（TypeSafeのJev）の呼び出しも同じ記録先へ足す。失敗しても投げない。 */
+export async function recordAiCall(record: AiUsageRecord): Promise<void> {
+  try {
+    await recorder(record);
+  } catch (error) {
+    console.error("[dayspan] AI usage log failed:", error instanceof Error ? error.message : error);
+  }
+}
+
 export type AnthropicMessageRequest = {
   /** 使用量を集計する機能。`ai-usage.ts` の `AI_FEATURES` から選ぶ。 */
   feature: AiFeature;
