@@ -137,9 +137,11 @@ function normalizeEvent(event: GoogleEvent, calendar: CalendarDisplay): Calendar
       color: calendar.color,
       readOnly: calendar.readOnly,
       url: event.htmlLink ?? null,
-      // 中止・不参加の記録はDaySpanのDBにある（docs/spec.md §37）。Googleの応答からは
-      // 決まらないため、ここでは常に null にして呼び出し側（services/calendar/load.ts）で埋める。
+      // 中止・不参加の記録、予定ごとの通知設定はDaySpanのDBにある（docs/spec.md §37、
+      // issue #708）。Googleの応答からは決まらないため、ここでは常に null にして
+      // 呼び出し側（services/calendar/load.ts）で埋める。
       outcome: null,
+      notification: null,
     };
   }
 
@@ -163,6 +165,7 @@ function normalizeEvent(event: GoogleEvent, calendar: CalendarDisplay): Calendar
     readOnly: calendar.readOnly,
     url: event.htmlLink ?? null,
     outcome: null,
+    notification: null,
   };
 }
 
