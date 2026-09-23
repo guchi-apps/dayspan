@@ -43,6 +43,18 @@ const DATA_LIMIT = 40;
 const WARM_MAX_AGE_MS = 10 * 60 * 1000;
 
 /**
+ * 通信が遅いとき、これだけ待っても届かなければ保存済みへ切り替える（issue #718）。
+ *
+ * 「電波は入っているが遅い」状態は `useOffline()` にも `navigator.onLine` にも現れず、
+ * これまでは失敗しない限り骨組み・空欄のまま待たせ続けていた。オフラインと同じ保存済みへ
+ * 倒す経路（networkFirst）へ、タイムアウトでの切り替えを足すだけで埋める。
+ */
+const SLOW_NETWORK_TIMEOUT_MS = 3000;
+
+/** レスポンスがタイムアウトによる保存済みの代用であることを示すヘッダー（issue #718）。 */
+const STALE_HEADER = "X-Dayspan-Stale";
+
+/**
  * 内容が変わってもURLが変わらないもの。取得できたら差し替える（stale-while-revalidate）。
  * /_next/static/ はファイル名にハッシュが入るため、こちらではなくキャッシュ優先で扱う。
  */
@@ -250,12 +262,12 @@ self.addEventListener("fetch", (event) => {
       return;
     }
 
-    event.respondWith(networkFirst(request, PAGE_CACHE, PAGE_LIMIT, true));
+    event.respondWith(networkFirst(event, PAGE_CACHE, PAGE_LIMIT, true));
     return;
   }
 
   if (CACHED_DATA_PATHS.has(url.pathname)) {
-    event.respondWith(networkFirst(request, DATA_CACHE, DATA_LIMIT, false));
+    event.respondWith(networkFirst(event, DATA_CACHE, DATA_LIMIT, false));
   }
 });
 
@@ -328,37 +340,92 @@ async function staleWhileRevalidate(request, cacheName) {
 }
 
 /**
- * オンラインなら常に最新を返し、取れなかったときだけ保存済みを返す。
+ * オンラインなら常に最新を返し、取れなかったとき・遅いときだけ保存済みを返す。
  *
  * ページとAPIはどちらもユーザーの最新の状態を映すものなので、キャッシュ優先にはしない。
- * 「オフラインだから前の内容が出ている」以外の理由で古い内容が出ることは避ける。
+ * 「オフラインだから」「通信が遅いから」以外の理由で古い内容が出ることは避ける。
+ *
+ * 3秒（SLOW_NETWORK_TIMEOUT_MS）以内に届けばそのまま返す。それより遅いときは、保存済みが
+ * あればいったんそちらを返し、実際の取得は打ち切らず event.waitUntil() で完走させて保存だけ
+ * 更新する（issue #718）。一度返した応答をあとから差し替える手段は無いため、次に開いたとき・
+ * 次の自動更新サイクルで新しい内容になる。保存済みが無ければ、これまでどおり届くまで待つ。
  */
-async function networkFirst(request, cacheName, limit, allowOtherQuery) {
+async function networkFirst(event, cacheName, limit, allowOtherQuery) {
+  const request = event.request;
   const cache = await caches.open(cacheName);
 
-  try {
-    const response = await fetch(request);
-
-    // 5xx は「届いたが今は応えられない」。proxy.ts はSupabase Authへ届かずログイン状態を
-    // 確認できなかったときにこれを返す。保存済みがあるならそちらを出す。エラー画面を出すと、
-    // 通信が不安定なだけの利用者に「ログアウトされた」と受け取られる。
-    if (response.status >= 500) {
-      const cached = await matchCached(cache, request, allowOtherQuery);
-      if (cached) return cached;
-      return response;
-    }
-
+  // 取得自体は3秒を超えても打ち切らない。タイムアウトで保存済みへ倒したあとも、
+  // このPromiseは event.waitUntil() で生かして完走させ、保存を更新する。
+  const attempt = fetch(request).then(async (response) => {
     if (isCacheable(response)) {
       await cache.put(request, response.clone());
       await trim(cache, limit);
     }
     return response;
+  });
+
+  const timedOut = Symbol("dayspan:timed-out");
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(timedOut), SLOW_NETWORK_TIMEOUT_MS);
+  });
+
+  let winner;
+  try {
+    winner = await Promise.race([attempt, timeout]);
   } catch (cause) {
+    // タイムアウトより前に失敗した（オフライン等）。これまでどおり即座に保存済みへ倒す。
+    clearTimeout(timer);
     const cached = await matchCached(cache, request, allowOtherQuery);
     if (cached) return cached;
-
     throw cause;
   }
+  clearTimeout(timer);
+
+  if (winner === timedOut) {
+    const cached = await matchCached(cache, request, allowOtherQuery);
+    if (cached) {
+      event.waitUntil(attempt.catch(() => {}));
+      return withStaleHeader(cached);
+    }
+
+    // 見せるものが無ければ、これまでどおり届くまで待つほかない。
+    try {
+      return await attempt;
+    } catch (cause) {
+      const fallback = await matchCached(cache, request, allowOtherQuery);
+      if (fallback) return withStaleHeader(fallback);
+      throw cause;
+    }
+  }
+
+  const response = winner;
+
+  // 5xx は「届いたが今は応えられない」。proxy.ts はSupabase Authへ届かずログイン状態を
+  // 確認できなかったときにこれを返す。保存済みがあるならそちらを出す。エラー画面を出すと、
+  // 通信が不安定なだけの利用者に「ログアウトされた」と受け取られる。
+  if (response.status >= 500) {
+    const cached = await matchCached(cache, request, allowOtherQuery);
+    if (cached) return cached;
+  }
+  return response;
+}
+
+/**
+ * タイムアウトで保存済みを代わりに返すとき、その旨をヘッダーで伝える（issue #718）。
+ *
+ * ページ（ハードナビゲーション）はこのヘッダーを読む手立てがクライアント側に無いため
+ * 実質使われないが、データAPI（/api/calendar 等）はレスポンスを直接読む呼び出し元
+ * （use-calendar-chunks.ts 等）がここを見て「保存済みを表示中」の印を出せる。
+ */
+function withStaleHeader(response) {
+  const headers = new Headers(response.headers);
+  headers.set(STALE_HEADER, "1");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 /**

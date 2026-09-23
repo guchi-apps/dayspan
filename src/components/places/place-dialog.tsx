@@ -271,13 +271,13 @@ export function PlaceDialog({
           {/*
             タグは登録済みから押して選び、無い名前はここから足す（タスク・日付リマインドと
             同じ TagPicker）。足した名前はNotionが選択肢として登録する。色・並び順・改名は
-            選択肢そのものの話なので、設定 ▸ タグ に置く。
+            選択肢そのものの話なので、`/places` のヘッダーから開く専用ページに置く（issue #706）。
           */}
           {capabilities.tags && (
             <div className="flex flex-col gap-1">
               <TagPicker label="タグ" options={tagOptions} value={tags} multiple onChange={setTags} />
               <p className="type-body-small text-on-surface-variant">
-                色・並び順・名前の変更は「設定 ▸ タグ」の「場所のタグ」から行えます。
+                色・並び順・名前の変更は場所一覧の右上「タグ」から行えます。
               </p>
             </div>
           )}

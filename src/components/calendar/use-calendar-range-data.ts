@@ -65,6 +65,11 @@ export type CalendarRangeData = {
   /** いま表示中の期間を、まだ一度も取得できていない。予定が無いのか読み込み中なのかを描き分ける。 */
   pending: boolean;
   /**
+   * 直近の取得が、通信が遅くてService Workerが代わりに返した保存済みだったか（issue #718）。
+   * `use-calendar-chunks.ts` の `stale` と同じ判定・同じ扱い。
+   */
+  stale: boolean;
+  /**
    * いま表示中の期間を取り直す。引数（変わった範囲）は使わない。範囲を1つしか持たず、
    * 月表示のように「かかる月だけ」を選んで取り直す必要が無いため。`useCalendarChunks` の
    * `invalidate` と同じ形にして、呼び出し側で表示形式ごとの分岐をさせない。
@@ -112,6 +117,7 @@ export function useCalendarRangeData({
     data: EMPTY_RESULT,
   }));
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
 
   const onLoadingChangeRef = useRef(onLoadingChange);
   useEffect(() => {
@@ -176,11 +182,16 @@ export function useCalendarRangeData({
     const requestId = ++latestRequestIdRef.current;
     inFlightKeyRef.current = targetKey;
     onLoadingChangeRef.current(true);
+    // 取り直しを始めた時点で、前の期間ぶんの印は一旦下ろす。届いた応答で改めて判定し直す。
+    setStale(false);
 
     try {
       const params = new URLSearchParams({ view: targetView, date: targetAnchorKey });
       const response = await fetch(`/api/calendar?${params.toString()}`);
       if (!response.ok) throw new Error(`status ${response.status}`);
+
+      // 通信が遅くてService Workerがタイムアウトで保存済みを代わりに返したとき（issue #718）。
+      const responseStale = response.headers.get("X-Dayspan-Stale") === "1";
 
       const data = (await response.json()) as CalendarLoadResult;
       // 自分より後に発行された要求があれば、追い越された古い応答として捨てる。
@@ -188,6 +199,7 @@ export function useCalendarRangeData({
       fetchedRef.current = { key: targetKey, fetchedAt: Date.now() };
       setState({ key: targetKey, data: normalize(data) });
       setLoadError(null);
+      setStale(responseStale);
     } catch {
       if (latestRequestIdRef.current !== requestId) return;
 
@@ -233,7 +245,13 @@ export function useCalendarRangeData({
     setInvalidateNonce((n) => n + 1);
   }, []);
 
-  const showing = state.key === key ? state.data : EMPTY_RESULT;
+  // 表示期間（view・anchorKey）が変わった直後は、新しい期間の取得がまだ終わっていない。
+  // ここで EMPTY_RESULT へ落とすと、前へ・次へ・スワイプのたびに一瞬グリッドが空になり、
+  // 直前まで表示できていた予定まで消える（issue #719）。`invalidate()` が同じキーのまま
+  // 「取得が終わるまでは、それまで持っていた内容を表示したままにする」のと同じ考え方で、
+  // 期間が変わったときも `state.data`（直前に取得できた期間の内容）を表示し続け、新しい
+  // 期間の取得が終わった時点で `state` ごと入れ替わって更新される。
+  const showing = state.data;
 
   return {
     events: showing.events,
@@ -247,6 +265,7 @@ export function useCalendarRangeData({
     errors: showing.errors,
     loadError,
     pending: state.key !== key,
+    stale,
     invalidate,
   };
 }

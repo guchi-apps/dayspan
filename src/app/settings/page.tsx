@@ -1,17 +1,20 @@
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowRight,
   Bell,
+  Briefcase,
   CalendarDays,
   ChevronRight,
+  Diamond,
   History,
   LayoutGrid,
+  ListTodo,
   NotebookPen,
+  ShoppingCart,
   Smartphone,
-  Tags,
   Timer,
   UserRound,
   Zap,
@@ -65,110 +68,151 @@ export default async function SettingsPage() {
   return (
     // 広い画面では行を2列に並べる（issue #636）。各項目の中身の画面は入力欄が並ぶため従来の幅のまま。
     <SettingsShell title="設定" backHref={startPath} backLabel={startPathLabel(startPathCookieValue)} wide>
-      <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
-        <MenuItem
-          href="/settings/google"
-          icon={CalendarDays}
-          label="Google Calendar"
-          value={
-            googleAccounts.length === 0
-              ? "未接続"
-              : googleAccounts.length === 1
-                ? googleAccounts[0].email
-                : `${googleAccounts.length}件のアカウント`
-          }
-        />
-        <MenuItem
-          href="/settings/notion"
-          icon={NotebookPen}
-          label="Notion"
-          value={
-            !notionConnection
-              ? "未接続"
-              : !notionConnection.taskDataSourceId
-                ? "タスクDB未選択"
-                : (notionConnection.taskTitle ?? "接続済み")
-          }
-        />
-        {/* タグはNotionのプロパティ選択肢が実体のため、接続前は開いても何も出せない。 */}
-        {notionConnection && (
+      {/*
+        共通設定・外部連携・機能ごとの設定の3区分に分ける（issue #706）。以前は11項目が
+        見出しなくフラットに並んでおり、どこで何が設定できるか分かりにくかった。
+        タグ・種類・カテゴリの選択肢管理（旧「タグ」1項目）は、タスク・日付リマインド・
+        勤務・買い物リストそれぞれの設定サブページへ分散させた（場所のタグは `/places` の
+        ヘッダーから開く専用ページに置くため、ここには出さない）。
+      */}
+      <SettingsSection heading="共通設定">
+        <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
           <MenuItem
-            href="/settings/tags"
-            icon={Tags}
-            label="タグ"
-            value="タスクのタグ・日付リマインドの種類・勤務場所"
+            href="/settings/account"
+            icon={UserRound}
+            label="アカウント"
+            value={user.email ?? "ログイン中"}
           />
-        )}
-        {/* 記録の保存先はGoogle Calendar。未接続では保存先が選べないため、行ごと出さない。 */}
-        {googleAccounts.length > 0 && (
           <MenuItem
-            href="/settings/activities"
-            icon={Timer}
-            label="活動記録"
+            href="/settings/display"
+            icon={LayoutGrid}
+            label="表示"
+            value={`起動画面: ${startPathLabel(startPathCookieValue)} / 週の開始日: ${weekStartLabel(uiSetting?.weekStartsOn ?? 0)}`}
+          />
+          {/* 通知はGoogle・Notionが未接続でも開ける。許可そのものは端末ごとに持つため、
+              この行には「この端末で受け取っているか」ではなく登録済みの端末の数を出す。 */}
+          <MenuItem
+            href="/settings/notifications"
+            icon={Bell}
+            label="通知"
             value={
-              activityPresetCount === 0
-                ? "項目なし"
-                : `${activityPresetCount}件の項目`
+              pushDeviceCount === 0
+                ? "未設定"
+                : notificationSummary(notificationSettings, pushDeviceCount)
             }
           />
-        )}
-        {/* 移動の本体はDaySpanのDBにあるため、Google・Notionが未接続でも使える。常に出す。 */}
-        <MenuItem
-          href="/settings/travel"
-          icon={ArrowRight}
-          label="移動"
-          value={
-            uiSetting?.travelDefaultOrigin
-              ? `${uiSetting.travelDefaultOrigin}から / ${TRAVEL_MODE_LABELS[uiSetting.travelDefaultMode]}`
-              : `既定の交通手段: ${TRAVEL_MODE_LABELS[uiSetting?.travelDefaultMode ?? "PUBLIC_TRANSIT"]}`
-          }
-        />
-        {/* 記録中の1件はGoogle未接続でも出せるため、Google接続の有無にかかわらず出す。 */}
-        <MenuItem
-          href="/settings/widget"
-          icon={Smartphone}
-          label="iPhoneウィジェット"
-          value={widgetToken ? "発行済み" : "未設定"}
-        />
-        {/* 睡眠の記録先はGoogle Calendar。ただしトークンの発行そのものは連携に依らず、
-            未接続でも先に手順を読める。ウィジェットと同じく常に出す。 */}
-        <MenuItem
-          href="/settings/shortcuts"
-          icon={Zap}
-          label="iPhoneショートカット"
-          value={shortcutToken ? "発行済み" : "未設定"}
-        />
-        {/* 通知はGoogle・Notionが未接続でも開ける。許可そのものは端末ごとに持つため、
-            この行には「この端末で受け取っているか」ではなく登録済みの端末の数を出す。 */}
-        <MenuItem
-          href="/settings/notifications"
-          icon={Bell}
-          label="通知"
-          value={
-            pushDeviceCount === 0
-              ? "未設定"
-              : notificationSummary(notificationSettings, pushDeviceCount)
-          }
-        />
-        <MenuItem
-          href="/settings/display"
-          icon={LayoutGrid}
-          label="表示"
-          value={`起動画面: ${startPathLabel(startPathCookieValue)} / 週の開始日: ${weekStartLabel(uiSetting?.weekStartsOn ?? 0)}`}
-        />
-        <MenuItem
-          href="/settings/account"
-          icon={UserRound}
-          label="アカウント"
-          value={user.email ?? "ログイン中"}
-        />
-        <MenuItem
-          href="/settings/changelog"
-          icon={History}
-          label="更新履歴"
-          value={`v${APP_VERSION}`}
-        />
-      </Card>
+          <MenuItem
+            href="/settings/changelog"
+            icon={History}
+            label="更新履歴"
+            value={`v${APP_VERSION}`}
+          />
+        </Card>
+      </SettingsSection>
+
+      <SettingsSection heading="外部連携">
+        <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
+          <MenuItem
+            href="/settings/google"
+            icon={CalendarDays}
+            label="Google Calendar"
+            value={
+              googleAccounts.length === 0
+                ? "未接続"
+                : googleAccounts.length === 1
+                  ? googleAccounts[0].email
+                  : `${googleAccounts.length}件のアカウント`
+            }
+          />
+          <MenuItem
+            href="/settings/notion"
+            icon={NotebookPen}
+            label="Notion"
+            value={
+              !notionConnection
+                ? "未接続"
+                : !notionConnection.taskDataSourceId
+                  ? "タスクDB未選択"
+                  : (notionConnection.taskTitle ?? "接続済み")
+            }
+          />
+        </Card>
+      </SettingsSection>
+
+      <SettingsSection heading="機能ごとの設定">
+        <Card className="gap-0 py-0 lg:grid lg:grid-cols-2">
+          {/* タグ・種類・カテゴリの選択肢はNotionのプロパティ定義そのもので、DB単位の
+              未接続はページ内の案内文で吸収する。行の表示・非表示はNotion全体の接続の
+              有無で揃える（以前の「タグ」項目と同じ条件）。 */}
+          {notionConnection && (
+            <>
+              <MenuItem
+                href="/settings/tasks"
+                icon={ListTodo}
+                label="タスク"
+                value={notionConnection.taskTitle ?? "タグを色つきで登録"}
+              />
+              <MenuItem
+                href="/settings/reminders"
+                icon={Diamond}
+                label="日付リマインド"
+                value={notionConnection.reminderTitle ?? "種類を色つきで登録"}
+              />
+              <MenuItem
+                href="/settings/work"
+                icon={Briefcase}
+                label="勤務"
+                value={notionConnection.workTitle ?? "勤務場所を色つきで登録"}
+              />
+              <MenuItem
+                href="/settings/shopping"
+                icon={ShoppingCart}
+                label="買い物リスト"
+                value={notionConnection.shoppingTitle ?? "カテゴリを色つきで登録"}
+              />
+            </>
+          )}
+          {/* 記録の保存先はGoogle Calendar。未接続では保存先が選べないため、行ごと出さない。 */}
+          {googleAccounts.length > 0 && (
+            <MenuItem
+              href="/settings/activities"
+              icon={Timer}
+              label="活動記録"
+              value={
+                activityPresetCount === 0
+                  ? "項目なし"
+                  : `${activityPresetCount}件の項目`
+              }
+            />
+          )}
+          {/* 移動の本体はDaySpanのDBにあるため、Google・Notionが未接続でも使える。常に出す。 */}
+          <MenuItem
+            href="/settings/travel"
+            icon={ArrowRight}
+            label="移動"
+            value={
+              uiSetting?.travelDefaultOrigin
+                ? `${uiSetting.travelDefaultOrigin}から / ${TRAVEL_MODE_LABELS[uiSetting.travelDefaultMode]}`
+                : `既定の交通手段: ${TRAVEL_MODE_LABELS[uiSetting?.travelDefaultMode ?? "PUBLIC_TRANSIT"]}`
+            }
+          />
+          {/* 記録中の1件はGoogle未接続でも出せるため、Google接続の有無にかかわらず出す。 */}
+          <MenuItem
+            href="/settings/widget"
+            icon={Smartphone}
+            label="iPhoneウィジェット"
+            value={widgetToken ? "発行済み" : "未設定"}
+          />
+          {/* 睡眠の記録先はGoogle Calendar。ただしトークンの発行そのものは連携に依らず、
+              未接続でも先に手順を読める。ウィジェットと同じく常に出す。 */}
+          <MenuItem
+            href="/settings/shortcuts"
+            icon={Zap}
+            label="iPhoneショートカット"
+            value={shortcutToken ? "発行済み" : "未設定"}
+          />
+        </Card>
+      </SettingsSection>
     </SettingsShell>
   );
 }
@@ -185,6 +229,16 @@ function notificationSummary(
 
   const devices = `${deviceCount}台`;
   return targets.length === 0 ? `${devices} / 知らせない` : `${devices} / ${targets.join("・")}`;
+}
+
+/** 見出し付きの区分。1つの区分が空になることは無いため、空のときの扱いは持たない。 */
+function SettingsSection({ heading, children }: { heading: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="type-title-small px-1 text-on-surface-variant">{heading}</h2>
+      {children}
+    </section>
+  );
 }
 
 /**

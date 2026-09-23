@@ -412,8 +412,8 @@ export function WorkScreen({
                   ) : placeOptions.length === 0 ? (
                     <p className="type-body-small text-on-surface-variant">
                       勤務場所の選択肢がありません。
-                      <Link href="/settings/tags" className="ml-1 underline">
-                        設定 ▸ タグ
+                      <Link href="/settings/work" className="ml-1 underline">
+                        設定 ▸ 勤務
                       </Link>
                       から追加してください。
                     </p>
