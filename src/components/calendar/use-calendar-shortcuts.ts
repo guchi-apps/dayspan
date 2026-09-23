@@ -34,7 +34,7 @@ export type CalendarShortcutActions = {
 
 type CalendarShortcutsArgs = {
   offline: boolean;
-  /** 右下の「＋」と同じ、追加できる種類。1つも無ければ `c` は何もしない。 */
+  /** 右下の「＋」と同じ、追加できる種類（予定のみ）。使えなければ `c` は何もしない。 */
   available: Record<AddableKind, boolean>;
   actions: CalendarShortcutActions;
 };
@@ -87,7 +87,7 @@ export function useCalendarShortcuts(args: CalendarShortcutsArgs) {
           if (!offline) actions.onRefresh();
           return;
         case "c":
-          if (!offline && (available.event || available.task || available.travel)) {
+          if (!offline && available.event) {
             actions.onAdd(available);
           }
           return;

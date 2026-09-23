@@ -2,15 +2,7 @@
 
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
 import type { WritableCalendar } from "@/types/calendar";
@@ -26,16 +18,15 @@ export type ItemKind = "event" | "task" | "reminder" | "travel";
 /**
  * カレンダーの「＋」から新しく作れる種類（docs/spec.md §15）。
  *
- * 日付リマインドを外しているのは、誕生日・契約更新日のように一度入れたら数年触らない項目
- * であるのに対し、カレンダーの「＋」は毎日押されるため。完了状態を持たない種類をそこへ
- * 並べていること自体が、やって終わらせるものを日付リマインドへ入れる入口になっていた（§9）。
- * 作成は専用一覧（/reminders）に寄せる。カレンダー上での表示・編集・削除は従来どおり。
+ * 予定だけにしている。種類の切り替えタブを持たない（issue #729）ため、「＋」が開く入力は
+ * 1種類に決まる。タスクはタスク画面、日付リマインドは専用一覧（/reminders）、
+ * 移動は予定の表示画面の「移動を追加」から作る。
  */
-export type AddableKind = Exclude<ItemKind, "reminder">;
+export type AddableKind = Extract<ItemKind, "event">;
 
 /**
- * 開く対象。追加では作れる種類ぶんを渡し、画面上で切り替えられるようにする。
- * 編集は種類を変えられないため1つだけ渡す（予定をタスクに作り変えることはできない）。
+ * 開く対象。開く種類のひな型を1つだけ渡す（`initialKind` と同じ種類）。
+ * 種類の切り替えは持たない（issue #729）。予定をタスクに作り変えることもできない。
  */
 export type ItemDrafts = {
   event?: EventDraft;
@@ -45,39 +36,21 @@ export type ItemDrafts = {
 };
 
 /**
- * 種類の名前と、その種類が何であるかの1行。
- *
- * 名前は仕様・カレンダー・一覧と同じ「日付リマインド」に揃える。ここだけ「リマインド」と
- * 短くすると、後で思い出させてくれるもの（＝やることの置き場）と読めてしまう。
- *
- * 説明を添えるのは、選ぶ時点で**完了状態を持つかどうか**が画面のどこにも書かれていないため。
- * タスクと日付リマインドの違いはこの一点で（docs/spec.md §9）、やって終わらせるものは
- * タスク、日付を覚えておくだけなら日付リマインドになる。
+ * 見出しに出す種類の名前。名前は仕様・カレンダー・一覧と同じ「日付リマインド」に揃える。
+ * ここだけ「リマインド」と短くすると、後で思い出させてくれるもの（＝やることの置き場）と読めてしまう。
  */
-const KIND_LABELS: { kind: ItemKind; label: string; description: string }[] = [
-  { kind: "event", label: "予定", description: "完了は無い。その時間に何をするかを押さえる" },
-  {
-    kind: "task",
-    label: "タスク",
-    description: "完了してこなす。繰り返しは完了した時点で次回が作られる",
-  },
-  {
-    kind: "reminder",
-    label: "日付リマインド",
-    description: "完了は無い。誕生日・更新日など日付そのものを覚えておく",
-  },
-  {
-    kind: "travel",
-    label: "移動",
-    description: "予定に付く移動時間。出発地と目的地から所要時間を求める",
-  },
-];
+const KIND_LABELS: Record<ItemKind, string> = {
+  event: "予定",
+  task: "タスク",
+  reminder: "日付リマインド",
+  travel: "移動",
+};
 
 /**
  * 予定・タスク・日付リマインドの入力ダイアログ（docs/spec.md §15）。
  *
- * 追加のときは、どれを作るかを開いてから選べるようにする。押す前に決めさせると、
- * 押した先の画面で入力の途中に気付いても、閉じて選び直すことになるため。
+ * 買い物リストの入力と同じく、画面の下から出るハーフモーダルにする（issue #729）。
+ * 種類の切り替えタブは持たず、開いた入口が決めた種類だけを出す。
  * 枠をここが持ち、中身だけを差し替えるのは、Radixのダイアログを開いたまま
  * アンマウントすると<body>のpointer-events:noneが残ることがあるため。
  */
@@ -107,12 +80,8 @@ export function ItemDialog({
   /** 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onSaved: (touched: TouchedRange[] | null) => void;
 }) {
-  const [kind, setKind] = useState<ItemKind>(initialKind);
-  // タイトルは種類によらず必ず入れる項目。切り替えで消えると入れ直しになるため引き継ぐ。
+  const kind = initialKind;
   const [title, setTitle] = useState(() => draftTitle(initialKind, drafts));
-  // 切り替えたあとは入力欄へ自動で移らない。スマートフォンでは切り替えるたびに
-  // キーボードが立ち上がり、選び直している最中の画面を覆ってしまうため。
-  const [switched, setSwitched] = useState(false);
 
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
@@ -128,14 +97,12 @@ export function ItemDialog({
     setTimeout(() => onSaved(touched), 150);
   };
 
-  const selectable = KIND_LABELS.filter((item) => drafts[item.kind] !== undefined);
   const editing = isEditing(kind, drafts);
-  const current = KIND_LABELS.find((item) => item.kind === kind);
-  const label = current?.label ?? "";
+  const label = KIND_LABELS[kind];
 
   const shared = {
     title,
-    autoFocusTitle: !switched,
+    autoFocusTitle: true,
     onTitleChange: setTitle,
     onSaved: finish,
     timeZone,
@@ -143,43 +110,9 @@ export function ItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+      <DialogContent position="bottom" className="max-h-[85dvh] gap-3 overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? `${label}を編集` : `${label}を追加`}</DialogTitle>
-
-          {/* M3のセグメンテッドボタン。排他的な選択であることを、隣接した枠で示す。 */}
-          {selectable.length > 1 && (
-            <div className="flex items-center self-start overflow-hidden rounded-full border border-outline">
-              {selectable.map((item) => (
-                <Button
-                  key={item.kind}
-                  type="button"
-                  variant={kind === item.kind ? "secondary" : "ghost"}
-                  size="xs"
-                  className={cn(
-                    // 狭い画面では余白を詰める。4種類ぶんの名前が入り切らないと、
-                    // 枠が overflow-hidden のため末尾の「移動」が切れて読めなくなる。
-                    "type-label-large h-9 rounded-none px-3 active:rounded-none sm:px-4",
-                    kind === item.kind && "text-on-secondary-container",
-                  )}
-                  onClick={() => {
-                    setKind(item.kind);
-                    setSwitched(true);
-                  }}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </div>
-          )}
-
-          {/* 選んでいる種類が何であるかの1行。タスクと日付リマインドの違いは
-              「完了があるかどうか」の一点で、選ぶ時点ではそれが画面に出ていない。 */}
-          {selectable.length > 1 && current && (
-            <DialogDescription className="type-body-small text-on-surface-variant">
-              {current.description}
-            </DialogDescription>
-          )}
         </DialogHeader>
 
         {kind === "event" && drafts.event && (
