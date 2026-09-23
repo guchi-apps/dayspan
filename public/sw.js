@@ -73,8 +73,14 @@ const REVALIDATED_ASSETS = new Set([
  */
 const NEVER_CACHE_PREFIXES = ["/auth/", "/login", "/api/google/", "/api/notion/", "/api/settings/"];
 
-/** オフラインでも読めるようにするGET API。応答はJSONで、認証は毎回サーバーが確認する。 */
-const CACHED_DATA_PATHS = new Set(["/api/calendar", "/api/tasks"]);
+/**
+ * オフラインでも読めるようにするGET API。応答はJSONで、認証は毎回サーバーが確認する。
+ *
+ * `/api/shopping` `/api/tasks/all` は買い物・タスク画面の一覧（issue #724）。画面はページで
+ * Notion を待たず、ここから背景取得するため、通信が遅いときも保存済みを返せる。
+ * 新しいパスを足すだけで保存する応答の形は変わらないため、VERSION は上げない。
+ */
+const CACHED_DATA_PATHS = new Set(["/api/calendar", "/api/tasks", "/api/shopping", "/api/tasks/all"]);
 
 self.addEventListener("install", () => {
   // 事前に貯めるものは無い。新しい版を待たせる理由もないため、すぐ有効化へ進む。
