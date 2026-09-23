@@ -233,7 +233,13 @@ export function useCalendarRangeData({
     setInvalidateNonce((n) => n + 1);
   }, []);
 
-  const showing = state.key === key ? state.data : EMPTY_RESULT;
+  // 表示期間（view・anchorKey）が変わった直後は、新しい期間の取得がまだ終わっていない。
+  // ここで EMPTY_RESULT へ落とすと、前へ・次へ・スワイプのたびに一瞬グリッドが空になり、
+  // 直前まで表示できていた予定まで消える（issue #719）。`invalidate()` が同じキーのまま
+  // 「取得が終わるまでは、それまで持っていた内容を表示したままにする」のと同じ考え方で、
+  // 期間が変わったときも `state.data`（直前に取得できた期間の内容）を表示し続け、新しい
+  // 期間の取得が終わった時点で `state` ごと入れ替わって更新される。
+  const showing = state.data;
 
   return {
     events: showing.events,
