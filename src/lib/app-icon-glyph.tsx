@@ -5,10 +5,10 @@
  * 背景はアプリのテーマ色（globals.css の --md-primary）と同じ紫にする。ログイン画面の
  * 「Googleでログイン」ボタンと同じ色で、manifest の background_color とも揃う。
  * （theme_color はステータスバーの領域の色で、ヘッダーの色に合わせている・issue #696）
- * 図柄は白。この紫と白のコントラストは6.4:1あり、32pxのfaviconでも枠が背景に沈まない。
+ * 図柄は白。この紫（M3 Expressive へ更新したインディゴ・issue #705）と白のコントラストは6.4:1あり、32pxのfaviconでも枠が背景に沈まない。
  * 背景を淡い色に変える場合は、白のままだとコントラストが3.0を割るため図柄側も暗い色に戻す。
  */
-export const APP_ICON_BACKGROUND = "#6750a4";
+export const APP_ICON_BACKGROUND = "#544fc1";
 export const APP_ICON_FOREGROUND = "#ffffff";
 
 /**

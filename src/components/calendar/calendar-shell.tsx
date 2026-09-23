@@ -803,7 +803,7 @@ export function CalendarShell({
               {headerLabel.year}
             </span>
           )}
-          <span className="type-title-medium md:type-headline-small truncate">
+          <span className="type-title-medium font-bold md:type-headline-small truncate">
             {/*
               狭い画面では月だけに切り替える。日と曜日は列ヘッダーに出ているため、
               ここで繰り返すと入り切らずに truncate され、いま見ている期間そのものが読めなくなる。
@@ -844,7 +844,7 @@ export function CalendarShell({
               variant={nav.view === item.view ? "secondary" : "ghost"}
               size="xs"
               className={cn(
-                "type-label-medium h-10 rounded-none px-3 md:type-label-large md:h-8",
+                "type-label-medium h-10 rounded-none px-3 active:rounded-none md:type-label-large md:h-8",
                 nav.view === item.view && "text-on-secondary-container",
                 item.desktopOnly && "hidden md:inline-flex",
               )}
@@ -1584,11 +1584,12 @@ function AddButton({
 
   return (
     <div className={cn("fixed right-4 z-30", fabBottomOffsetClass(hasRunningBar))}>
-      {/* M3のFAB。角は完全な丸ではなく大きめの角丸で、面として置かれていることを示す。 */}
+      {/* M3のFAB。角は完全な丸ではなく大きめの角丸で、面として置かれていることを示す。
+          大きさ・角丸は M3 Expressive の medium FAB に寄せる（issue #705）。 */}
       <Button
         size="icon"
         aria-label="追加"
-        className="elevation-3 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95"
+        className="elevation-3 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]"
         onClick={() => onAdd(available)}
       >
         <Plus className="size-6" />

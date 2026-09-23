@@ -215,7 +215,7 @@ export function ReminderList({
 
       <Button
         size="icon"
-        className="elevation-3 fixed right-4 bottom-[calc(1.5rem_+_env(safe-area-inset-bottom))] z-20 size-14 rounded-lg bg-primary-container text-on-primary-container hover:brightness-95"
+        className="elevation-3 fixed right-4 bottom-[calc(1.5rem_+_env(safe-area-inset-bottom))] z-20 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]"
         aria-label="日付リマインドを追加"
         disabled={offline}
         onClick={openAdd}
