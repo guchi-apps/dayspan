@@ -96,9 +96,6 @@ import { useCalendarShortcuts, type CalendarShortcutActions } from "./use-calend
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 import type { SlotRangeCommit } from "./use-slot-range";
 
-// タスクの期限は、その日のうちに片付ける想定の時刻から始める（予定の既定より遅い）。
-const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
-
 // 移動の仮の長さ。押した時点では所要時間が分からないが、出発と到着を同じ時刻にすると
 // 開いた瞬間に入力の注意が出るため、直す前提の長さを置いておく。
 const DEFAULT_TRAVEL_MINUTES = 30;
@@ -680,33 +677,13 @@ export function CalendarShell({
   // nav（楽観値）で判定するのは、表示形式の切り替え中でも正しい方を指すようにするため。
   const defaultDayKey = nav.view === "month" ? utils.todayKey() : gridDays[0];
 
-  /**
-   * 右下の「＋」からの追加。作れる種類ぶんのひな型をまとめて渡し、
-   * 画面上で切り替えられるようにする。日付はどれも同じ日から始める。
-   */
+  /** 右下の「＋」からの追加。予定の入力を下から開く（種類の切り替えは持たない・issue #729）。 */
   const openAdd = (available: Record<AddableKind, boolean>) => {
-    const drafts: ItemDrafts = {};
-    if (available.event) drafts.event = newEventDraft(defaultDayKey, DEFAULT_START_MINUTES);
-    if (available.task) {
-      drafts.task = {
-        dueMode: "datetime",
-        due: dateKeyPlusMinutes(defaultDayKey, DEFAULT_TASK_DUE_MINUTES),
-      };
-    }
-    if (available.travel) {
-      // 単独の移動は往復の起点になる予定が無いため、行きだけを作る。
-      drafts.travel = {
-        origin: travelSettings.defaultOrigin ?? "",
-        destination: "",
-        mode: travelSettings.defaultMode,
-        departAt: dateKeyPlusMinutes(defaultDayKey, DEFAULT_START_MINUTES),
-        arriveAt: dateKeyPlusMinutes(defaultDayKey, DEFAULT_START_MINUTES + 30),
-      };
-    }
-
-    // 「＋」は予定を足す操作として使われることが多い。作れるなら予定から開く。
-    const initialKind: AddableKind = available.event ? "event" : available.task ? "task" : "travel";
-    setItemDialog({ initialKind, drafts });
+    if (!available.event) return;
+    setItemDialog({
+      initialKind: "event",
+      drafts: { event: newEventDraft(defaultDayKey, DEFAULT_START_MINUTES) },
+    });
   };
 
   // 表示形式を切り替えたときの移動先。月表示はスクロールで移動するため anchorKey が
@@ -1333,9 +1310,6 @@ function CalendarBody({
   // 右下の「＋」で作れる種類。キーボードショートカットの `c`（issue #635）も同じ条件で判定する。
   const addAvailable: Record<AddableKind, boolean> = {
     event: !offline && data.calendars.length > 0,
-    task: !offline && data.notionReady,
-    // 移動の本体はDaySpanのDBにあるため、外部連携が済んでいなくても作れる。
-    travel: !offline,
   };
 
   const shortcutActions: CalendarShortcutActions = {
@@ -1575,9 +1549,8 @@ function shiftDateKey(dateKey: string, days: number): string {
 }
 
 /**
- * 画面右下の「＋」。押すと入力画面が開き、そこで予定・タスク・移動を切り替える
- * （docs/spec.md §15）。何を作るかは開いてからでも選べるため、ここでは種類を選ばせない。
- * 日付リマインドはこの一覧に出さない（AddableKind の理由を参照）。
+ * 画面右下の「＋」。押すと予定の入力が下から開く（docs/spec.md §15）。
+ * タスク・日付リマインド・移動は作れない（AddableKind の理由を参照）。
  */
 function AddButton({
   available,
@@ -1589,7 +1562,7 @@ function AddButton({
   /** 記録中バー（issue #629）が下部ナビの直上に出ているか。出ていれば重ならない位置まで逃がす。 */
   hasRunningBar: boolean;
 }) {
-  if (!available.event && !available.task && !available.travel) return null;
+  if (!available.event) return null;
 
   return (
     <div className={cn("fixed right-4 z-30", fabBottomOffsetClass(hasRunningBar))}>

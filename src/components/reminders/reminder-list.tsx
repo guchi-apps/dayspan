@@ -31,9 +31,6 @@ import {
 import type { TagCatalog, TagOption } from "@/services/notion/tag-options";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { ReminderItem, WritableCalendar } from "@/types/calendar";
-import { dateKeyPlusMinutes } from "@/components/calendar/datetime-fields";
-
-const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
 
 export function ReminderList({
   reminders,
@@ -113,19 +110,11 @@ export function ReminderList({
   /**
    * 右下の「＋」からの追加。日付リマインドを新しく作れるのはこの画面だけ（docs/spec.md §9・§15）。
    *
-   * ここからタスクも作れるのは残す。迷ったときはタスクのほうが安全で、完了を付ける場所があり、
-   * 繰り返しなら次回分も作られる（§13）。日付リマインドは完了を持てないため、
-   * 取り違えたときに失うものが大きい。
+   * タスクは併設しない（issue #729）。入力は種類の切り替えを持たず、ここが開くのは
+   * この画面の主題である日付リマインドだけ。タスクはタスク画面から作る。
    */
   const openAdd = () => {
-    const defaultDayKey = utils.todayKey();
-    const drafts: ItemDrafts = {};
-    drafts.reminder = { dateMode: "date", date: defaultDayKey };
-    drafts.task = {
-      dueMode: "datetime",
-      due: dateKeyPlusMinutes(defaultDayKey, DEFAULT_TASK_DUE_MINUTES),
-    };
-    setItemDialog(drafts);
+    setItemDialog({ reminder: { dateMode: "date", date: utils.todayKey() } });
   };
 
   return (
