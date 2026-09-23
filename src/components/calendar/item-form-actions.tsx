@@ -16,8 +16,8 @@ import { Button } from "@/components/ui/button";
  * 目が向く先が保存側になり、押し間違いの向きもそちらへ寄る。
  *
  * 中身が長くてダイアログがスクロールするときも、この帯は画面の下端に留まる（sticky）。
- * 保存のためだけに末尾までスクロールさせない。ダイアログ下端の余白（p-6 とホームバーを
- * 避ける分）は負の余白で帯の側に取り込み、余白の上へ入力欄が透けて見えないようにする。
+ * 保存のためだけに末尾までスクロールさせない。ダイアログ下端の余白（ホームバーを
+ * 避けるセーフエリア分）は負の余白で帯の側に取り込み、余白の上へ入力欄が透けて見えないようにする。
  * 上の罫線は、入力欄が帯の下へ潜っていることを示す。
  *
  * 外枠に DialogFooter を使わないのは、その基底が
@@ -47,7 +47,7 @@ export function ItemFormActions({
   children?: ReactNode;
 }) {
   return (
-    <div className="sticky bottom-0 z-10 -mx-6 -mb-[calc(1.5rem_+_env(safe-area-inset-bottom))] flex flex-col gap-2 border-t border-outline-variant bg-surface-container-high px-6 pt-3 pb-[calc(1.5rem_+_env(safe-area-inset-bottom))]">
+    <div className="sticky bottom-0 z-10 -mx-6 -mb-[env(safe-area-inset-bottom)] flex flex-col gap-2 border-t border-outline-variant bg-surface-container-high px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       <Button className="w-full" disabled={saveDisabled} onClick={onSave}>
         {saveLabel}
       </Button>
