@@ -5,7 +5,7 @@ import type { TaskItem } from "@/types/calendar";
 
 import type { NotionQueryFilter } from "./client";
 import { formatRecurrence, nextDue, parseRecurrence } from "./recurrence";
-import type { PropertyMap } from "./task-database";
+import { SKIPPED_OUTCOME, type PropertyMap } from "./task-database";
 
 // Notionのページプロパティは型ごとに形が違ううえ、完了状態や優先度は
 // ユーザーの設定次第で checkbox / status / select のどれにもなりうる。
@@ -63,6 +63,8 @@ export function normalizeTask(page: NotionPage, propertyMap: PropertyMap): TaskI
   const dueStart = dateStart(get("due"));
   const plannedStart = dateStart(get("planned"));
 
+  const skipped = readChoice(get("outcome")) === SKIPPED_OUTCOME;
+
   return {
     kind: "task",
     id: page.id,
@@ -72,7 +74,10 @@ export function normalizeTask(page: NotionPage, propertyMap: PropertyMap): TaskI
     hasTime: Boolean(dueStart && dueStart.includes("T")),
     planned: plannedStart,
     plannedHasTime: Boolean(plannedStart && plannedStart.includes("T")),
-    done: readDone(get("done")),
+    // 「対応しない」は完了と同じく片付いたものとして扱う（docs/spec.md §12）。
+    done: readDone(get("done")) || skipped,
+    skipped,
+    canSkip: Boolean(propertyMap.outcome),
     priority: readChoice(get("priority")),
     tags: (get("tags")?.multi_select ?? []).map((tag) => tag.name ?? "").filter(Boolean),
     memo: plainText(get("memo")?.rich_text) || null,
@@ -178,6 +183,8 @@ export type TaskWriteInput = {
   memo?: string | null;
   tags?: string[];
   recurrence?: string | null;
+  /** 対応状況。null は未設定（issue #750）。 */
+  outcome?: string | null;
 };
 
 /**
@@ -234,6 +241,10 @@ function toProperties(
 
   if (input.recurrence !== undefined) {
     set("recurrence", { select: input.recurrence ? { name: input.recurrence } : null });
+  }
+
+  if (input.outcome !== undefined) {
+    set("outcome", { select: input.outcome ? { name: input.outcome } : null });
   }
 
   return properties;
@@ -312,7 +323,12 @@ export async function completeTask(
   const page = await notion.pages.retrieve({ page_id: taskId });
   const current = "properties" in page ? normalizeTask(page as NotionPage, propertyMap) : null;
 
-  await updateTask(notion, connection, taskId, { done });
+  // 「対応しない」から完了へ変える操作では、対応状況を外す（完了と対応しないは両立しない）。
+  // 他の値（利用者が独自に足した選択肢）は触らない。
+  await updateTask(notion, connection, taskId, {
+    done,
+    ...(current?.skipped ? { outcome: null } : {}),
+  });
 
   // 未完了へ戻す操作では次回分を作らない。二重に増えてしまうため。
   if (!done || !current) return { nextTaskId: null };
@@ -335,6 +351,26 @@ export async function completeTask(
   });
 
   return { nextTaskId: created.id };
+}
+
+/**
+ * タスクを「対応しない」にする、または戻す（issue #750）。
+ * 完了と違い、繰り返しの次回分は作らない。やらないと決めた回は次へ進めない扱いにする。
+ * 完了状態も合わせて動かすのは、Notion側の一覧でも片付いたものとして並ぶようにするため。
+ */
+export async function skipTask(
+  notion: Client,
+  connection: NotionConnection,
+  taskId: string,
+  skipped: boolean,
+): Promise<void> {
+  const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
+  if (!propertyMap.outcome) throw new Error("このタスクDBには「対応状況」プロパティがありません。");
+
+  await updateTask(notion, connection, taskId, {
+    done: skipped,
+    outcome: skipped ? SKIPPED_OUTCOME : null,
+  });
 }
 
 /**

@@ -8,6 +8,7 @@ import { createNotionClient } from "@/services/notion/client";
 import {
   completeTask,
   deleteTask,
+  skipTask,
   updateTask,
   type TaskWriteInput,
 } from "@/services/notion/tasks";
@@ -15,7 +16,7 @@ import { getTaskLinkByTaskId, unlinkTask, unlinkTaskByTaskId } from "@/services/
 import { isSameTaskDate } from "@/services/task-links/stage";
 import { TASK_LINK_TARGETS, type TaskLinkTarget } from "@/types/calendar";
 
-type Body = TaskWriteInput & { completeAction?: boolean };
+type Body = TaskWriteInput & { completeAction?: boolean; skipped?: boolean };
 
 export async function PATCH(
   request: Request,
@@ -38,6 +39,12 @@ export async function PATCH(
   try {
     // 完了操作は繰り返しの次回作成を伴うため、単なるプロパティ更新とは経路を分ける
     // （docs/spec.md §13）。
+    // 「対応しない」の付け外し（issue #750）。次回分は作らないため完了とも別に扱う。
+    if (body.completeAction && body.skipped && body.done !== undefined) {
+      await skipTask(notion, connection, taskId, body.done);
+      return NextResponse.json({ ok: true, nextTaskId: null });
+    }
+
     if (body.completeAction && body.done !== undefined) {
       const result = await completeTask(notion, connection, taskId, body.done);
       return NextResponse.json({ ok: true, nextTaskId: result.nextTaskId });
