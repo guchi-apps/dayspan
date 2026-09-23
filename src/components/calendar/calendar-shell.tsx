@@ -1498,6 +1498,11 @@ function CalendarBody({
             onOpenEvent({ ...viewingEvent, outcome });
             handleChanged([{ start: viewingEvent.start, end: viewingEvent.end }]);
           }}
+          // 予定ごとの通知設定（issue #708）。カレンダー上の見た目には出さない方針のため、
+          // 開いている予定の値を差し替えるだけで足り、中止・不参加のような取り直しは要らない。
+          onNotificationChanged={(notification) => {
+            onOpenEvent({ ...viewingEvent, notification });
+          }}
           // 仮の予定の確定（issue #688）。続けて直せるようダイアログは閉じず、
           // 開いている予定だけ差し替えてから、その予定がかかる月を取り直す。
           onConfirmed={() => {

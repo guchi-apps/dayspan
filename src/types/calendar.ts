@@ -43,6 +43,14 @@ export type CalendarEventItem = {
    * （項目が増えるだけで応答の形は変わらないため、`public/sw.js` の VERSION は上げていない）。
    */
   outcome: EventOutcomeItem | null;
+  /**
+   * 予定ごとの通知の上書き（issue #708）。無ければアカウント既定（NotificationSetting）に従う。
+   *
+   * Service Workerが保存した古い応答にはこの項目が無い。読む側は必ず `?? null` で受ける
+   * （outcomeと同じ扱い。項目が増えるだけで応答の形は変わらないため `public/sw.js` の
+   * VERSION は上げていない）。
+   */
+  notification: EventNotificationOverride | null;
 };
 
 /**
@@ -82,6 +90,20 @@ export type EventOutcomeItem = {
   kind: EventOutcomeKind;
   /** 理由。場面ごとに違うため選択肢にせず自由入力にする。未入力は null。 */
   note: string | null;
+};
+
+/**
+ * 予定ごとの通知の上書き（issue #708）。
+ *
+ * アカウント単位の設定（NotificationSetting）は全予定に一律で適用される。この予定だけ
+ * 通知したくない・複数回通知したいという要望には応えられないため、EventOutcome・
+ * TaskEventLinkと同じく線だけをDaySpanのDBが持つ。
+ */
+export type EventNotificationOverride = {
+  /** この予定を通知するか。false ならアカウント設定によらず作らない。 */
+  enabled: boolean;
+  /** 開始の何分前に知らせるか。複数件で複数回通知する。 */
+  leadMinutes: number[];
 };
 
 export type TaskPriority = string | null;

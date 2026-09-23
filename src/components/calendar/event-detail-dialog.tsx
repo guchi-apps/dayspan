@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 
 import {
   ArrowRight,
+  Bell,
+  BellOff,
   CalendarClock,
   ChevronRight,
   CircleDashed,
@@ -33,12 +35,14 @@ import {
   EVENT_OUTCOME_KIND_LABELS,
   TRAVEL_MODE_LABELS,
   type CalendarEventItem,
+  type EventNotificationOverride,
   type EventOutcomeItem,
   type TravelItem,
 } from "@/types/calendar";
 
 import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { EventNotificationDialog } from "./event-notification-dialog";
 import { EventOutcomeDialog } from "./event-outcome-dialog";
 import { EventOutcomeMark } from "./event-outcome-mark";
 import { placeCoordinates } from "./location-input";
@@ -71,6 +75,7 @@ export function EventDetailDialog({
   places = [],
   onDeleted,
   onOutcomeChanged,
+  onNotificationChanged,
   onConfirmed,
 }: {
   event: CalendarEventItem;
@@ -106,6 +111,11 @@ export function EventDetailDialog({
    * ダイアログは開いたままにするため、削除（onDeleted）とは別に受ける。
    */
   onOutcomeChanged: (outcome: EventOutcomeItem | null) => void;
+  /**
+   * 予定ごとの通知設定が変わったときの処理（issue #708）。アカウント既定に戻したときは null。
+   * ダイアログは開いたままにする（onOutcomeChangedと同じ）。
+   */
+  onNotificationChanged: (notification: EventNotificationOverride | null) => void;
   /** 「仮の予定を確定する」が成功したときの処理（issue #688）。ダイアログは閉じない。 */
   onConfirmed: () => void;
 }) {
@@ -116,6 +126,8 @@ export function EventDetailDialog({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // 中止・不参加の記録（docs/spec.md §37）。表示画面を閉じずに重ねて開く。
   const [editingOutcome, setEditingOutcome] = useState(false);
+  // 予定ごとの通知設定（issue #708）。表示画面を閉じずに重ねて開く。
+  const [editingNotification, setEditingNotification] = useState(false);
   // 仮の予定の確定（issue #688）。確認は挟まない（編集フォームでいつでも仮へ戻せるため）。
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -213,6 +225,19 @@ export function EventDetailDialog({
             onSaved={(next) => {
               setEditingOutcome(false);
               onOutcomeChanged(next);
+            }}
+          />
+        )}
+
+        {editingNotification && (
+          <EventNotificationDialog
+            title={event.title}
+            initial={event.notification ?? null}
+            persist={{ eventId: event.id, calendarId: event.calendarId }}
+            onCancel={() => setEditingNotification(false)}
+            onSaved={(next) => {
+              setEditingNotification(false);
+              onNotificationChanged(next);
             }}
           />
         )}
@@ -422,6 +447,27 @@ export function EventDetailDialog({
               >
                 <ArrowRight className="size-4" />
                 移動を足す
+              </Button>
+            )}
+
+            {/*
+              予定ごとの通知設定（issue #708）。終日予定は通知の対象外（planEvents()参照）
+              なので出さない。使用がオフのカレンダーでも出す。設定はGoogleへ書き込まないため。
+            */}
+            {!event.allDay && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-primary-container text-on-primary-container"
+                disabled={readOnly}
+                onClick={() => setEditingNotification(true)}
+              >
+                {event.notification?.enabled === false ? (
+                  <BellOff className="size-4" />
+                ) : (
+                  <Bell className="size-4" />
+                )}
+                通知
               </Button>
             )}
 

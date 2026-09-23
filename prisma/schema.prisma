@@ -38,9 +38,10 @@ model User {
   eventOutcomes     EventOutcome[]
   annualLeaveGrants AnnualLeaveGrant[]
 
-  pushSubscriptions   PushSubscription[]
-  notificationSetting NotificationSetting?
-  notificationJobs    NotificationJob[]
+  pushSubscriptions         PushSubscription[]
+  notificationSetting       NotificationSetting?
+  notificationJobs          NotificationJob[]
+  eventNotificationSettings EventNotificationSetting[]
 }
 
 // --- Google Calendar連携 ---
@@ -659,6 +660,36 @@ model EventOutcome {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // 予定1件につき1つ。中止と不参加が同時に立つことはない。
+  @@unique([userId, eventId])
+}
+
+// --- 予定ごとの通知設定（issue #708） ---
+// アカウント単位の設定（NotificationSetting.eventLeadMinutes）は全予定に一律で適用される。
+// この予定だけ通知したくない・複数回通知したい、という要望には応えられない。Googleの予定には
+// reminders欄があるが、それはGoogleカレンダー自身の通知（popup/email）向けの欄で、DaySpanが
+// 送るWeb Push通知の下書き（NotificationJob）の計算には使えない。EventOutcome・TaskEventLink・
+// TravelPlanと同じく、相手のDBに欄が無いものは線だけをDaySpanが持つ。
+
+model EventNotificationSetting {
+  id     String @id @default(cuid())
+  userId String
+
+  calendarId String
+  eventId    String // 繰り返し予定は展開した1回分のID（EventOutcomeと同じ）
+
+  /// この予定を通知するか。false ならアカウント設定によらず作らない。
+  enabled Boolean @default(true)
+
+  /// 開始の何分前に知らせるか（分の配列）。複数件で複数回通知する。オフにしても選んでいた
+  /// 値は残す（次にオンへ戻したときに選び直させないため。通知設定画面の既存の扱いと同じ）。
+  leadMinutes Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 予定1件につき1つ。
   @@unique([userId, eventId])
 }
 

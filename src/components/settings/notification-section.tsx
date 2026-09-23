@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { eventLeadLabel } from "@/lib/event-notification";
 import { cn } from "@/lib/utils";
 import { EVENT_LEAD_MINUTES, type NotificationSettings } from "@/types/notification";
 
@@ -183,7 +184,7 @@ export function NotificationSection({
                   disabled={busy || !value.eventEnabled}
                   onClick={() => void send({ eventLeadMinutes: minutes })}
                 >
-                  {leadLabel(minutes)}
+                  {eventLeadLabel(minutes)}
                 </Button>
               ))}
             </div>
@@ -275,12 +276,10 @@ export function NotificationSection({
       <p className="type-body-small text-on-surface-variant">
         アプリアイコンのバッジには、期限が今日以前の未完了タスクの件数が出ます（タスク画面の「期限切れ」と「今日」の合計）。件数はアプリを開いたときと、通知が届いたときに更新されます。
       </p>
+
+      <p className="type-body-small text-on-surface-variant">
+        予定の詳細画面からは、予定ごとに個別の通知設定もできます。
+      </p>
     </div>
   );
-}
-
-function leadLabel(minutes: number): string {
-  if (minutes === 0) return "ちょうど";
-  if (minutes < 60) return `${minutes}分前`;
-  return `${minutes / 60}時間前`;
 }
