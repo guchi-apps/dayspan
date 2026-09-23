@@ -70,11 +70,23 @@ export function ShoppingItemDialog({
     return { todayKey: today, tomorrowKey: toDateKey(addDays(parseDateKey(today), 1)) };
   }, [timeZone]);
 
+  // 日付の欄を出すか。「今日」「明日」以外の日付が入っているときは、最初から出す
+  // （出さないと、入っている日付がどこにも見えない）。
+  const [pickingDate, setPickingDate] = useState(
+    () =>
+      existing?.plannedDate != null &&
+      existing.plannedDate !== todayKey &&
+      existing.plannedDate !== tomorrowKey,
+  );
+
   // 新しいカテゴリの追加。入力の途中で思いついた売り場を、設定画面へ回らずに足せるようにする
   // （タスクのタグ・場所の登録と同じ理由）。押されるまで欄は出さない。
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
-  const [categories, setCategories] = useState(categoryOptions);
+  // 一覧の取得を待たずに開けるため、開いた時点では選択肢が空で、あとから届くことがある
+  // （issue #724）。足したあとはサーバーが返した全量を優先し、それまでは届いた値に追従する。
+  const [addedCategories, setCategories] = useState<TagOption[] | null>(null);
+  const categories = addedCategories ?? categoryOptions;
 
   const offline = useOffline();
 
@@ -296,35 +308,53 @@ export function ShoppingItemDialog({
         </div>
 
         {/* 購入予定日（docs/spec.md §36）。「今日買う」「明日買う」がいちばん多い指定なので、
-            そこはチップ1つで済ませる。それ以外の日は下の欄で選ぶ。チップと欄はどちらも同じ値を
-            指しており、押した値と保存される値が食い違わない。 */}
+            そこはチップ1つで済ませる。それ以外の日は「日付を指定」を押したときだけ日付の欄を出す
+            （未定のときに空の欄が常に並ぶと、入力が要るように見えるため・issue #726）。
+            チップと欄はどちらも同じ値を指しており、押した値と保存される値が食い違わない。 */}
         <div className="flex flex-col gap-2">
           <span className="type-label-large text-on-surface-variant">購入予定日</span>
           <div className="flex flex-wrap gap-1.5">
-            <ChoiceChip selected={plannedDate === null} onClick={() => setPlannedDate(null)}>
+            <ChoiceChip
+              selected={!pickingDate && plannedDate === null}
+              onClick={() => {
+                setPickingDate(false);
+                setPlannedDate(null);
+              }}
+            >
               未定
             </ChoiceChip>
             <ChoiceChip
-              selected={plannedDate === todayKey}
-              onClick={() => setPlannedDate(todayKey)}
+              selected={!pickingDate && plannedDate === todayKey}
+              onClick={() => {
+                setPickingDate(false);
+                setPlannedDate(todayKey);
+              }}
             >
               今日
             </ChoiceChip>
             <ChoiceChip
-              selected={plannedDate === tomorrowKey}
-              onClick={() => setPlannedDate(tomorrowKey)}
+              selected={!pickingDate && plannedDate === tomorrowKey}
+              onClick={() => {
+                setPickingDate(false);
+                setPlannedDate(tomorrowKey);
+              }}
             >
               明日
+            </ChoiceChip>
+            <ChoiceChip selected={pickingDate} onClick={() => setPickingDate(true)}>
+              日付を指定
             </ChoiceChip>
           </div>
           {/* 日付の欄には ✕（クリア）を出さない。消す操作は「未定」のチップが受けており、
               欄にも置くと同じことをする出口が2つ並ぶ（CLAUDE.md「入力欄の ✕」）。 */}
-          <Input
-            label="日付"
-            type="date"
-            value={plannedDate ?? ""}
-            onChange={(event) => setPlannedDate(event.target.value || null)}
-          />
+          {pickingDate && (
+            <Input
+              label="日付"
+              type="date"
+              value={plannedDate ?? ""}
+              onChange={(event) => setPlannedDate(event.target.value || null)}
+            />
+          )}
         </div>
 
         <div className="flex flex-col gap-2">
