@@ -22,19 +22,18 @@ export function normalizeLeadMinutes(input: number[]): number[] {
 }
 
 /**
- * アカウント既定と予定ごとの上書きを合成し、実際に使う「何分前」の配列を返す。
+ * 予定ごとの設定（issue #746でオプトイン式へ変更）から、実際に使う「何分前」の配列を返す。
  *
- * 上書きが無い予定はアカウント既定に従う（オフなら空配列）。上書きがある予定は、
- * enabled が false なら常に空配列（アカウント既定によらず通知しない）、true なら
- * その予定専用の leadMinutes をそのまま使う。
+ * 予定は既定では通知しない。通知を入れた予定（enabled な上書きがある予定）だけが対象で、
+ * 上書きが無い・enabled が false の予定は常に空配列。アカウント全体の予定通知
+ * （accountEnabled）は親スイッチとして残し、オフの間は入れた予定も通知しない。
  */
 export function resolveEventLeadMinutes(
   override: EventNotificationOverride | null,
-  defaultEnabled: boolean,
-  defaultLeadMinutes: number,
+  accountEnabled: boolean,
 ): number[] {
-  if (override) return override.enabled ? override.leadMinutes : [];
-  return defaultEnabled ? [defaultLeadMinutes] : [];
+  if (!accountEnabled || !override?.enabled) return [];
+  return override.leadMinutes;
 }
 
 /** 「10分前」「1時間前」「ちょうど」のような表示用ラベル。 */

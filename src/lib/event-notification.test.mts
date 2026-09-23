@@ -15,21 +15,20 @@ test("normalizeLeadMinutes: 空配列は空配列のまま", () => {
   assert.deepEqual(normalizeLeadMinutes([]), []);
 });
 
-test("resolveEventLeadMinutes: 上書きが無ければアカウント既定（オン）を1件使う", () => {
-  assert.deepEqual(resolveEventLeadMinutes(null, true, 10), [10]);
+test("resolveEventLeadMinutes: 上書きが無ければ通知しない（オプトイン）", () => {
+  assert.deepEqual(resolveEventLeadMinutes(null, true), []);
 });
 
-test("resolveEventLeadMinutes: 上書きが無くアカウント既定がオフなら空", () => {
-  assert.deepEqual(resolveEventLeadMinutes(null, false, 10), []);
+test("resolveEventLeadMinutes: 通知を入れていない上書きは空", () => {
+  assert.deepEqual(resolveEventLeadMinutes({ enabled: false, leadMinutes: [10] }, true), []);
 });
 
-test("resolveEventLeadMinutes: 上書きで通知しないと決めていれば、アカウント既定がオンでも空", () => {
-  assert.deepEqual(resolveEventLeadMinutes({ enabled: false, leadMinutes: [10] }, true, 10), []);
+test("resolveEventLeadMinutes: 通知を入れた予定は指定のleadMinutesをそのまま使う", () => {
+  assert.deepEqual(resolveEventLeadMinutes({ enabled: true, leadMinutes: [10, 30] }, true), [
+    10, 30,
+  ]);
 });
 
-test("resolveEventLeadMinutes: 上書きで複数のleadMinutesを指定していればそれをそのまま使う", () => {
-  assert.deepEqual(
-    resolveEventLeadMinutes({ enabled: true, leadMinutes: [10, 30] }, true, 60),
-    [10, 30],
-  );
+test("resolveEventLeadMinutes: アカウントの予定通知がオフなら入れた予定も空", () => {
+  assert.deepEqual(resolveEventLeadMinutes({ enabled: true, leadMinutes: [10] }, false), []);
 });
