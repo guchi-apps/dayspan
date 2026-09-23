@@ -74,7 +74,10 @@ export function ShoppingItemDialog({
   // （タスクのタグ・場所の登録と同じ理由）。押されるまで欄は出さない。
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
-  const [categories, setCategories] = useState(categoryOptions);
+  // 一覧の取得を待たずに開けるため、開いた時点では選択肢が空で、あとから届くことがある
+  // （issue #724）。足したあとはサーバーが返した全量を優先し、それまでは届いた値に追従する。
+  const [addedCategories, setCategories] = useState<TagOption[] | null>(null);
+  const categories = addedCategories ?? categoryOptions;
 
   const offline = useOffline();
 

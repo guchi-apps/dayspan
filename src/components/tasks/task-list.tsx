@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { useOffline } from "next/offline";
 import {
   ArrowUpDown,
@@ -25,7 +24,9 @@ import { BottomNav } from "@/components/nav/main-nav";
 import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
-import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
+import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
+import { useApiResource } from "@/components/offline/use-api-resource";
+import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
 import { LinearProgress } from "@/components/ui/linear-progress";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -53,8 +54,8 @@ import {
   type TaskBucketKey,
   type TaskSort,
 } from "@/services/notion/task-buckets";
-import type { TagCatalog, TagOption } from "@/services/notion/tag-options";
-import type { PlaceCatalog } from "@/services/notion/places";
+import { EMPTY_TAG_CATALOG, type TagCatalog, type TagOption } from "@/services/notion/tag-options";
+import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import type { TaskItem, TaskPriority, WritableCalendar } from "@/types/calendar";
 import type { RunningActivitySummary } from "@/types/activity";
 import { dateKeyPlusMinutes } from "@/components/calendar/datetime-fields";
@@ -74,23 +75,23 @@ type TaskSection = {
   tasks: TaskItem[];
 };
 
-export function TaskList({
-  tasks,
-  tagCatalog,
-  timeZone,
-  loadError,
-  calendars = [],
-  placeCatalog = { ready: false, places: [] },
-  weekStartsOn = 0,
-  runningActivity = null,
-}: {
+type TaskListData = {
   tasks: TaskItem[];
   /** 登録済みのタグ・種類。色の表示と入力の候補に使う。 */
   tagCatalog: TagCatalog;
+  placeCatalog: PlaceCatalog;
+  calendars: WritableCalendar[];
+};
+
+const EMPTY_TASKS: TaskItem[] = [];
+const EMPTY_CALENDARS: WritableCalendar[] = [];
+
+export function TaskList({
+  timeZone,
+  weekStartsOn = 0,
+  runningActivity = null,
+}: {
   timeZone: string;
-  loadError: string | null;
-  calendars?: WritableCalendar[];
-  placeCatalog?: PlaceCatalog;
   weekStartsOn?: number;
   /**
    * 記録中の項目（issue #629）。ナビの記録の項目へ印を出し、下部ナビの直上に記録中バーを
@@ -98,8 +99,19 @@ export function TaskList({
    */
   runningActivity?: RunningActivitySummary | null;
 }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  // 一覧・タグ・場所・カレンダーはページが待たずに、ここで背景取得する（issue #724）。
+  // 追加ボタン・ナビは取得を待たない。入力ダイアログは候補が届く前でも開ける。
+  const resource = useApiResource<TaskListData>(
+    "/api/tasks/all",
+    "Notionのタスクを取得できませんでした。",
+  );
+  const { data, reload } = resource;
+  const tasks = data?.tasks ?? EMPTY_TASKS;
+  const tagCatalog = data?.tagCatalog ?? EMPTY_TAG_CATALOG;
+  const placeCatalog = data?.placeCatalog ?? EMPTY_PLACE_CATALOG;
+  const calendars = data?.calendars ?? EMPTY_CALENDARS;
+  const loadError = resource.error;
+  const pending = resource.loading;
   // 分類の軸・並び順・完了の開閉は、選び直すまで端末に残す（issue #286）。
   const { groupBy, sort, doneOpen, setGroupBy, setSort, setDoneOpen } = useTaskViewPrefs();
   const [itemDialog, setItemDialog] = useState<ItemDrafts | null>(null);
@@ -110,7 +122,6 @@ export function TaskList({
 
   // オフライン中は書き込みを止める（docs/spec.md §21）。
   const offline = useOffline();
-  useReconnectRefresh();
 
   // オフラインでこの画面を開けるよう、表示中にHTMLを保存しておく（issue #321）。
   // ナビからの移動はソフトナビゲーションで、Service Worker が保存できないため。
@@ -160,6 +171,13 @@ export function TaskList({
     }));
   }, [effectiveGroupBy, sort, tasks, tagOptions, buckets, bucketLabels]);
 
+  // バッジは期限だけで数える（services/notifications/badge.ts の countDueTasks と同じ式。
+  // あちらはサーバー専用のモジュールを読み込むため、クライアントからは呼ばない）。
+  const dueCount = useMemo(() => {
+    const due = classifyTasks(tasks, todayKey, utils.itemDateKey);
+    return due.overdue.length + due.today.length;
+  }, [tasks, todayKey, utils]);
+
   const doneTasks = useMemo(() => sortDoneTasks(buckets.done), [buckets]);
 
   const nextSort = () => setSort(TASK_SORTS[(TASK_SORTS.indexOf(sort) + 1) % TASK_SORTS.length]);
@@ -189,14 +207,14 @@ export function TaskList({
       setError(cause instanceof Error ? cause.message : "更新できませんでした。");
     } finally {
       setBusyId(null);
-      startTransition(() => router.refresh());
+      reload();
     }
   };
 
   /** 表示画面からの完了切り替え。表示画面は自前で完了状態を持つため、ここでは取り直すだけでよい。 */
   const toggleDoneFromDetail = async (task: TaskItem, done: boolean) => {
     await patchTaskDone(task, done);
-    startTransition(() => router.refresh());
+    reload();
   };
 
   const editTask = (task: TaskItem) => {
@@ -286,7 +304,7 @@ export function TaskList({
           aria-label="再取得"
           // オフライン中に押しても、再接続まで終わらない読み込みが始まるだけになる。
           disabled={pending || offline}
-          onClick={() => startTransition(() => router.refresh())}
+          onClick={() => reload()}
         >
           <RefreshCw className="size-4" />
         </Button>
@@ -295,9 +313,16 @@ export function TaskList({
       <LinearProgress active={pending || busyId !== null} />
 
       <OfflineNotice />
+      {!offline && resource.stale && <SlowNetworkNotice />}
 
       {(loadError || error) && (
         <div className="bg-error-container/70 text-on-error-container px-3 py-2 text-xs">{loadError ?? error}</div>
+      )}
+
+      {/* アイコンのバッジは、取得した一覧から合わせる（docs/spec.md §32）。ここで別に取り直すと
+          Notionへの往復が1回増えるため、一覧が届くまでは描かない。 */}
+      {(data !== null || loadError) && (
+        <AppBadgeSync count={data ? dueCount : null} />
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24">
@@ -385,7 +410,9 @@ export function TaskList({
             </section>
           )}
 
-          {tasks.length === 0 && !loadError && (
+          {data === null && !loadError && <TaskListSkeleton />}
+
+          {data !== null && tasks.length === 0 && !loadError && (
             <p className="p-6 text-center text-sm text-muted-foreground @2xl/main:col-span-full">
               タスクがありません。
             </p>
@@ -421,7 +448,7 @@ export function TaskList({
           onClose={() => setItemDialog(null)}
           onSaved={() => {
             setItemDialog(null);
-            startTransition(() => router.refresh());
+            reload();
           }}
         />
       )}
@@ -436,12 +463,12 @@ export function TaskList({
           onEdit={() => editTask(viewingTask)}
           onDeleted={() => {
             setViewingTask(null);
-            startTransition(() => router.refresh());
+            reload();
           }}
           onToggleDone={toggleDoneFromDetail}
           // 紐づけの操作は表示画面のまま効く（docs/spec.md §31）。この画面は取得範囲を
           // 持たないため、変わった期間は見ずにページごと読み直す。
-          onChanged={() => startTransition(() => router.refresh())}
+          onChanged={() => reload()}
         />
       )}
     </AppFrame>
@@ -455,6 +482,20 @@ export function TaskList({
  * 上下の余白も詰める（issue #286）。押せる大きさは変えない（チェックボックスは18dpのボックスに
  * 40dpの当たり判定を持つ）。
  */
+/** 一覧の取得が済むまでの行の骨組み。追加ボタンとナビは待たずに使える（issue #724）。 */
+function TaskListSkeleton() {
+  return (
+    <div role="status" aria-label="タスクを読み込み中" className="animate-pulse @2xl/main:col-span-full">
+      {Array.from({ length: 6 }, (_, row) => (
+        <div key={row} className="flex items-center gap-2 py-3 pr-3 pl-3">
+          <div className="size-[18px] rounded-xs bg-on-surface/10" />
+          <div className={cn("h-4 rounded bg-on-surface/10", row % 2 ? "w-1/3" : "w-1/2")} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TaskRow({
   task,
   hideTagName,

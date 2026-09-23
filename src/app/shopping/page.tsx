@@ -5,13 +5,9 @@ import { ShoppingCart } from "lucide-react";
 import { ShoppingScreen } from "@/components/shopping/shopping-screen";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { externalApiMessage } from "@/lib/api-error";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { createNotionClient } from "@/services/notion/client";
-import { listShoppingItems, shoppingDatabaseReady } from "@/services/notion/shopping-items";
-import { loadTagOptions } from "@/services/notion/tag-options";
-import type { ShoppingItem } from "@/types/shopping";
+import { shoppingDatabaseReady } from "@/services/notion/shopping-items";
 import { getRunningActivity } from "@/services/activity/running";
 
 export default async function ShoppingPage() {
@@ -29,26 +25,11 @@ export default async function ShoppingPage() {
   // データソースと項目名のプロパティが揃っていないと、読むことも書くこともできない。
   if (!connection || !shoppingDatabaseReady(connection)) return <ConnectPrompt />;
 
-  // Notionが失敗しても画面自体は開く。ここで投げるとNext.jsの汎用のエラー画面へ落ち、
-  // 何が起きたのかも、再取得できることも画面から分からなくなる（issue #402）。
-  let items: ShoppingItem[] = [];
-  let loadError: string | null = null;
-  try {
-    items = await listShoppingItems(createNotionClient(connection), connection);
-  } catch (error) {
-    loadError = `買い物リストを取得できませんでした。${externalApiMessage("notion", "買い物リストの取得", error)}`;
-  }
-
-  // カテゴリの取得は失敗しても空になるだけで、一覧の表示は妨げない（項目に付いている
-  // カテゴリ名だけでもタブは組み立てられる）。
-  const categoryOptions = await loadTagOptions(connection, "shopping");
-
+  // 一覧とカテゴリはここで待たない。Notionが遅いと追加ボタンまで出なくなるため、画面の枠だけを
+  // すぐ返し、一覧はクライアントが /api/shopping から背景取得する（issue #724）。
   return (
     <ShoppingScreen
-      items={items}
-      categoryOptions={categoryOptions ?? []}
       timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
-      loadError={loadError}
       runningActivity={runningActivity}
     />
   );
