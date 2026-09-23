@@ -162,6 +162,7 @@ export function QuickEventSheet({
           end: join(date, endTime),
           title,
           calendarId,
+          fromQuick: true,
         }),
       150,
     );
