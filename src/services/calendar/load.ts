@@ -1,6 +1,10 @@
 import { externalApiMessage } from "@/lib/api-error";
 import { db } from "@/lib/db";
 import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
+import {
+  attachEventNotificationSettings,
+  listEventNotificationSettings,
+} from "@/services/calendar/event-notification-settings";
 import { listCalendars } from "@/services/google-calendar/calendars";
 import { listEvents, toCalendarItems, type GoogleEvent } from "@/services/google-calendar/events";
 import { canWriteCalendar, SETTING_ORDER } from "@/services/google-calendar/settings";
@@ -154,6 +158,9 @@ export async function loadGoogleEvents(
   // 往復に比べて無視できる一方、投げっぱなしにするとこの先で例外が出たときに
   // 拾い手のいない reject が残る。
   const outcomes = await listEventOutcomes(userId);
+  // 予定ごとの通知設定（issue #708）。DaySpanのDBのみのため外部APIの往復は増えない。
+  // outcomesと同じ理由で並行にはしない。
+  const notificationSettings = await listEventNotificationSettings(userId);
 
   const items: CalendarEventItem[] = [];
   const calendars: WritableCalendar[] = [];
@@ -261,7 +268,11 @@ export async function loadGoogleEvents(
     });
   }
 
-  return { items: attachEventOutcomes(items, outcomes), calendars, errors };
+  return {
+    items: attachEventNotificationSettings(attachEventOutcomes(items, outcomes), notificationSettings),
+    calendars,
+    errors,
+  };
 }
 
 async function loadNotionItems(

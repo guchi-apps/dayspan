@@ -3,19 +3,23 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
+import { Bell, BellOff } from "lucide-react";
+
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { dateKeyDiffDays } from "@/lib/calendar-range";
 import type { PlaceCatalog } from "@/services/notion/places";
-import type { CalendarEventItem, WritableCalendar } from "@/types/calendar";
+import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
 
 import { CalendarChipSelect } from "./calendar-chip-select";
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
+import { EventNotificationDialog } from "./event-notification-dialog";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
 import { RecurrenceFields } from "./recurrence-fields";
@@ -42,6 +46,8 @@ export type EventDraft = {
   description?: string;
   /** 複製から引き継ぐ「仮の予定」かどうか（issue #688）。新規作成のときだけ意味を持つ。 */
   tentative?: boolean;
+  /** 複製から引き継ぐ通知の上書き設定（issue #708）。新規作成のときだけ意味を持つ。 */
+  notification?: EventNotificationOverride | null;
 };
 
 /**
@@ -85,6 +91,13 @@ export function EventForm({
   const [description, setDescription] = useState(editing?.description ?? draft.description ?? "");
   // 仮の予定（issue #688）。Googleのstatusフィールドをそのまま使うため、DaySpan独自DBは無い。
   const [tentative, setTentative] = useState(editing?.tentative ?? draft.tentative ?? false);
+  // 予定ごとの通知設定（issue #708）。新規作成のときだけこのフォームから選べる。編集時は
+  // 表示画面から即座に保存する専用の経路（EventDetailDialog）に一本化しているため、
+  // ここでは触らない（draft.event が無いときだけ意味を持つ）。
+  const [notification, setNotification] = useState<EventNotificationOverride | null>(
+    draft.notification ?? null,
+  );
+  const [editingNotification, setEditingNotification] = useState(false);
   const [recurrence, setRecurrence] = useState<RecurrenceInput>(NO_RECURRENCE);
   const [calendarId, setCalendarId] = useState(
     editing?.calendarId ??
@@ -186,6 +199,37 @@ export function EventForm({
         return;
       }
 
+      // 新規作成で、繰り返しなし・通知をアカウント既定から変えている場合は、作成できた
+      // eventIdを使って通知設定も送る（issue #708）。繰り返しの新規作成は対象外
+      // （Googleが返すのはシリーズ親IDで、EventNotificationSetting.eventIdが指す
+      // 「展開した1回分のID」とは異なるため。フォーム側でも通知ボタンをdisabledにしている）。
+      // 失敗しても予定作成自体は成功として扱う（中止・不参加の記録のreplanNotificationsと
+      // 同じベストエフォートの考え方。予定は作成できているので、失敗をここで止めない）。
+      if (!editing && !recurrenceRule && notification) {
+        const created = (await response.json().catch(() => null)) as { id?: string } | null;
+        if (created?.id) {
+          try {
+            const notifyResponse = await fetch(
+              `/api/events/${encodeURIComponent(created.id)}/notification`,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  calendarId: payload.calendarId,
+                  enabled: notification.enabled,
+                  leadMinutes: notification.leadMinutes,
+                }),
+              },
+            );
+            if (!notifyResponse.ok) {
+              console.error("[dayspan] event notification setting: save failed after create");
+            }
+          } catch (cause) {
+            console.error("[dayspan] event notification setting: save failed after create:", cause);
+          }
+        }
+      }
+
       // 移動した場合は移動元も変わる。繰り返しはどの月に何回現れるか読めないため範囲を絞らない。
       const touched: TouchedRange[] = [{ start: payload.start, end: payload.end }];
       if (editing) touched.push({ start: editing.start, end: editing.end });
@@ -240,6 +284,49 @@ export function EventForm({
           <Checkbox checked={tentative} onCheckedChange={(v) => setTentative(v === true)} />
           仮の予定
         </label>
+
+        {/*
+          予定ごとの通知設定（issue #708）。新規作成のときだけこのフォームから選べる
+          （編集時は表示画面の専用ボタンから即座に保存する）。終日は通知の対象外
+          （event-detail-dialog.tsxと同じ判断）。繰り返しを選んでいる間は保存後のeventIdが
+          「シリーズ親ID」になり、展開後の1回分のIDとは異なるため設定できない。
+        */}
+        {!editing && !allDay && (
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="bg-primary-container text-on-primary-container"
+              disabled={recurrence.frequency !== "none"}
+              onClick={() => setEditingNotification(true)}
+            >
+              {notification?.enabled === false ? (
+                <BellOff className="size-4" />
+              ) : (
+                <Bell className="size-4" />
+              )}
+              通知
+            </Button>
+            {recurrence.frequency !== "none" && (
+              <span className="type-label-small text-on-surface-variant">
+                繰り返し予定は保存してから設定できます
+              </span>
+            )}
+          </div>
+        )}
+
+        {editingNotification && (
+          <EventNotificationDialog
+            title={title || "この予定"}
+            initial={notification}
+            onCancel={() => setEditingNotification(false)}
+            onSaved={(next) => {
+              setEditingNotification(false);
+              setNotification(next);
+            }}
+          />
+        )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-2">
           {allDay ? (
@@ -368,6 +455,7 @@ export function duplicateEventDraft(event: CalendarEventItem, timeZone: string):
     location: event.location ?? undefined,
     description: event.description ?? undefined,
     tentative: event.tentative,
+    notification: event.notification ?? null,
   };
 }
 

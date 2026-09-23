@@ -2,6 +2,7 @@ import type { NotificationKind } from "@prisma/client";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { localInputToIso } from "@/components/calendar/datetime-fields";
+import { resolveEventLeadMinutes } from "@/lib/event-notification";
 import { db } from "@/lib/db";
 import { loadGoogleEvents } from "@/services/calendar/load";
 import { getNotionConnection } from "@/services/calendar/write-context";
@@ -10,6 +11,7 @@ import { getNotificationSettings } from "@/services/notifications/settings";
 import { createNotionClient } from "@/services/notion/client";
 import { listAllTasks } from "@/services/notion/tasks";
 import type { CalendarEventItem, TaskItem } from "@/types/calendar";
+import type { NotificationSettings } from "@/types/notification";
 
 /**
  * 通知の下書きを作る（docs/spec.md §32）。
@@ -127,7 +129,7 @@ export async function planUserNotifications(userId: string, now: Date): Promise<
     const drafts: JobDraft[] = [];
 
     if (eventResult) {
-      drafts.push(...planEvents(eventResult.items, settings.eventLeadMinutes, now, windowEnd, utils));
+      drafts.push(...planEvents(eventResult.items, settings, now, windowEnd, utils));
     }
 
     if (settings.taskEnabled && taskResult) {
@@ -177,10 +179,14 @@ async function loadTasks(userId: string): Promise<TaskItem[] | null> {
  *
  * 終日予定は対象にしない。「10分前」に当たる時刻が無く、日付が変わった瞬間に知らせても
  * その日の行動には結び付かないため（まとめて知りたい場合はタスクのまとめ通知と同じ扱いになる）。
+ *
+ * 予定ごとの上書き（issue #708）があれば、アカウント既定の代わりにそちらを使う。複数の
+ * leadMinutesを指定していれば、その回数ぶんの下書きを作る（dedupeKeyにleadMinutesまで
+ * 含めることで、同じ予定でも別々のNotificationJobになる）。
  */
 function planEvents(
   events: CalendarEventItem[],
-  leadMinutes: number,
+  defaultSettings: NotificationSettings,
   now: Date,
   windowEnd: Date,
   utils: ReturnType<typeof createCalendarDateUtils>,
@@ -193,25 +199,35 @@ function planEvents(
     // 予定の10分前に鳴らしても、そこから先の行動は変わらない。
     if (event.outcome) continue;
 
+    const leadList = resolveEventLeadMinutes(
+      event.notification,
+      defaultSettings.eventEnabled,
+      defaultSettings.eventLeadMinutes,
+    );
+    if (leadList.length === 0) continue;
+
     const start = new Date(event.start);
     if (Number.isNaN(start.getTime())) continue;
     if (start > windowEnd) continue;
 
-    const scheduledAt = new Date(start.getTime() - leadMinutes * 60_000);
-    // 通知の時刻が過ぎている予定は作らない。始まってから「まもなく」と知らせても意味が変わる。
-    if (scheduledAt <= now) continue;
-
     const timeRange = `${utils.formatTime(event.start)}〜${utils.formatTime(event.end)}`;
 
-    drafts.push({
-      kind: "EVENT",
-      // 予定が動けば別の下書きになるよう、開始時刻まで鍵に含める。
-      dedupeKey: `event:${event.id}:${event.start}`,
-      scheduledAt,
-      title: toDraftTitle(leadMinutes === 0 ? event.title : `まもなく ${event.title}`),
-      body: event.location ? `${timeRange} ・ ${event.location}` : timeRange,
-      url: `/calendar?date=${utils.itemDateKey(event.start)}`,
-    });
+    for (const leadMinutes of leadList) {
+      const scheduledAt = new Date(start.getTime() - leadMinutes * 60_000);
+      // 通知の時刻が過ぎている予定は作らない。始まってから「まもなく」と知らせても意味が変わる。
+      if (scheduledAt <= now) continue;
+
+      drafts.push({
+        kind: "EVENT",
+        // 予定が動けば別の下書きになるよう、開始時刻まで鍵に含める。leadMinutesも含めるのは、
+        // 複数回通知するとき、同じ予定・同じ開始時刻でも別々の下書きになるようにするため。
+        dedupeKey: `event:${event.id}:${event.start}:${leadMinutes}`,
+        scheduledAt,
+        title: toDraftTitle(leadMinutes === 0 ? event.title : `まもなく ${event.title}`),
+        body: event.location ? `${timeRange} ・ ${event.location}` : timeRange,
+        url: `/calendar?date=${utils.itemDateKey(event.start)}`,
+      });
+    }
   }
 
   return drafts;

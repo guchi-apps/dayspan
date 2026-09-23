@@ -92,6 +92,18 @@ export function withEventOutcomes(events: CalendarEventItem[]): CalendarEventIte
 }
 
 /**
+ * 予定ごとの通知設定を持たない応答も受ける（issue #708）。
+ *
+ * `notification` も項目が増えただけの変更で、`outcome` と同じ理由で `VERSION` は上げていない。
+ * 設定を足す前に保存された応答には項目そのものが無いため、ここで null を入れて形をそろえる。
+ */
+export function withEventNotificationSettings(events: CalendarEventItem[]): CalendarEventItem[] {
+  return events.map((event) =>
+    event.notification === undefined ? { ...event, notification: null } : event,
+  );
+}
+
+/**
  * タスクがカレンダーで場所を取っている日付。期限と予定日で別の日に現れるため、
  * 取り直しの対象も両方になる（どちらも未設定ならカレンダーに出ていない）。
  */
@@ -327,7 +339,7 @@ export function useCalendarChunks({
       const fresh = splitByMonth(
         {
           ...withWorkRecords(data),
-          events: withEventOutcomes(data.events),
+          events: withEventNotificationSettings(withEventOutcomes(data.events)),
           tasks: withTaskLinks(data.tasks),
         },
         months,
