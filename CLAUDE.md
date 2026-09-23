@@ -626,6 +626,18 @@ develop向けPRが約4分で自動マージされた。結果、レビュー対�
 マージされうる」と同じ理由）。なお `gh issue view --comments` は Projects (classic) 廃止の
 GraphQLエラーで落ちることがあるため、コメントだけを読むならREST APIのほうが確実。
 
+## ユーザーを待つときは文章で問いかけて終えない
+
+サブPCのローカルセッションが人を待っていることは、issue-deck のフック（`AskUserQuestion`・`ExitPlanMode`・
+承認プロンプト）か `00.check-user` ラベルでしか伝わらない。**文章で選択肢を並べて応答を終えると
+`Stop`（応答終了）としか報告されず、Push通知が鳴らない。** issue #737 は「続けるなら次のどちらかを
+選んでください」で止まったまま、issue-deck の画面にも通知が出なかった（issue #745）。
+
+人の判断を待つときは `AskUserQuestion` で聞く。それで済まない相談は Issue コメントに残し、
+`00.check-user`＋`01.check-blocked`（手作業・入力待ちは `01.check-input`）を付けてから止める。
+同じ規則を起動プロンプト（`scripts/prompts/implementation-agent.md`）にも書いている。
+仕組み側で拾う対応（`Stop` の時点での判定）は issue-deck の担当で、DaySpan側では持たない。
+
 ## develop向けPRは作成直後にマージされうる
 
 `claude-review-develop.yml` はCIが通った時点で自動マージまで進む。issue #352 では、PR作成から
