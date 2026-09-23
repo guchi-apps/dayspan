@@ -16,6 +16,7 @@ import type {
 import type { WorkRecordItem } from "@/types/work";
 
 import {
+  withEventNotificationSettings,
   withEventOutcomes,
   withTaskLinks,
   withWorkRecords,
@@ -40,7 +41,7 @@ const EMPTY_RESULT: CalendarLoadResult = {
 function normalize(data: CalendarLoadResult): CalendarLoadResult {
   return {
     ...withWorkRecords(data),
-    events: withEventOutcomes(data.events),
+    events: withEventNotificationSettings(withEventOutcomes(data.events)),
     tasks: withTaskLinks(data.tasks),
   };
 }
