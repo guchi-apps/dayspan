@@ -28,8 +28,14 @@ export function countDueTasks(tasks: TaskItem[], timeZone: string): number {
  *
  * 0を返すと「1件も無い」としてバッジが消える。取れなかったことと区別する必要がある。
  * 買い物リストのDBが未設定なら、数える対象が無いだけなので0とする。
+ *
+ * `want` で外した側はNotionへ問い合わせず null を返す。タスク・買い物の画面は自分の側を
+ * 取得済みの一覧から数えており、同じ全件取得をバッジのためにもう一度走らせないため（§20）。
  */
-export async function loadBadgeCounts(userId: string): Promise<BadgeCounts> {
+export async function loadBadgeCounts(
+  userId: string,
+  want: { tasks: boolean; shopping: boolean } = { tasks: true, shopping: true },
+): Promise<BadgeCounts> {
   const connection = await getNotionConnection(userId);
   if (!connection) return combineBadgeCounts(null, null);
 
@@ -41,14 +47,16 @@ export async function loadBadgeCounts(userId: string): Promise<BadgeCounts> {
   const notion = createNotionClient(connection);
 
   const [tasks, shopping] = await Promise.all([
-    listAllTasks(notion, connection).then(
-      (list) => countDueTasks(list, timeZone),
-      (error) => {
-        console.error("[dayspan] badge count failed:", error);
-        return null;
-      },
-    ),
-    countShopping(notion, connection, timeZone),
+    want.tasks
+      ? listAllTasks(notion, connection).then(
+          (list) => countDueTasks(list, timeZone),
+          (error) => {
+            console.error("[dayspan] badge count failed:", error);
+            return null;
+          },
+        )
+      : null,
+    want.shopping ? countShopping(notion, connection, timeZone) : null,
   ]);
 
   return combineBadgeCounts(tasks, shopping);

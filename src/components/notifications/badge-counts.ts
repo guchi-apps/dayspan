@@ -14,7 +14,10 @@ export type StoredBadgeCounts = { tasks: number | null; shopping: number | null 
 
 const TASKS_KEY = "dayspan:badge-tasks";
 const SHOPPING_KEY = "dayspan:badge-shopping";
-const CHECKED_AT_KEY = "dayspan:badge-checked-at";
+// 取り直しを試みた時刻。成否によらず記録し、片側が失敗し続けても10分に1回までに収める。
+// 名前を以前の "dayspan:badge-checked-at" から変えているのは、旧版が残した時刻のせいで
+// 件数がまだ1つも無い端末の取得が最大10分遅れないようにするため。
+const ATTEMPTED_AT_KEY = "dayspan:badge-attempted-at";
 const CHANGE_EVENT = "dayspan:badge-counts";
 
 export const BADGE_MAX_AGE_MS = 10 * 60 * 1000;
@@ -35,16 +38,24 @@ export function readBadgeCounts(): StoredBadgeCounts {
 }
 
 export function isBadgeStale(): boolean {
-  const checkedAt = readNumber(CHECKED_AT_KEY);
-  return checkedAt === null || checkedAt <= 0 || Date.now() - checkedAt > BADGE_MAX_AGE_MS;
+  const attemptedAt = readNumber(ATTEMPTED_AT_KEY);
+  return attemptedAt === null || attemptedAt <= 0 || Date.now() - attemptedAt > BADGE_MAX_AGE_MS;
 }
 
-/** 渡した側だけ書き換える。`checked` を立てると「いま取り直した」ことにする。 */
-export function writeBadgeCounts(next: Partial<StoredBadgeCounts>, checked: boolean): void {
+/** 取り直しを始めたことを残す。以後10分は取りにいかない。 */
+export function markBadgeAttempted(): void {
+  try {
+    localStorage.setItem(ATTEMPTED_AT_KEY, String(Date.now()));
+  } catch {
+    // 書けなければ次に開いたときにもう一度取りにいくだけ。
+  }
+}
+
+/** 渡した側だけ書き換える。 */
+export function writeBadgeCounts(next: Partial<StoredBadgeCounts>): void {
   try {
     if (typeof next.tasks === "number") localStorage.setItem(TASKS_KEY, String(next.tasks));
     if (typeof next.shopping === "number") localStorage.setItem(SHOPPING_KEY, String(next.shopping));
-    if (checked) localStorage.setItem(CHECKED_AT_KEY, String(Date.now()));
   } catch {
     // 書けなければ次に開いたときに取り直すだけ。
   }
