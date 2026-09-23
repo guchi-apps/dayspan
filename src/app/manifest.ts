@@ -18,7 +18,10 @@ export default function manifest(): MetadataRoute.Manifest {
     // 白い図柄だけが残ってアプリ側の起動画面（docs/spec.md §33）と同じ絵になる。
     // 1色しか持てないため、ライト・ダークで変わらないこの色にする。
     background_color: APP_ICON_BACKGROUND,
-    theme_color: APP_ICON_BACKGROUND,
+    // テーマ色はアイコンの紫ではなく、ライトのヘッダーの色（surface-container-low）にする。
+    // 紫のままだと、ステータスバーの領域でヘッダーの淡い色と混ざってにじむ（issue #696）。
+    // ダークでは layout.tsx の <meta name="theme-color"> が media ごとに上書きする。
+    theme_color: "#f7f2fa",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },

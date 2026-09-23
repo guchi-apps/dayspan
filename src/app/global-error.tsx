@@ -31,7 +31,7 @@ export default function GlobalError({
   return (
     <html lang="ja" className="h-full antialiased">
       <body className="min-h-full">
-        <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background p-6">
+        <div className="flex min-h-app flex-col items-center justify-center gap-6 bg-background p-6">
           <div className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
             <div className="flex size-14 items-center justify-center rounded-full bg-error-container text-on-error-container">
               <AlertTriangle className="size-7" />

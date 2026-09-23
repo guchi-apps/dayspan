@@ -42,8 +42,8 @@ export function SettingsShell({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-10 flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
+    <div className="flex min-h-app flex-col">
+      <header className="sticky top-[env(safe-area-inset-top,0px)] z-10 flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
         <Button variant="ghost" size="sm" asChild>
           <Link href={backHref}>
             <ArrowLeft className="size-4" />

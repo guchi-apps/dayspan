@@ -3,8 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
 import {
-  Suspense,
-  use,
   useCallback,
   useEffect,
   useMemo,
@@ -49,8 +47,8 @@ import {
 } from "@/lib/calendar-range";
 import { rememberCalendarView } from "@/lib/calendar-view-memory";
 import { cn } from "@/lib/utils";
-import type { PlaceCatalog } from "@/services/notion/places";
-import type { TagCatalog } from "@/services/notion/tag-options";
+import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
+import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
 import type { RunningActivityItem } from "@/types/activity";
 import type {
   CalendarEventItem,
@@ -65,7 +63,6 @@ import type { TravelSettings } from "@/services/travel/settings";
 import { coversDate, type WorkCapabilities } from "@/types/work";
 import { dayTone, weekdayLabel } from "@/lib/day-tone";
 
-import { CalendarGridSkeleton } from "./calendar-skeleton";
 import { dateKeyPlusMinutes, isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { EventDetailDialog } from "./event-detail-dialog";
 import { duplicateEventDraft, toEventDraft, type EventDraft } from "./event-form";
@@ -93,6 +90,7 @@ import {
   useCalendarChunks,
   type TouchedRange,
 } from "./use-calendar-chunks";
+import { useCalendarRangeData } from "./use-calendar-range-data";
 import { useCalendarShortcuts, type CalendarShortcutActions } from "./use-calendar-shortcuts";
 import type { AllDayDragCommit, DragCommit } from "./use-grid-drag";
 import type { SlotRangeCommit } from "./use-slot-range";
@@ -103,6 +101,10 @@ const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
 // 移動の仮の長さ。押した時点では所要時間が分からないが、出発と到着を同じ時刻にすると
 // 開いた瞬間に入力の注意が出るため、直す前提の長さを置いておく。
 const DEFAULT_TRAVEL_MINUTES = 30;
+
+// 日・3日・週表示は月ごとのチャンクを持たないため常に空（issue #697）。ContinuousMonthView
+// にしか渡らない値で、その表示形式のときは使われない。
+const NO_PENDING_MONTHS: ReadonlySet<string> = new Set();
 
 // 期間の短い順に並べる。同じ並びの中で右へ行くほど広い範囲を見ることになり、
 // 「今いる形式より広く／狭く見たい」がどちら向きに押せばよいか迷わずに済む。
@@ -140,6 +142,7 @@ export function CalendarShell({
   placeCatalogPromise,
   initialRunningActivity,
   activityCalendarIds,
+  holidayCalendarIds,
   travelSettings,
   work,
   weekStartsOn,
@@ -168,6 +171,11 @@ export function CalendarShell({
    * ここに入っている予定は、時間グリッドでは塗りを落として描き、月表示には出さない。
    */
   activityCalendarIds: string[];
+  /**
+   * 祝日として扱うカレンダー（issue #699）。ここに入っている予定は、カレンダー画面の
+   * 終日の並びで他の予定より上に表示される。
+   */
+  holidayCalendarIds: string[];
   /** 移動の既定値（docs/spec.md §29）。予定から移動を足すときの初期値に使う。 */
   travelSettings: TravelSettings;
   /** 勤務記録の入力に要るもの（issue #532）。 */
@@ -188,8 +196,9 @@ export function CalendarShell({
   // ナビからの移動はソフトナビゲーションで、Service Worker が保存できないため。
   useWarmOfflinePage("/calendar");
 
-  // 月のデータを取りにいっているか。取得はSuspense境界の内側で起きるが、
-  // 進行の表示はヘッダー直下（境界の外）にあるため、ここまで上げてもらう。
+  // 月・日/3日/週いずれかのデータを取りにいっているか。取得自体は `CalendarBody`
+  // 配下（`useCalendarChunks`/`useCalendarRangeData`）の中で起きるが、進行の表示は
+  // ヘッダー直下にあるため、`onLoadingChange` 経由でここまで上げてもらう。
   const [windowLoading, setWindowLoading] = useState(false);
   const utils = useMemo(() => createCalendarDateUtils(timeZone), [timeZone]);
 
@@ -207,6 +216,9 @@ export function CalendarShell({
     () => new Set(activityCalendarIds),
     [activityCalendarIds],
   );
+
+  // 祝日カレンダーの判定も同じ理由でSet化しておく（issue #699）。
+  const holidayCalendars = useMemo(() => new Set(holidayCalendarIds), [holidayCalendarIds]);
 
   // 押した直後に見出しが変わるよう、遷移中は指定した期間を先に表示する。
   const [nav, setNav] = useOptimistic({ view, anchorKey });
@@ -306,8 +318,23 @@ export function CalendarShell({
     setLinkingEvent(null);
   };
 
-  /** 月表示以外の取り直し。ページごと描き直すため、表示中の期間ぶんをすべて取り直す。 */
+  /**
+   * `CalendarBody` 側の `data.invalidate` を、ヘッダー・ドラッグなど外側の操作からも
+   * 呼べるようにする（issue #697）。`dataPromise` はマウント時点の1回しか消費しないため、
+   * 明示的な再取得（再取得ボタン・ドラッグ確定後の同期）はこちらを経由する必要がある。
+   */
+  const invalidateDataRef = useRef<(() => void) | null>(null);
+  const registerInvalidate = useCallback((fn: (() => void) | null) => {
+    invalidateDataRef.current = fn;
+  }, []);
+
+  /**
+   * 再取得ボタン・キーボードショートカット（`r`）。カレンダーのデータは `invalidate` で
+   * 即座に取り直し、それ以外のサーバー由来の値（記録中の活動・移動の既定値など）は
+   * 従来どおり `router.refresh()` でまとめて取り直す。
+   */
   const refreshAll = () => {
+    invalidateDataRef.current?.();
     startTransition(() => router.refresh());
   };
 
@@ -364,7 +391,10 @@ export function CalendarShell({
     } catch {
       setDragError("変更を保存できませんでした。");
     } finally {
-      startTransition(() => router.refresh());
+      // ページ全体を router.refresh() で描き直さず、カレンダーのデータだけを取り直す
+      // （issue #697）。動かした予定・タスクのぶんだけでなく表示中の期間すべてを対象にする
+      // （ドラッグの成否によらず、見えている範囲全体をサーバーの真の状態へそろえるため）。
+      invalidateDataRef.current?.();
     }
   };
 
@@ -408,7 +438,10 @@ export function CalendarShell({
     } catch {
       setDragError("変更を保存できませんでした。");
     } finally {
-      startTransition(() => router.refresh());
+      // ページ全体を router.refresh() で描き直さず、カレンダーのデータだけを取り直す
+      // （issue #697）。動かした予定・タスクのぶんだけでなく表示中の期間すべてを対象にする
+      // （ドラッグの成否によらず、見えている範囲全体をサーバーの真の状態へそろえるため）。
+      invalidateDataRef.current?.();
     }
   };
 
@@ -632,17 +665,19 @@ export function CalendarShell({
   /**
    * 時間グリッドに並べる日。
    *
-   * サーバーが渡してきた期間ではなく、押した直後に更新される nav を起点にする。
-   * 前へ・次へやスワイプは、取得の完了を待たずにその場で隣の期間へ切り替わってほしい。
-   * 表示形式そのものを変えている最中は、日数が変わるためサーバーの期間に従う。
+   * サーバーが渡してきた期間ではなく、押した直後に更新される nav（楽観値）を起点にする。
+   * 前へ・次へ・スワイプだけでなく、表示形式そのものの切り替え（1日⇔3日⇔週）も含めて、
+   * サーバーの応答（RSC往復・外部APIの取得）を待たずにその場で正しい日数へ切り替わる
+   * 必要があるため（issue #697）。月表示では使わないので `days`（サーバー初期値）のままでよい。
    */
   const gridDays = useMemo(() => {
-    if (view === "month" || nav.view !== view) return days;
-    return getVisibleDays(view, parseDateKey(nav.anchorKey), weekStartsOn).days;
-  }, [view, nav.view, nav.anchorKey, days, weekStartsOn]);
+    if (nav.view === "month") return days;
+    return getVisibleDays(nav.view, parseDateKey(nav.anchorKey), weekStartsOn).days;
+  }, [nav.view, nav.anchorKey, weekStartsOn, days]);
 
   // 予定を追加するときの既定の日。月表示は広い範囲を並べているため、先頭の日ではなく今日を使う。
-  const defaultDayKey = view === "month" ? utils.todayKey() : gridDays[0];
+  // nav（楽観値）で判定するのは、表示形式の切り替え中でも正しい方を指すようにするため。
+  const defaultDayKey = nav.view === "month" ? utils.todayKey() : gridDays[0];
 
   /**
    * 右下の「＋」からの追加。作れる種類ぶんのひな型をまとめて渡し、
@@ -855,82 +890,88 @@ export function CalendarShell({
       <OfflineNotice />
 
       {/*
-        予定とタスクの到着を待つ必要があるのはグリッドだけ。どの期間を見ているかは
-        取得前から決まっているため、ヘッダーは待たせずに描く。
-        なお前へ・次へは startTransition の中で遷移するため、ここは骨組みへ戻らず、
-        表示中の内容を保ったまま差し替わる（操作のたびに画面が消えることはない）。
+        グリッドの枠組み（どちらのコンポーネントを、どんな日付/週の並びで描くか）は
+        `nav`（useOptimistic の楽観値）だけで決まり、予定・タスクの取得を待たない
+        （issue #697）。`CalendarBody` はもう `use()` でPromiseを消費しないため、
+        ここをSuspenseで包む必要は無い。取得中かどうかは `onLoadingChange` で
+        上のヘッダー直下（LinearProgress）へ伝える。
+        なお前へ・次へは startTransition の中で遷移するため、表示中の内容を保った
+        まま差し替わる（操作のたびに画面が消えることはない）。
       */}
-      <Suspense fallback={<CalendarGridSkeleton />}>
-        <CalendarBody
-          dataPromise={dataPromise}
-          tagCatalogPromise={tagCatalogPromise}
-          placeCatalogPromise={placeCatalogPromise}
-          view={view}
-          days={gridDays}
-          weeks={view === "month" ? monthWeeks : weeks}
-          weekStartsOn={weekStartsOn}
-          utils={utils}
-          timeZone={timeZone}
-          windowMonths={windowMonths}
-          serverMonths={serverMonths}
-          scrollTarget={scrollTarget}
-          autoRefreshSeconds={autoRefreshSeconds}
-          offline={offline}
-          dragError={dragError}
-          itemDialog={itemDialog}
-          quickDraft={quickDraft}
-          viewingEvent={viewingEvent}
-          viewingTask={viewingTask}
-          viewingReminder={viewingReminder}
-          viewingTravel={viewingTravel}
-          linkingEvent={linkingEvent}
-          virtual={virtual}
-          onVisibleMonthChange={handleVisibleMonthChange}
-          onVisibleWeekChange={handleVisibleWeekChange}
-          onSwipe={moveDays}
-          onSelectDay={(dateKey) => navigate("day1", dateKey)}
-          onOpenEvent={openEvent}
-          onOpenTask={openTask}
-          onOpenReminder={openReminder}
-          onOpenTravel={openTravel}
-          onOpenTravelForEvent={openTravelFromEvent}
-          onEditEvent={editEvent}
-          onDuplicateEvent={duplicateEvent}
-          onEditTask={editTask}
-          onEditReminder={editReminder}
-          onEditTravel={editTravel}
-          onAddTravelForEvent={addTravelForEvent}
-          onLinkTaskForEvent={linkTaskForEvent}
-          onCreateTaskForEvent={createTaskForEvent}
-          onSelectSlot={(dateKey, minutes) => {
-            if (offline) return;
-            setQuickDraft(toQuickEventDraft(dateKey, minutes));
-          }}
-          onSelectRange={({ dateKey, startMinutes, endMinutes }) => {
-            if (offline) return;
-            setQuickDraft(toQuickEventDraft(dateKey, startMinutes, endMinutes));
-          }}
-          onQuickAddOnDay={(dateKey) => {
-            if (offline) return;
-            setQuickDraft(toQuickEventDraft(dateKey, DEFAULT_START_MINUTES));
-          }}
-          onOpenEventForm={openEventForm}
-          onDragCommit={commitDrag}
-          onAllDayDragCommit={commitAllDayDrag}
-          onAdd={openAdd}
-          onCloseDialogs={closeDialogs}
-          onRefreshAll={refreshAll}
-          onLoadingChange={setWindowLoading}
-          runningActivity={initialRunningActivity}
-          activityCalendars={activityCalendars}
-          onOpenActivity={openActivity}
-          work={work}
-          onGoToday={goToday}
-          onMove={move}
-          onSwitchView={switchView}
-          onOpenShortcuts={() => setShortcutsOpen(true)}
-        />
-      </Suspense>
+      <CalendarBody
+        dataPromise={dataPromise}
+        tagCatalogPromise={tagCatalogPromise}
+        placeCatalogPromise={placeCatalogPromise}
+        view={nav.view}
+        anchorKey={nav.anchorKey}
+        seedView={view}
+        seedAnchorKey={anchorKey}
+        days={gridDays}
+        weeks={nav.view === "month" ? monthWeeks : weeks}
+        weekStartsOn={weekStartsOn}
+        utils={utils}
+        timeZone={timeZone}
+        windowMonths={windowMonths}
+        serverMonths={serverMonths}
+        scrollTarget={scrollTarget}
+        autoRefreshSeconds={autoRefreshSeconds}
+        offline={offline}
+        dragError={dragError}
+        itemDialog={itemDialog}
+        quickDraft={quickDraft}
+        viewingEvent={viewingEvent}
+        viewingTask={viewingTask}
+        viewingReminder={viewingReminder}
+        viewingTravel={viewingTravel}
+        linkingEvent={linkingEvent}
+        virtual={virtual}
+        onVisibleMonthChange={handleVisibleMonthChange}
+        onVisibleWeekChange={handleVisibleWeekChange}
+        onSwipe={moveDays}
+        onSelectDay={(dateKey) => navigate("day1", dateKey)}
+        onOpenEvent={openEvent}
+        onOpenTask={openTask}
+        onOpenReminder={openReminder}
+        onOpenTravel={openTravel}
+        onOpenTravelForEvent={openTravelFromEvent}
+        onEditEvent={editEvent}
+        onDuplicateEvent={duplicateEvent}
+        onEditTask={editTask}
+        onEditReminder={editReminder}
+        onEditTravel={editTravel}
+        onAddTravelForEvent={addTravelForEvent}
+        onLinkTaskForEvent={linkTaskForEvent}
+        onCreateTaskForEvent={createTaskForEvent}
+        onSelectSlot={(dateKey, minutes) => {
+          if (offline) return;
+          setQuickDraft(toQuickEventDraft(dateKey, minutes));
+        }}
+        onSelectRange={({ dateKey, startMinutes, endMinutes }) => {
+          if (offline) return;
+          setQuickDraft(toQuickEventDraft(dateKey, startMinutes, endMinutes));
+        }}
+        onQuickAddOnDay={(dateKey) => {
+          if (offline) return;
+          setQuickDraft(toQuickEventDraft(dateKey, DEFAULT_START_MINUTES));
+        }}
+        onOpenEventForm={openEventForm}
+        onDragCommit={commitDrag}
+        onAllDayDragCommit={commitAllDayDrag}
+        onAdd={openAdd}
+        onCloseDialogs={closeDialogs}
+        onRefreshAll={refreshAll}
+        registerInvalidate={registerInvalidate}
+        onLoadingChange={setWindowLoading}
+        runningActivity={initialRunningActivity}
+        activityCalendars={activityCalendars}
+        holidayCalendars={holidayCalendars}
+        onOpenActivity={openActivity}
+        work={work}
+        onGoToday={goToday}
+        onMove={move}
+        onSwitchView={switchView}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
+      />
 
       <RunningActivityBar running={initialRunningActivity} />
       <BottomNav
@@ -968,6 +1009,9 @@ function CalendarBody({
   tagCatalogPromise,
   placeCatalogPromise,
   view,
+  anchorKey,
+  seedView,
+  seedAnchorKey,
   days,
   weeks,
   weekStartsOn,
@@ -1013,9 +1057,11 @@ function CalendarBody({
   onAdd,
   onCloseDialogs,
   onRefreshAll,
+  registerInvalidate,
   onLoadingChange,
   runningActivity,
   activityCalendars,
+  holidayCalendars,
   onOpenActivity,
   work,
   onGoToday,
@@ -1023,10 +1069,20 @@ function CalendarBody({
   onSwitchView,
   onOpenShortcuts,
 }: {
+  /**
+   * サーバーが最初に描いた応答。ここでは最初の1回（マウント時点のもの）だけを種として使い、
+   * 以後の表示形式・日付の切り替えで作られる新しい Promise は待たない（issue #697）。
+   */
   dataPromise: Promise<CalendarLoadResult>;
   tagCatalogPromise: Promise<TagCatalog>;
   placeCatalogPromise: Promise<PlaceCatalog>;
+  /** いま表示すべき形式。押した直後に更新される nav（楽観値）で、サーバーの応答を待たない。 */
   view: CalendarView;
+  /** いま表示すべき起点の日。view と同じく nav（楽観値）。 */
+  anchorKey: string;
+  /** dataPromise が対応する表示形式・日付（マウント時点のサーバー確定値）。 */
+  seedView: CalendarView;
+  seedAnchorKey: string;
   days: string[];
   weeks: string[][];
   weekStartsOn: number;
@@ -1082,10 +1138,18 @@ function CalendarBody({
   onAdd: (available: Record<AddableKind, boolean>) => void;
   onCloseDialogs: () => void;
   onRefreshAll: () => void;
+  /**
+   * 外側（ヘッダーの再取得ボタン・ドラッグ確定後の同期）から `data.invalidate` を
+   * 呼べるようにするための登録。`dataPromise` はマウント時点の1回しか消費しないため
+   * （issue #697）、明示的な再取得はこの経路を経由する。
+   */
+  registerInvalidate: (fn: (() => void) | null) => void;
   onLoadingChange: (loading: boolean) => void;
   runningActivity: RunningActivityItem | null;
   /** 活動記録の保存先に選ばれているカレンダー（issue #241）。 */
   activityCalendars: ReadonlySet<string>;
+  /** 祝日として扱うカレンダー（issue #699）。終日の並びで他の予定より上に表示する。 */
+  holidayCalendars: ReadonlySet<string>;
   /** 記録中の帯を押したとき。開始・停止は記録の画面で行う。 */
   onOpenActivity: () => void;
   /** 勤務記録の入力に要るもの（issue #532）。 */
@@ -1096,19 +1160,79 @@ function CalendarBody({
   onSwitchView: (view: CalendarView) => void;
   onOpenShortcuts: () => void;
 }) {
-  const initial = use(dataPromise);
-  const tagCatalog = use(tagCatalogPromise);
-  const placeCatalog = use(placeCatalogPromise);
+  /**
+   * タグ・場所は表示形式・日付が変わっても内容が変わらない（issue #697）。マウント時点の
+   * Promise だけを消費し、表示形式を切り替えるたびに作られる新しい Promise（Notionへの
+   * 無駄な再取得）は無視する。取得できるまでは空のカタログを出す。
+   */
+  const [seedTagPromise] = useState(() => tagCatalogPromise);
+  const [seedPlacePromise] = useState(() => placeCatalogPromise);
+  const [tagCatalog, setTagCatalog] = useState<TagCatalog>(EMPTY_TAG_CATALOG);
+  const [placeCatalog, setPlaceCatalog] = useState<PlaceCatalog>(EMPTY_PLACE_CATALOG);
 
-  // 月表示だけは、前後の月ぶんをここで保持して足りない月だけ取りにいく。
-  const data = useCalendarChunks({
+  useEffect(() => {
+    let cancelled = false;
+
+    seedTagPromise.then((catalog) => {
+      if (!cancelled) setTagCatalog(catalog);
+    });
+    seedPlacePromise.then((catalog) => {
+      if (!cancelled) setPlaceCatalog(catalog);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [seedTagPromise, seedPlacePromise]);
+
+  // 月表示は前後の月ぶんを、それ以外はいま表示中の期間ぶんを、それぞれ背景で保持する。
+  // どちらも dataPromise（サーバーが最初に描いた応答）はマウント時点の1回だけ種として使い、
+  // 表示形式・日付の切り替えでは外部APIの応答を待たない（issue #697）。
+  const monthData = useCalendarChunks({
     enabled: view === "month",
     windowMonths,
-    initial,
+    dataPromise,
     serverMonths,
     autoRefreshSeconds,
     onLoadingChange,
   });
+  const rangeData = useCalendarRangeData({
+    enabled: view !== "month",
+    view,
+    anchorKey,
+    dataPromise,
+    seedView,
+    seedAnchorKey,
+    autoRefreshSeconds,
+    onLoadingChange,
+  });
+
+  /**
+   * 月表示は月ごとのチャンク、それ以外は表示中の期間1つぶんと、保持の粒度が違うため
+   * ここで同じ形にそろえる。invalidate は「変わった期間」を受け取り、月表示では
+   * かかる月へ変換し、それ以外ではいま表示中の期間をまるごと取り直す。
+   */
+  const data = useMemo(
+    () =>
+      view === "month"
+        ? {
+            ...monthData,
+            invalidate: (touched: TouchedRange[] | null) =>
+              monthData.invalidate(touched === null ? null : monthsOfRanges(touched)),
+          }
+        : {
+            ...rangeData,
+            pendingMonths: NO_PENDING_MONTHS,
+          },
+    [view, monthData, rangeData],
+  );
+
+  // ヘッダーの再取得ボタン・ドラッグ確定後の同期など、CalendarShell 側から
+  // data.invalidate を呼べるように登録しておく（issue #697）。
+  useEffect(() => {
+    registerInvalidate(() => data.invalidate(null));
+    return () => registerInvalidate(null);
+  }, [data, registerInvalidate]);
 
   /**
    * 勤務場所の色（docs/spec.md §34）。選択肢はNotionのプロパティ定義が一次情報源で、
@@ -1127,8 +1251,9 @@ function CalendarBody({
    *
    * 他の入力（`itemDialog` など）は状態を外側の `CalendarShell` に置いているが、あれらは
    * 日付だけからひな型を作れる。勤務はその日の**既存の記録**を引く必要があり、それが解決するのは
-   * `<Suspense>` の内側（`use(dataPromise)`）のここから。外側で待つと「ヘッダーは取得を待たずに
-   * 描く」という作りが崩れるため、状態ごとこちらへ置く（issue #532 計画レビューG1の指摘）。
+   * カレンダーのデータ（`data.workRecords`）を持つこの `CalendarBody` のここから。外側で待つと
+   * 「ヘッダーは取得を待たずに描く」という作りが崩れるため、状態ごとこちらへ置く
+   * （issue #532 計画レビューG1の指摘）。
    */
   const [workDraft, setWorkDraft] = useState<WorkDraft | null>(null);
 
@@ -1164,19 +1289,15 @@ function CalendarBody({
   /**
    * 保存・削除のあとの取り直し。
    *
-   * 月表示は変わった月だけを取り直す。ページごと描き直すと、表示中の月すべてを
-   * 外部APIから取り直すことになり、保存のたびにその待ち時間が乗る。
+   * 月表示は変わった月だけを、日・3日・週表示はいま表示中の期間だけを取り直す
+   * （`data.invalidate`、`useCalendarChunks`/`useCalendarRangeData` どちらも同じ形）。
+   * ページごと描き直す（`router.refresh()`）と表示中の範囲すべてを外部APIから取り直す
+   * ことになり、保存のたびにその待ち時間が乗るため使わない（issue #697）。
    */
   const handleSaved = (touched: TouchedRange[] | null) => {
     onCloseDialogs();
     setWorkDraft(null);
-
-    if (view !== "month") {
-      onRefreshAll();
-      return;
-    }
-
-    data.invalidate(touched === null ? null : monthsOfRanges(touched));
+    data.invalidate(touched);
   };
 
   /**
@@ -1184,12 +1305,7 @@ function CalendarBody({
    * 続けて段階を選び直せるようにするため、押すたびにダイアログを閉じない。
    */
   const handleChanged = (touched: TouchedRange[] | null) => {
-    if (view !== "month") {
-      onRefreshAll();
-      return;
-    }
-
-    data.invalidate(touched === null ? null : monthsOfRanges(touched));
+    data.invalidate(touched);
   };
 
   /** 表示画面のままの完了切り替え。編集フォームを経由しないため保存とは別経路で送る。 */
@@ -1208,14 +1324,9 @@ function CalendarBody({
       throw new Error(body?.message ?? "更新できませんでした。");
     }
 
-    if (view !== "month") {
-      onRefreshAll();
-      return;
-    }
-
     // 完了にすると繰り返しの次回分が別の日に作られることもあるため、
-    // 期限と予定日の両方がかかる月を取り直す。
-    data.invalidate(monthsOfRanges(taskRanges(task)));
+    // 期限と予定日の両方がかかる範囲（月表示では月）を取り直す。
+    data.invalidate(taskRanges(task));
   };
 
   // 右下の「＋」で作れる種類。キーボードショートカットの `c`（issue #635）も同じ条件で判定する。
@@ -1265,6 +1376,7 @@ function CalendarBody({
           travels={data.travels}
           workRecords={data.workRecords}
           workPlaceOptions={workPlaceOptions}
+          holidayCalendarIds={holidayCalendars}
           weekStartsOn={weekStartsOn}
           utils={utils}
           scrollTarget={scrollTarget}
@@ -1292,6 +1404,7 @@ function CalendarBody({
           onOpenWork={openWork}
           runningActivity={runningActivity}
           activityCalendarIds={activityCalendars}
+          holidayCalendarIds={holidayCalendars}
           utils={utils}
           onOpenEvent={onOpenEvent}
           onOpenTask={onOpenTask}

@@ -23,6 +23,7 @@ import { CALENDAR_VIEW_COOKIE, parseCalendarMemory } from "@/lib/calendar-view-m
 import { db } from "@/lib/db";
 import { getRunningActivity } from "@/services/activity/running";
 import { listActivityCalendarIds } from "@/services/activity/settings";
+import { listHolidayCalendarIds } from "@/services/calendar/holiday-settings";
 import { loadCalendarData } from "@/services/calendar/load";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { loadTagCatalog } from "@/services/notion/tag-options";
@@ -102,11 +103,13 @@ export default async function CalendarPage({
   // どちらもDaySpanのDBだけで完結するため、外部APIを待たずにここで解決しておく。
   // 移動の既定値（docs/spec.md §29）も同じくDaySpanのDBだけで完結する。
   // 予定から移動を足すときの初期値に使うため、画面と一緒に渡しておく。
-  const [runningActivity, activityCalendarIds, travelSettings] = await Promise.all([
-    getRunningActivity(user.id),
-    listActivityCalendarIds(user.id),
-    getTravelSettings(user.id),
-  ]);
+  const [runningActivity, activityCalendarIds, holidayCalendarIds, travelSettings] =
+    await Promise.all([
+      getRunningActivity(user.id),
+      listActivityCalendarIds(user.id),
+      listHolidayCalendarIds(user.id),
+      getTravelSettings(user.id),
+    ]);
 
   return (
     <>
@@ -123,6 +126,7 @@ export default async function CalendarPage({
         placeCatalogPromise={placeCatalogPromise}
         initialRunningActivity={runningActivity}
         activityCalendarIds={activityCalendarIds}
+        holidayCalendarIds={holidayCalendarIds}
         travelSettings={travelSettings}
         /*
           勤務記録の入力（issue #532・docs/spec.md §34）。どれも既に読んでいる

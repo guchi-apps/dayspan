@@ -149,6 +149,7 @@ export function ContinuousMonthView({
   travels,
   workRecords,
   workPlaceOptions,
+  holidayCalendarIds,
   weekStartsOn,
   utils,
   scrollTarget,
@@ -172,6 +173,11 @@ export function ContinuousMonthView({
   workRecords: WorkRecordItem[];
   /** 勤務場所の選択肢。色を引くためだけに使う。 */
   workPlaceOptions: TagOption[];
+  /**
+   * 祝日として扱うカレンダー（issue #699）。ここに入っている予定は、週の帯で
+   * 他の予定より上（最上部）に並べる。
+   */
+  holidayCalendarIds: ReadonlySet<string>;
   weekStartsOn: number;
   utils: CalendarDateUtils;
   /**
@@ -373,8 +379,15 @@ export function ContinuousMonthView({
       push(startKey, endKey < startKey ? startKey : endKey, travel);
     }
 
+    // 祝日カレンダーの予定を最優先で上の段へ置く（issue #699）。lane割り当ては早い者勝ちの
+    // for ループ（下記）のため、ここでの並び順だけで祝日を常に lane 0（最上部）にできる。
+    const isHoliday = (segment: RawSegment): boolean =>
+      segment.item.kind === "event" && holidayCalendarIds.has(segment.item.calendarId);
+
     return rawByWeek.map((raw) => {
       raw.sort((a, b) => {
+        const holidayDiff = Number(isHoliday(b)) - Number(isHoliday(a));
+        if (holidayDiff !== 0) return holidayDiff;
         // 帯（日をまたぐ・終日）を先に置く。後から来た1日ぶんの予定が、
         // 帯の空いている段へ潜り込んで帯を分断しないようにするため。
         const barDiff = Number(isBar(b)) - Number(isBar(a));
@@ -425,7 +438,7 @@ export function ContinuousMonthView({
 
       return { segments, hiddenByColumn };
     });
-  }, [events, tasks, reminders, travels, utils, weeks, weekHeight]);
+  }, [events, tasks, reminders, travels, utils, weeks, weekHeight, holidayCalendarIds]);
 
   /** その高さにある週の先頭日。余白の中でも、窓の外の週として答える。 */
   const weekKeyAt = useCallback(

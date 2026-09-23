@@ -37,8 +37,6 @@ type MonthChunk = {
 /** 取得の失敗が続いても要求を出し続けないよう、再試行の間隔には下限を設ける。 */
 const MIN_REFRESH_SECONDS = 30;
 
-const NO_MONTHS: ReadonlySet<string> = new Set<string>();
-
 /** 日時文字列（YYYY-MM-DD または ISO 8601）の先頭は必ず YYYY-MM。 */
 function monthKeysBetween(start: string, end: string): string[] {
   const first = start.slice(0, 7);
@@ -79,7 +77,7 @@ export function withTaskLinks(tasks: TaskItem[]): TaskItem[] {
  * （上げると `activate` で古い世代のキャッシュがまとめて消え、オフラインで開けていた画面が
  * 一度失われる）。そのぶん、勤務場所を足す前に保存された応答がそのまま渡ってくる。
  */
-function withWorkRecords(data: CalendarLoadResult): CalendarLoadResult {
+export function withWorkRecords(data: CalendarLoadResult): CalendarLoadResult {
   return data.workRecords ? data : { ...data, workRecords: [] };
 }
 
@@ -89,7 +87,7 @@ function withWorkRecords(data: CalendarLoadResult): CalendarLoadResult {
  * `outcome` も項目が増えただけの変更で、`workRecords` と同じ理由で `VERSION` は上げていない。
  * 記録を足す前に保存された応答には項目そのものが無いため、ここで null を入れて形をそろえる。
  */
-function withEventOutcomes(events: CalendarEventItem[]): CalendarEventItem[] {
+export function withEventOutcomes(events: CalendarEventItem[]): CalendarEventItem[] {
   return events.map((event) => (event.outcome === undefined ? { ...event, outcome: null } : event));
 }
 
@@ -224,7 +222,7 @@ export type CalendarWindowData = {
 export function useCalendarChunks({
   enabled,
   windowMonths,
-  initial,
+  dataPromise,
   serverMonths,
   autoRefreshSeconds,
   onLoadingChange,
@@ -233,21 +231,25 @@ export function useCalendarChunks({
   enabled: boolean;
   /** いま画面に出しうる月。週の並びが触れる月から導く。 */
   windowMonths: string[];
-  initial: CalendarLoadResult;
-  /** initial が満たしている月。サーバーが描いた範囲と一致していなければならない。 */
+  /**
+   * サーバーが最初に描いた応答。表示形式・日付を切り替えるたびに新しく作られるが、
+   * ここでは最初の1回（マウント時点のもの）だけを種として使う（issue #697）。以後の
+   * 取り直しは `invalidate()` またはこのフック自身の背景取得（下記）に任せ、切り替えの
+   * たびにこの Promise の解決を待って画面を止めることはしない。
+   */
+  dataPromise: Promise<CalendarLoadResult>;
+  /** dataPromise（種）が満たしている月。サーバーが描いた範囲と一致していなければならない。 */
   serverMonths: string[];
   autoRefreshSeconds: number;
   /** 取得中かどうか。読み込み中の表示はSuspense境界の外にあるため、呼び出し側へ渡す。 */
   onLoadingChange: (loading: boolean) => void;
 }): CalendarWindowData {
-  const [chunks, setChunks] = useState(() =>
-    splitByMonth(withWorkRecords(initial), serverMonths, Date.now()),
-  );
+  const [chunks, setChunks] = useState<Map<string, MonthChunk>>(() => new Map());
   const [meta, setMeta] = useState({
-    calendars: initial.calendars,
-    notionReady: initial.notionReady,
-    reminderReady: initial.reminderReady,
-    errors: initial.errors,
+    calendars: [] as WritableCalendar[],
+    notionReady: false,
+    reminderReady: false,
+    errors: [] as CalendarLoadResult["errors"],
   });
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -273,21 +275,44 @@ export function useCalendarChunks({
     windowRef.current = windowMonths;
   }, [windowMonths]);
 
-  // サーバー側が描き直された（保存後の再取得など）ときは、そちらを正として入れ替える。
-  const seededRef = useRef(initial);
-  useEffect(() => {
-    if (seededRef.current === initial) return;
-    seededRef.current = initial;
+  // マウント時点の dataPromise・serverMonths だけを覚え、以後の切り替えで作られる新しい
+  // Promise は無視する（表示形式・日付の切り替えを外部APIの応答待ちにしないため）。
+  const [seedPromise] = useState(() => dataPromise);
+  const [seedMonths] = useState(() => serverMonths);
+  // マウント時点で月表示だったときだけ、種の内容を月の並びとして信用してよい。
+  // マウント時点が日・3日・週表示だった場合、dataPromise はその狭い期間しか含んでおらず、
+  // 月ごとの保持へそのまま流し込むと「一部しか無いのに取得済み」の月ができてしまう。
+  const [seedEnabled] = useState(() => enabled);
+  const [seeded, setSeeded] = useState(false);
 
-    setChunks(splitByMonth(withWorkRecords(initial), serverMonths, Date.now()));
-    setMeta({
-      calendars: initial.calendars,
-      notionReady: initial.notionReady,
-      reminderReady: initial.reminderReady,
-      errors: initial.errors,
-    });
-    setLoadError(null);
-  }, [initial, serverMonths]);
+  useEffect(() => {
+    let cancelled = false;
+    if (seedEnabled) onLoadingChangeRef.current(true);
+
+    seedPromise.then(
+      (data) => {
+        if (cancelled) return;
+        if (seedEnabled) {
+          setChunks(splitByMonth(withWorkRecords(data), seedMonths, Date.now()));
+          setMeta({
+            calendars: data.calendars,
+            notionReady: data.notionReady,
+            reminderReady: data.reminderReady,
+            errors: data.errors,
+          });
+        }
+        setSeeded(true);
+      },
+      () => {
+        // 最初の取得に失敗しても、以後の背景取得（fetchMonths）に任せる。
+        if (!cancelled) setSeeded(true);
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [seedPromise, seedMonths, seedEnabled]);
 
   const fetchMonths = useCallback(async (months: string[]) => {
     months.forEach((month) => inFlight.current.add(month));
@@ -359,9 +384,10 @@ export function useCalendarChunks({
   }, []);
 
   // 足りない月・古くなった月を取りにいく。取得できると chunks が変わって再実行され、
-  // 「足りない月なし」で止まる。
+  // 「足りない月なし」で止まる。種（dataPromise）の解決を待つのは、まだ判定していない
+  // うちに同じ月を二重に取りにいかないため。
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !seeded) return;
 
     const ttl = Math.max(autoRefreshSeconds, MIN_REFRESH_SECONDS) * 1000;
     const now = Date.now();
@@ -375,7 +401,7 @@ export function useCalendarChunks({
 
     if (needed.length === 0) return;
     void fetchMonths(needed);
-  }, [enabled, windowMonths, chunks, autoRefreshSeconds, fetchMonths]);
+  }, [enabled, seeded, windowMonths, chunks, autoRefreshSeconds, fetchMonths]);
 
   // 窓のぶんを1つに束ねる。月をまたぐ予定は複数の月に入っているため、ここで重複を落とす。
   const { events, tasks, reminders, travels, workRecords } = useMemo(() => {
@@ -456,24 +482,6 @@ export function useCalendarChunks({
       return changed ? next : prev;
     });
   }, []);
-
-  // 月表示以外は、サーバーが描いたぶんをそのまま使う。
-  if (!enabled) {
-    return {
-      events: initial.events,
-      tasks: initial.tasks,
-      reminders: initial.reminders,
-      travels: initial.travels,
-      workRecords: initial.workRecords ?? [],
-      calendars: initial.calendars,
-      notionReady: initial.notionReady,
-      reminderReady: initial.reminderReady,
-      errors: initial.errors,
-      loadError: null,
-      pendingMonths: NO_MONTHS,
-      invalidate,
-    };
-  }
 
   return {
     events,

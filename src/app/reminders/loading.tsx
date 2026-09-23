@@ -10,7 +10,7 @@ import { SkeletonBlock } from "@/components/calendar/calendar-skeleton";
  */
 export default function Loading() {
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div className="flex h-app flex-col overflow-hidden">
       <div className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
         <SkeletonBlock className="h-8 w-20 rounded-full" />
         <SkeletonBlock className="h-6 w-16" />
