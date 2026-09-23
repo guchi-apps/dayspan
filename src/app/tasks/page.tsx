@@ -2,21 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ListChecks } from "lucide-react";
 
-import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
 import { TaskList } from "@/components/tasks/task-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { countDueTasks } from "@/services/notifications/badge";
-import { createNotionClient } from "@/services/notion/client";
-import { loadTagCatalog } from "@/services/notion/tag-options";
-import { loadPlaceCatalog } from "@/services/notion/places";
-import { listAllTasks } from "@/services/notion/tasks";
-import { loadWritableCalendars } from "@/services/calendar/load";
-import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
 import { getRunningActivity } from "@/services/activity/running";
-import type { TaskItem } from "@/types/calendar";
 
 export default async function TasksPage() {
   const user = await getCurrentUser();
@@ -33,41 +24,14 @@ export default async function TasksPage() {
 
   if (!connection?.taskDataSourceId) return <ConnectPrompt />;
 
-  // 取得に失敗しても画面は開けるようにする。原因を画面上に出して再取得できる状態を保つ。
-  // タグの取得は失敗しても空になるだけで、タスクの表示は妨げない。
-  let tasks: TaskItem[] = [];
-  let loadError: string | null = null;
-  const tagCatalogPromise = loadTagCatalog(connection);
-  const placeCatalogPromise = loadPlaceCatalog(connection);
-  const calendarsPromise = loadWritableCalendars(user.id);
-  // 紐づけ（docs/spec.md §31）は行に「定例会議 の終了後」を添えるために読む。DaySpanのDBなので
-  // 外部APIの往復は増えない。ここには予定が無いため、ずれの判定はカレンダー画面側だけで行う。
-  const linksPromise = listTaskLinks(user.id);
-  try {
-    tasks = await listAllTasks(createNotionClient(connection), connection);
-  } catch {
-    loadError = "Notionのタスクを取得できませんでした。";
-  }
-  tasks = attachTaskLinks(tasks, await linksPromise);
-
-  const timeZone = uiSetting?.timeZone ?? "Asia/Tokyo";
-
+  // 一覧・タグ・場所・カレンダーはここで待たない。Notionが遅いと追加ボタンまで出なくなるため、
+  // 画面の枠だけをすぐ返し、中身はクライアントが /api/tasks/all から背景取得する（issue #724）。
   return (
-    <>
-      {/* アイコンのバッジは、この画面がすでに持っている件数から合わせる（docs/spec.md §32）。
-          ここで取り直すとNotionへの往復が1回増える。 */}
-      <AppBadgeSync count={loadError ? null : countDueTasks(tasks, timeZone)} />
-      <TaskList
-        tasks={tasks}
-        tagCatalog={await tagCatalogPromise}
-        placeCatalog={await placeCatalogPromise}
-        calendars={await calendarsPromise}
-        weekStartsOn={uiSetting?.weekStartsOn ?? 0}
-        timeZone={timeZone}
-        loadError={loadError}
-        runningActivity={runningActivity}
-      />
-    </>
+    <TaskList
+      weekStartsOn={uiSetting?.weekStartsOn ?? 0}
+      timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
+      runningActivity={runningActivity}
+    />
   );
 }
 

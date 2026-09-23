@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { useOffline } from "next/offline";
 import { ArrowUpDown, Eye, EyeOff, Plus, RefreshCw, ShoppingCart } from "lucide-react";
 
@@ -18,7 +17,8 @@ import { BottomNav } from "@/components/nav/main-nav";
 import { fabBottomOffsetClass, RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
-import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
+import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
+import { useApiResource } from "@/components/offline/use-api-resource";
 import { ShoppingItemDialog, type ShoppingDraft } from "@/components/shopping/shopping-item-dialog";
 import { useShoppingViewPrefs } from "@/components/shopping/use-shopping-view-prefs";
 import { Button } from "@/components/ui/button";
@@ -45,27 +45,33 @@ import type { RunningActivitySummary } from "@/types/activity";
  * 一次情報源はNotionの買い物リストDBで、DaySpanのDBには何も保存しない。別アプリ
  * （shopping-list）と同じDBを指せるため、どちらから足したものも両方に出る。
  */
+type ShoppingData = { items: ShoppingItem[]; categoryOptions: TagOption[] };
+
+const EMPTY_ITEMS: ShoppingItem[] = [];
+const EMPTY_OPTIONS: TagOption[] = [];
+
 export function ShoppingScreen({
-  items,
-  categoryOptions,
   timeZone,
-  loadError,
   runningActivity = null,
 }: {
-  items: ShoppingItem[];
-  /** 登録済みのカテゴリ。タブの並び順もこの定義順に従う。 */
-  categoryOptions: TagOption[];
   /** ナビの「カレンダー」が今日へ移るのに使う（端末の時計任せにしない）。 */
   timeZone: string;
-  loadError: string | null;
   /**
    * 記録中の項目（issue #629）。ナビの記録の項目へ印を出し、下部ナビの直上に記録中バーを
    * 出すために使う（docs/spec.md §27）。
    */
   runningActivity?: RunningActivitySummary | null;
 }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  // 一覧はページが待たずに、ここで背景取得する（issue #724）。追加ボタン・ナビは取得を待たない。
+  const resource = useApiResource<ShoppingData>(
+    "/api/shopping",
+    "買い物リストを取得できませんでした。",
+  );
+  const { data, reload } = resource;
+  const items = data?.items ?? EMPTY_ITEMS;
+  const fetchedOptions = data?.categoryOptions ?? EMPTY_OPTIONS;
+  const loadError = resource.error;
+  const pending = resource.loading;
   const { sort, showBought, setSort, setShowBought } = useShoppingViewPrefs();
   const [filterKey, setFilterKey] = useState("all");
   const [dialog, setDialog] = useState<ShoppingDraft | null>(null);
@@ -77,12 +83,12 @@ export function ShoppingScreen({
 
   // オフライン中は書き込みを止める（docs/spec.md §21）。
   const offline = useOffline();
-  useReconnectRefresh();
 
   // オフラインでこの画面を開けるよう、表示中にHTMLを保存しておく（issue #321）。
   // ナビからの移動はソフトナビゲーションで、Service Worker が保存できないため。
   useWarmOfflinePage("/shopping");
 
+  const categoryOptions = fetchedOptions;
   const categoryNames = useMemo(
     () => categoryOptions.map((option) => option.name),
     [categoryOptions],
@@ -148,7 +154,7 @@ export function ShoppingScreen({
         setError(await readErrorMessage(response, "購入済みを変更できませんでした。"));
         return;
       }
-      startTransition(() => router.refresh());
+      reload();
     } catch {
       setPendingBought((prev) => {
         const next = { ...prev };
@@ -214,7 +220,7 @@ export function ShoppingScreen({
           aria-label="再取得"
           // オフライン中に押しても、再接続まで終わらない読み込みが始まるだけになる。
           disabled={pending || offline}
-          onClick={() => startTransition(() => router.refresh())}
+          onClick={reload}
         >
           <RefreshCw className="size-4" />
         </Button>
@@ -223,6 +229,7 @@ export function ShoppingScreen({
       <LinearProgress active={pending || busyId !== null} />
 
       <OfflineNotice />
+      {!offline && resource.stale && <SlowNetworkNotice />}
 
       {(loadError || error) && (
         <div className="bg-error-container/70 px-3 py-2 text-xs text-on-error-container">
@@ -316,7 +323,9 @@ export function ShoppingScreen({
           ))}
         </div>
 
-        {sections.length === 0 && !loadError && (
+        {data === null && !loadError && <ShoppingListSkeleton />}
+
+        {data !== null && sections.length === 0 && !loadError && (
           <p className="p-6 text-center text-sm text-muted-foreground">
             {shown.length === 0
               ? "買うものがありません。"
@@ -354,11 +363,25 @@ export function ShoppingScreen({
             // 楽観更新ぶんは取り直した値で置き換わる。残しておくと、削除した項目の
             // 購入済みだけが手元に残り続ける。
             setPendingBought({});
-            startTransition(() => router.refresh());
+            reload();
           }}
         />
       )}
     </AppFrame>
+  );
+}
+
+/** 一覧の取得が済むまでの行の骨組み。追加ボタンとナビは待たずに使える（issue #724）。 */
+function ShoppingListSkeleton() {
+  return (
+    <div role="status" aria-label="買い物リストを読み込み中" className="animate-pulse">
+      {Array.from({ length: 6 }, (_, row) => (
+        <div key={row} className="flex items-center gap-2 py-3 pr-3 pl-3">
+          <div className="size-4 rounded-xs bg-on-surface/10" />
+          <div className={cn("h-4 rounded bg-on-surface/10", row % 2 ? "w-1/3" : "w-1/2")} />
+        </div>
+      ))}
+    </div>
   );
 }
 
