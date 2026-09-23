@@ -14,7 +14,8 @@ const realBase = process.env.TYPESAFE_BASE_URL;
 
 let recorded: AiUsageRecord[] = [];
 let previousRecorder: ReturnType<typeof setAiUsageRecorder>;
-let lastRequest: { url: string; auth: string | null; body: any } | null = null;
+type SentBody = { state: string; questions: { choice: { criteria: Record<string, unknown> } } };
+let lastRequest: { url: string; auth: string | null; body: SentBody } | null = null;
 
 function stubFetch(respond: () => Response) {
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
