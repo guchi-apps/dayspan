@@ -86,7 +86,9 @@ export function CalendarChipSelect({
         //
         // チップの枠やフォーカスリングが切れないよう、左右と下に少しだけ余白を確保して
         // その分を負のマージンで戻す。
-        className="-mx-1 flex min-w-0 gap-2 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:thin]"
+        // overflow-x を指定すると overflow-y も auto になり、上下の余白が無いと枠・フォーカスリングが
+        // 縦に切れる。縦の余白も確保し、縮められて高さが削られないよう shrink-0 にする（issue #765）。
+        className="-mx-1 -my-1 flex min-w-0 shrink-0 gap-2 overflow-x-auto overscroll-x-contain px-1 py-1 [scrollbar-width:thin]"
       >
         {calendars.map((calendar, index) => {
           const selected = calendar.calendarId === value;
