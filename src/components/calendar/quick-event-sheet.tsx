@@ -175,7 +175,7 @@ export function QuickEventSheet({
       <DialogContent
         ref={contentRef}
         position="bottom"
-        className="max-h-[80dvh] gap-3 overflow-y-auto"
+        className="max-h-[calc(100dvh-2rem)] gap-3 overflow-y-auto"
         // 開いた時点で入力欄へフォーカスを移さない。スマートフォンではその場でキーボードが
         // 立ち上がり、シートの下半分を覆ってしまう。時刻もカレンダーも押した位置から
         // 埋まっているため、開いてすぐ文字を打ちたいとは限らない。

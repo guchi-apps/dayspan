@@ -323,7 +323,7 @@ export function TaskList({
       {/* アイコンのバッジは、取得した一覧から合わせる（docs/spec.md §32）。ここで別に取り直すと
           Notionへの往復が1回増えるため、一覧が届くまでは描かない。 */}
       {(data !== null || loadError) && (
-        <AppBadgeSync count={data ? dueCount : null} />
+        <AppBadgeSync tasks={data ? dueCount : null} />
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24">

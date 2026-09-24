@@ -11,6 +11,7 @@ import { ActivityQuickSheet } from "@/components/nav/activity-quick-sheet";
 import { CalendarQuickSheet } from "@/components/nav/calendar-quick-sheet";
 import { NAV_ITEMS, type NavKey } from "@/components/nav/nav-items";
 import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
+import { useBadgeCount } from "@/components/notifications/badge-counts";
 import { cn } from "@/lib/utils";
 
 // 記録を中央に置くのは、押す回数がいちばん多く、他と同じ形で端に並べると
@@ -43,6 +44,19 @@ function RunningDot({ className }: { className?: string }) {
         className,
       )}
     />
+  );
+}
+
+/** 件数バッジ。0・未取得は出さない。 */
+function CountBadge({ count }: { count: number | null }) {
+  if (!count || count <= 0) return null;
+  return (
+    <span
+      aria-hidden
+      className="type-label-small absolute top-0 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-on-error"
+    >
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }
 
@@ -85,6 +99,10 @@ export function BottomNav({
   const router = useRouter();
   const navigateOffline = useOfflineNavigate();
   const offline = useOffline();
+  // タスク・買い物の件数（AppBadgeSync が置く。docs/spec.md §32）。
+  const taskCount = useBadgeCount("tasks");
+  const shoppingCount = useBadgeCount("shopping");
+  const counts: Partial<Record<NavKey, number | null>> = { tasks: taskCount, shopping: shoppingCount };
 
   // 記録の長押しで出すシート（issue #328）。開くまで中身は取りにいかない。
   const [quickOpen, setQuickOpen] = useState(false);
@@ -234,15 +252,18 @@ export function BottomNav({
               if (isPlainClick(event) && navigateOffline(item.href)) event.preventDefault();
             }}
             aria-current={active ? "page" : undefined}
+            aria-label={counts[item.key] ? `${item.label}（${counts[item.key]}件）` : undefined}
             className={ITEM_CLASS}
           >
             <span
               className={cn(
                 ICON_SLOT_CLASS,
+                "relative",
                 active ? "bg-secondary-container text-on-secondary-container" : "text-on-surface-variant",
               )}
             >
               <Icon className="size-6" />
+              <CountBadge count={counts[item.key] ?? null} />
             </span>
             <span className={cn(LABEL_CLASS, active ? "text-on-surface" : "text-on-surface-variant")}>
               {item.label}

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { isPushConfigured } from "@/lib/web-push/keys";
-import { loadBadgeCount } from "@/services/notifications/badge";
+import { loadBadgeCounts } from "@/services/notifications/badge";
 import { sendToUser } from "@/services/notifications/subscriptions";
 
 /**
@@ -25,14 +25,14 @@ export async function POST() {
     );
   }
 
-  const badge = await loadBadgeCount(userId);
+  const badge = (await loadBadgeCounts(userId)).total;
 
   const summary = await sendToUser(userId, {
     title: "DaySpanのテスト通知",
     body:
       badge === null
         ? "この通知が出れば、通知の設定は完了です。"
-        : `この通知が出れば、通知の設定は完了です。期限が今日までのタスクは${badge}件です。`,
+        : `この通知が出れば、通知の設定は完了です。対応が必要なタスクと買い物は合わせて${badge}件です。`,
     path: "/settings/notifications",
     badge,
   });

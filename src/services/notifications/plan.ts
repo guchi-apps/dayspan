@@ -6,7 +6,7 @@ import { resolveEventLeadMinutes } from "@/lib/event-notification";
 import { db } from "@/lib/db";
 import { loadGoogleEvents } from "@/services/calendar/load";
 import { getNotionConnection } from "@/services/calendar/write-context";
-import { countDueTasks } from "@/services/notifications/badge";
+import { countDueTasks, countShopping } from "@/services/notifications/badge";
 import { getNotificationSettings } from "@/services/notifications/settings";
 import { createNotionClient } from "@/services/notion/client";
 import { listAllTasks } from "@/services/notion/tasks";
@@ -138,7 +138,8 @@ export async function planUserNotifications(userId: string, now: Date): Promise<
     }
 
     // バッジの件数は下書きを作った時点のもの。送る瞬間に数え直すとNotionへの往復が増える。
-    const badgeCount = taskResult ? countDueTasks(taskResult, timeZone) : null;
+    // タスクと買い物の合計（docs/spec.md §32）。買い物は取れなければ合計ごと出さない。
+    const badgeCount = await computeBadgeCount(userId, taskResult, timeZone);
 
     const removed = await replacePendingJobs(userId, drafts, now, badgeCount);
 
@@ -159,6 +160,18 @@ async function markPlanned(userId: string, now: Date): Promise<void> {
     create: { userId, plannedAt: now },
     update: { plannedAt: now },
   });
+}
+
+async function computeBadgeCount(
+  userId: string,
+  tasks: TaskItem[] | null,
+  timeZone: string,
+): Promise<number | null> {
+  if (!tasks) return null;
+  const connection = await getNotionConnection(userId);
+  if (!connection) return null;
+  const shopping = await countShopping(createNotionClient(connection), connection, timeZone);
+  return shopping === null ? null : countDueTasks(tasks, timeZone) + shopping;
 }
 
 /** Notionのタスクを全件取る。取れなければ null（バッジも触らない）。 */
