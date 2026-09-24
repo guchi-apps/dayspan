@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { sleepNightKey } from "@/lib/sleep";
+import { nightBedWake, sleepNightKey, type SleepNight } from "@/lib/sleep";
 
 const TZ = "Asia/Tokyo";
 
@@ -41,4 +41,36 @@ test("sleepNightKey: 判定は設定タイムゾーンで行う（UTCの表記�
   // 同じ瞬間をUTCで見ると正午より前なので、タイムゾーンが違えば行も変わる。
   assert.equal(sleepNightKey("2026-09-08T14:35:00.000Z", "UTC"), "2026-09-08");
   assert.equal(sleepNightKey("2026-09-08T02:00:00.000Z", "UTC"), "2026-09-07");
+});
+
+const night = (segments: [number, number, boolean?][]): SleepNight => ({
+  dateKey: "2026-09-07",
+  segments: segments.map(([from, to, running]) => ({ from, to, running: running ?? false })),
+  minutes: 0,
+  settled: true,
+});
+
+// 行の12:00から数えた分。23:35 = 695、6:45 = 1125。
+test("nightBedWake: 通常の夜は帯の両端", () => {
+  assert.deepEqual(nightBedWake(night([[695, 1125]])), { bed: 695, wake: 1125, running: false });
+});
+
+test("nightBedWake: 中途で起きて2本に分かれても最初の就寝と最後の起床", () => {
+  assert.deepEqual(nightBedWake(night([[695, 900], [930, 1125]])), {
+    bed: 695,
+    wake: 1125,
+    running: false,
+  });
+});
+
+test("nightBedWake: 昼寝は夜の帯に混ぜず、昼寝だけの行はフォールバックのときだけ返す", () => {
+  const napOnly = night([[150, 210]]);
+  assert.equal(nightBedWake(napOnly), null);
+  assert.deepEqual(nightBedWake(napOnly, { fallbackToAll: true }), { bed: 150, wake: 210, running: false });
+  assert.equal(nightBedWake(night([[150, 210], [695, 1125]]))?.bed, 695);
+});
+
+test("nightBedWake: 記録中は running を返し、記録が無ければ null", () => {
+  assert.equal(nightBedWake(night([[695, 800, true]]))?.running, true);
+  assert.equal(nightBedWake(night([]), { fallbackToAll: true }), null);
 });
