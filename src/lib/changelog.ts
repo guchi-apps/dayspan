@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.21.1",
+    date: "2026-09-24",
+    changes: [
+      "予定の簡易入力ダイアログで、ホームボタンの無いiPhoneなどの端末において、下端の保存ボタンの帯が保存先カレンダーを選ぶチップに重なって見えづらくなる不具合を修正しました。",
+    ],
+  },
+  {
     version: "3.21.0",
     date: "2026-09-24",
     changes: [
