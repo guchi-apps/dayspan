@@ -332,6 +332,26 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
     }
   };
 
+  /** 使用中のタスクDBへ、対応付けできていない任意プロパティ（対応状況など）を足す。 */
+  const addTaskOptionalProperties = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/task-database", { method: "PATCH" });
+      if (!response.ok) {
+        setMessage({
+          text: await errorText(response, "タスクDBのプロパティを追加できませんでした。"),
+          tone: "error",
+        });
+        return;
+      }
+      setMessage({ text: "タスクDBに不足していたプロパティを追加しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /**
    * 使用中の勤務記録DBへ、年休・出張・会社休業日・事前申請・事後登録・メモのプロパティを足す。
    * この4つは名前が当たったときだけ対応付けるため、既存のDBを選ぶと揃わないことがある。
@@ -480,6 +500,27 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                     ))}
                   </dl>
                 )}
+                {state.propertyMap &&
+                  TASK_FIELD_REQUIREMENTS.some(
+                    (requirement) => !requirement.required && !state.propertyMap?.[requirement.field],
+                  ) && (
+                    <div className="flex flex-col items-start gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        対応付けできていない項目があります。Notionでプロパティを足したときは、
+                        しばらくすると自動で反映されます。DBに無い項目は、下のボタンで足せます
+                        （同じ名前のプロパティが既にあるときは作りません）。
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={addTaskOptionalProperties}
+                      >
+                        <Plus className="size-4" />
+                        不足しているプロパティを追加
+                      </Button>
+                    </div>
+                  )}
               </div>
             )}
 

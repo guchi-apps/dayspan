@@ -289,3 +289,77 @@ export async function createTaskDatabase(
     propertyMap: { ...TASK_DATABASE_TEMPLATE },
   };
 }
+
+/**
+ * Notionから取り直した対応付けを、保存済みの `propertyMap` へ反映すべきかを決める。
+ * 変わらないとき・必須プロパティが欠けたときは `null`（保存済みを据え置く）。
+ * 欠けたまま置き換えると、一時的にプロパティを消しただけでタスクの読み書きが全て止まるため。
+ */
+export function resolveRefreshedPropertyMap(
+  current: PropertyMap | null,
+  validation: Pick<ValidationResult, "propertyMap" | "missingRequired">,
+): PropertyMap | null {
+  if (validation.missingRequired.length > 0) return null;
+  const before = current ?? {};
+  const after = validation.propertyMap;
+  const fields = new Set([...Object.keys(before), ...Object.keys(after)]) as Set<TaskField>;
+  for (const field of fields) {
+    if (before[field] !== after[field]) return after;
+  }
+  return null;
+}
+
+function optionalPropertyConfig(field: TaskField): Record<string, unknown> | null {
+  switch (field) {
+    case "planned":
+      return { date: {} };
+    case "memo":
+      return { rich_text: {} };
+    case "priority":
+      return { select: { options: PRIORITY_OPTIONS.map((name) => ({ name })) } };
+    case "recurrence":
+      return { select: { options: RECURRENCE_OPTIONS.map((name) => ({ name })) } };
+    case "tags":
+      return { multi_select: {} };
+    case "outcome":
+      return { select: { options: [{ name: SKIPPED_OUTCOME }] } };
+    default:
+      return null;
+  }
+}
+
+/**
+ * 使用中のタスクDBへ、対応付けできていない任意プロパティ（予定日・メモ・優先度・繰り返し・
+ * タグ・対応状況）を足す。「対応状況」などは後から増えた項目で、既存のDBには置き場所が無い。
+ *
+ * Notionへ書き込むため、利用者が設定画面で押したときだけ呼ぶ（無断でDBを変えない）。
+ * すでに同じ名前のプロパティがあるときは作らない。型が違っていても作り直さないのは、
+ * 利用者が別の用途で使っている欄を黙って壊さないため（場所DB・勤務記録DBと同じ）。
+ */
+export async function addTaskOptionalProperties(
+  notion: Client,
+  dataSourceId: string,
+): Promise<ValidationResult & { title: string; databaseId: string | null }> {
+  const current = await validateTaskDataSource(notion, dataSourceId);
+  const source = await notion.dataSources.retrieve({ data_source_id: dataSourceId });
+  const names = new Set(
+    Object.values(source.properties as Record<string, NotionPropertyConfig>).map((p) => p.name),
+  );
+
+  const additions: Record<string, unknown> = {};
+  for (const item of current.missingOptional) {
+    const name = TASK_DATABASE_TEMPLATE[item.field];
+    const config = optionalPropertyConfig(item.field);
+    if (config && !names.has(name)) additions[name] = config;
+  }
+
+  if (Object.keys(additions).length > 0) {
+    await notion.dataSources.update({
+      data_source_id: dataSourceId,
+      properties: additions as never,
+    });
+  }
+
+  // 足したあとの構成で対応付けを取り直す。作っただけでは propertyMap に載らない。
+  return validateTaskDataSource(notion, dataSourceId);
+}
