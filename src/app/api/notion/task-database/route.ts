@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
+import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
-import { validateTaskDataSource } from "@/services/notion/task-database";
+import { addTaskOptionalProperties, validateTaskDataSource } from "@/services/notion/task-database";
 
 type Body = { dataSourceId?: string };
 
@@ -61,6 +62,43 @@ export async function POST(request: Request) {
   return NextResponse.json({
     taskDataSourceId: body.dataSourceId,
     taskTitle: validation.title,
+    propertyMap: validation.propertyMap,
+    missingOptional: validation.missingOptional,
+  });
+}
+
+/**
+ * 使用中のタスクDBへ、対応付けできていない任意プロパティ（対応状況など）を足す。
+ * 後から増えた項目は既存のDBに置き場所が無いため、設定画面から実行できるようにする
+ * （勤務記録DB・場所DBと同じ経路）。Notionへ書き込むので、押したときだけ呼ばれる。
+ */
+export async function PATCH() {
+  const userId = await requireUserId();
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const connection = await db.notionConnection.findUnique({ where: { userId } });
+  if (!connection?.taskDataSourceId) {
+    return NextResponse.json({ error: "task_database_not_selected" }, { status: 404 });
+  }
+
+  let validation;
+  try {
+    validation = await addTaskOptionalProperties(
+      createNotionClient(connection),
+      connection.taskDataSourceId,
+    );
+  } catch (error) {
+    return externalApiError("notion", "タスクDBのプロパティ追加", error);
+  }
+
+  if (validation.missingRequired.length === 0) {
+    await db.notionConnection.update({
+      where: { userId },
+      data: { propertyMap: validation.propertyMap, lastValidatedAt: new Date() },
+    });
+  }
+
+  return NextResponse.json({
     propertyMap: validation.propertyMap,
     missingOptional: validation.missingOptional,
   });

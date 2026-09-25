@@ -5,7 +5,15 @@ import type { TaskItem } from "@/types/calendar";
 
 import type { NotionQueryFilter } from "./client";
 import { formatRecurrence, nextDue, parseRecurrence } from "./recurrence";
-import { SKIPPED_OUTCOME, type PropertyMap } from "./task-database";
+import { externalApiMessage } from "@/lib/api-error";
+import { db } from "@/lib/db";
+
+import {
+  resolveRefreshedPropertyMap,
+  SKIPPED_OUTCOME,
+  validateTaskDataSource,
+  type PropertyMap,
+} from "./task-database";
 
 // Notionのページプロパティは型ごとに形が違ううえ、完了状態や優先度は
 // ユーザーの設定次第で checkbox / status / select のどれにもなりうる。
@@ -117,6 +125,44 @@ async function queryTasks(
   return pages;
 }
 
+/** 対応付けの取り直しの間隔。取得のたびに `dataSources.retrieve` が1往復増えるのを避ける（docs/spec.md §20）。 */
+const PROPERTY_MAP_REFRESH_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Notion側でプロパティを足した・改名した場合に追従できるよう、保存済みの対応付けを
+ * 一定間隔で取り直す。読み取りだけで、Notionは書き換えない。
+ * 失敗しても既存の対応付けで続行する（タスクの取得自体は止めない）。
+ * `lastValidatedAt` は他のDB（勤務・場所など）の検証でも更新されるため、間隔は目安になる。
+ */
+export async function refreshTaskPropertyMapIfStale(
+  notion: Client,
+  connection: NotionConnection,
+  { force = false }: { force?: boolean } = {},
+): Promise<NotionConnection> {
+  if (!connection.taskDataSourceId) return connection;
+  const validatedAt = connection.lastValidatedAt?.getTime() ?? 0;
+  if (!force && Date.now() - validatedAt < PROPERTY_MAP_REFRESH_MS) return connection;
+
+  try {
+    const validation = await validateTaskDataSource(notion, connection.taskDataSourceId);
+    const next = resolveRefreshedPropertyMap(
+      connection.propertyMap as PropertyMap | null,
+      validation,
+    );
+    const updated = await db.notionConnection.update({
+      where: { userId: connection.userId },
+      data: {
+        ...(next ? { propertyMap: next } : {}),
+        lastValidatedAt: new Date(),
+      },
+    });
+    return updated;
+  } catch (error) {
+    externalApiMessage("notion", "タスクDBの対応付けの再取得", error);
+    return connection;
+  }
+}
+
 /**
  * 指定期間に期限または予定日があるタスクを取得する。
  * どちらも未設定のタスクはカレンダーに置く日が決まらないため取得しない（docs/spec.md §10）。
@@ -130,9 +176,10 @@ async function queryTasks(
  */
 export async function listTasksInRange(
   notion: Client,
-  connection: NotionConnection,
+  initialConnection: NotionConnection,
   range: { from: string; to: string },
 ): Promise<TaskItem[]> {
+  const connection = await refreshTaskPropertyMapIfStale(notion, initialConnection);
   const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
   const dueProperty = propertyMap.due;
 
@@ -161,8 +208,9 @@ export async function listTasksInRange(
 /** タスク画面用に全件取得する（期限未設定・完了済みを含む）。 */
 export async function listAllTasks(
   notion: Client,
-  connection: NotionConnection,
+  initialConnection: NotionConnection,
 ): Promise<TaskItem[]> {
+  const connection = await refreshTaskPropertyMapIfStale(notion, initialConnection);
   const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
   if (!connection.taskDataSourceId) return [];
 
