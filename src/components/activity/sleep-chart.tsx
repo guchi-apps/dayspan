@@ -105,7 +105,7 @@ function NightRow({
   const tone = dayTone(night.dateKey);
   const diff = night.minutes - targetMinutes;
   const short = night.minutes > 0 && diff < 0;
-  // 帯の位置から目盛りを数えなくても読めるよう、就寝・起床を文字でも出す。
+  // 就寝・起床は帯の内側にも書く（読み上げ用の1文はここから作る）。
   const bedWake = nightBedWake(night, { fallbackToAll: true });
 
   return (
@@ -121,12 +121,6 @@ function NightRow({
         <span className={cn("type-label-small leading-4", tone ?? "text-on-surface-variant")}>
           {shortDateLabel(night.dateKey)}({weekdayLabel(night.dateKey)})
         </span>
-        {bedWake && (
-          // 記録中は起床がまだ決まっていないため、就寝だけ出して「–」で続きがあることを示す。
-          <span className="type-label-small text-[10px] leading-4 tabular-nums text-on-surface-variant">
-            {offsetToClock(bedWake.bed)}–{bedWake.running ? "" : offsetToClock(bedWake.wake)}
-          </span>
-        )}
       </span>
 
       <div
@@ -155,18 +149,25 @@ function NightRow({
         ))}
 
         {night.segments.map((segment, index) => (
+          // 帯の幅（コンテナ）に時刻2つが入るときだけ内側に書く。狭い帯（昼寝など）は
+          // 文字が溢れるため出さず、時刻は title と読み上げに残す。
           <i
             key={index}
             className={cn(
-              "absolute inset-y-2 rounded-item",
+              "@container absolute inset-y-2 rounded-item",
               segment.running
-                ? "border border-dashed border-primary bg-primary/25"
-                : "bg-primary",
+                ? "border border-dashed border-primary bg-primary/25 text-on-surface"
+                : "bg-primary text-on-primary",
             )}
             style={{ left: percent(segment.from), width: percent(segment.to - segment.from) }}
             title={`${offsetToClock(segment.from)}–${offsetToClock(segment.to)}${segment.running ? "（記録中）" : ""}`}
             aria-hidden
-          />
+          >
+            <span className="hidden h-full items-center justify-between overflow-hidden px-1 text-[10px] font-medium not-italic leading-none tabular-nums whitespace-nowrap @min-[64px]:flex">
+              <span>{offsetToClock(segment.from)}</span>
+              {!segment.running && <span>{offsetToClock(segment.to)}</span>}
+            </span>
+          </i>
         ))}
       </div>
 
