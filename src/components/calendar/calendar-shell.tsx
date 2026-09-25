@@ -83,6 +83,14 @@ import { TaskDetailDialog } from "./task-detail-dialog";
 import { TaskLinkDialog } from "./task-link-dialog";
 import { toTaskDraft } from "./task-form";
 import { TimeGridView } from "./time-grid-view";
+import {
+  applyOptimisticEvents,
+  buildOptimisticEvent,
+  OPTIMISTIC_EVENT_TTL_MS,
+  pendingOptimisticOps,
+  type OptimisticEventChange,
+  type OptimisticEventOp,
+} from "./optimistic-events";
 import { TravelDetailDialog } from "./travel-detail-dialog";
 import { toTravelDraft } from "./travel-form";
 import {
@@ -339,6 +347,43 @@ export function CalendarShell({
   const [dragError, setDragError] = useState<string | null>(null);
 
   /**
+   * 取り直しを待たずに画面へ重ねる予定の変更（issue #787・optimistic-events.ts）。
+   *
+   * ドラッグ（この `CalendarShell`）と入力ダイアログ（`CalendarBody`）の両方から積むため、
+   * こちらに持つ。どれを重ね続けるか（まだ取り直しで確かめられていないか）は、データを持つ
+   * `CalendarBody` が描くたびに決める。確かめられた操作は重ねなくなるだけで、配列からは
+   * 上限（OPTIMISTIC_EVENT_TTL_MS）が来たときに外す。
+   */
+  const [optimisticOps, setOptimisticOps] = useState<OptimisticEventOp[]>([]);
+  const optimisticSeqRef = useRef(0);
+
+  /**
+   * 変更を積む。`settled` が false のときは、書き込みの結果が出るまで確かめたことにしない
+   * （`savedAt` を無限大にしておき、`settleOptimisticEvent` で成否を決める）。ドラッグは離した
+   * 瞬間から動かした位置に描きたいが、その時点ではまだGoogleへ書けていないため。
+   */
+  const addOptimisticEvent = useCallback((change: OptimisticEventChange, settled = true) => {
+    const seq = ++optimisticSeqRef.current;
+    const savedAt = settled ? Date.now() : Number.POSITIVE_INFINITY;
+    setOptimisticOps((prev) => [...prev, { ...change, seq, savedAt }]);
+    setTimeout(
+      () => setOptimisticOps((prev) => prev.filter((op) => op.seq !== seq)),
+      OPTIMISTIC_EVENT_TTL_MS,
+    );
+    return seq;
+  }, []);
+
+  /** 書き込みの成否が出たとき。失敗したら重ねるのをやめ、元の位置へ戻す。 */
+  const settleOptimisticEvent = useCallback((seq: number, ok: boolean) => {
+    const savedAt = Date.now();
+    setOptimisticOps((prev) =>
+      ok
+        ? prev.map((op) => (op.seq === seq ? { ...op, savedAt } : op))
+        : prev.filter((op) => op.seq !== seq),
+    );
+  }, []);
+
+  /**
    * ドラッグで変わった時刻を保存する。失敗しても画面の見た目は元へ戻す（再取得する）ので、
    * 保存できたつもりのまま作業が進まないようにする。
    */
@@ -353,25 +398,37 @@ export function CalendarShell({
     }
 
     const startIso = localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.startMinutes), timeZone);
+    // 離した位置に、書き込みの結果を待たずに描く（issue #787）。失敗したら元へ戻す。
+    let optimisticSeq: number | null = null;
+    let saved = false;
 
     try {
       let response: Response;
 
       if (commit.target.kind === "event") {
         const event = commit.target.item;
+        const payload = {
+          calendarId: event.calendarId,
+          title: event.title,
+          allDay: false,
+          start: startIso,
+          end: localInputToIso(dateKeyPlusMinutes(commit.dayKey, commit.endMinutes), timeZone),
+        };
+        optimisticSeq = addOptimisticEvent(
+          {
+            type: "upsert",
+            item: buildOptimisticEvent(payload, event.id, [], event),
+            ranges: [
+              { start: event.start, end: event.end },
+              { start: payload.start, end: payload.end },
+            ],
+          },
+          false,
+        );
         response = await fetch(`/api/events/${encodeURIComponent(event.id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            calendarId: event.calendarId,
-            title: event.title,
-            allDay: false,
-            start: startIso,
-            end: localInputToIso(
-              dateKeyPlusMinutes(commit.dayKey, commit.endMinutes),
-              timeZone,
-            ),
-          }),
+          body: JSON.stringify(payload),
         });
       } else {
         // 掴んだのが期限の枠か予定日の枠かで、書き換える日付が違う。
@@ -382,6 +439,7 @@ export function CalendarShell({
         });
       }
 
+      saved = response.ok;
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;
         setDragError(body?.message ?? "変更を保存できませんでした。");
@@ -389,6 +447,7 @@ export function CalendarShell({
     } catch {
       setDragError("変更を保存できませんでした。");
     } finally {
+      if (optimisticSeq !== null) settleOptimisticEvent(optimisticSeq, saved);
       // ページ全体を router.refresh() で描き直さず、カレンダーのデータだけを取り直す
       // （issue #697）。動かした予定・タスクのぶんだけでなく表示中の期間すべてを対象にする
       // （ドラッグの成否によらず、見えている範囲全体をサーバーの真の状態へそろえるため）。
@@ -405,21 +464,36 @@ export function CalendarShell({
       return;
     }
 
+    let optimisticSeq: number | null = null;
+    let saved = false;
+
     try {
       let response: Response;
 
       if (commit.target.kind === "event") {
         const event = commit.target.item;
+        const payload = {
+          calendarId: event.calendarId,
+          title: event.title,
+          allDay: true,
+          start: shiftDateKey(event.start, commit.deltaDays),
+          end: shiftDateKey(event.end, commit.deltaDays),
+        };
+        optimisticSeq = addOptimisticEvent(
+          {
+            type: "upsert",
+            item: buildOptimisticEvent(payload, event.id, [], event),
+            ranges: [
+              { start: event.start, end: event.end },
+              { start: payload.start, end: payload.end },
+            ],
+          },
+          false,
+        );
         response = await fetch(`/api/events/${encodeURIComponent(event.id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            calendarId: event.calendarId,
-            title: event.title,
-            allDay: true,
-            start: shiftDateKey(event.start, commit.deltaDays),
-            end: shiftDateKey(event.end, commit.deltaDays),
-          }),
+          body: JSON.stringify(payload),
         });
       } else {
         response = await fetch(`/api/tasks/${encodeURIComponent(commit.target.item.id)}`, {
@@ -429,6 +503,7 @@ export function CalendarShell({
         });
       }
 
+      saved = response.ok;
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;
         setDragError(body?.message ?? "変更を保存できませんでした。");
@@ -436,6 +511,7 @@ export function CalendarShell({
     } catch {
       setDragError("変更を保存できませんでした。");
     } finally {
+      if (optimisticSeq !== null) settleOptimisticEvent(optimisticSeq, saved);
       // ページ全体を router.refresh() で描き直さず、カレンダーのデータだけを取り直す
       // （issue #697）。動かした予定・タスクのぶんだけでなく表示中の期間すべてを対象にする
       // （ドラッグの成否によらず、見えている範囲全体をサーバーの真の状態へそろえるため）。
@@ -939,6 +1015,8 @@ export function CalendarShell({
         onCloseDialogs={closeDialogs}
         onRefreshAll={refreshAll}
         registerInvalidate={registerInvalidate}
+        optimisticOps={optimisticOps}
+        onOptimisticEvent={addOptimisticEvent}
         onLoadingChange={setWindowLoading}
         runningActivity={initialRunningActivity}
         activityCalendars={activityCalendars}
@@ -1036,6 +1114,8 @@ function CalendarBody({
   onCloseDialogs,
   onRefreshAll,
   registerInvalidate,
+  optimisticOps,
+  onOptimisticEvent,
   onLoadingChange,
   runningActivity,
   activityCalendars,
@@ -1122,6 +1202,9 @@ function CalendarBody({
    * （issue #697）、明示的な再取得はこの経路を経由する。
    */
   registerInvalidate: (fn: (() => void) | null) => void;
+  /** 取り直しを待たずに重ねる予定の変更（issue #787）。 */
+  optimisticOps: readonly OptimisticEventOp[];
+  onOptimisticEvent: (change: OptimisticEventChange) => void;
   onLoadingChange: (loading: boolean) => void;
   runningActivity: RunningActivityItem | null;
   /** 活動記録の保存先に選ばれているカレンダー（issue #241）。 */
@@ -1190,19 +1273,38 @@ function CalendarBody({
    * ここで同じ形にそろえる。invalidate は「変わった期間」を受け取り、月表示では
    * かかる月へ変換し、それ以外ではいま表示中の期間をまるごと取り直す。
    */
+  const source = view === "month" ? monthData : rangeData;
+
+  /**
+   * 保存・削除・ドラッグのうち、まだ取り直しで確かめられていないものを重ねる（issue #787）。
+   * 取り直しを待たずに保存した予定を出し、遅い回線でも書き込みが通った時点で画面へ反映する。
+   * 確かめられたかは、保存より後に出した要求の最新の応答（保存済みの代用ではない）で、その
+   * 期間を取り直せたかで決める（`isSyncedSince`）。
+   */
+  const pendingOps = useMemo(
+    () => pendingOptimisticOps(optimisticOps, source.isSyncedSince),
+    [optimisticOps, source.isSyncedSince],
+  );
+  const overlaidEvents = useMemo(
+    () => applyOptimisticEvents(source.events, pendingOps),
+    [source.events, pendingOps],
+  );
+
   const data = useMemo(
     () =>
       view === "month"
         ? {
             ...monthData,
+            events: overlaidEvents,
             invalidate: (touched: TouchedRange[] | null) =>
               monthData.invalidate(touched === null ? null : monthsOfRanges(touched)),
           }
         : {
             ...rangeData,
+            events: overlaidEvents,
             pendingMonths: NO_PENDING_MONTHS,
           },
-    [view, monthData, rangeData],
+    [view, monthData, rangeData, overlaidEvents],
   );
 
   // ヘッダーの再取得ボタン・ドラッグ確定後の同期など、CalendarShell 側から
@@ -1272,9 +1374,11 @@ function CalendarBody({
    * ページごと描き直す（`router.refresh()`）と表示中の範囲すべてを外部APIから取り直す
    * ことになり、保存のたびにその待ち時間が乗るため使わない（issue #697）。
    */
-  const handleSaved = (touched: TouchedRange[] | null) => {
+  const handleSaved = (touched: TouchedRange[] | null, change?: OptimisticEventChange) => {
     onCloseDialogs();
     setWorkDraft(null);
+    // 保存した予定は、取り直しを待たずに画面へ重ねる（issue #787）。
+    if (change) onOptimisticEvent(change);
     data.invalidate(touched);
   };
 

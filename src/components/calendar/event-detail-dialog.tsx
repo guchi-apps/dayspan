@@ -49,6 +49,7 @@ import { placeCoordinates } from "./location-input";
 import { readErrorMessage } from "./response-error";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelMark } from "./travel-mark";
+import type { OptimisticEventChange } from "./optimistic-events";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 /** 移動に添える「車 80分」。所要時間は出発・到着から求める（保存しているのは時刻のため）。 */
@@ -105,7 +106,7 @@ export function EventDetailDialog({
    */
   places?: PlaceItem[];
   /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
-  onDeleted: (touched: TouchedRange[] | null) => void;
+  onDeleted: (touched: TouchedRange[] | null, change?: OptimisticEventChange) => void;
   /**
    * 中止・不参加の記録が変わったときの処理（docs/spec.md §37）。外したときは null。
    * ダイアログは開いたままにするため、削除（onDeleted）とは別に受ける。
@@ -202,9 +203,9 @@ export function EventDetailDialog({
   /** 中止・不参加の記録（docs/spec.md §37）。古い応答には項目自体が無いため null で受ける。 */
   const outcome = event.outcome ?? null;
 
-  const deleted = (touched: TouchedRange[] | null) => {
+  const deleted = (touched: TouchedRange[] | null, change?: OptimisticEventChange) => {
     setOpen(false);
-    setTimeout(() => onDeleted(touched), 150);
+    setTimeout(() => onDeleted(touched, change), 150);
   };
 
   return (
