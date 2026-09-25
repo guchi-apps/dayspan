@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import type { CalendarEventItem, ReminderItem, TaskItem, TravelItem } from "@/types/calendar";
 
 import { readErrorMessage } from "./response-error";
+import type { OptimisticEventChange } from "./optimistic-events";
 import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 
 /** 削除の対象。編集画面からも表示画面からも同じ確認を通す。 */
@@ -65,7 +66,8 @@ export function DeleteItemDialog({
   item: DeletableItem;
   onCancel: () => void;
   /** 削除後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
-  onDeleted: (touched: TouchedRange[] | null) => void;
+  /** 第2引数は予定を「この回だけ」消したときの楽観的な反映（issue #787）。 */
+  onDeleted: (touched: TouchedRange[] | null, change?: OptimisticEventChange) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [scope, setScope] = useState<EventDeleteScope>("single");
@@ -82,9 +84,9 @@ export function DeleteItemDialog({
     setTimeout(onCancel, 150);
   };
 
-  const finish = (touched: TouchedRange[] | null) => {
+  const finish = (touched: TouchedRange[] | null, change?: OptimisticEventChange) => {
     setOpen(false);
-    setTimeout(() => onDeleted(touched), 150);
+    setTimeout(() => onDeleted(touched, change), 150);
   };
 
   const remove = async () => {
@@ -101,7 +103,19 @@ export function DeleteItemDialog({
         setError(await readErrorMessage(response, "削除できませんでした。"));
         return;
       }
-      finish(touchedRanges(item, scope));
+      const touched = touchedRanges(item, scope);
+      // 予定を「この回だけ」消したときは、取り直しを待たずに画面から外す（issue #787）。
+      // シリーズに及ぶ削除は消える回が読めないため、従来どおり取り直しを待つ。
+      finish(
+        touched,
+        item.kind === "event" && touched
+          ? {
+              type: "remove",
+              target: { calendarId: item.event.calendarId, id: item.event.id },
+              ranges: touched,
+            }
+          : undefined,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "削除に失敗しました。");
     } finally {

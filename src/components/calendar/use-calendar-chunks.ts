@@ -32,7 +32,20 @@ type MonthChunk = {
   workRecords: WorkRecordItem[];
   /** 取得時刻。一定時間経った月は、窓に入り直したときに取り直す。 */
   fetchedAt: number;
+  /**
+   * 最新の内容を取れた要求を出した時刻（issue #787）。Service Workerが代わりに返した保存済み
+   * （stale）では進めない。楽観的に重ねた予定を外してよいか（保存より後に出した要求で取り直せたか）
+   * の判定に使う。
+   */
+  syncedAt: number;
 };
+
+/**
+ * 書き込みのあとの取り直しであることをService Workerへ伝えるヘッダー（issue #787）。
+ * これが付いた要求は、3秒のタイムアウトで保存済みへ倒さず最新が届くまで待つ（public/sw.js）。
+ * 保存前の保存済みが返ると、保存した予定の入っていない内容で「取り直せた」ことになるため。
+ */
+export const FRESH_REQUEST_HEADER = "X-Dayspan-Fresh";
 
 /** 取得の失敗が続いても要求を出し続けないよう、再試行の間隔には下限を設ける。 */
 const MIN_REFRESH_SECONDS = 30;
@@ -129,6 +142,7 @@ function splitByMonth(
   data: Pick<CalendarLoadResult, "events" | "tasks" | "reminders" | "travels" | "workRecords">,
   months: string[],
   fetchedAt: number,
+  syncedAt = 0,
 ): Map<string, MonthChunk> {
   const chunks = new Map<string, MonthChunk>();
   for (const month of months) {
@@ -139,6 +153,7 @@ function splitByMonth(
       travels: [],
       workRecords: [],
       fetchedAt,
+      syncedAt,
     });
   }
 
@@ -228,6 +243,11 @@ export type CalendarWindowData = {
    * 予定やタスクを保存したあと、変わった月だけを取り直すために呼ぶ。
    */
   invalidate: (months: string[] | null) => void;
+  /**
+   * 指定した期間がかかる月をすべて、`since` より後に出した要求の最新の応答で取り直せたか
+   * （issue #787）。楽観的に重ねた予定を外すかの判定に使う。
+   */
+  isSyncedSince: (ranges: TouchedRange[], since: number) => boolean;
 };
 
 /**
@@ -273,6 +293,13 @@ export function useCalendarChunks({
   const [stale, setStale] = useState(false);
 
   const inFlight = useRef(new Set<string>());
+  // 月ごとに、最後に invalidate() された時刻（issue #787）。取得中の月を invalidate しても、
+  // その要求は保存より前に出したものかもしれない。応答を書き込むときにこれと要求を出した時刻を
+  // 比べ、要求のほうが古ければ「取得済み」にせず、すぐ取り直させる。
+  const invalidatedAt = useRef(new Map<string, number>());
+  // invalidate() された月のうち、まだ取り直しの要求を出していないもの。次の要求を
+  // Service Workerのタイムアウトで保存済みへ倒さない（FRESH_REQUEST_HEADER）ために使う。
+  const freshMonths = useRef(new Set<string>());
 
   // fetchMonths からは常に最新のものを呼びたいが、fetchMonths 自体は作り直したくない。
   const onLoadingChangeRef = useRef(onLoadingChange);
@@ -337,17 +364,29 @@ export function useCalendarChunks({
     months.forEach((month) => inFlight.current.add(month));
     onLoadingChangeRef.current(true);
 
+    const requestedAt = Date.now();
+    const fresh = months.some((month) => freshMonths.current.has(month));
+    months.forEach((month) => freshMonths.current.delete(month));
+
+    // 要求を出したあとに invalidate() された月は、この応答では足りない。取得時刻を刻まずに
+    // 返し、下の効果にすぐ取り直させる。
+    const fetchedAtFor = (month: string, now: number) =>
+      (invalidatedAt.current.get(month) ?? 0) > requestedAt ? 0 : now;
+
     try {
       const params = new URLSearchParams({ months: months.join(",") });
-      const response = await fetch(`/api/calendar?${params.toString()}`);
+      const response = await fetch(`/api/calendar?${params.toString()}`, {
+        headers: fresh ? { [FRESH_REQUEST_HEADER]: "1" } : undefined,
+      });
       if (!response.ok) throw new Error(`status ${response.status}`);
 
       // 通信が遅くてService Workerがタイムアウトで保存済みを代わりに返したとき（issue #718）。
       // 届いた応答ごとに毎回上書きする（loadError と同じ扱い）。
-      setStale(response.headers.get("X-Dayspan-Stale") === "1");
+      const responseStale = response.headers.get("X-Dayspan-Stale") === "1";
+      setStale(responseStale);
 
       const data = (await response.json()) as CalendarLoadResult;
-      const fresh = splitByMonth(
+      const fetched = splitByMonth(
         {
           ...withWorkRecords(data),
           events: withEventNotificationSettings(withEventOutcomes(data.events)),
@@ -359,7 +398,15 @@ export function useCalendarChunks({
 
       setChunks((prev) => {
         const next = new Map(prev);
-        for (const [month, chunk] of fresh) next.set(month, chunk);
+        const now = Date.now();
+        for (const [month, chunk] of fetched) {
+          next.set(month, {
+            ...chunk,
+            fetchedAt: fetchedAtFor(month, now),
+            // 保存済みが返ったときは、前に最新を取れた時点のまま据え置く。
+            syncedAt: responseStale ? (prev.get(month)?.syncedAt ?? 0) : requestedAt,
+          });
+        }
         return pruneToWindow(next, windowRef.current);
       });
       setMeta({
@@ -385,7 +432,8 @@ export function useCalendarChunks({
             reminders: existing?.reminders ?? [],
             travels: existing?.travels ?? [],
             workRecords: existing?.workRecords ?? [],
-            fetchedAt,
+            fetchedAt: fetchedAtFor(month, fetchedAt),
+            syncedAt: existing?.syncedAt ?? 0,
           });
         }
 
@@ -489,6 +537,13 @@ export function useCalendarChunks({
     if (months && months.length === 0) return;
     const target = months ? new Set(months) : null;
 
+    // setChunks の更新関数の外で印を付ける（更新関数は描画のたびに呼び直されうるため）。
+    const now = Date.now();
+    for (const month of months ?? [...windowRef.current]) {
+      invalidatedAt.current.set(month, now);
+      freshMonths.current.add(month);
+    }
+
     setChunks((prev) => {
       const next = new Map(prev);
       let changed = false;
@@ -506,12 +561,19 @@ export function useCalendarChunks({
     });
   }, []);
 
+  const isSyncedSince = useCallback(
+    (ranges: TouchedRange[], since: number) =>
+      monthsOfRanges(ranges).every((month) => (chunks.get(month)?.syncedAt ?? 0) >= since),
+    [chunks],
+  );
+
   return {
     events,
     tasks,
     reminders,
     travels,
     workRecords,
+    isSyncedSince,
     calendars: meta.calendars,
     notionReady: meta.notionReady,
     reminderReady: meta.reminderReady,

@@ -55,6 +55,17 @@ const SLOW_NETWORK_TIMEOUT_MS = 3000;
 const STALE_HEADER = "X-Dayspan-Stale";
 
 /**
+ * 書き込みのあとの取り直しであることを示す要求ヘッダー（issue #787）。
+ *
+ * これが付いたデータ要求は、SLOW_NETWORK_TIMEOUT_MS で保存済みへ倒さず最新が届くまで待つ。
+ * 保存直後に保存前の保存済みを返すと、保存した予定の入っていない内容で「取り直せた」ことになり、
+ * 次の自動更新まで画面に出なくなるため。待っている間も、保存した予定は画面側が楽観的に
+ * 重ねて描いている（src/components/calendar/optimistic-events.ts）。通信に失敗したとき・
+ * 5xxのときに保存済みへ倒すのは通常と同じ。
+ */
+const FRESH_HEADER = "X-Dayspan-Fresh";
+
+/**
  * 内容が変わってもURLが変わらないもの。取得できたら差し替える（stale-while-revalidate）。
  * /_next/static/ はファイル名にハッシュが入るため、こちらではなくキャッシュ優先で扱う。
  */
@@ -376,9 +387,12 @@ async function networkFirst(event, cacheName, limit, allowOtherQuery) {
     timer = setTimeout(() => resolve(timedOut), SLOW_NETWORK_TIMEOUT_MS);
   });
 
+  // 書き込み後の取り直し（FRESH_HEADER）はタイムアウトで倒さない。
+  const racers = request.headers.get(FRESH_HEADER) === "1" ? [attempt] : [attempt, timeout];
+
   let winner;
   try {
-    winner = await Promise.race([attempt, timeout]);
+    winner = await Promise.race(racers);
   } catch (cause) {
     // タイムアウトより前に失敗した（オフライン等）。これまでどおり即座に保存済みへ倒す。
     clearTimeout(timer);

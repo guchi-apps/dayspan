@@ -31,6 +31,7 @@ import {
   type RecurrenceInput,
 } from "./recurrence-rule";
 import { readErrorMessage } from "./response-error";
+import { buildOptimisticEvent, type OptimisticEventChange } from "./optimistic-events";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export type EventDraft = {
@@ -81,8 +82,9 @@ export function EventForm({
   /**
    * 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。
    * どこが変わるか事前に決まらない場合（繰り返しの新規作成）は null を渡す。
+   * 第2引数は、取り直しを待たずに画面へ重ねる保存後の予定（issue #787）。
    */
-  onSaved: (touched: TouchedRange[] | null) => void;
+  onSaved: (touched: TouchedRange[] | null, change?: OptimisticEventChange) => void;
 }) {
   const editing = draft.event;
 
@@ -201,6 +203,11 @@ export function EventForm({
         return;
       }
 
+      // 新規作成で返った予定のID。楽観的な反映（issue #787）と通知設定の保存に使う。
+      const createdId = editing
+        ? null
+        : (((await response.json().catch(() => null)) as { id?: string } | null)?.id ?? null);
+
       // 新規作成で、繰り返しなし・通知をアカウント既定から変えている場合は、作成できた
       // eventIdを使って通知設定も送る（issue #708）。繰り返しの新規作成は対象外
       // （Googleが返すのはシリーズ親IDで、EventNotificationSetting.eventIdが指す
@@ -208,11 +215,10 @@ export function EventForm({
       // 失敗しても予定作成自体は成功として扱う（中止・不参加の記録のreplanNotificationsと
       // 同じベストエフォートの考え方。予定は作成できているので、失敗をここで止めない）。
       if (!editing && !recurrenceRule && notification) {
-        const created = (await response.json().catch(() => null)) as { id?: string } | null;
-        if (created?.id) {
+        if (createdId) {
           try {
             const notifyResponse = await fetch(
-              `/api/events/${encodeURIComponent(created.id)}/notification`,
+              `/api/events/${encodeURIComponent(createdId)}/notification`,
               {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
@@ -236,7 +242,23 @@ export function EventForm({
       const touched: TouchedRange[] = [{ start: payload.start, end: payload.end }];
       if (editing) touched.push({ start: editing.start, end: editing.end });
 
-      onSaved(recurrenceRule ? null : touched);
+      // 取り直しを待たずに、保存した内容を画面へ重ねる（issue #787）。繰り返しの新規作成は、
+      // 展開された回のIDも現れる日も決まらないため重ねず、従来どおり取り直しを待つ。
+      const savedId = editing ? editing.id : createdId;
+      const change: OptimisticEventChange | undefined =
+        !recurrenceRule && savedId
+          ? {
+              type: "upsert",
+              item: {
+                ...buildOptimisticEvent(payload, savedId, calendars, editing),
+                ...(editing ? {} : { notification }),
+              },
+              previous: editing ? { calendarId: editing.calendarId, id: editing.id } : null,
+              ranges: touched,
+            }
+          : undefined;
+
+      onSaved(recurrenceRule ? null : touched, change);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
