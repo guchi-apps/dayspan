@@ -13,6 +13,7 @@ import {
   type PropertyMap,
   type SharedPageSummary,
 } from "@/services/notion/task-database";
+import { refreshTaskPropertyMapIfStale } from "@/services/notion/tasks";
 import type { PlacePropertyMap } from "@/services/notion/place-database";
 import type { ReminderPropertyMap } from "@/services/notion/reminder-database";
 import type { ShoppingPropertyMap } from "@/services/notion/shopping-database";
@@ -37,7 +38,14 @@ export default async function NotionSettingsPage() {
 }
 
 async function loadNotionState(userId: string): Promise<NotionSectionState> {
-  const connection = await db.notionConnection.findUnique({ where: { userId } });
+  let connection = await db.notionConnection.findUnique({ where: { userId } });
+
+  // 設定画面を開いたときは間隔を待たず、Notion側で足した・直したプロパティを反映する。
+  if (connection?.taskDataSourceId) {
+    connection = await refreshTaskPropertyMapIfStale(createNotionClient(connection), connection, {
+      force: true,
+    });
+  }
 
   if (!connection) {
     return {
