@@ -240,11 +240,11 @@ export function summarizeSleepNights(
   const wakes: number[] = [];
 
   for (const night of recorded) {
-    const atNight = night.segments.filter((segment) => segment.from >= NIGHT_SEGMENT_START);
-    if (atNight.length === 0) continue;
+    const bedWake = nightBedWake(night);
+    if (!bedWake) continue;
 
-    beds.push(atNight[0].from);
-    wakes.push(atNight[atNight.length - 1].to);
+    beds.push(bedWake.bed);
+    wakes.push(bedWake.wake);
   }
 
   return {
@@ -256,6 +256,27 @@ export function summarizeSleepNights(
     medianBedOffset: median(beds),
     medianWakeOffset: median(wakes),
   };
+}
+
+/**
+ * 1行の就寝・起床（その行の12:00から数えた分）。
+ *
+ * 18:00以降に始まった帯の両端を取る（`NIGHT_SEGMENT_START` の理由）。中途で目が覚めた夜も
+ * 床に就いた時刻と最後に起きた時刻になる。`fallbackToAll` を立てると、夜の帯が無い行
+ * （昼寝だけ）でも全ての帯の両端を返す。画面の行には出したいが、中央値には混ぜたくないため。
+ * `running` は最後の帯が記録中で、起床がまだ決まっていないこと。
+ */
+export function nightBedWake(
+  night: SleepNight,
+  { fallbackToAll = false }: { fallbackToAll?: boolean } = {},
+): { bed: number; wake: number; running: boolean } | null {
+  let segments = night.segments.filter((segment) => segment.from >= NIGHT_SEGMENT_START);
+  if (segments.length === 0 && fallbackToAll) segments = night.segments;
+  if (segments.length === 0) return null;
+
+  const last = segments[segments.length - 1];
+
+  return { bed: segments[0].from, wake: last.to, running: last.running };
 }
 
 function median(values: number[]): number | null {

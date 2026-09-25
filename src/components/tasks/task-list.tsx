@@ -218,6 +218,20 @@ export function TaskList({
     reload();
   };
 
+  /** 行の「対応しない」チェック。完了と同じ経路で送り、次回分は作られない（issue #750・#773）。 */
+  const toggleSkipped = async (task: TaskItem, skipped: boolean) => {
+    setBusyId(task.id);
+    setError(null);
+    try {
+      await patchTaskDone(task, skipped, true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "更新できませんでした。");
+    } finally {
+      setBusyId(null);
+      reload();
+    }
+  };
+
   const editTask = (task: TaskItem) => {
     if (offline) return;
     setViewingTask(null);
@@ -252,6 +266,7 @@ export function TaskList({
       sort={sort}
       disabled={busyId === task.id || offline}
       onToggleDone={(done) => toggleDone(task, done)}
+      onToggleSkipped={(skipped) => toggleSkipped(task, skipped)}
       onOpen={() => setViewingTask(task)}
     />
   );
@@ -403,6 +418,7 @@ export function TaskList({
                       sort={sort}
                       disabled={busyId === task.id || offline}
                       onToggleDone={(done) => toggleDone(task, done)}
+                      onToggleSkipped={(skipped) => toggleSkipped(task, skipped)}
                       onOpen={() => setViewingTask(task)}
                     />
                   ))}
@@ -506,6 +522,7 @@ function TaskRow({
   sort,
   disabled,
   onToggleDone,
+  onToggleSkipped,
   onOpen,
 }: {
   task: TaskItem;
@@ -518,6 +535,7 @@ function TaskRow({
   sort: TaskSort;
   disabled: boolean;
   onToggleDone: (done: boolean) => void;
+  onToggleSkipped: (skipped: boolean) => void;
   onOpen: () => void;
 }) {
   // どちらの日付欄で超過を示すかは、実際に分類に使った基準日（classifyDateOf）に合わせる。
@@ -536,11 +554,23 @@ function TaskRow({
 
       <Checkbox
         className="mt-[3px]"
-        checked={task.done}
+        checked={task.done && !task.skipped}
         disabled={disabled}
         aria-label={`${task.title} を完了にする`}
         onCheckedChange={(value) => onToggleDone(value === true)}
       />
+
+      {/* 対応状況のプロパティが無いDBでは書き込む先が無いため出さない（issue #750）。 */}
+      {(task.canSkip || task.skipped) && (
+        <Checkbox
+          className="mt-[3px]"
+          checked={task.skipped}
+          disabled={disabled}
+          aria-label={`${task.title} を対応しないにする`}
+          title="対応しない"
+          onCheckedChange={(value) => onToggleSkipped(value === true)}
+        />
+      )}
 
       <button type="button" className="min-w-0 flex-1 text-left" onClick={onOpen}>
         <div

@@ -5,6 +5,7 @@ import {
   formatSleepDiff,
   formatSleepMinutes,
   formatSleepShort,
+  nightBedWake,
   offsetToClock,
   type SleepNight,
 } from "@/lib/sleep";
@@ -48,14 +49,14 @@ export function SleepChart({
 }) {
   return (
     <div className="flex flex-col">
-      {/* 目盛りの見出し。行の左のラベル（w-14）と右の合計（w-14）を除いた幅に合わせる。
-          絶対配置の基準はこの要素のパディングボックスなので、両端の 3.5rem を式で引く。 */}
+      {/* 目盛りの見出し。行の左のラベル（w-16）と右の合計（w-14）を除いた幅に合わせる。
+          絶対配置の基準はこの要素のパディングボックスなので、両端の 4rem・3.5rem を式で引く。 */}
       <div className="relative h-4">
         {LABEL_TICKS.map((tick) => (
           <span
             key={tick}
             className="type-label-small absolute -translate-x-1/2 whitespace-nowrap text-on-surface-variant"
-            style={{ left: `calc(3.5rem + (100% - 7rem) * ${tick / MINUTES_PER_NIGHT})` }}
+            style={{ left: `calc(4rem + (100% - 7.5rem) * ${tick / MINUTES_PER_NIGHT})` }}
           >
             {clockHour(tick)}
           </span>
@@ -104,23 +105,28 @@ function NightRow({
   const tone = dayTone(night.dateKey);
   const diff = night.minutes - targetMinutes;
   const short = night.minutes > 0 && diff < 0;
+  // 帯の位置から目盛りを数えなくても読めるよう、就寝・起床を文字でも出す。
+  const bedWake = nightBedWake(night, { fallbackToAll: true });
 
   return (
     <li
       className={cn(
-        "flex h-6 items-stretch",
+        "flex h-9 items-stretch",
         // 今日の行は淡く塗る。31行を上から追う面で、太字だけでは見つけにくい
         // （勤務の日別一覧の今日と同じ流儀）。
         today && "bg-primary/8",
       )}
     >
-      <span
-        className={cn(
-          "type-label-small w-14 shrink-0 pl-0.5 leading-6",
-          tone ?? "text-on-surface-variant",
+      <span className="flex w-16 shrink-0 flex-col justify-center pl-0.5">
+        <span className={cn("type-label-small leading-4", tone ?? "text-on-surface-variant")}>
+          {shortDateLabel(night.dateKey)}({weekdayLabel(night.dateKey)})
+        </span>
+        {bedWake && (
+          // 記録中は起床がまだ決まっていないため、就寝だけ出して「–」で続きがあることを示す。
+          <span className="type-label-small text-[10px] leading-4 tabular-nums text-on-surface-variant">
+            {offsetToClock(bedWake.bed)}–{bedWake.running ? "" : offsetToClock(bedWake.wake)}
+          </span>
         )}
-      >
-        {shortDateLabel(night.dateKey)}({weekdayLabel(night.dateKey)})
       </span>
 
       <div
@@ -152,7 +158,7 @@ function NightRow({
           <i
             key={index}
             className={cn(
-              "absolute inset-y-1 rounded-item",
+              "absolute inset-y-2 rounded-item",
               segment.running
                 ? "border border-dashed border-primary bg-primary/25"
                 : "bg-primary",
@@ -164,7 +170,7 @@ function NightRow({
         ))}
       </div>
 
-      <span className="type-label-small w-14 shrink-0 pr-0.5 text-right leading-6">
+      <span className="type-label-small flex w-14 shrink-0 items-center justify-end pr-0.5 text-right">
         {night.minutes === 0 ? (
           <span className="text-on-surface-variant">—</span>
         ) : (
@@ -185,8 +191,8 @@ function NightRow({
             ? "記録なし"
             : "これから"
           : `${formatSleepMinutes(night.minutes)}。${
-              night.segments.length > 0
-                ? `${offsetToClock(night.segments[0].from)}から${offsetToClock(night.segments[night.segments.length - 1].to)}まで。`
+              bedWake
+                ? `${offsetToClock(bedWake.bed)}に寝て${bedWake.running ? "、記録中。" : `${offsetToClock(bedWake.wake)}に起きた。`}`
                 : ""
             }目標より${formatSleepMinutes(Math.abs(diff))}${diff < 0 ? "少ない" : "多い"}`}
       </span>
