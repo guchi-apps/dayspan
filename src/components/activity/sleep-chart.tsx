@@ -35,6 +35,9 @@ const LABEL_TICKS = [0, 360, 720, 1080, MINUTES_PER_NIGHT];
 /** 夜として淡く落とす範囲。18:00（+360）から翌9:00（+1260）まで。 */
 const NIGHT_BAND = { from: 360, to: 1260 };
 
+/** 行の左のラベル（w-16）と右の2段（w-[5.5rem]）。目盛りの見出しの位置合わせに使う。 */
+const SIDE_WIDTH_REM = 9.5;
+
 const percent = (minutes: number): string => `${(minutes / MINUTES_PER_NIGHT) * 100}%`;
 
 export function SleepChart({
@@ -49,14 +52,14 @@ export function SleepChart({
 }) {
   return (
     <div className="flex flex-col">
-      {/* 目盛りの見出し。行の左のラベル（w-16）と右の合計（w-14）を除いた幅に合わせる。
-          絶対配置の基準はこの要素のパディングボックスなので、両端の 4rem・3.5rem を式で引く。 */}
+      {/* 目盛りの見出し。行の左のラベル（w-16）と右の2段（w-[5.5rem]）を除いた幅に合わせる。
+          絶対配置の基準はこの要素のパディングボックスなので、両端の 4rem・5.5rem を式で引く。 */}
       <div className="relative h-4">
         {LABEL_TICKS.map((tick) => (
           <span
             key={tick}
             className="type-label-small absolute -translate-x-1/2 whitespace-nowrap text-on-surface-variant"
-            style={{ left: `calc(4rem + (100% - 7.5rem) * ${tick / MINUTES_PER_NIGHT})` }}
+            style={{ left: `calc(4rem + (100% - ${SIDE_WIDTH_REM}rem) * ${tick / MINUTES_PER_NIGHT})` }}
           >
             {clockHour(tick)}
           </span>
@@ -149,12 +152,11 @@ function NightRow({
         ))}
 
         {night.segments.map((segment, index) => (
-          // 帯の幅（コンテナ）に時刻2つが入るときだけ内側に書く。狭い帯（昼寝など）は
-          // 文字が溢れるため出さず、時刻は title と読み上げに残す。
+          // 時刻は右の2段に出すため、帯の中には書かない（title と読み上げには残す）。
           <i
             key={index}
             className={cn(
-              "@container absolute inset-y-2 rounded-item",
+              "absolute inset-y-2 rounded-item",
               segment.running
                 ? "border border-dashed border-primary bg-primary/25 text-on-surface"
                 : "bg-primary text-on-primary",
@@ -162,24 +164,29 @@ function NightRow({
             style={{ left: percent(segment.from), width: percent(segment.to - segment.from) }}
             title={`${offsetToClock(segment.from)}–${offsetToClock(segment.to)}${segment.running ? "（記録中）" : ""}`}
             aria-hidden
-          >
-            <span className="hidden h-full items-center justify-between overflow-hidden px-1 text-[10px] font-medium not-italic leading-none tabular-nums whitespace-nowrap @min-[64px]:flex">
-              <span>{offsetToClock(segment.from)}</span>
-              {!segment.running && <span>{offsetToClock(segment.to)}</span>}
-            </span>
-          </i>
+          />
         ))}
       </div>
 
-      <span className="type-label-small flex w-14 shrink-0 items-center justify-end pr-0.5 text-right">
+      <span className="type-label-small flex w-[5.5rem] shrink-0 flex-col items-end justify-center pr-0.5 text-right leading-4 tabular-nums">
         {night.minutes === 0 ? (
           <span className="text-on-surface-variant">—</span>
         ) : (
           <>
-            <span className="font-bold">{formatSleepShort(night.minutes)}</span>
-            {/* 色だけに意味を持たせない。足りていないことは読み上げにも残す。 */}
-            <span className={cn("ml-1", short ? "text-error" : "text-on-surface-variant")}>
-              {formatSleepDiff(diff)}
+            {/* 上段: 就寝〜起床。狭い帯では帯の中に書けないため、時刻はここへ集める。 */}
+            <span className="text-on-surface-variant">
+              {bedWake
+                ? bedWake.running
+                  ? `${offsetToClock(bedWake.bed)}– 記録中`
+                  : `${offsetToClock(bedWake.bed)}–${offsetToClock(bedWake.wake)}`
+                : ""}
+            </span>
+            {/* 下段: 睡眠時間と目標との差。色だけに意味を持たせない（読み上げにも残す）。 */}
+            <span>
+              <span className="font-bold">{formatSleepShort(night.minutes)}</span>
+              <span className={cn("ml-1", short ? "text-error" : "text-on-surface-variant")}>
+                {formatSleepDiff(diff)}
+              </span>
             </span>
           </>
         )}
