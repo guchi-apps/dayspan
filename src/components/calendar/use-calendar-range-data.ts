@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useOffline } from "next/offline";
 
 import { isOfflineNow } from "@/components/offline/offline-state";
-import type { CalendarView } from "@/lib/calendar-range";
+import {
+  getVisibleDays,
+  parseDateKey,
+  shiftAnchor,
+  type CalendarView,
+} from "@/lib/calendar-range";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
@@ -15,7 +20,9 @@ import type {
 } from "@/types/calendar";
 import type { WorkRecordItem } from "@/types/work";
 
+import { rangesWithin } from "./optimistic-events";
 import {
+  FRESH_REQUEST_HEADER,
   withEventNotificationSettings,
   withEventOutcomes,
   withTaskLinks,
@@ -50,6 +57,26 @@ function rangeKey(view: CalendarView, anchorKey: string): string {
   return `${view}:${anchorKey}`;
 }
 
+/**
+ * `/api/calendar?view=&date=` が取る日の範囲（両端を含む日付キー）。サーバーの
+ * `getSwipeFetchRange` と同じく前後1期間ぶんを含む（週の開始曜日は日・3日・週表示では使われない）。
+ */
+function coveredDays(view: CalendarView, anchorKey: string): { startKey: string; endKey: string } {
+  const anchor = parseDateKey(anchorKey);
+  const previous = getVisibleDays(view, shiftAnchor(view, anchor, -1), 0).days;
+  const next = getVisibleDays(view, shiftAnchor(view, anchor, 1), 0).days;
+  return { startKey: previous[0], endKey: next[next.length - 1] };
+}
+
+type RangeState = {
+  key: string | null;
+  data: CalendarLoadResult;
+  /** 最新の内容を取れた要求を出した時刻（issue #787）。保存済み（stale）の応答では進めない。 */
+  syncedAt: number;
+  /** その内容が含む日の範囲。楽観的に重ねた予定を外してよいかの判定に使う。 */
+  covered: { startKey: string; endKey: string } | null;
+};
+
 export type CalendarRangeData = {
   events: CalendarEventItem[];
   tasks: TaskItem[];
@@ -75,6 +102,8 @@ export type CalendarRangeData = {
    * `invalidate` と同じ形にして、呼び出し側で表示形式ごとの分岐をさせない。
    */
   invalidate: (touched?: TouchedRange[] | null) => void;
+  /** 指定した期間を、`since` より後に出した要求の最新の応答で取り直せたか（issue #787）。 */
+  isSyncedSince: (ranges: TouchedRange[], since: number) => boolean;
 };
 
 /**
@@ -112,9 +141,11 @@ export function useCalendarRangeData({
   autoRefreshSeconds: number;
   onLoadingChange: (loading: boolean) => void;
 }): CalendarRangeData {
-  const [state, setState] = useState<{ key: string | null; data: CalendarLoadResult }>(() => ({
+  const [state, setState] = useState<RangeState>(() => ({
     key: null,
     data: EMPTY_RESULT,
+    syncedAt: 0,
+    covered: null,
   }));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -149,6 +180,11 @@ export function useCalendarRangeData({
   // （追い越された要求の分は fetchedRef も更新しないため、あとで同じ期間へ戻ってきたときは
   // 改めて取り直しになり、「上書きされたまま空表示に固定される」ことが無い。issue #702）。
   const latestRequestIdRef = useRef(0);
+  // 最後に invalidate() された時刻と、まだその取り直しの要求を出していないか（issue #787）。
+  // 取得中に invalidate しても、その要求は保存より前に出したものかもしれない。届いた応答の
+  // 要求時刻が invalidate より古ければ、表示は更新しつつもう一度取りにいく。
+  const invalidatedAtRef = useRef(0);
+  const freshPendingRef = useRef(false);
 
   useEffect(() => {
     if (seedView === "month") return;
@@ -159,7 +195,12 @@ export function useCalendarRangeData({
       (data) => {
         if (cancelled) return;
         fetchedRef.current = { key: seedKeyAtMount, fetchedAt: Date.now() };
-        setState({ key: seedKeyAtMount, data: normalize(data) });
+        setState({
+          key: seedKeyAtMount,
+          data: normalize(data),
+          syncedAt: 0,
+          covered: coveredDays(seedView, seedAnchorKey),
+        });
         setSeedSettled(true);
       },
       () => {
@@ -170,7 +211,7 @@ export function useCalendarRangeData({
     return () => {
       cancelled = true;
     };
-  }, [seedPromise, seedKeyAtMount, seedView]);
+  }, [seedPromise, seedKeyAtMount, seedView, seedAnchorKey]);
 
   const key = rangeKey(view, anchorKey);
   // invalidate() が押されたことを、下の取得判定の effect へ伝えるためだけの通し番号。
@@ -180,6 +221,9 @@ export function useCalendarRangeData({
   const fetchRange = useCallback(async (targetView: CalendarView, targetAnchorKey: string) => {
     const targetKey = rangeKey(targetView, targetAnchorKey);
     const requestId = ++latestRequestIdRef.current;
+    const requestedAt = Date.now();
+    const fresh = freshPendingRef.current;
+    freshPendingRef.current = false;
     inFlightKeyRef.current = targetKey;
     onLoadingChangeRef.current(true);
     // 取り直しを始めた時点で、前の期間ぶんの印は一旦下ろす。届いた応答で改めて判定し直す。
@@ -187,7 +231,9 @@ export function useCalendarRangeData({
 
     try {
       const params = new URLSearchParams({ view: targetView, date: targetAnchorKey });
-      const response = await fetch(`/api/calendar?${params.toString()}`);
+      const response = await fetch(`/api/calendar?${params.toString()}`, {
+        headers: fresh ? { [FRESH_REQUEST_HEADER]: "1" } : undefined,
+      });
       if (!response.ok) throw new Error(`status ${response.status}`);
 
       // 通信が遅くてService Workerがタイムアウトで保存済みを代わりに返したとき（issue #718）。
@@ -196,10 +242,25 @@ export function useCalendarRangeData({
       const data = (await response.json()) as CalendarLoadResult;
       // 自分より後に発行された要求があれば、追い越された古い応答として捨てる。
       if (latestRequestIdRef.current !== requestId) return;
-      fetchedRef.current = { key: targetKey, fetchedAt: Date.now() };
-      setState({ key: targetKey, data: normalize(data) });
+      setState((prev) => ({
+        key: targetKey,
+        data: normalize(data),
+        // 保存済みが返ったときは、同じ期間で前に最新を取れた時点のまま据え置く。
+        syncedAt: responseStale ? (prev.key === targetKey ? prev.syncedAt : 0) : requestedAt,
+        covered: coveredDays(targetView, targetAnchorKey),
+      }));
       setLoadError(null);
       setStale(responseStale);
+
+      if (invalidatedAtRef.current > requestedAt) {
+        // 要求を出したあとに invalidate() された。この応答では足りないため、取得済みにせず
+        // もう一度取りにいく（取得判定の effect を起こす）。
+        fetchedRef.current = { key: null, fetchedAt: 0 };
+        freshPendingRef.current = true;
+        setInvalidateNonce((n) => n + 1);
+      } else {
+        fetchedRef.current = { key: targetKey, fetchedAt: Date.now() };
+      }
     } catch {
       if (latestRequestIdRef.current !== requestId) return;
 
@@ -241,6 +302,8 @@ export function useCalendarRangeData({
    * （月表示の `invalidate` と同じ扱い。空へ戻すと、取り直しのたびに一瞬グリッドが空になる）。
    */
   const invalidate = useCallback((_touched?: TouchedRange[] | null) => {
+    invalidatedAtRef.current = Date.now();
+    freshPendingRef.current = true;
     fetchedRef.current = { key: null, fetchedAt: 0 };
     setInvalidateNonce((n) => n + 1);
   }, []);
@@ -252,6 +315,14 @@ export function useCalendarRangeData({
   // 期間が変わったときも `state.data`（直前に取得できた期間の内容）を表示し続け、新しい
   // 期間の取得が終わった時点で `state` ごと入れ替わって更新される。
   const showing = state.data;
+
+  const isSyncedSince = useCallback(
+    (ranges: TouchedRange[], since: number) =>
+      state.covered !== null &&
+      state.syncedAt >= since &&
+      rangesWithin(ranges, state.covered.startKey, state.covered.endKey),
+    [state.covered, state.syncedAt],
+  );
 
   return {
     events: showing.events,
@@ -267,5 +338,6 @@ export function useCalendarRangeData({
     pending: state.key !== key,
     stale,
     invalidate,
+    isSyncedSince,
   };
 }

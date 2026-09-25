@@ -11,6 +11,7 @@ import { EventForm, type EventDraft } from "./event-form";
 import { ReminderForm, type ReminderDraft } from "./reminder-form";
 import { TaskForm, type TaskDraft } from "./task-form";
 import { TravelForm, type TravelDraft } from "./travel-form";
+import type { OptimisticEventChange } from "./optimistic-events";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export type ItemKind = "event" | "task" | "reminder" | "travel";
@@ -78,7 +79,8 @@ export function ItemDialog({
   weekStartsOn?: number;
   onClose: () => void;
   /** 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
-  onSaved: (touched: TouchedRange[] | null) => void;
+  /** 第2引数は予定を保存したときの楽観的な反映（issue #787）。 */
+  onSaved: (touched: TouchedRange[] | null, change?: OptimisticEventChange) => void;
 }) {
   const kind = initialKind;
   const [title, setTitle] = useState(() => draftTitle(initialKind, drafts));
@@ -92,9 +94,9 @@ export function ItemDialog({
     setTimeout(onClose, 150);
   };
 
-  const finish = (touched: TouchedRange[] | null) => {
+  const finish = (touched: TouchedRange[] | null, change?: OptimisticEventChange) => {
     setOpen(false);
-    setTimeout(() => onSaved(touched), 150);
+    setTimeout(() => onSaved(touched, change), 150);
   };
 
   const editing = isEditing(kind, drafts);

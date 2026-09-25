@@ -12,6 +12,7 @@ import { localInputToIso } from "./datetime-fields";
 import type { EventDraft } from "./event-form";
 import { ItemFormActions } from "./item-form-actions";
 import { MINUTES_PER_DAY } from "./item-layout";
+import { buildOptimisticEvent, type OptimisticEventChange } from "./optimistic-events";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export type QuickEventDraft = {
@@ -67,7 +68,8 @@ export function QuickEventSheet({
   timeZone: string;
   onClose: () => void;
   /** 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
-  onSaved: (touched: TouchedRange[] | null) => void;
+  /** 第2引数は、取り直しを待たずに画面へ重ねる保存後の予定（issue #787）。 */
+  onSaved: (touched: TouchedRange[] | null, change?: OptimisticEventChange) => void;
   /** 入力済みの値を持ったまま、通常の入力画面へ移る。 */
   onOpenDetail: (draft: EventDraft) => void;
 }) {
@@ -142,8 +144,18 @@ export function QuickEventSheet({
         return;
       }
 
+      const created = (await response.json().catch(() => null)) as { id?: string } | null;
+      const touched: TouchedRange[] = [{ start: payload.start, end: payload.end }];
+      const change: OptimisticEventChange | undefined = created?.id
+        ? {
+            type: "upsert",
+            item: buildOptimisticEvent(payload, created.id, calendars),
+            ranges: touched,
+          }
+        : undefined;
+
       setOpen(false);
-      setTimeout(() => onSaved([{ start: payload.start, end: payload.end }]), 150);
+      setTimeout(() => onSaved(touched, change), 150);
     } catch (cause) {
       // 日時の変換など、リクエスト送信前に失敗することもある。黙って閉じないよう画面に出す。
       setError(cause instanceof Error ? cause.message : "保存に失敗しました。");
