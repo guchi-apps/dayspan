@@ -51,14 +51,15 @@ import { cn } from "@/lib/utils";
 import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places";
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
 import type { RunningActivityItem } from "@/types/activity";
-import type {
-  CalendarEventItem,
-  CalendarLoadResult,
-  ReminderItem,
-  TaskEventStage,
-  TaskItem,
-  TaskLinkTarget,
-  TravelItem,
+import {
+  DEFAULT_TASK_LINK_TARGET,
+  type CalendarEventItem,
+  type CalendarLoadResult,
+  type ReminderItem,
+  type TaskEventStage,
+  type TaskItem,
+  type TaskLinkTarget,
+  type TravelItem,
 } from "@/types/calendar";
 import type { TravelSettings } from "@/services/travel/settings";
 import { coversDate, type WorkCapabilities } from "@/types/work";
@@ -627,6 +628,7 @@ export function CalendarShell({
     stage: TaskEventStage,
     target: TaskLinkTarget,
   ) => {
+    setViewingEvent(null);
     setLinkingEvent(null);
     setItemDialog({
       initialKind: "task",
@@ -1567,6 +1569,9 @@ function CalendarBody({
           )}
           onOpenTravel={onOpenTravelForEvent}
           onLinkTask={() => onLinkTaskForEvent(viewingEvent)}
+          onCreateTask={() =>
+            onCreateTaskForEvent(viewingEvent, "BEFORE_START", DEFAULT_TASK_LINK_TARGET)
+          }
           // 消すと紐づけが外れるタスク。確認の前に示す（docs/spec.md §31）。
           linkedTasks={data.tasks
             .filter((task) => task.links.some((link) => link.eventId === viewingEvent.id))
