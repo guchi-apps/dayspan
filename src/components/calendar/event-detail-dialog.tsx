@@ -505,6 +505,7 @@ export function EventDetailDialog({
               size="sm"
               className="bg-secondary-container text-on-secondary-container"
               disabled={readOnly}
+              title="開始前・予定日でこの予定に紐づけて作ります"
               onClick={createTask}
             >
               <Plus className="size-4" />

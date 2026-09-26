@@ -628,6 +628,7 @@ export function CalendarShell({
     stage: TaskEventStage,
     target: TaskLinkTarget,
   ) => {
+    if (offline) return;
     setViewingEvent(null);
     setLinkingEvent(null);
     setItemDialog({
