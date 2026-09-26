@@ -14,6 +14,7 @@ import {
   ExternalLink,
   MapPin,
   Pencil,
+  Plus,
   RotateCw,
   Trash2,
   Users,
@@ -72,6 +73,7 @@ export function EventDetailDialog({
   linkedTravels,
   onOpenTravel,
   onLinkTask,
+  onCreateTask,
   linkedTasks,
   places = [],
   onDeleted,
@@ -98,6 +100,8 @@ export function EventDetailDialog({
   onOpenTravel: (travel: TravelItem) => void;
   /** この予定にタスクを紐づける（docs/spec.md §31）。 */
   onLinkTask: () => void;
+  /** この予定に紐づけた状態で、新しいタスクを作る入力画面を開く。 */
+  onCreateTask: () => void;
   /** この予定に紐づいているタスクの名前。削除の確認で、外れる紐づけを示すために使う。 */
   linkedTasks?: string[];
   /**
@@ -165,6 +169,11 @@ export function EventDetailDialog({
   const linkTask = () => {
     setOpen(false);
     setTimeout(onLinkTask, 150);
+  };
+
+  const createTask = () => {
+    setOpen(false);
+    setTimeout(onCreateTask, 150);
   };
 
   const confirmTentative = async () => {
@@ -488,6 +497,19 @@ export function EventDetailDialog({
             >
               <TaskStageMark stage="AFTER_END" className="h-4 w-5 text-on-secondary-container" />
               タスクを紐づける
+            </Button>
+
+            {/* 紐づけダイアログを経由せず、この予定に紐づいた新しいタスクを直接作る（issue #794）。 */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-secondary-container text-on-secondary-container"
+              disabled={readOnly}
+              title="開始前・予定日でこの予定に紐づけて作ります"
+              onClick={createTask}
+            >
+              <Plus className="size-4" />
+              タスクを作成
             </Button>
 
             {/*
