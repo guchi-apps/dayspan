@@ -20,7 +20,6 @@ import { resolveStageDate } from "@/services/task-links/stage";
 import {
   TASK_LINK_TARGET_LABELS,
   type CalendarEventItem,
-  type CalendarLoadResult,
   type TaskEventStage,
   type TaskLinkTarget,
 } from "@/types/calendar";
@@ -88,15 +87,19 @@ export function EventPickerDialog({
     const id = ++requestId.current;
     let cancelled = false;
 
-    fetch(`/api/calendar?months=${monthKey}`)
+    fetch(`/api/events?month=${monthKey}`)
       .then(async (response) => {
         if (!response.ok) throw new Error(await readErrorMessage(response, "予定を取得できませんでした。"));
-        return (await response.json()) as CalendarLoadResult;
+        return (await response.json()) as {
+          events: CalendarEventItem[];
+          errors?: { reason: string }[];
+        };
       })
       .then((data) => {
         if (cancelled || id !== requestId.current) return;
         setEvents(data.events ?? []);
-        setError(null);
+        // Googleの取得に失敗しても空として返る。空の月と区別できるよう理由を出す。
+        setError(data.errors?.[0]?.reason ?? null);
       })
       .catch((cause: unknown) => {
         if (cancelled || id !== requestId.current) return;
