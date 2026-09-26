@@ -21,7 +21,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
 
 キーの比較は `node:crypto` の `timingSafeEqual` で定数時間で行う（`src/lib/internal-auth.ts`）。トークンはクエリではなく `Authorization` ヘッダーで受ける。クエリに載せるとApacheのアクセスログにそのまま残る（iPhoneウィジェットのトークンと同じ理由。docs/spec.md §28）。
 
-**書き込み系（`POST /api/internal/events`）は読み取りとは別の鍵（`INTERNAL_EVENTS_API_KEY`）で守る。** 読み取り用の `INTERNAL_API_KEY` が漏れても予定を書き込まれないようにするため（起点: guchi-apps/aide-bot#184「読み取りとは別の資格情報」）。未設定・不一致のときの応答（503 / 401）は読み取り用とまったく同じ形。
+**書き込み系（`POST` / `PATCH` / `DELETE /api/internal/events`）は読み取りとは別の鍵（`INTERNAL_EVENTS_API_KEY`）で守る。** 読み取り用の `INTERNAL_API_KEY` が漏れても予定を書き込まれないようにするため（起点: guchi-apps/aide-bot#184「読み取りとは別の資格情報」）。未設定・不一致のときの応答（503 / 401）は読み取り用とまったく同じ形。
 
 `/api/internal/` は `src/proxy.ts`（`src/lib/supabase/middleware.ts`）がSupabaseへ問い合わせずに素通しする。認証がキーで完結しており、呼ばれるたびにSupabase Authへ往復させる理由が無いため。matcherからは外さない（外すと詐称されたユーザーIDヘッダーが後段へ届く）。
 
@@ -69,6 +69,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
           "endTime": "11:00",
           "location": "渋谷オフィス",
           "description": null,
+          "calendarId": "abc@group.calendar.google.com", // 更新・削除で対象を指すのに使う
           "calendarName": "仕事",
           "recurring": true,
           "tentative": false,                 // 仮の予定かどうか（Googleのstatus:tentative）
@@ -190,7 +191,7 @@ DaySpan自身のDBを引けなかったときだけは、取れたぶんとい�
 
 ## `POST /api/internal/events`
 
-予定を1件作成する（起点: guchi-apps/aide-bot#184）。秘書（AIDE）が「明日10時に歯医者を入れて」のような発話から予定を登録できるようにするための入口で、**作成だけを持つ。編集・削除は無い。** 取り消せない操作をサーバー間経路へ出さないため、動かす・消すには画面から行う。
+予定を1件作成する（起点: guchi-apps/aide-bot#184）。秘書（AIDE）が「明日10時に歯医者を入れて」のような発話から予定を登録できるようにするための入口で、更新・削除は次節（`PATCH` / `DELETE /api/internal/events/[id]`・issue #805）が別に持つ。
 
 認証は `INTERNAL_EVENTS_API_KEY`（読み取り用の `INTERNAL_API_KEY` とは別の鍵。上記「認証」参照）。
 
@@ -217,7 +218,7 @@ DaySpan自身のDBを引けなかったときだけは、取れたぶんとい�
 | `startTime` / `endTime` | - | `HH:MM`。**両方指定するか、両方省略するかのどちらかのみ。** 片方だけの指定、`endTime <= startTime`、形式不正はいずれも `400`（時刻ありか終日かが決まらない・所要時間が0以下になるため） |
 | `location` | - | 省略可 |
 | `calendarId` | - | 省略時は書き込み可能な既定のカレンダーを解決する。書き込めるカレンダーが1つも無ければ `404`（`no_writable_calendar`） |
-| `tentative` | - | 省略時 `false`。`true` で仮の予定（Googleの `status: tentative`）として作成する（issue #688）。「多分この時間に」のような曖昧な発話のときだけ秘書側が付ける想定。確定・仮への戻しはDaySpanの画面から行う（このAPIは作成のみのため） |
+| `tentative` | - | 省略時 `false`。`true` で仮の予定（Googleの `status: tentative`）として作成する（issue #688）。「多分この時間に」のような曖昧な発話のときだけ秘書側が付ける想定。後から確定へ変える・仮へ戻すのは下の `PATCH`（`tentative`）で行える |
 
 日付の解釈は `GET /api/internal/schedule` と同じく `UiSetting.timeZone`（既定 `Asia/Tokyo`）で行う。呼び出し側でJSTの時刻へ変換する必要はない。
 
@@ -261,6 +262,55 @@ curl -s -X POST -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"title":"多分この時間","date":"2026-09-07","startTime":"14:00","endTime":"15:00","tentative":true}' \
   "http://127.0.0.1:3113/api/internal/events" | jq .
+```
+
+## `PATCH /api/internal/events/[id]` / `DELETE /api/internal/events/[id]`
+
+既存の予定1件を動かす・取り消す（起点: guchi-apps/aide-bot#372・issue #805）。認証は作成と同じ `INTERNAL_EVENTS_API_KEY`（書き込み用の鍵の分離を踏襲）。ブラウザ用の `PATCH` / `DELETE /api/events/[eventId]` と同じ処理（書き込み可否の判定・紐づけたタスクの日付の追随・記録／通知設定の掃除）を通す。
+
+誤操作の影響を抑えるため、対象は必ず `calendarId` とIDで名指しさせる（`aide_schedule` の各予定の `id` / `calendarId` を使う。事前に確認してから呼ぶ想定）。繰り返しの親（シリーズ全体）・日をまたぐ／複数日の予定は `409`（1回分のIDを指定する）。
+
+### `PATCH`
+
+```jsonc
+{
+  "calendarId": "primary",     // 必須
+  "title": "歯医者（変更）",    // 以下は全て任意。送った項目だけを変える。1つも無ければ400
+  "date": "2026-09-08",
+  "startTime": "14:00",         // startTime と endTime は両方指定
+  "endTime": "15:00",
+  "allDay": false,              // true で終日へ（時刻と同時指定は400）。終日→時刻ありは時刻が要る
+  "location": "〇〇歯科",       // 空文字で消す
+  "tentative": false            // 仮の予定⇄確定
+}
+```
+
+応答は `{ "id": "...", "url": "..." }`。日付のみ・時刻のみの指定は、もう一方を今の値のまま保つ。
+
+### `DELETE`
+
+`DELETE /api/internal/events/[id]?calendarId=...&title=...`
+
+`title` に**予定の現在のタイトル**を必須で添える。一致しなければ `409`（`title_mismatch`、`currentTitle` を返す）で何も消えない。IDの取り違え・復唱と違う予定の削除を防ぐため。消せるのは1回分だけ（繰り返しの「これ以降・すべて」は無い）。応答は `{ "ok": true }`。
+
+### エラー
+
+| 状況 | 応答 |
+| --- | --- |
+| 認証エラー | `401` / `503` |
+| 入力不正 | `400` |
+| 予定が無い | `404`（`event_not_found`。Google側の存在しないIDも `502` ではなく外部エラーとして返る場合がある） |
+| カレンダーが使用オフ・書き込み不可 | `403` / `404`（作成と同じ） |
+| 繰り返しの親・日をまたぐ予定・タイトル不一致 | `409` |
+
+```bash
+curl -s -X PATCH -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"calendarId":"primary","startTime":"14:00","endTime":"15:00"}' \
+  "http://127.0.0.1:3113/api/internal/events/EVENT_ID" | jq .
+
+curl -s -X DELETE -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" -G \
+  --data-urlencode "calendarId=primary" --data-urlencode "title=歯医者" \
+  "http://127.0.0.1:3113/api/internal/events/EVENT_ID" | jq .
 ```
 
 ## `POST /api/internal/notifications/dispatch`

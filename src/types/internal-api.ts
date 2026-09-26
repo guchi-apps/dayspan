@@ -11,6 +11,8 @@ import type { TravelEstimateSource, TravelMode } from "@/types/calendar";
 /** 予定。時刻は設定タイムゾーンでの HH:MM で、終日のときは null。 */
 export type InternalEvent = {
   id: string;
+  /** 更新・削除（`PATCH` / `DELETE /api/internal/events/[id]`）で対象を指すのに要る */
+  calendarId: string;
   title: string;
   allDay: boolean;
   /** allDay なら YYYY-MM-DD、それ以外は ISO 8601 */
@@ -154,8 +156,8 @@ export type InternalScheduleResponse = {
 };
 
 /**
- * `POST /api/internal/events` の入力（docs/internal-api.md）。作成だけを扱い、編集・削除は
- * 持たない（取り消せない操作をサーバー間経路へ出さないため）。
+ * `POST /api/internal/events` の入力（docs/internal-api.md）。更新・削除は
+ * `PATCH` / `DELETE /api/internal/events/[id]`（issue #805）が別に持つ。
  */
 export type InternalCreateEventRequest = {
   title: string;
@@ -178,4 +180,24 @@ export type InternalCreateEventRequest = {
 export type InternalCreateEventResponse = {
   id: string;
   url: string | null;
+};
+
+/**
+ * `PATCH /api/internal/events/[id]` の入力（issue #805）。`calendarId` 以外は全て任意で、
+ * 送った項目だけを変える。1項目も無ければ400。
+ */
+export type InternalUpdateEventRequest = {
+  /** 予定のあるカレンダー（`aide_schedule` の各予定の `calendarId`）。必須 */
+  calendarId?: string;
+  title?: string | null;
+  /** YYYY-MM-DD */
+  date?: string | null;
+  /** HH:MM。両方指定するか両方省略 */
+  startTime?: string | null;
+  endTime?: string | null;
+  /** true で終日へ変える（時刻は同時に指定できない）。false で時刻ありへ（時刻の指定が要る） */
+  allDay?: boolean;
+  /** 空文字で消す */
+  location?: string | null;
+  tentative?: boolean;
 };
