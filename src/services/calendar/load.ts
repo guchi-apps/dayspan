@@ -130,6 +130,33 @@ export async function loadCalendarData(
   };
 }
 
+/**
+ * 予定だけを取得する（issue #802）。タスクへ紐づける予定を月グリッドから選ぶ画面用。
+ * `loadCalendarData()` はタスク・日付リマインド・ゴミの日・勤務・買い物までNotionへ読みにいくため、
+ * 予定しか使わない画面が月を送るたびにその往復を負わないよう分ける（docs/spec.md §20）。
+ * 書き出した移動は予定と二重にならないよう `loadCalendarData()` と同じく落とす。
+ */
+export async function loadEventsOnly(
+  userId: string,
+  range: { timeMin: string; timeMax: string },
+): Promise<{ events: CalendarEventItem[]; errors: CalendarLoadResult["errors"] }> {
+  const [events, travelPlans] = await Promise.all([
+    loadGoogleEvents(userId, range),
+    listTravelsInRange(userId, range),
+  ]);
+
+  const exportedEventIds = new Set(
+    travelPlans.map((plan) => plan.googleEventId).filter((id): id is string => Boolean(id)),
+  );
+
+  return {
+    events: exportedEventIds.size
+      ? events.items.filter((item) => !exportedEventIds.has(item.id))
+      : events.items,
+    errors: events.errors,
+  };
+}
+
 /** カレンダー1つ分の取得結果。1つの失敗で他のカレンダーまで巻き添えにしないために分けて持つ。 */
 type EventsFetchResult =
   | { ok: true; events: GoogleEvent[] }
