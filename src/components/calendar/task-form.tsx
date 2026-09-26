@@ -1,7 +1,7 @@
 "use client";
 
 import { useOffline } from "next/offline";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { ExternalLink } from "lucide-react";
 
@@ -34,6 +34,7 @@ import {
 
 import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { EventPickerDialog, type PendingEventLink } from "./event-picker-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { ItemFormActions } from "./item-form-actions";
 import { readErrorMessage } from "./response-error";
@@ -48,9 +49,15 @@ const NO_VALUE = "__none__";
 /** 期限・予定日の指定方法（docs/spec.md §15）。 */
 type DueMode = "datetime" | "date" | "none";
 
-const DATE_MODES: [DueMode, string][] = [
+/**
+ * 並びは日時指定・日付のみ・予定と紐付け・未設定（issue #802）。「予定と紐付け」は指定方法ではなく
+ * 予定を選ぶ入口で、押すとモーダルが開く。選んだあとは欄ごと選んだ予定の表示に入れ替わるため、
+ * DueMode（入力欄の状態）には含めない。
+ */
+const DATE_MODES: [DueMode | "link", string][] = [
   ["datetime", "日時指定"],
   ["date", "日付のみ"],
+  ["link", "予定と紐付け"],
   ["none", "未設定"],
 ];
 
@@ -89,6 +96,7 @@ export function TaskForm({
   draft,
   timeZone,
   tagOptions,
+  weekStartsOn = 0,
   title,
   autoFocusTitle,
   onTitleChange,
@@ -98,6 +106,8 @@ export function TaskForm({
   timeZone: string;
   /** 設定画面で登録済みのタグ。無い名前もここから足せる（Notionが選択肢を増やす）。 */
   tagOptions: TagOption[];
+  /** 予定を選ぶ月グリッドの週の始まり。 */
+  weekStartsOn?: number;
   /** タイトルは種類を切り替えても引き継ぐため、ItemDialog が持つ。 */
   title: string;
   autoFocusTitle: boolean;
@@ -120,8 +130,13 @@ export function TaskForm({
   // 予定への紐づけ（docs/spec.md §31）。解除は保存を待たずにその場で効かせる。
   // 日付を直せるようにするための操作で、押した直後に欄が開かないと解除できたのか分からない。
   const [links, setLinks] = useState(editing?.links ?? []);
-  // 紐づけて作る途中で、タスクだけ作れて紐づけが失敗したときの作成済みID。
-  const [createdId, setCreatedId] = useState<string | null>(null);
+  // 入力画面から選んだ予定（issue #802）。保存するときに紐づける。行き先ごとに1件。
+  const [pending, setPending] = useState<Partial<Record<TaskLinkTarget, PendingEventLink>>>({});
+  const [pickerTarget, setPickerTarget] = useState<TaskLinkTarget | null>(null);
+  // タスクの保存までは済んだが紐づけが失敗したときの、保存済みのタスクID（作成でも編集でも）。
+  const [savedTaskId, setSavedTaskId] = useState<string | null>(null);
+  // 紐づけが済んだ行き先と入った日時。再試行のときに済んだものをやり直さない。
+  const linkedDatesRef = useRef<Partial<Record<TaskLinkTarget, string>>>({});
   // 紐づけて作るときの段階・行き先。入力画面で選び直せる（issue #798）。
   const [linkStage, setLinkStage] = useState<TaskEventStage>(
     draft.linkTo?.stage ?? "BEFORE_START",
@@ -170,9 +185,13 @@ export function TaskForm({
 
   const linkedDue = linkedFor("DUE");
   const linkedPlanned = linkedFor("PLANNED");
+  // 入力画面から選んだ予定。既存の紐づけ・紐づけて作る相手がある行き先には出さない。
+  const pendingDue = linkedDue ? null : (pending.DUE ?? null);
+  const pendingPlanned = linkedPlanned ? null : (pending.PLANNED ?? null);
 
-  const dueError = linkedDue ? null : missingDateError("期限", dueMode, due);
-  const plannedError = linkedPlanned ? null : missingDateError("予定日", plannedMode, planned);
+  const dueError = linkedDue || pendingDue ? null : missingDateError("期限", dueMode, due);
+  const plannedError =
+    linkedPlanned || pendingPlanned ? null : missingDateError("予定日", plannedMode, planned);
 
   const unlink = async (link: TaskEventLinkItem) => {
     setBusy(true);
@@ -199,10 +218,10 @@ export function TaskForm({
     return localInputToIso(value, timeZone);
   };
 
-  /** 作ったばかりのタスクを予定へ紐づける。行き先へ入った日時を返す。 */
+  /** 保存したタスクを予定へ紐づける。行き先へ入った日時を返す。 */
   const linkCreatedTask = async (
     taskId: string,
-    linkTo: NonNullable<TaskDraft["linkTo"]>,
+    linkTo: { calendarId: string; eventId: string; stage: TaskEventStage; target: TaskLinkTarget },
   ): Promise<string | null> => {
     const response = await fetch("/api/task-links", {
       method: "POST",
@@ -241,8 +260,32 @@ export function TaskForm({
       // ずれている場合に「手で書き換えられた」と読まれ、紐づけが黙って外れる
       // （api/tasks/[taskId] の dropLinksIfDateOverridden）。期限・予定日のどちらも
       // 紐づけの行き先になりうるため、行き先ごとに判断する。
-      const nextDue = linkedDue ? undefined : buildDate(dueMode, due);
-      const nextPlanned = linkedPlanned ? undefined : buildDate(plannedMode, planned);
+      const nextDue = linkedDue || pendingDue ? undefined : buildDate(dueMode, due);
+      const nextPlanned =
+        linkedPlanned || pendingPlanned ? undefined : buildDate(plannedMode, planned);
+
+      // 保存のあとに紐づける相手。紐づけて作る相手（予定詳細から）と、入力画面から選んだ予定。
+      const linkOps: {
+        calendarId: string;
+        eventId: string;
+        stage: TaskEventStage;
+        target: TaskLinkTarget;
+      }[] = [
+        ...(linkTo && !links.some((item) => item.target === linkTo.target) ? [linkTo] : []),
+        ...(pendingDue ? [{ ...pendingDue, target: "DUE" as const }] : []),
+        ...(pendingPlanned ? [{ ...pendingPlanned, target: "PLANNED" as const }] : []),
+      ];
+
+      /** 保存済みのタスクへ、まだ済んでいない紐づけを順に行う。失敗したら false。 */
+      const runLinks = async (taskId: string): Promise<boolean> => {
+        for (const op of linkOps) {
+          if (linkedDatesRef.current[op.target] !== undefined) continue;
+          const date = await linkCreatedTask(taskId, op);
+          if (date === null) return false;
+          linkedDatesRef.current[op.target] = date;
+        }
+        return true;
+      };
 
       const payload = {
         title,
@@ -262,28 +305,21 @@ export function TaskForm({
        * いま入っている値のままとする（未設定にした場合の null と、送っていない undefined を
        * 分けて扱う。混ぜると、消したはずの日付を入っているものとして数えることになる）。
        */
-      const rangesWithLink = (linkedDate: string | null): TouchedRange[] =>
+      const rangesWithLink = (): TouchedRange[] =>
         taskRanges({
           due:
-            linkTo?.target === "DUE"
-              ? linkedDate
-              : nextDue === undefined
-                ? (editing?.due ?? null)
-                : nextDue,
+            linkedDatesRef.current.DUE ??
+            (nextDue === undefined ? (editing?.due ?? null) : nextDue),
           planned:
-            linkTo?.target === "PLANNED"
-              ? linkedDate
-              : nextPlanned === undefined
-                ? (editing?.planned ?? null)
-                : nextPlanned,
+            linkedDatesRef.current.PLANNED ??
+            (nextPlanned === undefined ? (editing?.planned ?? null) : nextPlanned),
         });
 
-      // 前回の保存でタスクは作れて紐づけだけ失敗している場合は、紐づけからやり直す。
-      if (createdId && linkTo) {
-        const linkedDate = await linkCreatedTask(createdId, linkTo);
-        if (linkedDate === null) return;
+      // 前回の保存でタスクは保存できて紐づけだけ失敗している場合は、紐づけからやり直す。
+      if (savedTaskId) {
+        if (!(await runLinks(savedTaskId))) return;
 
-        onSaved(rangesWithLink(linkedDate));
+        onSaved([...rangesWithLink(), ...(editing ? taskRanges(editing) : [])]);
         return;
       }
 
@@ -301,27 +337,29 @@ export function TaskForm({
         return;
       }
 
-      // 新しく作ったタスクを予定へ紐づける。行き先の日付はこの呼び出しが入れるため、
-      // 作成の時点では送っていない（同じ値をNotionへ2回書かないため）。
-      let dateFromLink: string | null = null;
-      if (!editing && linkTo) {
-        const created = (await response.json()) as { id?: string };
-        if (!created.id) {
-          setError("タスクは作れましたが、紐づけできませんでした。");
-          return;
+      // 紐づける相手があれば、保存したタスクへ紐づける。行き先の日付はこの呼び出しが入れるため、
+      // 保存の時点では送っていない（同じ値をNotionへ2回書かないため）。
+      if (linkOps.length > 0) {
+        let taskId = editing?.id;
+        if (!taskId) {
+          const created = (await response.json()) as { id?: string };
+          if (!created.id) {
+            setError("タスクは作れましたが、紐づけできませんでした。");
+            return;
+          }
+          taskId = created.id;
         }
 
         // 紐づけだけが失敗した場合、もう一度押せばここからやり直せるようにする。
-        // 作り直すと同じタスクが2つ並ぶため、作れたIDは覚えておく。
-        setCreatedId(created.id);
-        dateFromLink = await linkCreatedTask(created.id, linkTo);
-        if (dateFromLink === null) return;
+        // 作り直すと同じタスクが2つ並ぶため、保存できたIDは覚えておく。
+        setSavedTaskId(taskId);
+        if (!(await runLinks(taskId))) return;
       }
 
       // 期限・予定日を動かした場合は移動元も変わる。どちらも未設定の状態は
       // カレンダーに出ないため、対象から外れる。
       const touched: TouchedRange[] = [
-        ...rangesWithLink(dateFromLink),
+        ...rangesWithLink(),
         ...(editing ? taskRanges(editing) : []),
       ];
 
@@ -341,6 +379,19 @@ export function TaskForm({
           item={{ kind: "task", task: editing }}
           onCancel={() => setConfirmingDelete(false)}
           onDeleted={onSaved}
+        />
+      )}
+
+      {pickerTarget && (
+        <EventPickerDialog
+          target={pickerTarget}
+          timeZone={timeZone}
+          weekStartsOn={weekStartsOn}
+          onCancel={() => setPickerTarget(null)}
+          onPick={(link) => {
+            setPending((current) => ({ ...current, [pickerTarget]: link }));
+            setPickerTarget(null);
+          }}
         />
       )}
 
@@ -372,7 +423,8 @@ export function TaskForm({
                       type="button"
                       variant={selected ? "secondary" : "outline"}
                       size="sm"
-                      disabled={busy || createdId !== null}
+                      // もう一方の行き先へ入力画面から予定を選んでいるときは、同じ枠へ重ならないよう切り替えない。
+                      disabled={busy || savedTaskId !== null || (!selected && pending[value] !== undefined)}
                       className={cn(selected && "text-on-secondary-container")}
                       onClick={() => setLinkTarget(value)}
                     >
@@ -384,7 +436,7 @@ export function TaskForm({
             </div>
             <TaskStagePicker
               value={linkStage}
-              disabled={busy || createdId !== null}
+              disabled={busy || savedTaskId !== null}
               onChange={setLinkStage}
             />
           </div>
@@ -406,10 +458,20 @@ export function TaskForm({
             busy={busy}
             onUnlink={unlink}
           />
+        ) : pendingDue ? (
+          <PendingLinkField
+            label="期限"
+            pending={pendingDue}
+            timeZone={timeZone}
+            disabled={busy || savedTaskId !== null}
+            onReselect={() => setPickerTarget("DUE")}
+            onCancel={() => setPending((current) => ({ ...current, DUE: undefined }))}
+          />
         ) : (
           <DateModeField
             id="task-due"
             label="期限"
+            onPickEvent={() => setPickerTarget("DUE")}
             mode={dueMode}
             value={due}
             timeZone={timeZone}
@@ -433,10 +495,20 @@ export function TaskForm({
             busy={busy}
             onUnlink={unlink}
           />
+        ) : pendingPlanned ? (
+          <PendingLinkField
+            label="予定日"
+            pending={pendingPlanned}
+            timeZone={timeZone}
+            disabled={busy || savedTaskId !== null}
+            onReselect={() => setPickerTarget("PLANNED")}
+            onCancel={() => setPending((current) => ({ ...current, PLANNED: undefined }))}
+          />
         ) : (
           <DateModeField
             id="task-planned"
             label="予定日"
+            onPickEvent={() => setPickerTarget("PLANNED")}
             mode={plannedMode}
             value={planned}
             timeZone={timeZone}
@@ -579,6 +651,47 @@ function LinkedDateField({
 }
 
 /**
+ * 入力画面から選んだ予定の欄（issue #802）。まだ保存していないため、選び直し・取り消しは
+ * その場で効く。保存すると紐づけが確定し、日付は予定から決まる（docs/spec.md §31）。
+ */
+function PendingLinkField({
+  label,
+  pending,
+  timeZone,
+  disabled,
+  onReselect,
+  onCancel,
+}: {
+  label: string;
+  pending: PendingEventLink;
+  timeZone: string;
+  disabled: boolean;
+  onReselect: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>{label}</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 rounded-lg bg-secondary-container px-2.5 py-1 text-sm text-on-secondary-container">
+          <TaskStageMark stage={pending.stage} className="h-3.5 w-4.5 text-on-secondary-container" />
+          {pending.eventTitle} の{TASK_EVENT_STAGE_LABELS[pending.stage]}
+        </span>
+        <Button variant="ghost" size="sm" disabled={disabled} onClick={onReselect}>
+          選び直す
+        </Button>
+        <Button variant="ghost" size="sm" disabled={disabled} onClick={onCancel}>
+          紐づけをやめる
+        </Button>
+      </div>
+      <p className="text-xs text-on-surface-variant">
+        保存すると、{label}が {formatLinkedDate(pending.date, timeZone)} になります。
+      </p>
+    </div>
+  );
+}
+
+/**
  * 期限・予定日の入力欄。指定方法（日時／日付のみ／未設定）と入力欄を組で出す。
  * 2つの日付で形を揃えるため、1つの部品にまとめる。
  */
@@ -589,6 +702,7 @@ function DateModeField({
   value,
   timeZone,
   defaultTime,
+  onPickEvent,
   onChange,
 }: {
   id: string;
@@ -599,6 +713,8 @@ function DateModeField({
   timeZone: string;
   /** 日時指定へ切り替えたときの初期時刻（HH:mm）。 */
   defaultTime: string;
+  /** 「予定と紐付け」を押したとき。予定を選ぶモーダルを開く（issue #802）。 */
+  onPickEvent: () => void;
   onChange: (next: { mode: DueMode; value: string }) => void;
 }) {
   const changeMode = (next: DueMode) => {
@@ -621,14 +737,15 @@ function DateModeField({
   return (
     <div className="flex flex-col gap-1.5">
       <Label>{label}</Label>
-      <div className="flex gap-1">
+      {/* 4つ並べると幅390pxの端末で収まらないため、折り返す。 */}
+      <div className="flex flex-wrap gap-1">
         {DATE_MODES.map(([option, optionLabel]) => (
           <Button
             key={option}
             type="button"
             variant={mode === option ? "secondary" : "outline"}
             size="sm"
-            onClick={() => changeMode(option)}
+            onClick={() => (option === "link" ? onPickEvent() : changeMode(option))}
           >
             {optionLabel}
           </Button>

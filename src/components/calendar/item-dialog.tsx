@@ -127,7 +127,12 @@ export function ItemDialog({
           />
         )}
         {kind === "task" && drafts.task && (
-          <TaskForm {...shared} draft={drafts.task} tagOptions={tagCatalog.task ?? []} />
+          <TaskForm
+            {...shared}
+            draft={drafts.task}
+            tagOptions={tagCatalog.task ?? []}
+            weekStartsOn={weekStartsOn}
+          />
         )}
         {kind === "reminder" && drafts.reminder && (
           <ReminderForm
