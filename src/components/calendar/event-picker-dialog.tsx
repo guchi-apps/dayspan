@@ -77,6 +77,8 @@ export function EventPickerDialog({
   const [monthKey, setMonthKey] = useState(() => todayKey.slice(0, 7));
   const [events, setEvents] = useState<CalendarEventItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 月グリッドか日付ごとの一覧か（issue #809）。端末には覚えさせない。
+  const [mode, setMode] = useState<"month" | "list">("month");
   const [focusDay, setFocusDay] = useState<string | null>(null);
   const [chosen, setChosen] = useState<CalendarEventItem | null>(null);
   const [stage, setStage] = useState<TaskEventStage>("BEFORE_START");
@@ -153,6 +155,17 @@ export function EventPickerDialog({
 
   const targetLabel = TASK_LINK_TARGET_LABELS[target];
   const monthLabel = `${monthKey.slice(0, 4)}年${Number(monthKey.slice(5, 7))}月`;
+  const listDays = useMemo(
+    () =>
+      weeks
+        .flat()
+        .filter((dateKey) => dateKey.slice(0, 7) === monthKey)
+        .map((dateKey) => ({ dateKey, dayEvents: eventsOn(dateKey) }))
+        .filter((day) => day.dayEvents.length > 0),
+    // eventsOn は events と utils だけに依存する。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [weeks, monthKey, events, utils],
+  );
   const focusEvents = focusDay ? eventsOn(focusDay) : [];
 
   return (
@@ -233,6 +246,55 @@ export function EventPickerDialog({
                 </Button>
               </div>
 
+              <div className="flex gap-1">
+                {(["month", "list"] as const).map((value) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={mode === value ? "secondary" : "outline"}
+                    className={cn(mode === value && "text-on-secondary-container")}
+                    onClick={() => setMode(value)}
+                  >
+                    {value === "month" ? "月" : "一覧"}
+                  </Button>
+                ))}
+              </div>
+
+              {mode === "list" ? (
+                <div
+                  className={cn(
+                    "flex max-h-[50dvh] flex-col overflow-y-auto rounded-md border border-outline-variant transition-opacity",
+                    events === null && "opacity-50",
+                  )}
+                >
+                  {events !== null && listDays.length === 0 && (
+                    <p className="px-3 py-3 text-sm text-muted-foreground">予定がありません。</p>
+                  )}
+                  {listDays.map(({ dateKey, dayEvents }) => (
+                    <div key={dateKey}>
+                      <p className="sticky top-0 border-b border-outline-variant bg-surface-container-high px-3 py-1 text-xs text-on-surface-variant">
+                        {formatLinkedDate(dateKey, timeZone)}
+                      </p>
+                      {dayEvents.map((event) => (
+                        <button
+                          key={event.id}
+                          type="button"
+                          onClick={() => choose(event)}
+                          className="flex w-full items-center justify-between gap-3 border-b border-outline-variant px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-container-high"
+                        >
+                          <span className="clip-nowrap">{event.title}</span>
+                          <span className="shrink-0 text-xs text-on-surface-variant">
+                            {event.allDay
+                              ? "終日"
+                              : formatLinkedDate(event.start, timeZone).split(" ")[1]}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <div
                 className={cn(
                   "grid grid-cols-7 border-t border-l border-outline-variant transition-opacity",
@@ -295,8 +357,9 @@ export function EventPickerDialog({
                   );
                 })}
               </div>
+              )}
 
-              {focusDay && (
+              {mode === "month" && focusDay && (
                 <div className="flex flex-col rounded-md border border-outline-variant">
                   <p className="border-b border-outline-variant px-3 py-1.5 text-xs text-on-surface-variant">
                     {formatLinkedDate(focusDay, timeZone)}の予定
