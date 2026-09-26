@@ -5,9 +5,31 @@ import { calendarWriteError, externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { createEvent, type EventWriteInput } from "@/services/google-calendar/events";
+import { getMonthsFetchRange } from "@/lib/calendar-range";
+import { loadEventsOnly } from "@/services/calendar/load";
 import { resolveGoogleAccountForCalendar } from "@/services/calendar/write-context";
 
 type Body = Partial<EventWriteInput> & { calendarId?: string };
+
+/**
+ * 指定した月の予定だけを返す（`?month=YYYY-MM`）。タスクの入力画面で紐づける予定を選ぶために使う
+ * （issue #802）。タスク・日付リマインドなどNotionの項目は読まない。
+ */
+export async function GET(request: Request) {
+  const userId = await requireUserId();
+  if (!userId) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const month = new URL(request.url).searchParams.get("month") ?? "";
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return NextResponse.json({ error: "month is required" }, { status: 400 });
+  }
+
+  const data = await loadEventsOnly(userId, getMonthsFetchRange([month]));
+
+  return NextResponse.json(data);
+}
 
 export async function POST(request: Request) {
   const userId = await requireUserId();
