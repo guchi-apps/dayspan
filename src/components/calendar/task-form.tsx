@@ -21,8 +21,11 @@ import { TagPicker } from "@/components/tags/tag-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { RECURRENCE_PRESETS } from "@/services/notion/recurrence";
 import type { TagOption } from "@/services/notion/tag-options";
+import { cn } from "@/lib/utils";
 import {
   TASK_EVENT_STAGE_LABELS,
+  TASK_LINK_TARGETS,
+  TASK_LINK_TARGET_LABELS,
   type TaskEventLinkItem,
   type TaskEventStage,
   type TaskItem,
@@ -36,6 +39,7 @@ import { ItemFormActions } from "./item-form-actions";
 import { readErrorMessage } from "./response-error";
 import { formatLinkedDate, taskLinkFullLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
+import { TaskStagePicker } from "./task-stage-picker";
 import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 
 const PRIORITY_OPTIONS = ["高", "中", "低"];
@@ -118,6 +122,13 @@ export function TaskForm({
   const [links, setLinks] = useState(editing?.links ?? []);
   // 紐づけて作る途中で、タスクだけ作れて紐づけが失敗したときの作成済みID。
   const [createdId, setCreatedId] = useState<string | null>(null);
+  // 紐づけて作るときの段階・行き先。入力画面で選び直せる（issue #798）。
+  const [linkStage, setLinkStage] = useState<TaskEventStage>(
+    draft.linkTo?.stage ?? "BEFORE_START",
+  );
+  const [linkTarget, setLinkTarget] = useState<TaskLinkTarget>(draft.linkTo?.target ?? "PLANNED");
+  // 選んだ値を反映した紐づけ先。保存・表示はこちらを使う。
+  const linkTo = draft.linkTo ? { ...draft.linkTo, stage: linkStage, target: linkTarget } : undefined;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 削除は押した直後には実行せず、確認を挟む。
@@ -146,10 +157,10 @@ export function TaskForm({
       return { label: taskLinkFullLabel(existing), stage: existing.stage, link: existing };
     }
 
-    if (draft.linkTo?.target === target) {
+    if (linkTo?.target === target) {
       return {
-        label: `${draft.linkTo.eventTitle} の${TASK_EVENT_STAGE_LABELS[draft.linkTo.stage]}`,
-        stage: draft.linkTo.stage,
+        label: `${linkTo.eventTitle} の${TASK_EVENT_STAGE_LABELS[linkTo.stage]}`,
+        stage: linkTo.stage,
         link: null,
       };
     }
@@ -254,13 +265,13 @@ export function TaskForm({
       const rangesWithLink = (linkedDate: string | null): TouchedRange[] =>
         taskRanges({
           due:
-            draft.linkTo?.target === "DUE"
+            linkTo?.target === "DUE"
               ? linkedDate
               : nextDue === undefined
                 ? (editing?.due ?? null)
                 : nextDue,
           planned:
-            draft.linkTo?.target === "PLANNED"
+            linkTo?.target === "PLANNED"
               ? linkedDate
               : nextPlanned === undefined
                 ? (editing?.planned ?? null)
@@ -268,8 +279,8 @@ export function TaskForm({
         });
 
       // 前回の保存でタスクは作れて紐づけだけ失敗している場合は、紐づけからやり直す。
-      if (createdId && draft.linkTo) {
-        const linkedDate = await linkCreatedTask(createdId, draft.linkTo);
+      if (createdId && linkTo) {
+        const linkedDate = await linkCreatedTask(createdId, linkTo);
         if (linkedDate === null) return;
 
         onSaved(rangesWithLink(linkedDate));
@@ -293,7 +304,7 @@ export function TaskForm({
       // 新しく作ったタスクを予定へ紐づける。行き先の日付はこの呼び出しが入れるため、
       // 作成の時点では送っていない（同じ値をNotionへ2回書かないため）。
       let dateFromLink: string | null = null;
-      if (!editing && draft.linkTo) {
+      if (!editing && linkTo) {
         const created = (await response.json()) as { id?: string };
         if (!created.id) {
           setError("タスクは作れましたが、紐づけできませんでした。");
@@ -303,7 +314,7 @@ export function TaskForm({
         // 紐づけだけが失敗した場合、もう一度押せばここからやり直せるようにする。
         // 作り直すと同じタスクが2つ並ぶため、作れたIDは覚えておく。
         setCreatedId(created.id);
-        dateFromLink = await linkCreatedTask(created.id, draft.linkTo);
+        dateFromLink = await linkCreatedTask(created.id, linkTo);
         if (dateFromLink === null) return;
       }
 
@@ -342,6 +353,42 @@ export function TaskForm({
           onClear={() => onTitleChange("")}
           autoFocus={autoFocusTitle}
         />
+
+        {/*
+          紐づけて作るときは、段階と行き先をここで選べる（docs/spec.md §31・issue #798）。
+          タスクを作れたあとの再試行では、作成済みのタスクの行き先を変えないよう押せなくする。
+        */}
+        {!editing && draft.linkTo && (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>紐づける日付</Label>
+              <div className="flex flex-wrap gap-1">
+                {TASK_LINK_TARGETS.map((value) => {
+                  const selected = value === linkTarget;
+
+                  return (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant={selected ? "secondary" : "outline"}
+                      size="sm"
+                      disabled={busy || createdId !== null}
+                      className={cn(selected && "text-on-secondary-container")}
+                      onClick={() => setLinkTarget(value)}
+                    >
+                      {TASK_LINK_TARGET_LABELS[value]}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+            <TaskStagePicker
+              value={linkStage}
+              disabled={busy || createdId !== null}
+              onChange={setLinkStage}
+            />
+          </div>
+        )}
 
         {/*
           期限も予定日も予定へ紐づけられる（docs/spec.md §31）。紐づいている間はその日付が
