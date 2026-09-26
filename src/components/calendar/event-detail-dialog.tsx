@@ -505,7 +505,7 @@ export function EventDetailDialog({
               size="sm"
               className="bg-secondary-container text-on-secondary-container"
               disabled={readOnly}
-              title="開始前・予定日でこの予定に紐づけて作ります"
+              title="開始前・予定日を初期値に、この予定に紐づけて作ります（入力画面で変えられます）"
               onClick={createTask}
             >
               <Plus className="size-4" />
