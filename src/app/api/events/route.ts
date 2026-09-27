@@ -13,7 +13,7 @@ type Body = Partial<EventWriteInput> & { calendarId?: string };
 
 /**
  * 指定した月の予定だけを返す（`?month=YYYY-MM`）。タスクの入力画面で紐づける予定を選ぶために使う
- * （issue #802）。タスク・日付リマインドなどNotionの項目は読まない。
+ * （issue #802）。活動記録の保存先カレンダーの予定は除く（issue #809）。タスク・日付リマインドなどNotionの項目は読まない。
  */
 export async function GET(request: Request) {
   const userId = await requireUserId();

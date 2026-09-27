@@ -1,5 +1,6 @@
 import { externalApiMessage } from "@/lib/api-error";
 import { db } from "@/lib/db";
+import { listActivityCalendarIds } from "@/services/activity/settings";
 import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
 import {
   attachEventNotificationSettings,
@@ -135,14 +136,18 @@ export async function loadCalendarData(
  * `loadCalendarData()` はタスク・日付リマインド・ゴミの日・勤務・買い物までNotionへ読みにいくため、
  * 予定しか使わない画面が月を送るたびにその往復を負わないよう分ける（docs/spec.md §20）。
  * 書き出した移動は予定と二重にならないよう `loadCalendarData()` と同じく落とす。
+ *
+ * 紐づけ先を選ぶ画面専用で、活動記録の保存先カレンダーの予定は除く（issue #809。活動記録に
+ * タスクは紐づかないため）。他の画面で予定だけを読みたいときは、この除外が要るかを確かめる。
  */
 export async function loadEventsOnly(
   userId: string,
   range: { timeMin: string; timeMax: string },
 ): Promise<{ events: CalendarEventItem[]; errors: CalendarLoadResult["errors"] }> {
-  const [events, travelPlans] = await Promise.all([
+  const [events, travelPlans, activityCalendarIds] = await Promise.all([
     loadGoogleEvents(userId, range),
     listTravelsInRange(userId, range),
+    listActivityCalendarIds(userId),
   ]);
 
   const exportedEventIds = new Set(
@@ -150,9 +155,9 @@ export async function loadEventsOnly(
   );
 
   return {
-    events: exportedEventIds.size
-      ? events.items.filter((item) => !exportedEventIds.has(item.id))
-      : events.items,
+    events: events.items.filter(
+      (item) => !exportedEventIds.has(item.id) && !activityCalendarIds.includes(item.calendarId),
+    ),
     errors: events.errors,
   };
 }

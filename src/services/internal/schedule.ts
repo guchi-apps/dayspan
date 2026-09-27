@@ -202,6 +202,7 @@ function toInternalEvent(
 
   return {
     id: event.id,
+    calendarId: event.calendarId,
     title: event.title,
     allDay: event.allDay,
     start: event.start,
