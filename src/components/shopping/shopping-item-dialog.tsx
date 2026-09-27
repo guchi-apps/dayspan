@@ -21,7 +21,7 @@ import { SHOPPING_PRIORITIES, type ShoppingItem, type ShoppingPriority } from "@
 
 /** 開くときに渡す下書き。新規は選んでいるカテゴリから、編集は既存の項目から始める。 */
 export type ShoppingDraft =
-  | { mode: "create"; category: string | null }
+  | { mode: "create"; category: string | null; wishlisted: boolean }
   | { mode: "edit"; item: ShoppingItem };
 
 /**
@@ -50,6 +50,7 @@ export function ShoppingItemDialog({
   onSaved: () => void;
 }) {
   const existing = draft.mode === "edit" ? draft.item : null;
+  const wishlisted = existing?.wishlisted ?? (draft.mode === "create" && draft.wishlisted);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const [open, setOpen] = useState(true);
@@ -182,7 +183,15 @@ export function ShoppingItemDialog({
       return;
     }
 
-    const body = { name: trimmed, memo: memo.trim() || null, category, priority, plannedDate };
+    const body = {
+      name: trimmed,
+      memo: memo.trim() || null,
+      category,
+      priority,
+      // ほしい物には買う日を持たせない。移すときに初めて通常の買い物として日付を決める。
+      plannedDate: wishlisted ? null : plannedDate,
+      wishlisted,
+    };
 
     if (existing) {
       await send(
@@ -264,7 +273,9 @@ export function ShoppingItemDialog({
             : undefined
         }
       >
-        <DialogTitle>{existing ? "買い物リストの項目" : "買い物リストに追加"}</DialogTitle>
+        <DialogTitle>
+          {existing ? (wishlisted ? "ほしい物リストの項目" : "買い物リストの項目") : wishlisted ? "ほしい物リストに追加" : "買い物リストに追加"}
+        </DialogTitle>
         <DialogDescription className="sr-only">
           アイテム名・メモ・カテゴリ・購入予定日・優先度を入力します。
         </DialogDescription>
@@ -378,6 +389,8 @@ export function ShoppingItemDialog({
           )}
         </div>
 
+        {!wishlisted && (
+          <>
         {/* 購入予定日（docs/spec.md §36）。「今日買う」「明日買う」がいちばん多い指定なので、
             そこはチップ1つで済ませる。それ以外の日は「日付を指定」を押したときだけ日付の欄を出す
             （未定のときに空の欄が常に並ぶと、入力が要るように見えるため・issue #726）。
@@ -427,6 +440,8 @@ export function ShoppingItemDialog({
             />
           )}
         </div>
+          </>
+        )}
 
         <div className="flex flex-col gap-2">
           <span className="type-label-large text-on-surface-variant">優先度</span>

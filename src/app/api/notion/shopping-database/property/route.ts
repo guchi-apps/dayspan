@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { createNotionClient } from "@/services/notion/client";
 import {
   addShoppingDateProperty,
+  addShoppingWishlistProperty,
   SHOPPING_DATABASE_TEMPLATE,
 } from "@/services/notion/shopping-database";
 
@@ -16,7 +17,7 @@ import {
  * Notion側で手で足させると、何という名前・どの型のプロパティにすればよいかが画面に出ていない
  * （場所DBの座標・勤務記録DBの出張と同じ理由で、設定画面から実行できるようにする）。
  */
-export async function POST() {
+export async function POST(request: Request) {
   const userId = await requireUserId();
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -25,16 +26,20 @@ export async function POST() {
     return NextResponse.json({ error: "shopping_database_not_selected" }, { status: 404 });
   }
 
+  const { field } = (await request.json().catch(() => ({}))) as { field?: string };
+  const isWishlist = field === "wishlisted";
+  const propertyName = isWishlist
+    ? SHOPPING_DATABASE_TEMPLATE.wishlisted
+    : SHOPPING_DATABASE_TEMPLATE.plannedDate;
   let validation;
   try {
-    validation = await addShoppingDateProperty(
-      createNotionClient(connection),
-      connection.shoppingDataSourceId,
-    );
+    validation = isWishlist
+      ? await addShoppingWishlistProperty(createNotionClient(connection), connection.shoppingDataSourceId)
+      : await addShoppingDateProperty(createNotionClient(connection), connection.shoppingDataSourceId);
   } catch (error) {
     return externalApiError(
       "notion",
-      `「${SHOPPING_DATABASE_TEMPLATE.plannedDate}」プロパティの追加`,
+      `「${propertyName}」プロパティの追加`,
       error,
     );
   }

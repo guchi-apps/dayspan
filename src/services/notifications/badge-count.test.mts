@@ -13,6 +13,7 @@ test("購入予定日が今日以前の未購入だけ数える", () => {
     item({ plannedDate: "2026-09-24" }),
     item({ plannedDate: null }),
     item({ plannedDate: "2026-09-20", bought: true }),
+    item({ plannedDate: "2026-09-20", wishlisted: true }),
   ];
   assert.equal(countDueShopping(items, "2026-09-23"), 2);
 });
