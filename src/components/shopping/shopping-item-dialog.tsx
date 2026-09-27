@@ -50,7 +50,9 @@ export function ShoppingItemDialog({
   onSaved: () => void;
 }) {
   const existing = draft.mode === "edit" ? draft.item : null;
-  const wishlisted = existing?.wishlisted ?? (draft.mode === "create" && draft.wishlisted);
+  const [wishlisted, setWishlisted] = useState(
+    existing?.wishlisted ?? (draft.mode === "create" && draft.wishlisted),
+  );
   const contentRef = useRef<HTMLDivElement>(null);
 
   const [open, setOpen] = useState(true);
@@ -188,9 +190,12 @@ export function ShoppingItemDialog({
       memo: memo.trim() || null,
       category,
       priority,
-      // ほしい物には買う日を持たせない。移すときに初めて通常の買い物として日付を決める。
+      // 欲しいものには買う日を持たせない。買うものへ変えたあとに日付を決める。
       plannedDate: wishlisted ? null : plannedDate,
       wishlisted,
+      // 購入済みは買うものだけの状態。欲しいものへ変えたときに残ると、買うものへ戻した直後に
+      // 一覧から隠れてしまうため、分類変更と同時に未購入へ戻す。
+      ...(wishlisted ? { bought: false } : {}),
     };
 
     if (existing) {
@@ -274,10 +279,10 @@ export function ShoppingItemDialog({
         }
       >
         <DialogTitle>
-          {existing ? (wishlisted ? "ほしい物リストの項目" : "買い物リストの項目") : wishlisted ? "ほしい物リストに追加" : "買い物リストに追加"}
+          {existing ? (wishlisted ? "欲しいもの" : "買うもの") : wishlisted ? "欲しいものを追加" : "買うものを追加"}
         </DialogTitle>
         <DialogDescription className="sr-only">
-          アイテム名・メモ・カテゴリ・購入予定日・優先度を入力します。
+          アイテム名・メモ・カテゴリ・優先度を入力します。買うものでは購入予定日も入力できます。
         </DialogDescription>
 
         {error && (
@@ -285,6 +290,18 @@ export function ShoppingItemDialog({
             {error}
           </p>
         )}
+
+        <div className="flex flex-col gap-2">
+          <span className="type-label-large text-on-surface-variant">分類</span>
+          <div className="flex flex-wrap gap-1.5">
+            <ChoiceChip selected={!wishlisted} onClick={() => setWishlisted(false)}>
+              買うもの
+            </ChoiceChip>
+            <ChoiceChip selected={wishlisted} onClick={() => setWishlisted(true)}>
+              欲しいもの
+            </ChoiceChip>
+          </div>
+        </div>
 
         <Input
           label="アイテム名"
