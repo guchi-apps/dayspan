@@ -35,7 +35,7 @@ export function validateShoppingBody(
   }
   if (body.wishlisted !== undefined && typeof body.wishlisted !== "boolean") {
     return NextResponse.json(
-      { error: "invalid_wishlisted", message: "ほしい物の指定が正しくありません。" },
+      { error: "invalid_wishlisted", message: "欲しいものの指定が正しくありません。" },
       { status: 400 },
     );
   }

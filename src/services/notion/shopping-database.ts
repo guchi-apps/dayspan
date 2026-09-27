@@ -82,7 +82,7 @@ export const SHOPPING_FIELD_REQUIREMENTS: Requirement[] = [
   },
   {
     field: "wishlisted",
-    label: "ほしい物",
+    label: "欲しいもの",
     types: ["checkbox"],
     required: false,
     hints: ["ほしい物", "ほしいもの", "欲しい物", "欲しいもの", "wishlist", "wish"],
@@ -173,7 +173,7 @@ export const SHOPPING_DATABASE_TEMPLATE = {
   memo: "メモ",
   priority: "優先度",
   plannedDate: "購入予定日",
-  wishlisted: "ほしい物",
+  wishlisted: "欲しいもの",
   bought: "購入済み",
 } as const satisfies Required<Record<ShoppingField, string>>;
 
@@ -280,7 +280,7 @@ export async function addShoppingDateProperty(
   return validateShoppingDataSource(notion, dataSourceId);
 }
 
-/** 既存の買い物リストDBへ、ほしい物リストの所属を示す任意プロパティを足す。 */
+/** 既存の買い物リストDBへ、欲しいものの所属を示す任意プロパティを足す。 */
 export async function addShoppingWishlistProperty(
   notion: Client,
   dataSourceId: string,
@@ -288,7 +288,9 @@ export async function addShoppingWishlistProperty(
   const name = SHOPPING_DATABASE_TEMPLATE.wishlisted;
   const source = await notion.dataSources.retrieve({ data_source_id: dataSourceId });
   const properties = source.properties as Record<string, PropertyConfig>;
-  const existing = Object.values(properties).find((property) => property.name === name);
+  // 旧「ほしい物」など、すでに認識できる所属プロパティがあれば新しい名前を重ねて作らない。
+  // shopping-list と共有する既存DBの構成を、DaySpanの表示語変更だけで増やさないため。
+  const existing = Boolean(buildShoppingPropertyMap(properties).propertyMap.wishlisted);
 
   if (!existing) {
     await notion.dataSources.update({
