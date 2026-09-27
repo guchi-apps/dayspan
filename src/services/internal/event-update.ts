@@ -1,9 +1,9 @@
 import { isoToLocalInput, localInputToIso } from "@/components/calendar/datetime-fields";
+import { addDays, dateKeyDiffDays, isRealDateKey, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import type { EventWriteInput, GoogleEvent } from "@/services/google-calendar/events";
 import type { InternalUpdateEventRequest } from "@/types/internal-api";
 
 const TIME_KEY = /^([01]\d|2[0-3]):[0-5]\d$/;
-const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 export type MergeResult =
   | { ok: true; input: EventWriteInput }
@@ -12,9 +12,10 @@ export type MergeResult =
 /**
  * 既存の予定へ、送られた項目だけを重ねて更新の入力を作る（`PATCH /api/internal/events/[id]`）。
  *
- * 送られなかった項目は今の値のまま。日をまたぐ予定・複数日の終日予定は、`date` + `startTime` /
- * `endTime` の形では表せず、黙って1日へ縮めてしまうため断る。繰り返しの親（シリーズ全体を
- * 指すID）も、1回の更新がシリーズ全体へ及ぶため断る。
+ * 送られなかった項目は今の値のまま。複数日にまたがる終日予定（出張など）は、`date` だけでは
+ * 終了日を表せず、黙って1日へ縮めてしまうため断る。日をまたぐ時刻ありの予定（issue #813）は
+ * `endDate` で終了日を別に受け、開始日時より後であることを検証したうえで扱う。繰り返しの親
+ * （シリーズ全体を指すID）も、1回の更新がシリーズ全体へ及ぶため断る。
  */
 export function mergeInternalEventUpdate(
   existing: GoogleEvent,
@@ -38,22 +39,24 @@ export function mergeInternalEventUpdate(
 
   const currentAllDay = Boolean(existing.start?.date);
   let currentDate: string;
+  let currentEndDate: string;
   let currentStartTime: string | null = null;
   let currentEndTime: string | null = null;
 
   if (currentAllDay) {
     currentDate = startValue;
-    // end.date は排他（翌日）。1日ぶんの終日だけ扱う。
+    // end.date は排他（翌日）。複数日にまたがる終日予定（出張など）はこの入口では扱わない。
     const next = new Date(`${startValue}T00:00:00Z`);
     next.setUTCDate(next.getUTCDate() + 1);
     if (next.toISOString().slice(0, 10) !== endValue) {
-      return multiDay();
+      return multiDayAllDay();
     }
+    currentEndDate = currentDate;
   } else {
     const [startDate, startTime] = isoToLocalInput(startValue, timeZone).split("T");
-    const [endDate, endTime] = isoToLocalInput(endValue, timeZone).split("T");
-    if (startDate !== endDate) return multiDay();
+    const [endDateLocal, endTime] = isoToLocalInput(endValue, timeZone).split("T");
     currentDate = startDate;
+    currentEndDate = endDateLocal;
     currentStartTime = startTime;
     currentEndTime = endTime;
   }
@@ -64,7 +67,7 @@ export function mergeInternalEventUpdate(
   }
 
   const date = body.date ?? currentDate;
-  if (!DATE_KEY.test(date) || Number.isNaN(new Date(`${date}T00:00:00Z`).getTime())) {
+  if (!isRealDateKey(date)) {
     return { ok: false, status: 400, error: "date must be a valid date in YYYY-MM-DD format" };
   }
 
@@ -82,6 +85,24 @@ export function mergeInternalEventUpdate(
   }
 
   const allDay = body.allDay === true ? true : hasStart ? false : currentAllDay && body.allDay !== false;
+
+  if (allDay && body.endDate != null && body.endDate !== date) {
+    return { ok: false, status: 400, error: "endDate cannot be combined with allDay" };
+  }
+
+  // 終了日: 明示されなければ、開始日を動かしたぶんだけ今のまたぎ幅（開始日から終了日までの
+  // 日数）を保って一緒にずらす。開始日も動かしていなければ今の終了日のまま（issue #813）。
+  const endDate = allDay
+    ? date
+    : (body.endDate ??
+      (body.date != null
+        ? toDateKey(addDays(parseDateKey(date), dateKeyDiffDays(currentDate, currentEndDate)))
+        : currentEndDate));
+
+  if (!allDay && !isRealDateKey(endDate)) {
+    return { ok: false, status: 400, error: "endDate must be a valid date in YYYY-MM-DD format" };
+  }
+
   let startTime: string | null = null;
   let endTime: string | null = null;
 
@@ -98,9 +119,14 @@ export function mergeInternalEventUpdate(
     if (!TIME_KEY.test(startTime) || !TIME_KEY.test(endTime)) {
       return { ok: false, status: 400, error: "startTime and endTime must be in HH:MM format" };
     }
-    if (endTime <= startTime) {
-      return { ok: false, status: 400, error: "endTime must be after startTime" };
-    }
+  }
+
+  const start = allDay ? date : localInputToIso(`${date}T${startTime}`, timeZone);
+  const end = allDay ? date : localInputToIso(`${endDate}T${endTime}`, timeZone);
+
+  // 日付をまたいだ組み合わせも実際の日時どうしで比べる（HH:MM文字列の比較は同日でしか正しくない）。
+  if (!allDay && new Date(end).getTime() <= new Date(start).getTime()) {
+    return { ok: false, status: 400, error: "endTime must be after startTime" };
   }
 
   return {
@@ -108,8 +134,8 @@ export function mergeInternalEventUpdate(
     input: {
       title,
       allDay,
-      start: allDay ? date : localInputToIso(`${date}T${startTime}`, timeZone),
-      end: allDay ? date : localInputToIso(`${date}T${endTime}`, timeZone),
+      start,
+      end,
       location: body.location !== undefined ? (body.location ?? "").trim() : undefined,
       timeZone,
       tentative: body.tentative,
@@ -117,11 +143,11 @@ export function mergeInternalEventUpdate(
   };
 }
 
-function multiDay(): MergeResult {
+function multiDayAllDay(): MergeResult {
   return {
     ok: false,
     status: 409,
     error: "multi_day_event_unsupported",
-    message: "日をまたぐ予定・複数日の予定はこの入口では更新できません。",
+    message: "複数日にまたがる終日予定はこの入口では更新できません。",
   };
 }
