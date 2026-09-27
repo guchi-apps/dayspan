@@ -3,10 +3,12 @@ import type { NotionConnection } from "@prisma/client";
 
 import type { TaskItem } from "@/types/calendar";
 
-import type { NotionFilterGroup, NotionQueryFilter } from "./client";
+import type { NotionQueryFilter } from "./client";
 import { formatRecurrence, nextDue, parseRecurrence } from "./recurrence";
 import { externalApiMessage } from "@/lib/api-error";
 import { db } from "@/lib/db";
+
+import { taskRangeFilter, type OverdueTaskRange } from "./task-query-filter";
 
 import {
   resolveRefreshedPropertyMap,
@@ -178,7 +180,7 @@ export async function listTasksInRange(
   notion: Client,
   initialConnection: NotionConnection,
   range: { from: string; to: string },
-  options?: { overdueBefore?: string },
+  options?: { overdueRange?: OverdueTaskRange },
 ): Promise<TaskItem[]> {
   const connection = await refreshTaskPropertyMapIfStale(notion, initialConnection);
   const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
@@ -186,25 +188,10 @@ export async function listTasksInRange(
 
   if (!connection.taskDataSourceId || !dueProperty) return [];
 
-  const withinRange = (property: string) => ({
-    and: [
-      { property, date: { on_or_after: range.from } },
-      { property, date: { on_or_before: range.to } },
-    ],
-  });
-
-  const plannedProperty = propertyMap.planned;
-
-  const filters: NotionFilterGroup[] = [withinRange(dueProperty)];
-  if (plannedProperty) filters.push(withinRange(plannedProperty));
-  // カレンダーでは期限切れを今日へ寄せる。予定日だけが過去のタスクを混ぜないよう、
-  // 追加する条件は期限プロパティだけに限る（issue #817）。
-  if (options?.overdueBefore) filters.push({ property: dueProperty, date: { before: options.overdueBefore } });
-
   const pages = await queryTasks(
     notion,
     connection.taskDataSourceId,
-    filters.length === 1 ? filters[0] : { or: filters },
+    taskRangeFilter(dueProperty, propertyMap.planned, range, options?.overdueRange),
   );
 
   return pages.map((page) => normalizeTask(page, propertyMap)).filter((task) => !task.done);

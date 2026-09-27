@@ -33,6 +33,12 @@ export function validateShoppingBody(
   if (body.memo != null && body.memo.length > TEXT_LIMIT) {
     return NextResponse.json({ error: "memo is too long" }, { status: 400 });
   }
+  if (body.wishlisted !== undefined && typeof body.wishlisted !== "boolean") {
+    return NextResponse.json(
+      { error: "invalid_wishlisted", message: "ほしい物の指定が正しくありません。" },
+      { status: 400 },
+    );
+  }
   // 優先度はDaySpanが決めた3つだけ。Notionのselectは定義に無い名前を書き込むとその場で
   // 選択肢が増えるため、知らない名前を素通りさせると、行左端の帯の色も並び順も決まらない
   // 選択肢がNotion側に残る。

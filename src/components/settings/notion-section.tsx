@@ -402,6 +402,30 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
     }
   };
 
+  /** 既存DBへほしい物の所属を持たせる。自動では足さず、利用者がここで明示的に実行する。 */
+  const addShoppingWishlistProperty = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/notion/shopping-database/property", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field: "wishlisted" }),
+      });
+      if (!response.ok) {
+        setMessage({
+          text: await errorText(response, "「ほしい物」プロパティを追加できませんでした。"),
+          tone: "error",
+        });
+        return;
+      }
+      setMessage({ text: "買い物リストDBに「ほしい物」プロパティを追加しました。", tone: "ok" });
+      startTransition(() => router.refresh());
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createDatabase = async (kind: DatabaseKind) => {
     setBusy(true);
     setMissing(null);
@@ -851,6 +875,24 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
                       >
                         <Plus className="size-4" />
                         購入予定日プロパティを追加
+                      </Button>
+                    </div>
+                  )}
+                  {!state.shoppingPropertyMap?.wishlisted && (
+                    <div className="flex flex-col items-start gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        ほしい物のプロパティがありません。足すと、今すぐ買わないものを買い物リストと
+                        分けて保管し、買う時期になったときに同じ項目を買い物リストへ移せます。
+                        無いままでも通常の買い物リストは使えます。
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled}
+                        onClick={addShoppingWishlistProperty}
+                      >
+                        <Plus className="size-4" />
+                        ほしい物プロパティを追加
                       </Button>
                     </div>
                   )}

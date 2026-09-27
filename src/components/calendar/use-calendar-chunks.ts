@@ -149,7 +149,7 @@ export function taskMonths(
 ): string[] {
   const months = new Set<string>();
 
-  for (const occurrence of taskOccurrences(task)) {
+  for (const occurrence of taskOccurrences(task, undefined, todayKey)) {
     months.add(taskOccurrenceCalendarDate(occurrence, itemDateKey, todayKey).slice(0, 7));
   }
 

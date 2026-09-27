@@ -51,8 +51,12 @@ import { taskLinkForField, taskLinkStageLabel, taskLinkTargetedLabel } from "./t
  * 期限と予定日が同じ日時に落ちる場合は期限の1枠にまとまるため、その枠では両方の紐づけを返す。
  * 片方を落とすと、その紐づけの段階もずれも画面のどこにも出なくなる。
  */
-function linksInFrame(task: TaskItem, field: TaskDateField): TaskEventLinkItem[] {
-  return taskFieldsInFrame(task, field)
+function linksInFrame(
+  task: TaskItem,
+  field: TaskDateField,
+  todayKey: string,
+): TaskEventLinkItem[] {
+  return taskFieldsInFrame(task, field, undefined, todayKey)
     .map((each) => taskLinkForField(task, each))
     .filter((link): link is TaskEventLinkItem => link !== null);
 }
@@ -1004,7 +1008,7 @@ function DayColumn({
         const minutes = utils.minutesFromMidnight(date);
         // 紐づけの印は枠と行き先を突き合わせて出す（docs/spec.md §31）。期限と予定日が同じ
         // 時刻に落ちる枠は1つにまとまるため、まとまった枠では両方の紐づけを出す。
-        const links = linksInFrame(task, field);
+        const links = linksInFrame(task, field, utils.todayKey());
 
         // 縦棒は時刻そのものを指すため動かさない。動かすのはラベルだけで、
         // その差だけ縦棒と引き出し線を本来の時刻へ戻す（issue #331）。
@@ -1615,6 +1619,7 @@ const AllDayPane = memo(function AllDayPane({
               <AllDayTaskChip
                 task={segment.item}
                 field={segment.taskField}
+                todayKey={utils.todayKey()}
                 dragging={preview?.id === allDaySegmentKey(segment)}
                 onStartDrag={(e) =>
                   onStartDrag(e, { kind: "task", item: segment.item, field: segment.taskField })
@@ -1715,18 +1720,20 @@ function AllDayEventChip({
 function AllDayTaskChip({
   task,
   field,
+  todayKey,
   dragging,
   onStartDrag,
   onOpen,
 }: {
   task: TaskItem;
   field: TaskDateField;
+  todayKey: string;
   dragging: boolean;
   onStartDrag: (event: React.PointerEvent) => void;
   onOpen: () => void;
 }) {
   const planned = field === "planned";
-  const links = linksInFrame(task, field);
+  const links = linksInFrame(task, field, todayKey);
 
   return (
     <button

@@ -7,7 +7,7 @@ import type { ShoppingItem } from "@/types/shopping";
  * 「いつまでに」が決まっていないため数えない。`todayKey` は設定タイムゾーンの今日（`YYYY-MM-DD`）。
  */
 export function countDueShopping(items: ShoppingItem[], todayKey: string): number {
-  return items.filter((item) => !item.bought && item.plannedDate !== null && item.plannedDate <= todayKey)
+  return items.filter((item) => !item.wishlisted && !item.bought && item.plannedDate !== null && item.plannedDate <= todayKey)
     .length;
 }
 

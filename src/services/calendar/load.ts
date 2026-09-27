@@ -1,4 +1,5 @@
 import { externalApiMessage } from "@/lib/api-error";
+import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
 import { listActivityCalendarIds } from "@/services/activity/settings";
 import { attachEventOutcomes, listEventOutcomes } from "@/services/calendar/event-outcomes";
@@ -27,6 +28,8 @@ import type {
   WritableCalendar,
 } from "@/types/calendar";
 import type { WorkRecordItem } from "@/types/work";
+
+const OVERDUE_LOOKBACK_DAYS = 90;
 
 /**
  * 書き込み可能なカレンダーのリストを読み込む。
@@ -346,6 +349,15 @@ async function loadNotionItems(
       from: range.timeMin.slice(0, 10),
       to: range.timeMax.slice(0, 10),
     };
+    const overdueRange =
+      todayKey && dateRange.from <= todayKey && todayKey <= dateRange.to
+        ? {
+            overdueRange: {
+              from: toDateKey(addDays(parseDateKey(todayKey), -OVERDUE_LOOKBACK_DAYS)),
+              before: todayKey,
+            },
+          }
+        : undefined;
     // ゴミの日と、購入予定日のある買い物は日付リマインドと同じ形で描くため、同じ配列へ混ぜて
     // 返す（docs/spec.md §9・§36）。勤務場所（docs/spec.md §34）は日付の見出しに出す別枠のため、
     // 混ぜずに分けて返す。
@@ -355,9 +367,7 @@ async function loadNotionItems(
             notion,
             connection,
             dateRange,
-            todayKey && dateRange.from <= todayKey && todayKey <= dateRange.to
-              ? { overdueBefore: todayKey }
-              : undefined,
+            overdueRange,
           )
         : [],
       connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],

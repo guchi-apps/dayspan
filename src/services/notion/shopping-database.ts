@@ -12,6 +12,7 @@ export type ShoppingField =
   | "memo"
   | "priority"
   | "plannedDate"
+  | "wishlisted"
   | "bought";
 
 export type ShoppingPropertyMap = Partial<Record<ShoppingField, string>>;
@@ -77,6 +78,15 @@ export const SHOPPING_FIELD_REQUIREMENTS: Requirement[] = [
      * 空いている欄へ割り当てた結果、購入予定日をそこへ書き込むことになる。書き換えられたことは
      * DaySpanの画面からは読めない（場所DBの座標・勤務記録DBの出張と同じ扱い）。
      */
+    hintOnly: true,
+  },
+  {
+    field: "wishlisted",
+    label: "ほしい物",
+    types: ["checkbox"],
+    required: false,
+    hints: ["ほしい物", "ほしいもの", "欲しい物", "欲しいもの", "wishlist", "wish"],
+    // 「購入済み」と同じ checkbox なので、型だけで割り当てると意味が入れ替わる。
     hintOnly: true,
   },
   {
@@ -163,6 +173,7 @@ export const SHOPPING_DATABASE_TEMPLATE = {
   memo: "メモ",
   priority: "優先度",
   plannedDate: "購入予定日",
+  wishlisted: "ほしい物",
   bought: "購入済み",
 } as const satisfies Required<Record<ShoppingField, string>>;
 
@@ -220,6 +231,7 @@ export async function createShoppingDatabase(
           select: { options: SHOPPING_PRIORITY_OPTIONS.map((option) => ({ ...option })) },
         },
         [SHOPPING_DATABASE_TEMPLATE.plannedDate]: { date: {} },
+        [SHOPPING_DATABASE_TEMPLATE.wishlisted]: { checkbox: {} },
         [SHOPPING_DATABASE_TEMPLATE.bought]: { checkbox: {} },
       },
     },
@@ -265,5 +277,25 @@ export async function addShoppingDateProperty(
   }
 
   // 足したあとの構成で対応付けを取り直す。作っただけでは propertyMap に載らない。
+  return validateShoppingDataSource(notion, dataSourceId);
+}
+
+/** 既存の買い物リストDBへ、ほしい物リストの所属を示す任意プロパティを足す。 */
+export async function addShoppingWishlistProperty(
+  notion: Client,
+  dataSourceId: string,
+): Promise<ShoppingValidation & { title: string; databaseId: string | null }> {
+  const name = SHOPPING_DATABASE_TEMPLATE.wishlisted;
+  const source = await notion.dataSources.retrieve({ data_source_id: dataSourceId });
+  const properties = source.properties as Record<string, PropertyConfig>;
+  const existing = Object.values(properties).find((property) => property.name === name);
+
+  if (!existing) {
+    await notion.dataSources.update({
+      data_source_id: dataSourceId,
+      properties: { [name]: { checkbox: {} } } as never,
+    });
+  }
+
   return validateShoppingDataSource(notion, dataSourceId);
 }
