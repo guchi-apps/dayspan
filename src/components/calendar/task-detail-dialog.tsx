@@ -203,35 +203,35 @@ export function TaskDetailDialog({
           />
         )}
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="削除"
-          className="absolute top-2 right-18"
-          disabled={readOnly}
-          onClick={() => setConfirmingDelete(true)}
-        >
-          <Trash2 className="size-4" />
-        </Button>
+        <div className="absolute top-2 right-10 flex items-center">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="削除"
+            disabled={readOnly}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trash2 className="size-4" />
+          </Button>
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="編集"
-          className="absolute top-2 right-10"
-          disabled={readOnly}
-          onClick={edit}
-        >
-          <Pencil className="size-4" />
-        </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="編集"
+            disabled={readOnly}
+            onClick={edit}
+          >
+            <Pencil className="size-4" />
+          </Button>
+        </div>
 
         <DialogHeader>
-          <DialogTitle className={cn("pr-22", done && "text-on-surface-variant line-through")}>
+          <DialogTitle className={cn("pr-30", done && "text-on-surface-variant line-through")}>
             {task.title}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 text-sm">
+        <div className="flex min-w-0 flex-col gap-4 text-sm">
           <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
             <Checkbox
               checked={done && !skipped}
@@ -281,7 +281,7 @@ export function TaskDetailDialog({
             2つ並んだときにどちらの日付の話なのかが読めるよう、見出しに行き先を入れる。
           */}
           {links.map((link) => (
-            <div key={link.id} className="flex flex-col gap-2 px-4">
+            <div key={link.id} className="flex min-w-0 flex-col gap-2 px-4">
               <span className="text-xs text-muted-foreground">
                 {taskLinkTargetLabel(link)}を予定に合わせる
               </span>
@@ -382,9 +382,9 @@ function DetailField({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-0.5 px-4">
+    <div className="flex min-w-0 flex-col gap-0.5 px-4">
       <span className="text-xs text-muted-foreground">{label}</span>
-      {children ?? <span className="whitespace-pre-wrap">{value}</span>}
+      {children ?? <span className="whitespace-pre-wrap break-words">{value}</span>}
     </div>
   );
 }
