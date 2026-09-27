@@ -22,6 +22,7 @@ import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
 import { useApiResource } from "@/components/offline/use-api-resource";
 import { countDueShopping } from "@/services/notifications/badge-count";
 import { ShoppingItemDialog, type ShoppingDraft } from "@/components/shopping/shopping-item-dialog";
+import { ShoppingItemDetailDialog } from "@/components/shopping/shopping-item-detail-dialog";
 import { useShoppingViewPrefs } from "@/components/shopping/use-shopping-view-prefs";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -80,6 +81,8 @@ export function ShoppingScreen({
   const [view, setView] = useState<ShoppingView>("shopping");
   const [filterKey, setFilterKey] = useState("all");
   const [dialog, setDialog] = useState<ShoppingDraft | null>(null);
+  // 行を押した直後は編集ではなく表示画面を開く。編集は詳細画面の明示操作からだけ開く。
+  const [viewingItem, setViewingItem] = useState<ShoppingItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 購入済みの切り替えは押した瞬間に画面へ反映する。買い物中はいちばん押す操作で、
@@ -375,7 +378,7 @@ export function ShoppingScreen({
                     onToggleBought={(bought) => toggleBought(item, bought)}
                     wishlist={view === "wishlist"}
                     onChangeClassification={(nextWishlisted) => changeClassification(item, nextWishlisted)}
-                    onOpen={() => setDialog({ mode: "edit", item })}
+                    onOpen={() => setViewingItem(item)}
                   />
                 ))}
               </ul>
@@ -424,6 +427,24 @@ export function ShoppingScreen({
             setDialog(null);
             // 楽観更新ぶんは取り直した値で置き換わる。残しておくと、削除した項目の
             // 購入済みだけが手元に残り続ける。
+            setPendingBought({});
+            reload();
+          }}
+        />
+      )}
+
+      {viewingItem && (
+        <ShoppingItemDetailDialog
+          item={viewingItem}
+          readOnly={offline}
+          onClose={() => setViewingItem(null)}
+          onEdit={(item) => {
+            setViewingItem(null);
+            setDialog({ mode: "edit", item });
+          }}
+          onChanged={reload}
+          onDeleted={() => {
+            setViewingItem(null);
             setPendingBought({});
             reload();
           }}
