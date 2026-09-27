@@ -33,6 +33,7 @@ import {
   reminderAnnualYearLabel,
   reminderAnnualYearShortLabel,
   stackMarkTops,
+  taskOccurrenceCalendarDate,
   taskOccurrenceKey,
   taskFieldsInFrame,
   taskOccurrences,
@@ -1447,12 +1448,6 @@ const AllDayPane = memo(function AllDayPane({
           }
         : { start: event.start, end: event.end };
 
-    // 掴んでいるのは期限・予定日のどちらか一方の枠。動かすのもその枠だけにする。
-    const shiftedTaskDate = (occurrence: TaskOccurrence): string =>
-      preview?.id === occurrence.key
-        ? shiftDateKey(occurrence.date, preview.deltaDays)
-        : occurrence.date;
-
     const raw: WithoutLane<AllDaySegment>[] = [];
 
     for (const event of events) {
@@ -1480,10 +1475,13 @@ const AllDayPane = memo(function AllDayPane({
     }
 
     for (const task of tasks) {
-      for (const occurrence of taskOccurrences(task)) {
+      for (const occurrence of taskOccurrences(task, undefined, utils.todayKey())) {
         if (occurrence.hasTime) continue;
 
-        const column = position.get(shiftedTaskDate(occurrence));
+        const displayDate = taskOccurrenceCalendarDate(occurrence, utils.itemDateKey, utils.todayKey());
+        const column = position.get(
+          preview?.id === occurrence.key ? shiftDateKey(displayDate, preview.deltaDays) : displayDate,
+        );
         if (column === undefined) continue;
 
         raw.push({

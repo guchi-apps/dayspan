@@ -89,7 +89,9 @@ export default async function CalendarPage({
       : getSwipeFetchRange(view, anchor, weekStartsOn);
 
   // ここでawaitしない。渡した先の<Suspense>境界で解決させ、ヘッダーは取得を待たずに描く。
-  const dataPromise = loadCalendarData(user.id, range);
+  const dataPromise = loadCalendarData(user.id, range, {
+    todayKey: createCalendarDateUtils(timeZone).todayKey(),
+  });
 
   // タグ・種類は月をまたいでも変わらない。予定・タスクの取得とは分けて解決させ、
   // 月を送るたびにNotionへの往復が増えないようにする。

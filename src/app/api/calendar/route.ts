@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
+import { db } from "@/lib/db";
+import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import {
   getMonthsFetchRange,
   getSwipeFetchRange,
@@ -37,6 +39,8 @@ export async function GET(request: Request) {
   }
 
   const params = new URL(request.url).searchParams;
+  const uiSetting = await db.uiSetting.findUnique({ where: { userId } });
+  const todayKey = createCalendarDateUtils(uiSetting?.timeZone ?? "Asia/Tokyo").todayKey();
   const viewParam = params.get("view");
   const dateParam = params.get("date");
 
@@ -52,7 +56,7 @@ export async function GET(request: Request) {
       parseDateKey(dateParam),
       0,
     );
-    const data = await loadCalendarData(userId, range);
+    const data = await loadCalendarData(userId, range, { todayKey });
 
     return NextResponse.json(data);
   }
@@ -70,7 +74,7 @@ export async function GET(request: Request) {
   }
 
   // loadCalendarData は Google / Notion の失敗を errors に載せて返すため、ここでは投げない。
-  const data = await loadCalendarData(userId, getMonthsFetchRange(months));
+  const data = await loadCalendarData(userId, getMonthsFetchRange(months), { todayKey });
 
   return NextResponse.json(data);
 }

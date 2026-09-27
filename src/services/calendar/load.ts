@@ -84,11 +84,12 @@ export async function loadWritableCalendars(userId: string): Promise<WritableCal
 export async function loadCalendarData(
   userId: string,
   range: { timeMin: string; timeMax: string },
+  options?: { todayKey?: string },
 ): Promise<CalendarLoadResult> {
   // 移動と紐づけはDaySpanのDBにあるため、外部APIの往復は増えない。Google・Notionと並行に読む。
   const [events, notion, travelPlans, taskLinks] = await Promise.all([
     loadGoogleEvents(userId, range),
-    loadNotionItems(userId, range),
+    loadNotionItems(userId, range, options?.todayKey),
     listTravelsInRange(userId, range),
     listTaskLinks(userId),
   ]);
@@ -310,6 +311,7 @@ export async function loadGoogleEvents(
 async function loadNotionItems(
   userId: string,
   range: { timeMin: string; timeMax: string },
+  todayKey?: string,
 ): Promise<{
   tasks: TaskItem[];
   reminders: ReminderItem[];
@@ -348,7 +350,16 @@ async function loadNotionItems(
     // 返す（docs/spec.md §9・§36）。勤務場所（docs/spec.md §34）は日付の見出しに出す別枠のため、
     // 混ぜずに分けて返す。
     const [tasks, reminders, garbageDays, workRecords, shoppingPlans] = await Promise.all([
-      connection.taskDataSourceId ? listTasksInRange(notion, connection, dateRange) : [],
+      connection.taskDataSourceId
+        ? listTasksInRange(
+            notion,
+            connection,
+            dateRange,
+            todayKey && dateRange.from <= todayKey && todayKey <= dateRange.to
+              ? { overdueBefore: todayKey }
+              : undefined,
+          )
+        : [],
       connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],
       connection.garbageDataSourceId ? listGarbageDaysInRange(notion, connection, dateRange) : [],
       workDatabaseReady(connection) ? listWorkRecordsInRange(notion, connection, dateRange) : [],
