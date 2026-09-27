@@ -16,7 +16,11 @@ import type {
 } from "@/types/calendar";
 import type { WorkRecordItem } from "@/types/work";
 
-import { taskOccurrences } from "./item-layout";
+import {
+  taskOccurrenceCalendarDate,
+  taskOccurrences,
+  type CalendarDateUtils,
+} from "./item-layout";
 
 /**
  * 1ヶ月ぶんの保持データ。
@@ -138,10 +142,25 @@ export function monthsOfRanges(ranges: TouchedRange[]): string[] {
 }
 
 /** 取得結果を月ごとに仕分ける。月をまたぐ予定は、かかる月すべてに入る。 */
+export function taskMonths(
+  task: TaskItem,
+  itemDateKey: (date: string) => string,
+  todayKey: string,
+): string[] {
+  const months = new Set<string>();
+
+  for (const occurrence of taskOccurrences(task, undefined, todayKey)) {
+    months.add(taskOccurrenceCalendarDate(occurrence, itemDateKey, todayKey).slice(0, 7));
+  }
+
+  return [...months];
+}
+
 function splitByMonth(
   data: Pick<CalendarLoadResult, "events" | "tasks" | "reminders" | "travels" | "workRecords">,
   months: string[],
   fetchedAt: number,
+  utils: CalendarDateUtils,
   syncedAt = 0,
 ): Map<string, MonthChunk> {
   const chunks = new Map<string, MonthChunk>();
@@ -167,13 +186,7 @@ function splitByMonth(
     // 期限と予定日が別の月にあるタスクは、どちらの月にも入れる。片方だけに入れると、
     // もう一方の月を見ているときにその日の枠が出てこない（表示は月ごとに保持している）。
     // 同じ月に両方あるときは1件でよい（枠に分けるのは描画側）。
-    const months = new Set<string>();
-
-    for (const occurrence of taskOccurrences(task)) {
-      const month = occurrence.date.slice(0, 7);
-      if (months.has(month)) continue;
-
-      months.add(month);
+    for (const month of taskMonths(task, utils.itemDateKey, utils.todayKey())) {
       chunks.get(month)?.tasks.push(task);
     }
   }
@@ -263,6 +276,7 @@ export function useCalendarChunks({
   dataPromise,
   serverMonths,
   autoRefreshSeconds,
+  utils,
   onLoadingChange,
 }: {
   /** 月表示のときだけ働かせる。1日・3日・週表示は取得範囲が狭く、窓で持つ必要がない。 */
@@ -279,6 +293,7 @@ export function useCalendarChunks({
   /** dataPromise（種）が満たしている月。サーバーが描いた範囲と一致していなければならない。 */
   serverMonths: string[];
   autoRefreshSeconds: number;
+  utils: CalendarDateUtils;
   /** 取得中かどうか。読み込み中の表示はSuspense境界の外にあるため、呼び出し側へ渡す。 */
   onLoadingChange: (loading: boolean) => void;
 }): CalendarWindowData {
@@ -339,7 +354,7 @@ export function useCalendarChunks({
       (data) => {
         if (cancelled) return;
         if (seedEnabled) {
-          setChunks(splitByMonth(withWorkRecords(data), seedMonths, Date.now()));
+          setChunks(splitByMonth(withWorkRecords(data), seedMonths, Date.now(), utils));
           setMeta({
             calendars: data.calendars,
             notionReady: data.notionReady,
@@ -358,7 +373,7 @@ export function useCalendarChunks({
     return () => {
       cancelled = true;
     };
-  }, [seedPromise, seedMonths, seedEnabled]);
+  }, [seedPromise, seedMonths, seedEnabled, utils]);
 
   const fetchMonths = useCallback(async (months: string[]) => {
     months.forEach((month) => inFlight.current.add(month));
@@ -394,6 +409,7 @@ export function useCalendarChunks({
         },
         months,
         Date.now(),
+        utils,
       );
 
       setChunks((prev) => {
@@ -452,7 +468,7 @@ export function useCalendarChunks({
       months.forEach((month) => inFlight.current.delete(month));
       onLoadingChangeRef.current(inFlight.current.size > 0);
     }
-  }, []);
+  }, [utils]);
 
   // 足りない月・古くなった月を取りにいく。取得できると chunks が変わって再実行され、
   // 「足りない月なし」で止まる。種（dataPromise）の解決を待つのは、まだ判定していない

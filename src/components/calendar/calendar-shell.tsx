@@ -1258,6 +1258,7 @@ function CalendarBody({
     dataPromise,
     serverMonths,
     autoRefreshSeconds,
+    utils,
     onLoadingChange,
   });
   const rangeData = useCalendarRangeData({

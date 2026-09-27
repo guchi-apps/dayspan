@@ -8,6 +8,8 @@ import { formatRecurrence, nextDue, parseRecurrence } from "./recurrence";
 import { externalApiMessage } from "@/lib/api-error";
 import { db } from "@/lib/db";
 
+import { taskRangeFilter, type OverdueTaskRange } from "./task-query-filter";
+
 import {
   resolveRefreshedPropertyMap,
   SKIPPED_OUTCOME,
@@ -178,6 +180,7 @@ export async function listTasksInRange(
   notion: Client,
   initialConnection: NotionConnection,
   range: { from: string; to: string },
+  options?: { overdueRange?: OverdueTaskRange },
 ): Promise<TaskItem[]> {
   const connection = await refreshTaskPropertyMapIfStale(notion, initialConnection);
   const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
@@ -185,21 +188,10 @@ export async function listTasksInRange(
 
   if (!connection.taskDataSourceId || !dueProperty) return [];
 
-  const withinRange = (property: string) => ({
-    and: [
-      { property, date: { on_or_after: range.from } },
-      { property, date: { on_or_before: range.to } },
-    ],
-  });
-
-  const plannedProperty = propertyMap.planned;
-
   const pages = await queryTasks(
     notion,
     connection.taskDataSourceId,
-    plannedProperty
-      ? { or: [withinRange(dueProperty), withinRange(plannedProperty)] }
-      : withinRange(dueProperty),
+    taskRangeFilter(dueProperty, propertyMap.planned, range, options?.overdueRange),
   );
 
   return pages.map((page) => normalizeTask(page, propertyMap)).filter((task) => !task.done);
