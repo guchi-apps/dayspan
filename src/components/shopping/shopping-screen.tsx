@@ -184,7 +184,7 @@ export function ShoppingScreen({
     setDialog({ mode: "create", category: activeKey === "all" ? null : activeKey, wishlisted: view === "wishlist" });
   };
 
-  const moveToShopping = async (item: ShoppingItem) => {
+  const changeClassification = async (item: ShoppingItem, wishlisted: boolean) => {
     if (offline) {
       setError(OFFLINE_WRITE_MESSAGE);
       return;
@@ -195,15 +195,26 @@ export function ShoppingScreen({
       const response = await fetch(`/api/shopping/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wishlisted: false }),
+        // 欲しいものへ移すときは、買うものだけが持つ購入予定日・購入済みも外す。
+        // そのまま残すと、あとで買うものへ戻したときに意図しない予定日や購入済みが復活する。
+        body: JSON.stringify(
+          wishlisted
+            ? { wishlisted: true, plannedDate: null, bought: false }
+            : { wishlisted: false },
+        ),
       });
       if (!response.ok) {
-        setError(await readErrorMessage(response, "買い物リストへ移せませんでした。"));
+        setError(
+          await readErrorMessage(
+            response,
+            wishlisted ? "欲しいものへ変更できませんでした。" : "買うものへ変更できませんでした。",
+          ),
+        );
         return;
       }
       reload();
     } catch {
-      setError("買い物リストへ移せませんでした。");
+      setError(wishlisted ? "欲しいものへ変更できませんでした。" : "買うものへ変更できませんでした。");
     } finally {
       setBusyId(null);
     }
@@ -275,11 +286,11 @@ export function ShoppingScreen({
 
       <div role="tablist" aria-label="リスト" className="flex gap-2 border-b border-rule bg-surface-container-low px-3 pt-2 pb-1">
         <CategoryTab active={view === "shopping"} count={items.filter((item) => !item.wishlisted && !item.bought).length} onClick={() => setView("shopping")}>
-          買い物
+          買うもの
         </CategoryTab>
         {wishlistReady && (
           <CategoryTab active={view === "wishlist"} count={items.filter((item) => item.wishlisted).length} onClick={() => setView("wishlist")}>
-            <Heart className="size-3.5" aria-hidden /> ほしい物
+            <Heart className="size-3.5" aria-hidden /> 欲しいもの
           </CategoryTab>
         )}
       </div>
@@ -363,7 +374,7 @@ export function ShoppingScreen({
                     disabled={busyId === item.id || offline}
                     onToggleBought={(bought) => toggleBought(item, bought)}
                     wishlist={view === "wishlist"}
-                    onMoveToShopping={() => moveToShopping(item)}
+                    onChangeClassification={(nextWishlisted) => changeClassification(item, nextWishlisted)}
                     onOpen={() => setDialog({ mode: "edit", item })}
                   />
                 ))}
@@ -377,7 +388,7 @@ export function ShoppingScreen({
         {data !== null && sections.length === 0 && !loadError && (
           <p className="p-6 text-center text-sm text-muted-foreground">
             {shown.length === 0
-              ? view === "wishlist" ? "ほしい物はありません。" : "買うものがありません。"
+              ? view === "wishlist" ? "欲しいものはありません。" : "買うものがありません。"
               : showBought
                 ? "このカテゴリに項目がありません。"
                 : "買うものはありません。購入したものは隠しています。"}
@@ -391,7 +402,7 @@ export function ShoppingScreen({
           "elevation-3 fixed right-4 z-20 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]",
           fabBottomOffsetClass(runningActivity !== null),
         )}
-        aria-label={view === "wishlist" ? "ほしい物を追加" : "買うものを追加"}
+        aria-label={view === "wishlist" ? "欲しいものを追加" : "買うものを追加"}
         disabled={offline}
         onClick={openAdd}
       >
@@ -474,7 +485,7 @@ function ShoppingRow({
   disabled,
   onToggleBought,
   wishlist,
-  onMoveToShopping,
+  onChangeClassification,
   onOpen,
 }: {
   item: ShoppingItem;
@@ -483,7 +494,7 @@ function ShoppingRow({
   disabled: boolean;
   onToggleBought: (bought: boolean) => void;
   wishlist: boolean;
-  onMoveToShopping: () => void;
+  onChangeClassification: (wishlisted: boolean) => void;
   onOpen: () => void;
 }) {
   return (
@@ -491,7 +502,7 @@ function ShoppingRow({
       <PriorityBar priority={item.priority} />
 
       {wishlist ? (
-        <Heart className="mt-[3px] size-5 shrink-0 text-primary" aria-label="ほしい物" />
+        <Heart className="mt-[3px] size-5 shrink-0 text-primary" aria-label="欲しいもの" />
       ) : (
         <Checkbox
           className="mt-[3px]"
@@ -526,19 +537,17 @@ function ShoppingRow({
           </div>
         )}
       </button>
-      {wishlist && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-1 shrink-0"
-          disabled={disabled}
-          aria-label={`${item.name}を買い物リストへ移す`}
-          onClick={onMoveToShopping}
-        >
-          <ArrowRight className="size-4" />
-          <span className="hidden sm:inline">買い物へ</span>
-        </Button>
-      )}
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-1 shrink-0"
+        disabled={disabled}
+        aria-label={`${item.name}を${wishlist ? "買うもの" : "欲しいもの"}へ変更`}
+        onClick={() => onChangeClassification(!wishlist)}
+      >
+        {wishlist ? <ArrowRight className="size-4" /> : <Heart className="size-4" />}
+        <span className="hidden sm:inline">{wishlist ? "買うものへ" : "欲しいものへ"}</span>
+      </Button>
     </li>
   );
 }
