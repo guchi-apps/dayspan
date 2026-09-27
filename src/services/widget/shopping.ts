@@ -36,7 +36,9 @@ export async function buildWidgetShopping(userId: string): Promise<WidgetShoppin
     };
   }
 
-  const remaining = sortShoppingItems(source.items, "priority").filter((item) => !item.bought);
+  const remaining = sortShoppingItems(source.items, "priority").filter(
+    (item) => !item.wishlisted && !item.bought,
+  );
 
   return {
     timeZone,

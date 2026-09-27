@@ -26,6 +26,8 @@ export type ShoppingItem = {
    * リストとしては足りる。Notion側の日付プロパティに時刻が入っていても、読むときに日付へ落とす。
    */
   plannedDate: string | null;
+  /** 今すぐ買うものではなく、将来ほしいものとして保管しているか。 */
+  wishlisted: boolean;
   bought: boolean;
   url: string | null;
 };

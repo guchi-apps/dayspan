@@ -71,6 +71,8 @@ export function normalizeShoppingPage(
     memo: text(get("memo")?.rich_text) || null,
     priority: toPriority(get("priority")?.select?.name),
     plannedDate: toPlannedDate(get("plannedDate")?.date?.start),
+    // 対応付け前のDB・外部アプリからの項目は通常の買い物として扱う。
+    wishlisted: get("wishlisted")?.checkbox === true,
     bought: get("bought")?.checkbox === true,
     url: page.url ?? null,
   };
@@ -116,6 +118,7 @@ export type ShoppingWriteInput = {
   priority?: ShoppingPriority;
   /** `YYYY-MM-DD` か、消すときは null。項目ごと渡さなければ「触らない」。 */
   plannedDate?: string | null;
+  wishlisted?: boolean;
   bought?: boolean;
 };
 
@@ -143,6 +146,9 @@ function toProperties(
   }
   if (input.plannedDate !== undefined) {
     set("plannedDate", { date: input.plannedDate ? { start: input.plannedDate } : null });
+  }
+  if (input.wishlisted !== undefined) {
+    set("wishlisted", { checkbox: input.wishlisted });
   }
   if (input.bought !== undefined) {
     set("bought", { checkbox: input.bought });
@@ -208,6 +214,7 @@ export async function createShoppingItem(
     memo: input.memo ?? null,
     priority: input.priority ?? null,
     plannedDate: input.plannedDate ?? null,
+    wishlisted: input.wishlisted ?? false,
     bought: input.bought ?? false,
     url: "url" in page ? (page.url ?? null) : null,
   };

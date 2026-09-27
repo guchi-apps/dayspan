@@ -45,7 +45,7 @@ export async function listShoppingPlansInRange(
     .map((page) => normalizeShoppingPage(page as ShoppingPage, map))
     // 数えるのは未購入のものだけ。買い物中に見るのは残っているもの、という一覧側の扱いと
     // 同じにする。その日のぶんを全部買い終えると、カレンダーからも枠ごと消える。
-    .filter((item): item is ShoppingItem => item !== null && !item.bought && item.plannedDate !== null);
+    .filter((item): item is ShoppingItem => item !== null && !item.wishlisted && !item.bought && item.plannedDate !== null);
 
   const byDate = new Map<string, ShoppingItem[]>();
   for (const item of items) {
