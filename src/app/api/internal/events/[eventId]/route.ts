@@ -9,7 +9,16 @@ import { mergeInternalEventUpdate } from "@/services/internal/event-update";
 import { dropLinksForEvent, syncLinksForEvent } from "@/services/task-links/links";
 import type { InternalUpdateEventRequest } from "@/types/internal-api";
 
-const UPDATE_FIELDS = ["title", "date", "startTime", "endTime", "allDay", "location", "tentative"];
+const UPDATE_FIELDS = [
+  "title",
+  "date",
+  "endDate",
+  "startTime",
+  "endTime",
+  "allDay",
+  "location",
+  "tentative",
+];
 
 /**
  * サーバー間（AIDE）から予定を1件更新する（docs/internal-api.md・issue #805）。

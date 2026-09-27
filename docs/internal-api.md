@@ -268,7 +268,7 @@ curl -s -X POST -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" \
 
 既存の予定1件を動かす・取り消す（起点: guchi-apps/aide-bot#372・issue #805）。認証は作成と同じ `INTERNAL_EVENTS_API_KEY`（書き込み用の鍵の分離を踏襲）。ブラウザ用の `PATCH` / `DELETE /api/events/[eventId]` と同じ処理（書き込み可否の判定・紐づけたタスクの日付の追随・記録／通知設定の掃除）を通す。
 
-誤操作の影響を抑えるため、対象は必ず `calendarId` とIDで名指しさせる（`aide_schedule` の各予定の `id` / `calendarId` を使う。事前に確認してから呼ぶ想定）。繰り返しの親（シリーズ全体）・日をまたぐ／複数日の予定は `409`（1回分のIDを指定する）。
+誤操作の影響を抑えるため、対象は必ず `calendarId` とIDで名指しさせる（`aide_schedule` の各予定の `id` / `calendarId` を使う。事前に確認してから呼ぶ想定）。繰り返しの親（シリーズ全体）は `409`（1回分のIDを指定する）。複数日にまたがる終日予定（出張など）もこの入口では扱えず `409`。日をまたぐ**時刻あり**の予定は `endDate`（issue #813）で終了日を指定すれば動かせる。
 
 ### `PATCH`
 
@@ -276,16 +276,17 @@ curl -s -X POST -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" \
 {
   "calendarId": "primary",     // 必須
   "title": "歯医者（変更）",    // 以下は全て任意。送った項目だけを変える。1つも無ければ400
-  "date": "2026-09-08",
+  "date": "2026-09-08",         // 開始日
+  "endDate": "2026-09-09",       // 終了日。日をまたぐときに date とセットで指定する（issue #813）
   "startTime": "14:00",         // startTime と endTime は両方指定
   "endTime": "15:00",
-  "allDay": false,              // true で終日へ（時刻と同時指定は400）。終日→時刻ありは時刻が要る
+  "allDay": false,              // true で終日へ（時刻・endDateと同時指定は400）。終日→時刻ありは時刻が要る
   "location": "〇〇歯科",       // 空文字で消す
   "tentative": false            // 仮の予定⇄確定
 }
 ```
 
-応答は `{ "id": "...", "url": "..." }`。日付のみ・時刻のみの指定は、もう一方を今の値のまま保つ。
+応答は `{ "id": "...", "url": "..." }`。日付のみ・時刻のみの指定は、もう一方を今の値のまま保つ。`endDate` を省いたときは、`date`（開始日）を動かしたぶんだけ今のまたぎ幅（開始日から終了日までの日数。日をまたがない予定は0日）を保って一緒にずらし、`date` も送らなければ今の終了日のまま保つ。終了日時は開始日時より後であることを検証する（実際の日時どうしの比較で、`endTime` が `startTime` より前の時刻でも、日をまたいでいれば通る）。
 
 ### `DELETE`
 
@@ -301,11 +302,16 @@ curl -s -X POST -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" \
 | 入力不正 | `400` |
 | 予定が無い | `404`（`event_not_found`。Google側の存在しないIDも `502` ではなく外部エラーとして返る場合がある） |
 | カレンダーが使用オフ・書き込み不可 | `403` / `404`（作成と同じ） |
-| 繰り返しの親・日をまたぐ予定・タイトル不一致 | `409` |
+| 繰り返しの親・複数日にまたがる終日予定・タイトル不一致 | `409` |
 
 ```bash
 curl -s -X PATCH -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" -H "Content-Type: application/json" \
   -d '{"calendarId":"primary","startTime":"14:00","endTime":"15:00"}' \
+  "http://127.0.0.1:3113/api/internal/events/EVENT_ID" | jq .
+
+# 日をまたぐ時刻ありの予定（issue #813）
+curl -s -X PATCH -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"calendarId":"primary","date":"2026-09-07","endDate":"2026-09-08","startTime":"23:00","endTime":"06:00"}' \
   "http://127.0.0.1:3113/api/internal/events/EVENT_ID" | jq .
 
 curl -s -X DELETE -H "Authorization: Bearer $INTERNAL_EVENTS_API_KEY" -G \

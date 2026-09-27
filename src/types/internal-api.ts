@@ -190,8 +190,15 @@ export type InternalUpdateEventRequest = {
   /** 予定のあるカレンダー（`aide_schedule` の各予定の `calendarId`）。必須 */
   calendarId?: string;
   title?: string | null;
-  /** YYYY-MM-DD */
+  /** 開始日（YYYY-MM-DD） */
   date?: string | null;
+  /**
+   * 終了日（YYYY-MM-DD、issue #813）。日をまたぐ時刻ありの予定を動かすときに `date`（開始日）と
+   * セットで指定する。省略時は、`date` を動かしたぶんだけ今のまたぎ幅（開始日から終了日までの
+   * 日数）を保って一緒にずらし、`date` も送らなければ今の終了日のまま。`allDay: true` とは
+   * 組み合わせられない（終日で複数日にまたがる予定はこの入口では扱わない）
+   */
+  endDate?: string | null;
   /** HH:MM。両方指定するか両方省略 */
   startTime?: string | null;
   endTime?: string | null;
