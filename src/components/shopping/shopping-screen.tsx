@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useOffline } from "next/offline";
-import { ArrowUpDown, Eye, EyeOff, Plus, RefreshCw, ShoppingCart } from "lucide-react";
+import { ArrowRight, ArrowUpDown, Eye, EyeOff, Heart, Plus, RefreshCw, ShoppingCart } from "lucide-react";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { readErrorMessage } from "@/components/calendar/response-error";
@@ -47,7 +47,8 @@ import type { RunningActivitySummary } from "@/types/activity";
  * 一次情報源はNotionの買い物リストDBで、DaySpanのDBには何も保存しない。別アプリ
  * （shopping-list）と同じDBを指せるため、どちらから足したものも両方に出る。
  */
-type ShoppingData = { items: ShoppingItem[]; categoryOptions: TagOption[] };
+type ShoppingData = { items: ShoppingItem[]; categoryOptions: TagOption[]; wishlistReady: boolean };
+type ShoppingView = "shopping" | "wishlist";
 
 const EMPTY_ITEMS: ShoppingItem[] = [];
 const EMPTY_OPTIONS: TagOption[] = [];
@@ -72,9 +73,11 @@ export function ShoppingScreen({
   const { data, reload } = resource;
   const items = data?.items ?? EMPTY_ITEMS;
   const fetchedOptions = data?.categoryOptions ?? EMPTY_OPTIONS;
+  const wishlistReady = data?.wishlistReady ?? false;
   const loadError = resource.error;
   const pending = resource.loading;
   const { sort, showBought, setSort, setShowBought } = useShoppingViewPrefs();
+  const [view, setView] = useState<ShoppingView>("shopping");
   const [filterKey, setFilterKey] = useState("all");
   const [dialog, setDialog] = useState<ShoppingDraft | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -103,12 +106,16 @@ export function ShoppingScreen({
   const dueCount = useMemo(() => countDueShopping(items, todayKey), [items, todayKey]);
 
   // 楽観更新ぶんを重ねた一覧。以降の集計・区分はすべてこれを見る。
+  const listedItems = useMemo(
+    () => items.filter((item) => item.wishlisted === (view === "wishlist")),
+    [items, view],
+  );
   const shown = useMemo(
     () =>
-      items.map((item) =>
+      listedItems.map((item) =>
         item.id in pendingBought ? { ...item, bought: pendingBought[item.id] } : item,
       ),
-    [items, pendingBought],
+    [listedItems, pendingBought],
   );
 
   const tabKeys = useMemo(
@@ -126,7 +133,7 @@ export function ShoppingScreen({
     [shown, categoryNames, activeKey, sort, showBought],
   );
 
-  const hasBought = shown.some((item) => item.bought);
+  const hasBought = view === "shopping" && shown.some((item) => item.bought);
 
   /**
    * 購入済みの切り替え。
@@ -174,7 +181,32 @@ export function ShoppingScreen({
   const openAdd = () => {
     // 追加の既定は開いているタブのカテゴリ。「すべて」を見ているときだけ未設定から始める
     // （そこには「いま何のカテゴリを足そうとしているか」の手掛かりが無い）。
-    setDialog({ mode: "create", category: activeKey === "all" ? null : activeKey });
+    setDialog({ mode: "create", category: activeKey === "all" ? null : activeKey, wishlisted: view === "wishlist" });
+  };
+
+  const moveToShopping = async (item: ShoppingItem) => {
+    if (offline) {
+      setError(OFFLINE_WRITE_MESSAGE);
+      return;
+    }
+    setBusyId(item.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/shopping/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wishlisted: false }),
+      });
+      if (!response.ok) {
+        setError(await readErrorMessage(response, "買い物リストへ移せませんでした。"));
+        return;
+      }
+      reload();
+    } catch {
+      setError("買い物リストへ移せませんでした。");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const nextSort = () => setSort(SHOPPING_SORTS[(SHOPPING_SORTS.indexOf(sort) + 1) % SHOPPING_SORTS.length]);
@@ -240,6 +272,17 @@ export function ShoppingScreen({
           {loadError ?? error}
         </div>
       )}
+
+      <div role="tablist" aria-label="リスト" className="flex gap-2 border-b border-rule bg-surface-container-low px-3 pt-2 pb-1">
+        <CategoryTab active={view === "shopping"} count={items.filter((item) => !item.wishlisted && !item.bought).length} onClick={() => setView("shopping")}>
+          買い物
+        </CategoryTab>
+        {wishlistReady && (
+          <CategoryTab active={view === "wishlist"} count={items.filter((item) => item.wishlisted).length} onClick={() => setView("wishlist")}>
+            <Heart className="size-3.5" aria-hidden /> ほしい物
+          </CategoryTab>
+        )}
+      </div>
 
       {/* カテゴリのタブ。数字は未購入の件数で、押す前に残りの多い売り場が分かる。
           並び順はNotionのプロパティ定義そのもの（そこが一次情報源）。 */}
@@ -319,6 +362,8 @@ export function ShoppingScreen({
                     todayKey={todayKey}
                     disabled={busyId === item.id || offline}
                     onToggleBought={(bought) => toggleBought(item, bought)}
+                    wishlist={view === "wishlist"}
+                    onMoveToShopping={() => moveToShopping(item)}
                     onOpen={() => setDialog({ mode: "edit", item })}
                   />
                 ))}
@@ -332,7 +377,7 @@ export function ShoppingScreen({
         {data !== null && sections.length === 0 && !loadError && (
           <p className="p-6 text-center text-sm text-muted-foreground">
             {shown.length === 0
-              ? "買うものがありません。"
+              ? view === "wishlist" ? "ほしい物はありません。" : "買うものがありません。"
               : showBought
                 ? "このカテゴリに項目がありません。"
                 : "買うものはありません。購入したものは隠しています。"}
@@ -346,7 +391,7 @@ export function ShoppingScreen({
           "elevation-3 fixed right-4 z-20 size-16 rounded-[20px] bg-primary-container text-on-primary-container hover:brightness-95 active:rounded-[14px]",
           fabBottomOffsetClass(runningActivity !== null),
         )}
-        aria-label="買うものを追加"
+        aria-label={view === "wishlist" ? "ほしい物を追加" : "買うものを追加"}
         disabled={offline}
         onClick={openAdd}
       >
@@ -428,6 +473,8 @@ function ShoppingRow({
   todayKey,
   disabled,
   onToggleBought,
+  wishlist,
+  onMoveToShopping,
   onOpen,
 }: {
   item: ShoppingItem;
@@ -435,19 +482,25 @@ function ShoppingRow({
   todayKey: string;
   disabled: boolean;
   onToggleBought: (bought: boolean) => void;
+  wishlist: boolean;
+  onMoveToShopping: () => void;
   onOpen: () => void;
 }) {
   return (
     <li className="flex items-start gap-2 border-b border-rule/50 py-1.5 pr-3 pl-2">
       <PriorityBar priority={item.priority} />
 
-      <Checkbox
-        className="mt-[3px]"
-        checked={item.bought}
-        disabled={disabled}
-        aria-label={`${item.name} を購入済みにする`}
-        onCheckedChange={(value) => onToggleBought(value === true)}
-      />
+      {wishlist ? (
+        <Heart className="mt-[3px] size-5 shrink-0 text-primary" aria-label="ほしい物" />
+      ) : (
+        <Checkbox
+          className="mt-[3px]"
+          checked={item.bought}
+          disabled={disabled}
+          aria-label={`${item.name} を購入済みにする`}
+          onCheckedChange={(value) => onToggleBought(value === true)}
+        />
+      )}
 
       <button type="button" className="min-w-0 flex-1 text-left" onClick={onOpen}>
         <div className="flex min-w-0 items-center gap-1.5">
@@ -463,7 +516,7 @@ function ShoppingRow({
           </span>
           {/* 購入予定日は名前の後ろへ流す。先に読みたいのは何を買うかで、日付はその次
               （docs/spec.md §36）。未設定のときは何も出さない。 */}
-          {item.plannedDate && !item.bought && (
+          {!wishlist && item.plannedDate && !item.bought && (
             <PlannedDateChip dateKey={item.plannedDate} todayKey={todayKey} />
           )}
         </div>
@@ -473,6 +526,19 @@ function ShoppingRow({
           </div>
         )}
       </button>
+      {wishlist && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-1 shrink-0"
+          disabled={disabled}
+          aria-label={`${item.name}を買い物リストへ移す`}
+          onClick={onMoveToShopping}
+        >
+          <ArrowRight className="size-4" />
+          <span className="hidden sm:inline">買い物へ</span>
+        </Button>
+      )}
     </li>
   );
 }

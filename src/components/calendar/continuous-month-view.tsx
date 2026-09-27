@@ -33,6 +33,7 @@ import {
   isAllDayItem,
   reminderAnnualYearLabel,
   reminderAnnualYearShortLabel,
+  taskOccurrenceCalendarDate,
   taskFieldsInFrame,
   taskOccurrences,
   type CalendarDateUtils,
@@ -361,8 +362,8 @@ export function ContinuousMonthView({
     // 片方に寄せず、それぞれの日で描き分ける（docs/spec.md §5）。ただし月表示のマスは
     // 日までしか分かれない。同じ日に落ちる枠は、時刻が違っても期限の1つにまとめる。
     for (const task of tasks) {
-      for (const occurrence of taskOccurrences(task, utils.itemDateKey)) {
-        const dateKey = utils.itemDateKey(occurrence.date);
+      for (const occurrence of taskOccurrences(task, utils.itemDateKey, todayKey)) {
+        const dateKey = taskOccurrenceCalendarDate(occurrence, utils.itemDateKey, todayKey);
         push(dateKey, dateKey, task, occurrence.field);
       }
     }
@@ -438,7 +439,7 @@ export function ContinuousMonthView({
 
       return { segments, hiddenByColumn };
     });
-  }, [events, tasks, reminders, travels, utils, weeks, weekHeight, holidayCalendarIds]);
+  }, [events, tasks, reminders, travels, utils, weeks, weekHeight, holidayCalendarIds, todayKey]);
 
   /** その高さにある週の先頭日。余白の中でも、窓の外の週として答える。 */
   const weekKeyAt = useCallback(
@@ -688,7 +689,15 @@ export function ContinuousMonthView({
                                 gridRow: segment.lane + 1,
                               }}
                             >
-                              {renderChip(segment, utils, onOpenEvent, onOpenTask, onOpenReminder, onOpenTravel)}
+                              {renderChip(
+                                segment,
+                                utils,
+                                todayKey,
+                                onOpenEvent,
+                                onOpenTask,
+                                onOpenReminder,
+                                onOpenTravel,
+                              )}
                             </div>
                           ))}
 
@@ -726,6 +735,7 @@ export function ContinuousMonthView({
 function renderChip(
   segment: WeekSegment,
   utils: CalendarDateUtils,
+  todayKey: string,
   onOpenEvent: (event: CalendarEventItem) => void,
   onOpenTask: (task: TaskItem) => void,
   onOpenReminder: (reminder: ReminderItem) => void,
@@ -765,6 +775,7 @@ function renderChip(
       task={item}
       field={segment.taskField ?? "due"}
       utils={utils}
+      todayKey={todayKey}
       onOpen={() => onOpenTask(item)}
     />
   );
@@ -899,11 +910,13 @@ function TaskChip({
   task,
   field,
   utils,
+  todayKey,
   onOpen,
 }: {
   task: TaskItem;
   field: TaskDateField;
   utils: CalendarDateUtils;
+  todayKey: string;
   onOpen: () => void;
 }) {
   const planned = field === "planned";
@@ -916,7 +929,7 @@ function TaskChip({
   // 紐づいたタスクは段階の印に置き換わり、チェックボックスは並べない（docs/spec.md §38）。
   // 段階の印はすでに線画で、「2pxの縦棒が印として読まれない」という issue #573 の問題には
   // 当たらない。2つ並べると項目名から11pxほど奪う（狭いときは印より名前・issue #433）。
-  const links = taskFieldsInFrame(task, field, utils.itemDateKey)
+  const links = taskFieldsInFrame(task, field, utils.itemDateKey, todayKey)
     .map((each) => taskLinkForField(task, each))
     .filter((item): item is TaskEventLinkItem => item !== null);
 

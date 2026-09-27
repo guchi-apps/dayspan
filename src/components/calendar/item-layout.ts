@@ -155,6 +155,21 @@ export function taskOccurrenceKey(taskId: string, field: TaskDateField): string 
 }
 
 /**
+ * タスクの枠をカレンダーへ置く日付。期限切れの期限だけは今日へ寄せる。
+ *
+ * 元の期限値をここで書き換えると、詳細表示・ドラッグ・保存が「今日を期限として保存する」操作に
+ * 変わってしまう。そのため `TaskOccurrence.date` は一次情報源のままにし、配置側だけがこの日付を使う。
+ */
+export function taskOccurrenceCalendarDate(
+  occurrence: TaskOccurrence,
+  itemDateKey: (date: string) => string,
+  todayKey: string,
+): string {
+  const dateKey = itemDateKey(occurrence.date);
+  return occurrence.field === "due" && dateKey < todayKey ? todayKey : dateKey;
+}
+
+/**
  * タスクをカレンダーに置く枠。期限と予定日の両方があれば2枠になる。
  *
  * 同じ場所へ2つ並べても読める情報は増えず、同じタイトルが2行に見えるだけのため、
@@ -170,13 +185,15 @@ export function taskOccurrences(
   task: TaskItem,
   /** 同じ日なら1枠にまとめる画面（月表示）が渡す、日付キーへの変換。 */
   toDateKey?: (date: string) => string,
+  /** 期限切れを寄せる表示上の今日。月表示だけが日単位で枠をまとめるために渡す。 */
+  todayKey?: string,
 ): TaskOccurrence[] {
   const occurrences: TaskOccurrence[] = [];
 
   for (const field of ["due", "planned"] as const) {
     const { date, hasTime } = taskDateOf(task, field);
     if (!date) continue;
-    if (field === "planned" && plannedMergesIntoDue(task, toDateKey)) continue;
+    if (field === "planned" && plannedMergesIntoDue(task, toDateKey, todayKey)) continue;
 
     occurrences.push({ task, field, date, hasTime, key: taskOccurrenceKey(task.id, field) });
   }
@@ -185,9 +202,26 @@ export function taskOccurrences(
 }
 
 /** 予定日の枠が期限の枠へまとまるか。まとめる単位は画面ごとに違う（月表示は日まで）。 */
-function plannedMergesIntoDue(task: TaskItem, toDateKey?: (date: string) => string): boolean {
+function plannedMergesIntoDue(
+  task: TaskItem,
+  toDateKey?: (date: string) => string,
+  todayKey?: string,
+): boolean {
   if (!task.due || !task.planned) return false;
-  return toDateKey ? toDateKey(task.planned) === toDateKey(task.due) : task.planned === task.due;
+  if (!toDateKey) {
+    // 時間グリッドは同じ日時だけをまとめる。期限が今日より前なら期限だけが今日へ移るため、
+    // 元の日時が同じでも予定日の枠を落とさない。
+    if (todayKey && task.due.slice(0, 10) < todayKey) return false;
+    return task.planned === task.due;
+  }
+
+  const due = taskOccurrenceCalendarDate(
+    { task, field: "due", date: task.due, hasTime: task.hasTime, key: taskOccurrenceKey(task.id, "due") },
+    toDateKey,
+    todayKey ?? toDateKey(task.due),
+  );
+  const planned = toDateKey(task.planned);
+  return planned === due;
 }
 
 /**
@@ -201,9 +235,10 @@ export function taskFieldsInFrame(
   task: TaskItem,
   field: TaskDateField,
   toDateKey?: (date: string) => string,
+  todayKey?: string,
 ): TaskDateField[] {
   if (field !== "due") return [field];
-  return plannedMergesIntoDue(task, toDateKey) ? ["due", "planned"] : ["due"];
+  return plannedMergesIntoDue(task, toDateKey, todayKey) ? ["due", "planned"] : ["due"];
 }
 
 type ZonedParts = { dateKey: string; hour: number; minute: number };
@@ -298,7 +333,9 @@ export function createCalendarDateUtils(timeZone: string) {
   /** その日に置くタスクの枠。期限と予定日が別の日にあれば、日ごとに片方だけが返る。 */
   const taskOccurrencesOnDay = (tasks: TaskItem[], dateKey: string): TaskOccurrence[] =>
     tasks.flatMap((task) =>
-      taskOccurrences(task).filter((occurrence) => itemDateKey(occurrence.date) === dateKey),
+      taskOccurrences(task, undefined, todayKey()).filter(
+        (occurrence) => taskOccurrenceCalendarDate(occurrence, itemDateKey, todayKey()) === dateKey,
+      ),
     );
 
   const itemSortTime = ({ item, taskField }: PlacedItem): number => {

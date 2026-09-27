@@ -7,6 +7,7 @@ import { createNotionClient } from "@/services/notion/client";
 import {
   createShoppingItem,
   listShoppingItems,
+  shoppingPropertyMap,
   shoppingDatabaseReady,
   type ShoppingWriteInput,
 } from "@/services/notion/shopping-items";
@@ -34,7 +35,12 @@ export async function GET() {
       listShoppingItems(createNotionClient(connection), connection),
       loadTagOptions(connection, "shopping"),
     ]);
-    return NextResponse.json({ items, categoryOptions: categoryOptions ?? [] });
+    return NextResponse.json({
+      items,
+      categoryOptions: categoryOptions ?? [],
+      // 既存DBへは自動でプロパティを足さない。未対応なら画面側で入口を出さず、設定から明示的に足す。
+      wishlistReady: Boolean(shoppingPropertyMap(connection).wishlisted),
+    });
   } catch (error) {
     return externalApiError("notion", "買い物リストの取得", error);
   }
