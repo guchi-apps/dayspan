@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -12,9 +14,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { eventLeadLabel } from "@/lib/event-notification";
+import { eventLeadLabel, isValidLeadMinutes } from "@/lib/event-notification";
 import type { EventNotificationOverride } from "@/types/calendar";
-import { EVENT_LEAD_MINUTES } from "@/types/notification";
+import { EVENT_LEAD_MINUTES, MAX_EVENT_LEAD_MINUTES } from "@/types/notification";
+
+const MAX_LEAD_HOURS = Math.floor(MAX_EVENT_LEAD_MINUTES / 60);
 
 /**
  * 予定ごとの通知設定（issue #708）。編集画面（EventForm）の中に重ねて開く（issue #834）。
@@ -41,6 +45,14 @@ export function EventNotificationDialog({
   // 切っている間も、選んでいた分数は残す（次に入れ直したときに選び直させないため）。
   const [leadMinutes, setLeadMinutes] = useState<number[]>(initial?.leadMinutes ?? [10]);
 
+  // 好きな時間の追加欄（issue #849）。時間・分の2欄にするのは、7.5のような小数を打たせない
+  // ため（所定労働時間・目標睡眠時間と同じ・sleep-section.tsx）。
+  const [adding, setAdding] = useState(false);
+  const [hourDraft, setHourDraft] = useState("");
+  const [minuteDraft, setMinuteDraft] = useState("");
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const hourInputRef = useRef<HTMLInputElement>(null);
+
   const close = () => {
     setOpen(false);
     setTimeout(onCancel, 150);
@@ -57,6 +69,47 @@ export function EventNotificationDialog({
         ? current.filter((value) => value !== minutes)
         : [...current, minutes].sort((a, b) => a - b),
     );
+  };
+
+  // 表示するチップ = 定義済みの候補（EVENT_LEAD_MINUTES）∪ 選択中だが候補に無い値
+  // （好きな時間で足したカスタム値）。過去にカスタム値で保存した設定を開き直しても、
+  // そのチップが選択状態のまま見えるようにする（tag-picker.tsx の extras と同じ考え方）。
+  const definedMinutes = new Set<number>(EVENT_LEAD_MINUTES);
+  const customMinutes = leadMinutes.filter((minutes) => !definedMinutes.has(minutes));
+  const chipMinutes = [...new Set([...EVENT_LEAD_MINUTES, ...customMinutes])].sort(
+    (a, b) => a - b,
+  );
+
+  const openAdding = () => {
+    setAdding(true);
+    setHourDraft("");
+    setMinuteDraft("");
+    setDraftError(null);
+    // 描画されてから当てる。開いた直後に入力を始められるようにする。
+    setTimeout(() => hourInputRef.current?.focus(), 0);
+  };
+
+  const commitDraft = () => {
+    // 分の欄を空にしただけで確定できなくならないよう、空欄は0として扱う（睡眠の目標時間と同じ）。
+    const hours = hourDraft.trim() === "" ? 0 : Number(hourDraft);
+    const mins = minuteDraft.trim() === "" ? 0 : Number(minuteDraft);
+
+    if (!Number.isInteger(hours) || !Number.isInteger(mins) || hours < 0 || mins < 0 || mins > 59) {
+      setDraftError("時間と分を正しく入力してください。");
+      return;
+    }
+
+    const total = hours * 60 + mins;
+    if (!isValidLeadMinutes(total)) {
+      setDraftError(`0分〜${MAX_LEAD_HOURS}時間の範囲で指定してください。`);
+      return;
+    }
+
+    if (!leadMinutes.includes(total)) {
+      setLeadMinutes((current) => [...current, total].sort((a, b) => a - b));
+    }
+    setAdding(false);
+    setDraftError(null);
   };
 
   const invalid = enabled && leadMinutes.length === 0;
@@ -90,7 +143,7 @@ export function EventNotificationDialog({
               何分前に知らせるか（複数選ぶと、その回数ぶん通知します）
             </p>
             <div className="flex flex-wrap gap-2">
-              {EVENT_LEAD_MINUTES.map((minutes) => {
+              {chipMinutes.map((minutes) => {
                 const selected = leadMinutes.includes(minutes);
                 return (
                   <Button
@@ -105,7 +158,74 @@ export function EventNotificationDialog({
                   </Button>
                 );
               })}
+              {!adding && (
+                <Button type="button" variant="outline" size="sm" onClick={openAdding}>
+                  <Plus className="size-4" />
+                  好きな時間
+                </Button>
+              )}
             </div>
+
+            {adding && (
+              <div className="flex flex-col gap-2 rounded-md border border-outline-variant p-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    ref={hourInputRef}
+                    aria-label="時間"
+                    type="number"
+                    inputMode="numeric"
+                    step="1"
+                    min="0"
+                    max={MAX_LEAD_HOURS}
+                    placeholder="0"
+                    className="h-10 w-16 min-w-0 text-center"
+                    value={hourDraft}
+                    onChange={(event) => setHourDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitDraft();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        setAdding(false);
+                      }
+                    }}
+                  />
+                  <span className="type-label-medium text-on-surface-variant">時間</span>
+                  <Input
+                    aria-label="分"
+                    type="number"
+                    inputMode="numeric"
+                    step="1"
+                    min="0"
+                    max="59"
+                    placeholder="0"
+                    className="h-10 w-16 min-w-0 text-center"
+                    value={minuteDraft}
+                    onChange={(event) => setMinuteDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitDraft();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        setAdding(false);
+                      }
+                    }}
+                  />
+                  <span className="type-label-medium text-on-surface-variant">分前</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="secondary" size="sm" onClick={commitDraft}>
+                    追加
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)}>
+                    やめる
+                  </Button>
+                </div>
+                {draftError && <p className="type-label-small text-destructive">{draftError}</p>}
+              </div>
+            )}
           </div>
         )}
 

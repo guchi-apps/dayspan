@@ -105,7 +105,7 @@ export function TravelDetailDialog({
           <DialogTitle className="pr-22">{travel.title}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 text-sm">
+        <div className="flex min-w-0 flex-col gap-3 text-sm">
           <DetailRow icon={<CalendarClock className="size-4" />}>
             {formatTravelTime(travel, timeZone)}
           </DetailRow>
