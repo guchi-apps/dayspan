@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useOffline } from "next/offline";
 import {
   ArrowUpDown,
@@ -61,8 +61,13 @@ import type { TaskItem, TaskPriority, WritableCalendar } from "@/types/calendar"
 import type { RunningActivitySummary } from "@/types/activity";
 import { dateKeyPlusMinutes } from "@/components/calendar/datetime-fields";
 
-/** 期限での分類の並び。完了は分類の軸によらず末尾へ別に置くため含めない。 */
-const DUE_ORDER: Exclude<TaskBucketKey, "done">[] = ["overdue", "today", "upcoming", "someday"];
+/** 期限での分類の並び。完了・対応しないは分類の軸によらず末尾へ別に置くため含めない。 */
+const DUE_ORDER: Exclude<TaskBucketKey, "done" | "skipped">[] = [
+  "overdue",
+  "today",
+  "upcoming",
+  "someday",
+];
 
 const DEFAULT_TASK_DUE_MINUTES = 18 * 60;
 
@@ -113,8 +118,9 @@ export function TaskList({
   const calendars = data?.calendars ?? EMPTY_CALENDARS;
   const loadError = resource.error;
   const pending = resource.loading;
-  // 分類の軸・並び順・完了の開閉は、選び直すまで端末に残す（issue #286）。
-  const { groupBy, sort, doneOpen, setGroupBy, setSort, setDoneOpen } = useTaskViewPrefs();
+  // 分類の軸・並び順・完了と対応しないの開閉は、選び直すまで端末に残す（issue #286）。
+  const { groupBy, sort, doneOpen, skippedOpen, setGroupBy, setSort, setDoneOpen, setSkippedOpen } =
+    useTaskViewPrefs();
   const [itemDialog, setItemDialog] = useState<ItemDrafts | null>(null);
   // タップした直後は表示専用画面を開く。編集アイコンを押したときだけ draft へ切り替える。
   const [viewingTask, setViewingTask] = useState<TaskItem | null>(null);
@@ -180,6 +186,7 @@ export function TaskList({
   }, [tasks, todayKey, utils]);
 
   const doneTasks = useMemo(() => sortDoneTasks(buckets.done), [buckets]);
+  const skippedTasks = useMemo(() => sortDoneTasks(buckets.skipped), [buckets]);
 
   const nextSort = () => setSort(TASK_SORTS[(TASK_SORTS.indexOf(sort) + 1) % TASK_SORTS.length]);
 
@@ -218,20 +225,6 @@ export function TaskList({
     reload();
   };
 
-  /** 行の「対応しない」チェック。完了と同じ経路で送り、次回分は作られない（issue #750・#773）。 */
-  const toggleSkipped = async (task: TaskItem, skipped: boolean) => {
-    setBusyId(task.id);
-    setError(null);
-    try {
-      await patchTaskDone(task, skipped, true);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "更新できませんでした。");
-    } finally {
-      setBusyId(null);
-      reload();
-    }
-  };
-
   const editTask = (task: TaskItem) => {
     if (offline) return;
     setViewingTask(null);
@@ -266,7 +259,6 @@ export function TaskList({
       sort={sort}
       disabled={busyId === task.id || offline}
       onToggleDone={(done) => toggleDone(task, done)}
-      onToggleSkipped={(skipped) => toggleSkipped(task, skipped)}
       onOpen={() => setViewingTask(task)}
     />
   );
@@ -378,54 +370,50 @@ export function TaskList({
             );
           })}
 
-          {/* 完了は履歴として残るぶん件数が増え続ける（docs/spec.md §12）。既定では畳んでおき、
-              見出しを押したときだけ開く。分類の軸によらず末尾に1つだけ置く。広い画面でも
-              区分の列には混ぜず、格子の下に全幅の1段で置く。 */}
-          {doneTasks.length > 0 && (
-            <section className={cn(WIDE_SECTION_CARD_CLASS, "@2xl/main:col-span-full")}>
-              <h2
-                className={cn(
-                  "sticky top-0 z-10 border-b border-rule bg-background/95 backdrop-blur",
-                  WIDE_SECTION_HEADING_CLASS,
-                )}
-              >
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-1.5 px-3 py-1 text-left text-[11px] tracking-widest text-muted-foreground"
-                  aria-expanded={doneOpen}
-                  onClick={() => setDoneOpen(!doneOpen)}
-                >
-                  {doneOpen ? (
-                    <ChevronDown className="size-3.5" />
-                  ) : (
-                    <ChevronRight className="size-3.5" />
-                  )}
-                  {bucketLabels.done}
-                  <span className="text-[10px] opacity-70">{doneTasks.length}</span>
-                </button>
-              </h2>
+          {/* 完了・対応しないは履歴として残るぶん件数が増え続ける（docs/spec.md §12）。既定では
+              畳んでおき、見出しを押したときだけ開く。分類の軸によらず末尾に置き、それぞれ
+              別見出し・別の開閉状態にする（issue #858）。広い画面でも区分の列には混ぜず、
+              格子の下に全幅の1段ずつで置く。 */}
+          <CollapsibleTaskSection
+            label={bucketLabels.done}
+            tasks={doneTasks}
+            open={doneOpen}
+            onToggle={() => setDoneOpen(!doneOpen)}
+            renderTask={(task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                hideTagName={null}
+                tagOptions={tagOptions}
+                utils={utils}
+                todayKey={todayKey}
+                sort={sort}
+                disabled={busyId === task.id || offline}
+                onToggleDone={(done) => toggleDone(task, done)}
+                onOpen={() => setViewingTask(task)}
+              />
+            )}
+          />
 
-              {doneOpen && (
-                <ul className={WIDE_SECTION_LIST_CLASS}>
-                  {doneTasks.map((task) => (
-                    <TaskRow
-                      key={task.id}
-                      task={task}
-                      hideTagName={null}
-                      tagOptions={tagOptions}
-                      utils={utils}
-                      todayKey={todayKey}
-                      sort={sort}
-                      disabled={busyId === task.id || offline}
-                      onToggleDone={(done) => toggleDone(task, done)}
-                      onToggleSkipped={(skipped) => toggleSkipped(task, skipped)}
-                      onOpen={() => setViewingTask(task)}
-                    />
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
+          <CollapsibleTaskSection
+            label={bucketLabels.skipped}
+            tasks={skippedTasks}
+            open={skippedOpen}
+            onToggle={() => setSkippedOpen(!skippedOpen)}
+            renderTask={(task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                hideTagName={null}
+                tagOptions={tagOptions}
+                utils={utils}
+                todayKey={todayKey}
+                sort={sort}
+                disabled={busyId === task.id || offline}
+                onOpen={() => setViewingTask(task)}
+              />
+            )}
+          />
 
           {data === null && !loadError && <TaskListSkeleton />}
 
@@ -493,6 +481,51 @@ export function TaskList({
 }
 
 /**
+ * 完了・対応しないの折りたたみ見出し。分類の軸によらず末尾に置く区画で、
+ * 完了と対応しないをそれぞれ別見出し・別の開閉状態にするために共通化した（issue #858）。
+ * 件数が0のときは区画ごと出さない（対応状況プロパティが無いDBでは skippedTasks が常に空になる）。
+ */
+function CollapsibleTaskSection({
+  label,
+  tasks,
+  open,
+  onToggle,
+  renderTask,
+}: {
+  label: string;
+  tasks: TaskItem[];
+  open: boolean;
+  onToggle: () => void;
+  renderTask: (task: TaskItem) => ReactNode;
+}) {
+  if (tasks.length === 0) return null;
+
+  return (
+    <section className={cn(WIDE_SECTION_CARD_CLASS, "@2xl/main:col-span-full")}>
+      <h2
+        className={cn(
+          "sticky top-0 z-10 border-b border-rule bg-background/95 backdrop-blur",
+          WIDE_SECTION_HEADING_CLASS,
+        )}
+      >
+        <button
+          type="button"
+          className="flex w-full items-center gap-1.5 px-3 py-1 text-left text-[11px] tracking-widest text-muted-foreground"
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          {label}
+          <span className="text-[10px] opacity-70">{tasks.length}</span>
+        </button>
+      </h2>
+
+      {open && <ul className={WIDE_SECTION_LIST_CLASS}>{tasks.map((task) => renderTask(task))}</ul>}
+    </section>
+  );
+}
+
+/**
  * タスク1件の行。
  *
  * 1画面に入る件数を増やすため、タスク名は body-medium、日付・タグの行は label-small まで下げ、
@@ -522,7 +555,6 @@ function TaskRow({
   sort,
   disabled,
   onToggleDone,
-  onToggleSkipped,
   onOpen,
 }: {
   task: TaskItem;
@@ -534,8 +566,12 @@ function TaskRow({
   /** 分類・超過表示の基準日を期限にするか予定日優先にするかを決める（issue #572）。 */
   sort: TaskSort;
   disabled: boolean;
-  onToggleDone: (done: boolean) => void;
-  onToggleSkipped: (skipped: boolean) => void;
+  /**
+   * 完了チェックボックスの切り替え。渡さないと行にチェックボックス自体を出さない
+   * （対応しない区画の行では、行のチェックボックスは「完了」の意味しか持たせない・issue #858。
+   * 対応しないの解除は表示画面〔TaskDetailDialog〕からのみ行う）。
+   */
+  onToggleDone?: (done: boolean) => void;
   onOpen: () => void;
 }) {
   // どちらの日付欄で超過を示すかは、実際に分類に使った基準日（classifyDateOf）に合わせる。
@@ -552,23 +588,19 @@ function TaskRow({
     <li className="flex items-start gap-2 border-b border-rule/50 py-1.5 pr-3 pl-2">
       <PriorityBar priority={task.priority} />
 
-      <Checkbox
-        className="mt-[3px]"
-        checked={task.done && !task.skipped}
-        disabled={disabled}
-        aria-label={`${task.title} を完了にする`}
-        onCheckedChange={(value) => onToggleDone(value === true)}
-      />
-
-      {/* 対応状況のプロパティが無いDBでは書き込む先が無いため出さない（issue #750）。 */}
-      {(task.canSkip || task.skipped) && (
+      {/*
+        行のチェックボックスは「完了」の1つだけにする（issue #858）。「対応しない」への切り替えは
+        表示画面（TaskDetailDialog）からのみ行い、一覧行からは操作できない。対応しない区画の行では
+        onToggleDone を渡さないため、チェックボックス自体を出さない（メタ情報行の Ban バッジで
+        対応しない状態を示す）。
+      */}
+      {onToggleDone && (
         <Checkbox
           className="mt-[3px]"
-          checked={task.skipped}
+          checked={task.done && !task.skipped}
           disabled={disabled}
-          aria-label={`${task.title} を対応しないにする`}
-          title="対応しない"
-          onCheckedChange={(value) => onToggleSkipped(value === true)}
+          aria-label={`${task.title} を完了にする`}
+          onCheckedChange={(value) => onToggleDone(value === true)}
         />
       )}
 
