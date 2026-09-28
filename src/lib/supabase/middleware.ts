@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isAllowedEmail } from "@/lib/allowed-users";
 import { SUPABASE_USER_ID_HEADER } from "@/lib/auth-header";
 import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
 import { getRequestOrigin } from "@/lib/request-origin";
@@ -77,7 +78,7 @@ export async function updateSession(request: NextRequest) {
   // getUser()は毎回Supabaseの /user へ往復する。届かなかったときの戻り値は未ログインと同じ
   // user: null なので、errorを見ないと「セッションが無い」と「今は確認できない」を取り違える。
   const {
-    data: { user },
+    data: { user: authenticatedUser },
     error,
   } = await supabase.auth.getUser();
 
@@ -88,6 +89,15 @@ export async function updateSession(request: NextRequest) {
       `[dayspan] Supabase Authへ到達できずセッションを確認できない: ${request.nextUrl.pathname} ${error?.status ?? ""} ${error?.message ?? ""}`,
     );
   }
+
+  // 許可リスト（ALLOWED_GOOGLE_EMAILS）から外れたメールアドレスは、Supabaseのセッションが
+  // refresh tokenで有効なままでも未ログインと同じに扱う。ここで弾かないと、下の
+  // 「/login をログイン済みユーザーが開いたら戻す」判定が生のSupabaseユーザーだけを見て
+  // 元の画面へ送り返し、そちらは getCurrentUser() 側の許可判定（auth-user.ts）で /login へ
+  // 差し戻されるため、/login と保護ページの間で無限リダイレクトになる（issue #842）。
+  // メールアドレスは getUser() の応答に既に載っているため、往復は増えない。
+  const user =
+    authenticatedUser && isAllowedEmail(authenticatedUser.email) ? authenticatedUser : null;
 
   // 検証済みのユーザーIDを後段へ渡し、ページ側が同じ検証を繰り返さずに済むようにする。
   // auth.getUser()は毎回Supabaseへ往復するため、1リクエストで2回叩くと待ち時間がそのまま倍になる。
