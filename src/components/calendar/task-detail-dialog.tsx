@@ -233,26 +233,28 @@ export function TaskDetailDialog({
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-4 text-sm">
-          <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
-            <Checkbox
-              checked={done && !skipped}
-              disabled={busy || readOnly}
-              onCheckedChange={(v) => toggleDone(v === true)}
-            />
-            完了
-          </label>
-
-          {/* 対応状況のプロパティが無いDBでは書き込む先が無いため出さない（issue #750）。 */}
-          {(task.canSkip || skipped) && (
-            <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
+          <div className="-my-1 flex flex-wrap items-center gap-x-6 gap-y-1 px-4 text-base select-none md:text-sm">
+            <label className="flex min-h-11 items-center gap-3">
               <Checkbox
-                checked={skipped}
+                checked={done && !skipped}
                 disabled={busy || readOnly}
-                onCheckedChange={(v) => toggleSkipped(v === true)}
+                onCheckedChange={(v) => toggleDone(v === true)}
               />
-              対応しない
+              完了
             </label>
-          )}
+
+            {/* 対応状況のプロパティが無いDBでは書き込む先が無いため出さない（issue #750）。 */}
+            {(task.canSkip || skipped) && (
+              <label className="flex min-h-11 items-center gap-3">
+                <Checkbox
+                  checked={skipped}
+                  disabled={busy || readOnly}
+                  onCheckedChange={(v) => toggleSkipped(v === true)}
+                />
+                対応しない
+              </label>
+            )}
+          </div>
 
           {readOnly && <p className="px-4 text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
 
