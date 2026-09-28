@@ -6,7 +6,6 @@ import type { ReactNode } from "react";
 import {
   ArrowRight,
   Bell,
-  BellOff,
   CalendarClock,
   ChevronRight,
   CircleDashed,
@@ -14,7 +13,6 @@ import {
   ExternalLink,
   MapPin,
   Pencil,
-  Plus,
   RotateCw,
   Trash2,
   Users,
@@ -29,6 +27,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { LinkifiedText } from "@/components/ui/linkified-text";
+import { eventLeadLabel } from "@/lib/event-notification";
 import { mapLink } from "@/lib/map-link";
 import type { PlaceItem } from "@/services/notion/places";
 import { cn } from "@/lib/utils";
@@ -36,18 +36,18 @@ import {
   EVENT_OUTCOME_KIND_LABELS,
   TRAVEL_MODE_LABELS,
   type CalendarEventItem,
-  type EventNotificationOverride,
   type EventOutcomeItem,
+  type TaskItem,
   type TravelItem,
 } from "@/types/calendar";
 
 import { tintedEventColors } from "./calendar-color";
 import { DeleteItemDialog } from "./delete-item-dialog";
-import { EventNotificationDialog } from "./event-notification-dialog";
 import { EventOutcomeDialog } from "./event-outcome-dialog";
 import { EventOutcomeMark } from "./event-outcome-mark";
 import { placeCoordinates } from "./location-input";
 import { readErrorMessage } from "./response-error";
+import { taskLinkTargetLabel } from "./task-link-label";
 import { TaskStageMark } from "./task-stage-mark";
 import { TravelMark } from "./travel-mark";
 import type { OptimisticEventChange } from "./optimistic-events";
@@ -73,12 +73,11 @@ export function EventDetailDialog({
   linkedTravels,
   onOpenTravel,
   onLinkTask,
-  onCreateTask,
   linkedTasks,
+  onOpenTask,
   places = [],
   onDeleted,
   onOutcomeChanged,
-  onNotificationChanged,
   onConfirmed,
 }: {
   event: CalendarEventItem;
@@ -98,12 +97,20 @@ export function EventDetailDialog({
    */
   linkedTravels?: TravelItem[];
   onOpenTravel: (travel: TravelItem) => void;
-  /** この予定にタスクを紐づける（docs/spec.md §31）。 */
+  /**
+   * この予定にタスクを登録する（docs/spec.md §31）。押すとタスク登録ダイアログ
+   * （`TaskLinkDialog`）が開き、既存タスクから選ぶか、その場で新しく作れる（issue #835）。
+   */
   onLinkTask: () => void;
-  /** この予定に紐づけた状態で、新しいタスクを作る入力画面を開く。 */
-  onCreateTask: () => void;
-  /** この予定に紐づいているタスクの名前。削除の確認で、外れる紐づけを示すために使う。 */
-  linkedTasks?: string[];
+  /**
+   * この予定に紐づいているタスク（issue #835）。
+   *
+   * 削除の確認では、外れる紐づけを示すためにタイトルだけを取り出して使う。それとは別に、
+   * 通常の表示画面でも一覧を出し、予定を見ただけでどのタスクが紐づいているか分かるようにする。
+   */
+  linkedTasks?: TaskItem[];
+  /** 紐づいているタスクの行を押したときに、そのタスクの詳細画面を開く。 */
+  onOpenTask: (task: TaskItem) => void;
   /**
    * 登録済みの場所（issue #426）。場所を地図で開くとき、同じ名前で登録されていれば
    * その座標を使う。画面がすでに読んでいるものを渡すため、Notionへの往復は増えない。
@@ -116,11 +123,6 @@ export function EventDetailDialog({
    * ダイアログは開いたままにするため、削除（onDeleted）とは別に受ける。
    */
   onOutcomeChanged: (outcome: EventOutcomeItem | null) => void;
-  /**
-   * 予定ごとの通知設定が変わったときの処理（issue #708）。アカウント既定に戻したときは null。
-   * ダイアログは開いたままにする（onOutcomeChangedと同じ）。
-   */
-  onNotificationChanged: (notification: EventNotificationOverride | null) => void;
   /** 「仮の予定を確定する」が成功したときの処理（issue #688）。ダイアログは閉じない。 */
   onConfirmed: () => void;
 }) {
@@ -131,8 +133,6 @@ export function EventDetailDialog({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // 中止・不参加の記録（docs/spec.md §37）。表示画面を閉じずに重ねて開く。
   const [editingOutcome, setEditingOutcome] = useState(false);
-  // 予定ごとの通知設定（issue #708）。表示画面を閉じずに重ねて開く。
-  const [editingNotification, setEditingNotification] = useState(false);
   // 仮の予定の確定（issue #688）。確認は挟まない（編集フォームでいつでも仮へ戻せるため）。
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -166,14 +166,14 @@ export function EventDetailDialog({
     setTimeout(() => onOpenTravel(travel), 150);
   };
 
+  const openTask = (task: TaskItem) => {
+    setOpen(false);
+    setTimeout(() => onOpenTask(task), 150);
+  };
+
   const linkTask = () => {
     setOpen(false);
     setTimeout(onLinkTask, 150);
-  };
-
-  const createTask = () => {
-    setOpen(false);
-    setTimeout(onCreateTask, 150);
   };
 
   const confirmTentative = async () => {
@@ -222,7 +222,7 @@ export function EventDetailDialog({
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         {confirmingDelete && (
           <DeleteItemDialog
-            item={{ kind: "event", event, linkedTasks }}
+            item={{ kind: "event", event, linkedTasks: linkedTasks?.map((task) => task.title) }}
             onCancel={() => setConfirmingDelete(false)}
             onDeleted={deleted}
           />
@@ -235,19 +235,6 @@ export function EventDetailDialog({
             onSaved={(next) => {
               setEditingOutcome(false);
               onOutcomeChanged(next);
-            }}
-          />
-        )}
-
-        {editingNotification && (
-          <EventNotificationDialog
-            title={event.title}
-            initial={event.notification ?? null}
-            persist={{ eventId: event.id, calendarId: event.calendarId }}
-            onCancel={() => setEditingNotification(false)}
-            onSaved={(next) => {
-              setEditingNotification(false);
-              onNotificationChanged(next);
             }}
           />
         )}
@@ -319,9 +306,7 @@ export function EventDetailDialog({
               <EventOutcomeMark className="mt-0.5 size-4" />
               <div className="flex min-w-0 flex-col">
                 <span className="font-bold">{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}</span>
-                {outcome.note && (
-                  <span className="break-words opacity-90">{outcome.note}</span>
-                )}
+                {outcome.note && <LinkifiedText as="span" className="opacity-90" text={outcome.note} />}
               </div>
             </div>
           )}
@@ -374,8 +359,19 @@ export function EventDetailDialog({
             <DetailRow icon={<RotateCw className="size-4" />}>繰り返しの予定です</DetailRow>
           )}
 
+          {/*
+            予定ごとの通知設定（issue #708）は編集画面でだけ変更できる。ここでは他の任意項目
+            （場所・出席者・繰り返し）と同じ「設定されているときだけ行を出す」規則に合わせ、
+            状態だけを表示する（issue #834）。終日予定は通知の対象外なので出さない。
+          */}
+          {!event.allDay && event.notification?.enabled && (
+            <DetailRow icon={<Bell className="size-4" />}>
+              通知：{event.notification.leadMinutes.map(eventLeadLabel).join("・")}
+            </DetailRow>
+          )}
+
           {event.description && (
-            <p className="whitespace-pre-wrap text-on-surface-variant">{event.description}</p>
+            <LinkifiedText className="text-on-surface-variant" text={event.description} />
           )}
 
           {event.readOnly && (
@@ -426,6 +422,48 @@ export function EventDetailDialog({
           )}
 
           {/*
+            この予定に紐づいているタスク（issue #835）。予定を見ただけで、どのタスクが
+            紐づいているか分かるようにする。1つのタスクが期限・予定日の両方でこの予定に
+            紐づくこともあるため、その予定に対するlinkを行き先ごと並べる（docs/spec.md §31）。
+          */}
+          {linkedTasks && linkedTasks.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {linkedTasks.map((task) => {
+                const links = task.links.filter((link) => link.eventId === event.id);
+                if (links.length === 0) return null;
+
+                return (
+                  <button
+                    key={task.id}
+                    type="button"
+                    onClick={() => openTask(task)}
+                    className="flex items-center gap-2 rounded-md border border-secondary-container bg-secondary-container/40 py-1.5 pr-2.5 text-left text-xs text-on-surface"
+                    style={{ borderLeftWidth: "3px", paddingLeft: "8px" }}
+                  >
+                    <TaskStageMark
+                      stage={links[0].stage}
+                      drifted={links.some((link) => link.drifted)}
+                      className="h-4 w-5 shrink-0"
+                    />
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 truncate",
+                        task.done && "text-on-surface-variant line-through",
+                      )}
+                    >
+                      {task.title}
+                      <span className="opacity-75">
+                        （{links.map((link) => taskLinkTargetLabel(link)).join("・")}）
+                      </span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 opacity-70" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/*
             この予定から作れるものへの導線。アイコンだけの操作にすると、矢印が何を指すのか
             押してみるまで分からないため、名前を添えたボタンとして並べる。
           */}
@@ -461,32 +499,12 @@ export function EventDetailDialog({
             )}
 
             {/*
-              予定ごとの通知設定（issue #708）。終日予定は通知の対象外（planEvents()参照）
-              なので出さない。使用がオフのカレンダーでも出す。設定はGoogleへ書き込まないため。
-            */}
-            {!event.allDay && (
-              <Button
-                variant="outline"
-                size="sm"
-                className={
-                  event.notification?.enabled ? "bg-primary-container text-on-primary-container" : undefined
-                }
-                disabled={readOnly}
-                onClick={() => setEditingNotification(true)}
-              >
-                {!event.notification?.enabled ? (
-                  <BellOff className="size-4" />
-                ) : (
-                  <Bell className="size-4" />
-                )}
-                通知
-              </Button>
-            )}
-
-            {/*
-              タスクを紐づける入口（docs/spec.md §31）。終日予定でも出す。移動と違い、
+              タスクを登録する入口（docs/spec.md §31）。終日予定でも出す。移動と違い、
               出発時刻を逆算する起点が要らず、その日のうちにやる、で置き場所が決まるため。
               使用がオフのカレンダーでも出す。紐づけはGoogleへ書き込まないため。
+              以前は「タスクを紐づける」「タスクを作成」の2つに分かれていたが、後者の入口が
+              あっても紐づけ画面（`TaskLinkDialog`）の中で新しく作れるため、1つに統合した
+              （issue #835）。
             */}
             <Button
               variant="outline"
@@ -496,20 +514,7 @@ export function EventDetailDialog({
               onClick={linkTask}
             >
               <TaskStageMark stage="AFTER_END" className="h-4 w-5 text-on-secondary-container" />
-              タスクを紐づける
-            </Button>
-
-            {/* 紐づけダイアログを経由せず、この予定に紐づいた新しいタスクを直接作る（issue #794）。 */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-secondary-container text-on-secondary-container"
-              disabled={readOnly}
-              title="開始前・予定日を初期値に、この予定に紐づけて作ります（入力画面で変えられます）"
-              onClick={createTask}
-            >
-              <Plus className="size-4" />
-              タスクを作成
+              タスクを登録
             </Button>
 
             {/*

@@ -35,7 +35,12 @@ import { readErrorMessage } from "./response-error";
 import { taskRanges, withTaskLinks, type TouchedRange } from "./use-calendar-chunks";
 
 /**
- * 予定にタスクを紐づける（docs/spec.md §31）。
+ * 予定にタスクを登録する（docs/spec.md §31）。
+ *
+ * 「タスクを紐づける」「タスクを作成」に分かれていた入口を1つに統合したもので、
+ * 既存のタスクから選ぶか、その場で新しく作るかをこのダイアログの中で選べる（issue #835）。
+ * 「新しいタスクを作る」を一覧の先頭に置くのは、以前フッターの目立たない位置にしかなく
+ * 気づきにくかったため（issue #794）。既存タスクを選ぶのと対等な操作に見せる。
  *
  * 選ぶ相手は「カレンダーに出ているタスク」では足りない。期限も予定日も無いタスクは
  * カレンダーに置く日が決まらず表示されていないが（docs/spec.md §10）、それこそが
@@ -177,7 +182,7 @@ export function TaskLinkDialog({
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>「{event.title}」に紐づける</DialogTitle>
+          <DialogTitle>「{event.title}」にタスクを登録</DialogTitle>
           <DialogDescription className="type-body-small text-on-surface-variant">
             選んだ段階から決まる日時が、タスクの{targetLabel}に入ります。予定を動かすと{targetLabel}
             も動きます。
@@ -223,14 +228,27 @@ export function TaskLinkDialog({
             />
 
             <div className="max-h-56 overflow-y-auto rounded-md border border-outline-variant">
+              {/*
+                新しいタスクを作る（issue #835）。以前はフッター左下にしかなく気づきにくかった
+                （issue #794）ため、一覧の先頭に固定し、既存タスクから選ぶのと対等な選択肢にする。
+                読み込み中・0件でも押せる（既存タスクの有無に関わらず新規作成はできるため）。
+              */}
+              <button
+                type="button"
+                onClick={createTask}
+                disabled={busy || offline}
+                className="flex w-full items-center gap-2 border-b border-outline-variant bg-secondary-container px-3 py-2 text-left text-sm font-medium text-on-secondary-container hover:brightness-95 disabled:opacity-38"
+              >
+                <Plus className="size-4" />
+                新しいタスクを作る
+              </button>
+
               {tasks === null && (
                 <p className="px-3 py-4 text-sm text-muted-foreground">読み込んでいます…</p>
               )}
               {tasks !== null && filtered.length === 0 && (
                 <p className="px-3 py-4 text-sm text-muted-foreground">
-                  {tasks.length === 0
-                    ? "未完了のタスクがありません。新しいタスクを作ってください。"
-                    : "見つかりませんでした。"}
+                  {tasks.length === 0 ? "未完了のタスクがありません。" : "見つかりませんでした。"}
                 </p>
               )}
               {filtered.map((task) => (
@@ -283,19 +301,13 @@ export function TaskLinkDialog({
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <DialogFooter className="sm:justify-between">
-          <Button variant="ghost" size="sm" disabled={busy || offline} onClick={createTask}>
-            <Plus className="size-4" />
-            新しいタスクを作る
+        <DialogFooter>
+          <Button variant="ghost" disabled={busy} onClick={close}>
+            やめる
           </Button>
-          <div className="flex gap-2">
-            <Button variant="ghost" disabled={busy} onClick={close}>
-              やめる
-            </Button>
-            <Button disabled={busy || offline || !selected} onClick={link}>
-              紐づける
-            </Button>
-          </div>
+          <Button disabled={busy || offline || !selected} onClick={link}>
+            紐づける
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -12,6 +12,7 @@ import { DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { dateKeyDiffDays } from "@/lib/calendar-range";
+import { sameNotificationOverride } from "@/lib/event-notification";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
 
@@ -95,11 +96,10 @@ export function EventForm({
   const [description, setDescription] = useState(editing?.description ?? draft.description ?? "");
   // 仮の予定（issue #688）。Googleのstatusフィールドをそのまま使うため、DaySpan独自DBは無い。
   const [tentative, setTentative] = useState(editing?.tentative ?? draft.tentative ?? false);
-  // 予定ごとの通知設定（issue #708）。新規作成のときだけこのフォームから選べる。編集時は
-  // 表示画面から即座に保存する専用の経路（EventDetailDialog）に一本化しているため、
-  // ここでは触らない（draft.event が無いときだけ意味を持つ）。
+  // 予定ごとの通知設定（issue #708）。編集画面に入力欄を一本化しており（issue #834）、
+  // 新規作成・既存の編集のどちらもこのフォームから選ぶ。API呼び出しはsave()でまとめて行う。
   const [notification, setNotification] = useState<EventNotificationOverride | null>(
-    draft.notification ?? null,
+    editing?.notification ?? draft.notification ?? null,
   );
   const [editingNotification, setEditingNotification] = useState(false);
   const [recurrence, setRecurrence] = useState<RecurrenceInput>(NO_RECURRENCE);
@@ -208,33 +208,40 @@ export function EventForm({
         ? null
         : (((await response.json().catch(() => null)) as { id?: string } | null)?.id ?? null);
 
-      // 新規作成で、繰り返しなし・通知をアカウント既定から変えている場合は、作成できた
-      // eventIdを使って通知設定も送る（issue #708）。繰り返しの新規作成は対象外
-      // （Googleが返すのはシリーズ親IDで、EventNotificationSetting.eventIdが指す
-      // 「展開した1回分のID」とは異なるため。フォーム側でも通知ボタンをdisabledにしている）。
-      // 失敗しても予定作成自体は成功として扱う（中止・不参加の記録のreplanNotificationsと
-      // 同じベストエフォートの考え方。予定は作成できているので、失敗をここで止めない）。
-      if (!editing && !recurrenceRule && notification) {
-        if (createdId) {
-          try {
-            const notifyResponse = await fetch(
-              `/api/events/${encodeURIComponent(createdId)}/notification`,
-              {
+      // 通知設定も編集画面でまとめて選べる（issue #708・#834）。編集は元の予定のID、
+      // 新規作成は作成できたeventIdを使う。繰り返しの新規作成は対象外（Googleが返すのは
+      // シリーズ親IDで、EventNotificationSetting.eventIdが指す「展開した1回分のID」とは
+      // 異なるため。フォーム側でも通知ボタンをdisabledにしている）。
+      const notificationEventId = editing ? editing.id : recurrenceRule ? null : createdId;
+
+      // 編集は元の値と比べ、実質的に変わっているときだけ送る（押しただけで毎回APIを
+      // 叩かないため）。新規作成は選んだときだけ送る（何も選んでいなければ削除する対象が
+      // 無い）。失敗しても予定の保存自体は成功として扱う（中止・不参加の記録の
+      // replanNotificationsと同じベストエフォートの考え方。予定は保存できているので、
+      // 失敗をここで止めない）。
+      const notificationChanged = editing
+        ? !sameNotificationOverride(editing.notification ?? null, notification)
+        : notification !== null;
+
+      if (notificationEventId && notificationChanged) {
+        try {
+          const notifyUrl = `/api/events/${encodeURIComponent(notificationEventId)}/notification`;
+          const notifyResponse = notification?.enabled
+            ? await fetch(notifyUrl, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   calendarId: payload.calendarId,
-                  enabled: notification.enabled,
+                  enabled: true,
                   leadMinutes: notification.leadMinutes,
                 }),
-              },
-            );
-            if (!notifyResponse.ok) {
-              console.error("[dayspan] event notification setting: save failed after create");
-            }
-          } catch (cause) {
-            console.error("[dayspan] event notification setting: save failed after create:", cause);
+              })
+            : await fetch(notifyUrl, { method: "DELETE" });
+          if (!notifyResponse.ok) {
+            console.error("[dayspan] event notification setting: save failed");
           }
+        } catch (cause) {
+          console.error("[dayspan] event notification setting: save failed:", cause);
         }
       }
 
@@ -251,7 +258,7 @@ export function EventForm({
               type: "upsert",
               item: {
                 ...buildOptimisticEvent(payload, savedId, calendars, editing),
-                ...(editing ? {} : { notification }),
+                notification,
               },
               previous: editing ? { calendarId: editing.calendarId, id: editing.id } : null,
               ranges: touched,
@@ -369,13 +376,14 @@ export function EventForm({
         />
 
         {/*
-          予定ごとの通知設定（issue #708）。新規作成のときだけこのフォームから選べる
-          （編集時は表示画面の専用ボタンから即座に保存する）。簡易入力から
-          移ってきたときは出さない（issue #739）。終日は通知の対象外
-          （event-detail-dialog.tsxと同じ判断）。繰り返しを選んでいる間は保存後のeventIdが
-          「シリーズ親ID」になり、展開後の1回分のIDとは異なるため設定できない。
+          予定ごとの通知設定（issue #708）。新規作成・既存の編集どちらもこのフォームから選ぶ
+          （表示画面には状態だけを出す・issue #834）。簡易入力から移ってきたときは出さない
+          （issue #739）。終日は通知の対象外（event-detail-dialog.tsxと同じ判断）。
+          新規作成で繰り返しを選んでいる間は保存後のeventIdが「シリーズ親ID」になり、
+          展開後の1回分のIDとは異なるため設定できない（編集時はRecurrenceFieldsを出さず
+          recurrenceが動かないため、このガードは常にfalseで副作用なく共存する）。
         */}
-        {!editing && !allDay && !draft.fromQuick && (
+        {!allDay && !draft.fromQuick && (
           <div className="flex flex-wrap items-center gap-2 px-1">
             <Button
               type="button"
