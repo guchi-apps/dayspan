@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import type { TagOption } from "@/services/notion/tag-options";
 import type { ReminderItem } from "@/types/calendar";
 
@@ -164,7 +165,7 @@ export function ReminderDetailDialog({
           )}
 
           {reminder.memo && (
-            <p className="whitespace-pre-wrap text-on-surface-variant">{reminder.memo}</p>
+            <LinkifiedText className="text-on-surface-variant" text={reminder.memo} />
           )}
 
           {reminder.url && (

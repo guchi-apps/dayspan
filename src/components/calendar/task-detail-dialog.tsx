@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { TagChipList } from "@/components/tags/tag-chip";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
 import type { TaskEventLinkItem, TaskEventStage, TaskItem } from "@/types/calendar";
@@ -384,7 +385,7 @@ function DetailField({
   return (
     <div className="flex min-w-0 flex-col gap-0.5 px-4">
       <span className="text-xs text-muted-foreground">{label}</span>
-      {children ?? <span className="whitespace-pre-wrap break-words">{value}</span>}
+      {children ?? (value !== undefined && <LinkifiedText as="span" text={value} />)}
     </div>
   );
 }
