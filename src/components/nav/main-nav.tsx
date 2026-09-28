@@ -174,7 +174,13 @@ export function BottomNav({
     //
     // 等分の格子にするのは、記録を必ず中央に置くため。5項目でちょうど3番目が中央に来る。
     // 上端だけを大きく丸め、本文の上に置かれた面として見せる（M3 Expressive・issue #705）。
-    <nav className="relative grid shrink-0 grid-cols-5 items-start rounded-t-[28px] bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+    //
+    // 記録の円は枠の高さ（h-8）を超えてはみ出すため、<nav>自身の外側（上約12px）まで描かれる。
+    // そこにセクション見出し（sticky top-0 z-10。task-list.tsx・shopping-screen.tsx）の帯が
+    // 重なると、z-indexを持たない<nav>（z-index: auto）はDOM順に関係なく必ず見出しの背後に
+    // 沈み、円の上側が隠れる（issue #857）。見出し（z-10）より高く、ダイアログ（z-50）より低い
+    // z-20を持たせて防ぐ。他画面のFAB（タスク/買い物/日付リマインドがz-20）と同じ帯に揃える。
+    <nav className="relative z-20 grid shrink-0 grid-cols-5 items-start rounded-t-[28px] bg-surface-container px-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
       {NAV_ITEMS.map((item) => {
         const active = item.key === current;
         const Icon = item.icon;
