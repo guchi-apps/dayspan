@@ -138,7 +138,7 @@ export function ReminderDetailDialog({
           <DialogTitle className={external ? "pr-6" : "pr-22"}>{reminder.title}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 text-sm">
+        <div className="flex min-w-0 flex-col gap-3 text-sm">
           <DetailRow icon={<CalendarClock className="size-4" />}>
             {formatReminderDate(reminder, timeZone)}
             {elapsed && <span className="ml-2 text-tertiary">{elapsed}</span>}
