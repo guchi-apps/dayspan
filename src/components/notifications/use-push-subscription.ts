@@ -99,7 +99,7 @@ export function usePushSubscription(publicKey: string | null) {
           permission,
           error:
             permission === "denied"
-              ? "通知が拒否されています。iPhoneの「設定 > 通知 > DaySpan」から許可してください。"
+              ? "通知が拒否されています。iPhoneの「設定 > 通知」の一覧から、ホーム画面に追加したこのアプリを選んで許可してください。"
               : "通知が許可されませんでした。",
         }));
         return;

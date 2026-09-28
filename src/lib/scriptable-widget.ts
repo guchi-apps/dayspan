@@ -163,7 +163,7 @@ function escapeForJsString(value: string): string {
   return JSON.stringify(value).slice(1, -1);
 }
 
-const SCRIPTABLE_TEMPLATE = String.raw`// DaySpan ウィジェット
+const SCRIPTABLE_TEMPLATE = String.raw`// Koyomio ウィジェット
 //
 // 設定 > iPhoneウィジェット から生成された台本です。
 // トークンが入っているので、そのまま他人へ渡さないでください。
@@ -179,7 +179,7 @@ const SCRIPTABLE_TEMPLATE = String.raw`// DaySpan ウィジェット
 // 同じ台本を複数置いて、枠ごとに違う値を入れられます。
 //
 // ウィジェットを押したときと、Scriptableの一覧でこの台本のアイコンを押したときは、
-// どちらもDaySpanが開きます（ウィジェットの見本は表示しません）。
+// どちらもホーム画面に追加したアプリが開きます（ウィジェットの見本は表示しません）。
 //
 // 押してもScriptableが開くだけで先へ進まないときは、ウィジェットを長押し > ウィジェットを編集 の
 // When Interacting を Open URL にし、URL 欄へ設定画面に出ているURLを入れてください。
@@ -188,19 +188,19 @@ const ENDPOINT_BASE = "__DAYSPAN_ENDPOINT_BASE__";
 const TOKEN = "__DAYSPAN_TOKEN__";
 const APP_URL = "__DAYSPAN_APP_URL__";
 
-// ホーム画面に追加したDaySpan（Webアプリ）を開くためのURL。iOS 16.4以降のスキームです。
+// ホーム画面に追加したアプリ（Webアプリ）を開くためのURL。iOS 16.4以降のスキームです。
 // httpのアドレスで作った台本では空になります（httpのサイトはWebアプリとして追加できないため）。
 const WEBAPP_URL = "__DAYSPAN_WEBAPP_URL__";
 
-// ホーム画面のDaySpanへ渡すためのHTTPSのページ。
+// ホーム画面のアプリへ渡すためのHTTPSのページ。
 // 端末によっては webapp:// を直接開けず、押してもScriptableが開くだけで先へ進みません。
 // httpsのURLなら必ず開けるので、いったんこのページへ飛ばし、そこで開く先を選びます。
 // httpのアドレスで作った台本では空になります（渡す相手がいないため）。
 const BRIDGE_URL = "__DAYSPAN_BRIDGE_URL__";
 
 // 押したときに開く先。
-//   "app"        … ホーム画面に追加したDaySpan（上のページを経由します）
-//   "app-direct" … ホーム画面に追加したDaySpan（webapp:// を直接開きます。効く端末はこちらが速い）
+//   "app"        … ホーム画面に追加したアプリ（上のページを経由します）
+//   "app-direct" … ホーム画面に追加したアプリ（webapp:// を直接開きます。効く端末はこちらが速い）
 //   "browser"    … ブラウザ（ホーム画面に追加していないときはこちらにしてください）
 const OPEN_IN = "app";
 
@@ -210,7 +210,7 @@ const REFRESH_MINUTES = __DAYSPAN_REFRESH_MINUTES__;
 // Parameter に入れられる値。
 const VIEWS = ["activity", "schedule", "tasks", "shopping"];
 
-// DaySpanの画面と同じ配色。記録中だけ色を変え、色でも記録中かどうかが分かるようにする。
+// Koyomioの画面と同じ配色。記録中だけ色を変え、色でも記録中かどうかが分かるようにする。
 const RUN_BG = Color.dynamic(new Color("#eaddff"), new Color("#4f378b"));
 const RUN_INK = Color.dynamic(new Color("#21005d"), new Color("#eaddff"));
 const IDLE_BG = Color.dynamic(new Color("#fef7ff"), new Color("#1d1b20"));
@@ -228,7 +228,7 @@ const IS_ACCESSORY = FAMILY.indexOf("accessory") === 0;
 // 「止めたい」と思った操作がそのまま画面へつながるようにする。
 //
 // 既定（"app"）はHTTPSの受け渡しページです。端末によっては webapp:// を直接開けず、押しても
-// Scriptableが開くだけで先へ進まないため、ページ側でホーム画面のDaySpanかブラウザかを選びます。
+// Scriptableが開くだけで先へ進まないため、ページ側でホーム画面のアプリかブラウザかを選びます。
 //
 // "app-direct" は webapp:// を直接開きます。iOSはこのスキームのパスを無視し、Webアプリの
 // 最初の画面（起動画面の判定ページ）から開きます。その画面はこの端末で設定した起動画面
@@ -258,7 +258,7 @@ if (config.runsInWidget) {
 
   Script.setWidget(widget);
 } else {
-  // Scriptableの一覧からこの台本のアイコンを押したときは、ウィジェットの見本を出さずにDaySpanを開く。
+  // Scriptableの一覧からこの台本のアイコンを押したときは、ウィジェットの見本を出さずにホーム画面のアプリを開く。
   // 押す理由は「いまの記録を見たい・止めたい」で、見本を挟むと目的の画面まで1手増える。
   // 記録の取得もしない。開くだけなら要らない往復のため（docs/spec.md §20）。
   Safari.open(OPEN_URL);
@@ -286,7 +286,7 @@ async function load(view) {
     }
     return { summary: json };
   } catch (error) {
-    return { error: "DaySpanへつながりませんでした。" };
+    return { error: "Koyomioへつながりませんでした。" };
   }
 }
 
@@ -339,7 +339,7 @@ function renderActivity(widget, ink, summary) {
 function renderSmall(widget, ink, summary) {
   const running = summary.running;
 
-  addHeader(widget, ink, running ? "記録中" : "DaySpan", running !== null);
+  addHeader(widget, ink, running ? "記録中" : "Koyomio", running !== null);
   widget.addSpacer(6);
 
   const title = addText(widget, ink, running ? running.title : "記録していません", Font.semiboldSystemFont(15));
@@ -375,7 +375,7 @@ function renderMedium(widget, ink, summary) {
   left.layoutVertically();
   left.size = new Size(124, 0);
 
-  addHeader(left, ink, running ? "記録中" : "DaySpan", running !== null);
+  addHeader(left, ink, running ? "記録中" : "Koyomio", running !== null);
   left.addSpacer(6);
 
   const title = addText(left, ink, running ? running.title : "記録していません", Font.semiboldSystemFont(15));
@@ -880,7 +880,7 @@ function renderError(widget, ink, message) {
     return;
   }
 
-  addHeader(widget, ink, "DaySpan", false);
+  addHeader(widget, ink, "Koyomio", false);
   widget.addSpacer(6);
 
   const title = addText(widget, ink, "表示できません", Font.semiboldSystemFont(14));
@@ -1011,7 +1011,7 @@ function formatDuration(minutes) {
 }
 
 /**
- * 設定タイムゾーンでの時刻。端末のタイムゾーンではなくDaySpanの設定に合わせる。
+ * 設定タイムゾーンでの時刻。端末のタイムゾーンではなくKoyomioの設定に合わせる。
  * 端末側で時差のある場所にいても、アプリの画面と同じ時刻が出る必要がある。
  */
 function formatTime(iso, timeZone) {

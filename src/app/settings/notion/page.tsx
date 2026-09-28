@@ -28,7 +28,7 @@ export default async function NotionSettingsPage() {
   return (
     <SettingsShell
       title="Notion"
-      description="タスクの一次情報源です。Notion側で用意したタスクDBをDaySpanから選択します。"
+      description="タスクの一次情報源です。Notion側で用意したタスクDBをKoyomioから選択します。"
       backHref="/settings"
       backLabel="設定"
     >

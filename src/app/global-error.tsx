@@ -37,7 +37,7 @@ export default function GlobalError({
               <AlertTriangle className="size-7" />
             </div>
 
-            <h1 className="type-title-large">DaySpanを表示できませんでした</h1>
+            <h1 className="type-title-large">Koyomioを表示できませんでした</h1>
 
             <p className="type-body-medium text-muted-foreground">
               一時的な不具合の可能性があります。もう一度試すか、時間をおいて開き直してください。

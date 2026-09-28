@@ -75,6 +75,6 @@ export function validateShoppingBody(
 /** 買い物リストDB以外のページへの書き込みは、経路によらず断る。 */
 export const notEditable = () =>
   NextResponse.json(
-    { error: "not_editable", message: "この項目はDaySpanからは変更できません。" },
+    { error: "not_editable", message: "この項目はKoyomioからは変更できません。" },
     { status: 403 },
   );

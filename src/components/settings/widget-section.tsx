@@ -234,17 +234,17 @@ export function WidgetSection({
 
             <ol className="type-body-medium flex list-decimal flex-col gap-1 pl-5 text-on-surface-variant">
               <li>
-                iPhoneのSafariでDaySpanを開き、共有 → <span className="text-on-surface">ホーム画面に追加</span>
+                iPhoneのSafariでKoyomioを開き、共有 → <span className="text-on-surface">ホーム画面に追加</span>
                 （ウィジェットから開く先がこのアプリになります）
               </li>
               <li>App Storeから「Scriptable」を入れる</li>
               <li>
                 上の<span className="text-on-surface">台本をコピー</span>を押す
               </li>
-              <li>Scriptableで新しいスクリプトを作り、貼り付けて「DaySpan」と名前を付ける</li>
+              <li>Scriptableで新しいスクリプトを作り、貼り付けて「Koyomio」と名前を付ける</li>
               <li>
                 ホーム画面を長押し → ウィジェットを追加 → Scriptable →
-                スクリプトに「DaySpan」を選ぶ
+                スクリプトに「Koyomio」を選ぶ
               </li>
               <li>
                 置いたウィジェットを長押し → <span className="text-on-surface">ウィジェットを編集</span>
@@ -264,7 +264,7 @@ export function WidgetSection({
 
               <dl className="flex flex-col gap-2">
                 <SettingRow label="Script">
-                  DaySpan<span className="text-on-surface-variant">（4で付けた名前）</span>
+                  Koyomio<span className="text-on-surface-variant">（4で付けた名前）</span>
                 </SettingRow>
                 <SettingRow label="When Interacting">Open URL</SettingRow>
                 <SettingRow label="URL">
@@ -329,10 +329,10 @@ export function WidgetSection({
                 <>
                   <p className="type-body-small text-on-surface-variant">
                     上の<code className="mx-1">URL</code>
-                    は、ホーム画面に追加したDaySpanへ渡すための受け渡しページです。端末によっては
+                    は、ホーム画面に追加したアプリへ渡すための受け渡しページです。端末によっては
                     <code className="mx-1">webapp://</code>
                     で始まるURLを直接開けず、押してもScriptableが開くだけで先へ進みません。httpsのURL
-                    なら必ず開けるため、いったんこのページを開き、ホーム画面のDaySpanで開くか、
+                    なら必ず開けるため、いったんこのページを開き、ホーム画面のアプリで開くか、
                     このままブラウザで開くかをそこで選びます。
                   </p>
 
@@ -342,9 +342,9 @@ export function WidgetSection({
                     読めないため、貼り替えの手順が並ぶこの画面にも書いておく。
                   */}
                   <p className="type-body-small text-on-surface-variant">
-                    「ホーム画面の DaySpan を開く」を押したときに
+                    「ホーム画面のアプリを開く」を押したときに
                     <span className="mx-1">「アドレスが無効です」</span>
-                    と出る端末では、ホーム画面のDaySpanを開けません。下の「別の開き方にする」から、
+                    と出る端末では、ホーム画面のアプリを開けません。下の「別の開き方にする」から、
                     ブラウザで開く設定に変えてください。
                   </p>
 
@@ -360,7 +360,7 @@ export function WidgetSection({
                       {directAppUrl && (
                         <p className="flex flex-wrap items-center gap-2">
                           <span>
-                            受け渡しページを挟まず、ホーム画面のDaySpanを直接開くときは、URLに
+                            受け渡しページを挟まず、ホーム画面のアプリを直接開くときは、URLに
                             <code className="mx-1">{directAppUrl}</code>
                             を入れ、台本の先頭にある<code className="mx-1">OPEN_IN</code>も
                             <code className="mx-1">&quot;app-direct&quot;</code>
@@ -415,9 +415,9 @@ export function WidgetSection({
                 </>
               ) : (
                 <p className="type-body-small text-on-surface-variant">
-                  いまhttpのアドレスでこの画面を開いているため、ホーム画面のDaySpanを開くURL
+                  いまhttpのアドレスでこの画面を開いているため、ホーム画面のアプリを開くURL
                   （<code className="mx-1">webapp://</code>
-                  ）も、そこへ渡すための受け渡しページも作れません。上のURLはブラウザでDaySpanを
+                  ）も、そこへ渡すための受け渡しページも作れません。上のURLはブラウザでKoyomioを
                   開きます。httpsのアドレスで開き直すと、そちらのURLが出ます。
                 </p>
               )}
@@ -439,7 +439,7 @@ export function WidgetSection({
               <li>時計の下のウィジェットの枠を押す</li>
               <li>一覧から Scriptable を選び、置きたい形を押す</li>
               <li>
-                置いたウィジェットを押して、スクリプトに「DaySpan」を選ぶ（
+                置いたウィジェットを押して、スクリプトに「Koyomio」を選ぶ（
                 <code className="mx-1">When Interacting</code>と
                 <code className="mx-1">URL</code>は上と同じ値にする）
               </li>
@@ -469,7 +469,7 @@ export function WidgetSection({
               </p>
               <p>
                 ウィジェットと、Scriptableの一覧にある台本のアイコンを押すと、ホーム画面に追加した
-                DaySpanが開きます。iOSの仕様でWebアプリは最初の画面から開きます（すでに開いていた
+                アプリが開きます。iOSの仕様でWebアプリは最初の画面から開きます（すでに開いていた
                 ときは前の画面のまま）。最初の画面は設定 ▸ 表示の「起動時に開く画面」（既定は記録）
                 のため、押すとその画面になります。ホーム画面へ追加した端末で開く画面を変えたいとき、
                 または以前にホーム画面へ追加した端末でカレンダーが開いてしまうときは、いったん
@@ -487,7 +487,7 @@ export function WidgetSection({
               </p>
               <p>
                 同じものを見る枠が複数あっても外部への問い合わせが増えないよう、取得した内容は
-                サーバー側で3分だけ持ち回します。DaySpanの画面で買い物にチェックを付けたり
+                サーバー側で3分だけ持ち回します。Koyomioの画面で買い物にチェックを付けたり
                 タスクを完了にした直後は、ウィジェットに反映されるまで最大3分かかります。
               </p>
               <p>

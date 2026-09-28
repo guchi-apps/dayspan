@@ -24,10 +24,15 @@ export function AppLaunchScreen() {
       className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5"
       style={{ backgroundColor: APP_ICON_BACKGROUND }}
     >
-      <AppIconGlyph size={88} />
+      {/*
+        新デザイン（issue #872）は図形が自身のviewBox内で占める割合が旧デザインより小さいため、
+        88のままだと図柄がひとまわり小さく見える。旧デザインでの実際の可視サイズ（88px中
+        およそ66px）に近づくよう引き上げている。
+      */}
+      <AppIconGlyph size={110} />
 
       <div className="type-title-medium" style={{ color: APP_ICON_FOREGROUND }}>
-        DaySpan
+        Koyomio
       </div>
 
       {/*

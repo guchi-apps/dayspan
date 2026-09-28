@@ -149,7 +149,7 @@ self.addEventListener("message", (event) => {
  * 取り消す。届いたのに何も出さない経路を作らないため、中身が読めなくても既定の文面で出す。
  */
 self.addEventListener("push", (event) => {
-  const fallback = { title: "DaySpan", body: "" };
+  const fallback = { title: "Koyomio", body: "" };
 
   let notification = fallback;
   if (event.data) {
@@ -157,7 +157,7 @@ self.addEventListener("push", (event) => {
       const payload = event.data.json();
       notification = payload?.notification ?? fallback;
     } catch {
-      notification = { title: "DaySpan", body: event.data.text() };
+      notification = { title: "Koyomio", body: event.data.text() };
     }
   }
 
@@ -168,7 +168,7 @@ self.addEventListener("push", (event) => {
         await self.registration.setAppBadge(notification.app_badge).catch(() => {});
       }
 
-      await self.registration.showNotification(notification.title || "DaySpan", {
+      await self.registration.showNotification(notification.title || "Koyomio", {
         body: notification.body || "",
         icon: "/icon-192.png",
         badge: "/icon-192.png",

@@ -183,8 +183,8 @@ export function TravelSection({
 
           <p className="type-body-small text-on-surface-variant">
             {calendars.length === 0
-              ? "Google Calendarを接続すると、移動を他の端末のカレンダーからも見られるようになります。接続していない間、移動はDaySpanの中だけに出ます。"
-              : "移動はDaySpanが一次情報源です。ここへ書き出した予定を Google 側で直しても、DaySpanで保存し直すと元に戻ります。"}
+              ? "Google Calendarを接続すると、移動を他の端末のカレンダーからも見られるようになります。接続していない間、移動はKoyomioの中だけに出ます。"
+              : "移動はKoyomioが一次情報源です。ここへ書き出した予定を Google 側で直しても、Koyomioで保存し直すと元に戻ります。"}
           </p>
         </div>
       </CardContent>

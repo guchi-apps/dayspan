@@ -154,7 +154,7 @@ function ConnectPrompt() {
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
       <div className="flex items-center gap-2 text-xl font-semibold">
         <CalendarDays className="size-6 text-primary" />
-        DaySpan
+        Koyomio
       </div>
 
       <Card>

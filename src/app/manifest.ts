@@ -4,8 +4,8 @@ import { APP_ICON_BACKGROUND } from "@/lib/app-icon-glyph";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "DaySpan",
-    short_name: "DaySpan",
+    name: "Koyomio",
+    short_name: "Koyomio",
     description: "Google CalendarとNotionタスクを統合表示するカレンダー",
     // 起動画面は設定 ▸ 表示で選べる（`START_PATH_COOKIE`・issue #637）。ここを固定パスに
     // すると選んだ画面へ振り分けられないため、判定を挟む `/`（src/app/page.tsx）にする。
