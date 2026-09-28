@@ -18,7 +18,7 @@ export default function Icon() {
           background: APP_ICON_BACKGROUND,
         }}
       >
-        <AppIconGlyph size={size.width * 0.7} />
+        <AppIconGlyph size={size.width} />
       </div>
     ),
     size,

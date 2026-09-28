@@ -67,7 +67,7 @@ export function AppMenuButton({
         showCloseButton={false}
         className="bg-surface-container-low pt-[calc(1rem_+_env(safe-area-inset-top,0px))] pb-[max(0.5rem,env(safe-area-inset-bottom))]"
       >
-        <DialogTitle className="px-6 pb-2 text-base font-semibold">DaySpan</DialogTitle>
+        <DialogTitle className="px-6 pb-2 text-base font-semibold">Koyomio</DialogTitle>
         {/* 読み上げ用。見出しだけでは、ここが何の一覧なのかが読み上げでは伝わらない。 */}
         <DialogDescription className="sr-only">画面の切り替えと設定</DialogDescription>
 

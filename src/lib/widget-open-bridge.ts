@@ -44,7 +44,7 @@ export function buildWidgetOpenBridgeHtml(): string {
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="${APP_ICON_BACKGROUND}" />
     <meta name="robots" content="noindex" />
-    <title>DaySpan を開く</title>
+    <title>アプリを開く</title>
     <style>
       html, body { height: 100%; }
       body {
@@ -78,16 +78,16 @@ export function buildWidgetOpenBridgeHtml(): string {
   </head>
   <body>
     <main>
-      <h1>DaySpan を開く</h1>
-      <p id="status">ホーム画面に追加した DaySpan と、このままブラウザのどちらで開くかを選んでください。</p>
+      <h1>アプリを開く</h1>
+      <p id="status">ホーム画面に追加したアプリと、このままブラウザのどちらで開くかを選んでください。</p>
 
       <!--
         リンクは素の <a> で置く。スクリプトから開くと、アプリが入っていてもブラウザへ落ちることが
-        ある（CLAUDE.md のYahoo!乗換案内の判断と同じ）。ホーム画面の DaySpan の側だけ最初は
+        ある（CLAUDE.md のYahoo!乗換案内の判断と同じ）。ホーム画面のアプリの側だけ最初は
         隠しておくのは、宛先（webapp://<ホスト>）がブラウザ側でしか組み立てられないため。
       -->
       <div class="actions">
-        <a class="primary" id="app-link" href="#" hidden>ホーム画面の DaySpan を開く</a>
+        <a class="primary" id="app-link" href="#" hidden>ホーム画面のアプリを開く</a>
         <a id="browser-link" href="/">このままブラウザで開く</a>
       </div>
 
@@ -105,7 +105,7 @@ export function buildWidgetOpenBridgeHtml(): string {
           note.hidden = false;
         }
 
-        // すでにホーム画面の DaySpan の中で開かれていたら、渡す相手は自分自身になる。
+        // すでにホーム画面のアプリの中で開かれていたら、渡す相手は自分自身になる。
         // そのまま選ばせても行き先が同じなので、起動画面へ送って終わる。
         var standalone =
           window.navigator.standalone === true ||
@@ -120,7 +120,7 @@ export function buildWidgetOpenBridgeHtml(): string {
         // （src/lib/scriptable-widget.ts の toWebAppUrl() と同じ判断）。
         if (location.protocol !== "https:") {
           status.textContent = "このままブラウザで開きます。";
-          showNote("http のアドレスではホーム画面の DaySpan を開けません。");
+          showNote("http のアドレスではホーム画面のアプリを開けません。");
           return;
         }
 
@@ -135,7 +135,7 @@ export function buildWidgetOpenBridgeHtml(): string {
             if (document.visibilityState === "hidden") return;
 
             showNote(
-              "ホーム画面の DaySpan へ切り替わらないときは、この端末では開けません。" +
+              "ホーム画面のアプリへ切り替わらないときは、この端末では開けません。" +
                 "「このままブラウザで開く」を使ってください。" +
                 "設定 ▸ iPhoneウィジェット から、押したときブラウザで開くように変えられます。",
             );

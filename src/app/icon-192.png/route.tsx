@@ -17,7 +17,7 @@ export function GET() {
           background: APP_ICON_BACKGROUND,
         }}
       >
-        <AppIconGlyph size={SIZE * 0.7} />
+        <AppIconGlyph size={SIZE} />
       </div>
     ),
     { width: SIZE, height: SIZE },
