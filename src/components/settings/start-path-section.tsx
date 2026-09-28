@@ -41,7 +41,7 @@ export function StartPathSection({ startPath }: { startPath: string }) {
             <Label htmlFor="start-path">起動時に開く画面</Label>
             <p className="type-body-small text-on-surface-variant">
               アプリを開いたときに最初に出す画面です。いま設定を開いているこのアプリだけに
-              反映されます。ホーム画面に追加したDaySpanとブラウザは別々に持つため、スマートフォンと
+              反映されます。ホーム画面に追加したアプリとブラウザは別々に持つため、スマートフォンと
               パソコンはもちろん、同じ端末でも別々に設定できます。
             </p>
           </div>

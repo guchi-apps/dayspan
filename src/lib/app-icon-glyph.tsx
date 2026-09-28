@@ -12,18 +12,23 @@ export const APP_ICON_BACKGROUND = "#544fc1";
 export const APP_ICON_FOREGROUND = "#ffffff";
 
 /**
- * DaySpanのアプリアイコン。カレンダー枠の中に「1日分の時間帯（span）」を表す縦棒を置き、
- * 月表示と時間グリッドを併せ持つアプリであることを示す。
- * 縦棒は塗らずに背景色で抜き、枠と棒の境目を色数を増やさずに出す。
+ * Koyomioのアプリアイコン。カレンダーの枠を白い線画で描き、線と点で日々の流れを表す
+ * （issue #872。検討した3案のうち意匠③を採用）。
+ *
+ * 背景（APP_ICON_BACKGROUND）は含まず、線画だけを描く。198のviewBoxに対して図形は
+ * 中央付近の約56〜63%だけを占めており、この余白込みの配置がそのままアイコンの余白になる。
+ * 呼び出し側は size をそのまま容器のサイズに渡せばよく、縮小の掛け算は不要。
  */
 export function AppIconGlyph({ size }: { size: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <rect x="3" y="4.5" width="18" height="16.5" rx="3" fill={APP_ICON_FOREGROUND} />
-      <rect x="7" y="2" width="2" height="4.5" rx="1" fill={APP_ICON_FOREGROUND} />
-      <rect x="15" y="2" width="2" height="4.5" rx="1" fill={APP_ICON_FOREGROUND} />
-      <rect x="6" y="9.5" width="4.5" height="8" rx="1.5" fill={APP_ICON_BACKGROUND} />
-      <rect x="13.5" y="9.5" width="4.5" height="4" rx="1.5" fill={APP_ICON_BACKGROUND} />
+    <svg width={size} height={size} viewBox="0 0 198 198" fill="none">
+      <g stroke={APP_ICON_FOREGROUND} strokeLinecap="round" strokeLinejoin="round">
+        <rect x="44" y="49" width="110" height="104" rx="9" strokeWidth="11" />
+        <path d="M46 79h106" strokeWidth="10" />
+        <path d="M69 39v22M129 39v22" strokeWidth="10" />
+        <path d="M67 130h28v-29h34" strokeWidth="11" />
+      </g>
+      <circle cx="129" cy="101" r="10" fill={APP_ICON_FOREGROUND} />
     </svg>
   );
 }

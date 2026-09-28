@@ -192,8 +192,8 @@ function describe(item: DeletableItem): string {
   if (item.kind === "event") {
     const name = `「${item.event.title}」`;
     return item.event.recurring
-      ? `${name}は繰り返しの予定です。どこまで削除するか選んでください。Google Calendarから消え、DaySpanからは元に戻せません。`
-      : `${name}をGoogle Calendarから削除します。DaySpanからは元に戻せません。`;
+      ? `${name}は繰り返しの予定です。どこまで削除するか選んでください。Google Calendarから消え、Koyomioからは元に戻せません。`
+      : `${name}をGoogle Calendarから削除します。Koyomioからは元に戻せません。`;
   }
 
   if (item.kind === "task") {

@@ -22,7 +22,7 @@ export default async function LoginPage({
 
       <div className="type-headline-small flex items-center gap-2">
         <CalendarDays className="size-7 text-primary" />
-        DaySpan
+        Koyomio
       </div>
 
       <Card className="w-full max-w-sm bg-surface-container-high">

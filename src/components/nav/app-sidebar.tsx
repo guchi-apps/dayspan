@@ -45,7 +45,7 @@ export function AppSidebar({
       onPointerEnter={() => setTouched(true)}
       onFocus={() => setTouched(true)}
     >
-      <div className="px-6 pb-2 text-base font-semibold">DaySpan</div>
+      <div className="px-6 pb-2 text-base font-semibold">Koyomio</div>
       <DrawerNavContent
         current={current}
         activityRunning={activityRunning}

@@ -49,8 +49,8 @@ export function travelEventDescription(plan: {
     `所要時間: ${travelMinutes(plan)}分${estimateSuffix(plan.estimateSource)}`,
   ];
   if (plan.note) lines.push("", plan.note);
-  // DaySpanが書いた予定であることを残す。Google側で直接編集しても戻ることを伝えるため。
-  lines.push("", "DaySpanの移動として管理しています。編集はDaySpanから行ってください。");
+  // Koyomioが書いた予定であることを残す。Google側で直接編集しても戻ることを伝えるため。
+  lines.push("", "Koyomioの移動として管理しています。編集はKoyomioから行ってください。");
   return lines.join("\n");
 }
 

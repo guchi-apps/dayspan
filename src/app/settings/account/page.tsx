@@ -11,7 +11,7 @@ export default async function AccountSettingsPage() {
   return (
     <SettingsShell
       title="アカウント"
-      description="DaySpanへのログインに使っているGoogleアカウントです。"
+      description="Koyomioへのログインに使っているGoogleアカウントです。"
       backHref="/settings"
       backLabel="設定"
     >

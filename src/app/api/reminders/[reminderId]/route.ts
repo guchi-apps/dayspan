@@ -17,7 +17,7 @@ import {
  */
 const notEditable = () =>
   NextResponse.json(
-    { error: "not_editable", message: "この項目はDaySpanからは変更できません。" },
+    { error: "not_editable", message: "この項目はKoyomioからは変更できません。" },
     { status: 403 },
   );
 

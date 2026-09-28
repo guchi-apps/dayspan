@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "parentPageId is required" }, { status: 400 });
   }
 
-  const title = body.title?.trim() || "DaySpan 買い物リスト";
+  const title = body.title?.trim() || "Koyomio 買い物リスト";
 
   let created;
   try {
