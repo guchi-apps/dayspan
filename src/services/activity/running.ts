@@ -110,6 +110,14 @@ export type StopResult =
  * 予定を作れた場合だけ進行中の行を消す。先に消すと、Googleが失敗したときに
  * 記録していた時間そのものが失われる。失敗は例外のまま呼び出し側へ返し、
  * 画面には外部APIが返した理由を出す（CLAUDE.md「外部APIの扱い」）。
+ *
+ * 消すのは読み取った行（`id`）に限る。停止と停止、または停止と切り替え
+ * （`startActivity()` は内部でこれを呼ぶ）が重なると、どちらも同じ行を読める。
+ * `userId` だけで絞って消すと、片方が予定を作り終えて消した時点でもう片方が
+ * 作った新しい記録（切り替え先）まで巻き添えで消してしまう（issue #841）。
+ * `id` を条件にした `deleteMany` を「この行を確保した」印として使い、0件だった
+ * ほう（＝もう片方が先に処理した）は `not_running` として抜けることで、予定の
+ * 二重作成も防ぐ。
  */
 export async function stopRunningActivity(
   userId: string,
@@ -149,6 +157,11 @@ export async function stopRunningActivity(
     throw new ActivityCalendarNotFoundError(target.reason);
   }
 
+  // ここまでは読み取っただけで、行そのものには触れていない。ここから先だけを
+  // 「確保できたときにしか進まない」区間にする。
+  const claimed = await db.runningActivity.deleteMany({ where: { id: running.id } });
+  if (claimed.count === 0) return { status: "not_running" };
+
   const start = running.startedAt;
   const end = new Date(
     Math.max(requestedEnd.getTime(), start.getTime() + MIN_ACTIVITY_MINUTES * 60_000),
@@ -156,15 +169,39 @@ export async function stopRunningActivity(
 
   const uiSetting = await db.uiSetting.findUnique({ where: { userId } });
 
-  await createEvent(target.account, running.calendarId, {
-    title: running.title,
-    allDay: false,
-    start: start.toISOString(),
-    end: end.toISOString(),
-    timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
-  });
-
-  await db.runningActivity.deleteMany({ where: { userId } });
+  try {
+    await createEvent(target.account, running.calendarId, {
+      title: running.title,
+      allDay: false,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      timeZone: uiSetting?.timeZone ?? "Asia/Tokyo",
+    });
+  } catch (error) {
+    // 確保のために消した行を、失敗したときは同じidで元へ戻す。戻さないと、
+    // Google側が失敗しただけで記録していた時間そのものが失われてしまう
+    // （もう一度停止すれば保存をやり直せる、という既存の保証を保つ）。
+    await db.runningActivity
+      .create({
+        data: {
+          id: running.id,
+          userId,
+          title: running.title,
+          calendarId: running.calendarId,
+          startedAt: running.startedAt,
+        },
+      })
+      .catch((restoreError: unknown) => {
+        // 復元自体が失敗するのは、その間に別の記録が始まっていた（userIdの一意制約に
+        // ぶつかった）ような稀なケース。元のGoogle書き込み失敗の理由を隠さないよう、
+        // ここでは投げ直さずログにだけ残す。
+        console.error(
+          "[dayspan] failed to restore running activity after createEvent failure:",
+          restoreError,
+        );
+      });
+    throw error;
+  }
 
   // ウィジェットの今日の合計は、Googleから取った予定を短時間持ち回して求めている。
   // いま作ったぶんが載るまで待たせると、画面では止まっているのに合計が増えない時間ができる。

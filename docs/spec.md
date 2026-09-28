@@ -912,7 +912,10 @@ Notion側の一覧でも片付いたものとして並ぶ。戻すと両方を�
 
 認証にはSupabase Auth + Google OAuthを使用する。NextAuth/Auth.jsは使用しない。
 
-初期版では許可されたユーザーのみログイン後に利用可能とする。
+初期版では許可されたユーザーのみログイン後に利用可能とする。許可の判定（`ALLOWED_GOOGLE_EMAILS`）は
+ログイン時だけでなく、リクエストごと（`src/lib/supabase/middleware.ts` と `getCurrentUser()`）でも
+行う。許可リストからメールアドレスを外すと、そのユーザーのSupabaseセッションがrefresh tokenで
+有効なままでも、次のリクエストからDaySpanを使えなくなる（issue #842）。
 
 将来一般公開する際に、ユーザー単位で各外部サービスとの連携情報を管理できる構造にする。
 
