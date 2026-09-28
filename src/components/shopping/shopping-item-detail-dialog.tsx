@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils";
 import type { ShoppingItem } from "@/types/shopping";
 
@@ -270,7 +271,7 @@ function DetailField({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 px-4">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="whitespace-pre-wrap">{value}</span>
+      <LinkifiedText as="span" text={value} />
     </div>
   );
 }
