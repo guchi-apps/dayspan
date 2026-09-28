@@ -4,7 +4,7 @@ import type { TaskItem } from "@/types/calendar";
 // タスク画面の分類（docs/spec.md §11）。表示だけの都合なので外部APIには依存させず、
 // 取得済みのタスクと「今日」の日付から決める。
 
-export type TaskBucketKey = "overdue" | "today" | "upcoming" | "someday" | "done";
+export type TaskBucketKey = "overdue" | "today" | "upcoming" | "someday" | "done" | "skipped";
 
 export const TASK_BUCKET_LABELS: Record<TaskBucketKey, string> = {
   overdue: "期限切れ",
@@ -12,6 +12,7 @@ export const TASK_BUCKET_LABELS: Record<TaskBucketKey, string> = {
   upcoming: "今後",
   someday: "期限未設定",
   done: "完了",
+  skipped: "対応しない",
 };
 
 export type TaskSort = "due" | "priority" | "planned";
@@ -35,6 +36,7 @@ export const TASK_BUCKET_LABELS_PLANNED: Record<TaskBucketKey, string> = {
   upcoming: "今後",
   someday: "未設定",
   done: "完了",
+  skipped: "対応しない",
 };
 
 /** 並び順に応じた区分見出し。並び順ごとに分類の基準日が変わるため、見出しもそれに合わせる。 */
@@ -77,12 +79,14 @@ export function classifyTasks(
     upcoming: [],
     someday: [],
     done: [],
+    skipped: [],
   };
 
   for (const task of tasks) {
-    // 完了したタスクは期限に関わらず「完了」へ入れる。履歴として残すため（docs/spec.md §12）。
+    // 完了・対応しないは期限に関わらず末尾へ入れる。履歴として残すため（docs/spec.md §12）。
+    // 「対応しない」は完了とは別の見出しに分けるため、done とは別のバケットへ振り分ける（issue #858）。
     if (task.done) {
-      buckets.done.push(task);
+      (task.skipped ? buckets.skipped : buckets.done).push(task);
       continue;
     }
 
@@ -148,7 +152,7 @@ export function sortTasks(tasks: TaskItem[], sort: TaskSort): TaskItem[] {
   return [...tasks].sort(SORT_COMPARATORS[sort]);
 }
 
-/** 完了タスクは履歴なので、新しく期限が来たものから見せる。 */
+/** 完了・対応しないタスクは履歴なので、新しく期限が来たものから見せる（どちらのバケットにも使う）。 */
 export function sortDoneTasks(tasks: TaskItem[]): TaskItem[] {
   return [...tasks].sort((a, b) => {
     if (a.due && b.due && a.due !== b.due) return a.due < b.due ? 1 : -1;

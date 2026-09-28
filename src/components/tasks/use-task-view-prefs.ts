@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
 
 import { TASK_SORTS, type TaskSort } from "@/services/notion/task-buckets";
 
-// タスク画面の見え方（分類の軸・並び順・完了の開閉）を端末に覚えさせる（issue #286）。
+// タスク画面の見え方（分類の軸・並び順・完了と対応しないの開閉）を端末に覚えさせる（issue #286）。
 //
 // カレンダー画面のCookie方式（lib/calendar-view-memory.ts）とは分ける。あちらはサーバー側で
 // 取得範囲を組み立てる前に要る値だが、こちらは描いたあとで足りる。
@@ -21,14 +21,17 @@ type Prefs = {
   sort: TaskSort;
   /** 完了の折りたたみを開いているか。完了は履歴で件数が増え続けるため、既定は閉じる。 */
   doneOpen: boolean;
+  /** 対応しないの折りたたみを開いているか。完了とは別の見出し・別の開閉状態にする（issue #858）。 */
+  skippedOpen: boolean;
 };
 
-const DEFAULT_PREFS: Prefs = { groupBy: "due", sort: "due", doneOpen: false };
+const DEFAULT_PREFS: Prefs = { groupBy: "due", sort: "due", doneOpen: false, skippedOpen: false };
 
 const STORAGE_KEYS = {
   groupBy: "dayspan:tasks:group-by",
   sort: "dayspan:tasks:sort",
   doneOpen: "dayspan:tasks:done-open",
+  skippedOpen: "dayspan:tasks:skipped-open",
 } as const;
 
 let current: Prefs | null = null;
@@ -47,11 +50,13 @@ function readStored(): Prefs {
   const groupBy = readItem(STORAGE_KEYS.groupBy);
   const sort = readItem(STORAGE_KEYS.sort);
   const doneOpen = readItem(STORAGE_KEYS.doneOpen);
+  const skippedOpen = readItem(STORAGE_KEYS.skippedOpen);
 
   return {
     groupBy: groupBy === "tag" ? "tag" : DEFAULT_PREFS.groupBy,
     sort: TASK_SORTS.includes(sort as TaskSort) ? (sort as TaskSort) : DEFAULT_PREFS.sort,
     doneOpen: doneOpen === "1",
+    skippedOpen: skippedOpen === "1",
   };
 }
 
@@ -76,6 +81,7 @@ function update(next: Partial<Prefs>): void {
     window.localStorage.setItem(STORAGE_KEYS.groupBy, current.groupBy);
     window.localStorage.setItem(STORAGE_KEYS.sort, current.sort);
     window.localStorage.setItem(STORAGE_KEYS.doneOpen, current.doneOpen ? "1" : "0");
+    window.localStorage.setItem(STORAGE_KEYS.skippedOpen, current.skippedOpen ? "1" : "0");
   } catch {
     // 保存できなくても、その画面を開いている間の見え方は保てる。
   }
@@ -87,6 +93,7 @@ export type TaskViewPrefs = Prefs & {
   setGroupBy: (groupBy: TaskGroupBy) => void;
   setSort: (sort: TaskSort) => void;
   setDoneOpen: (doneOpen: boolean) => void;
+  setSkippedOpen: (skippedOpen: boolean) => void;
 };
 
 export function useTaskViewPrefs(): TaskViewPrefs {
@@ -95,6 +102,7 @@ export function useTaskViewPrefs(): TaskViewPrefs {
   const setGroupBy = useCallback((groupBy: TaskGroupBy) => update({ groupBy }), []);
   const setSort = useCallback((sort: TaskSort) => update({ sort }), []);
   const setDoneOpen = useCallback((doneOpen: boolean) => update({ doneOpen }), []);
+  const setSkippedOpen = useCallback((skippedOpen: boolean) => update({ skippedOpen }), []);
 
-  return { ...prefs, setGroupBy, setSort, setDoneOpen };
+  return { ...prefs, setGroupBy, setSort, setDoneOpen, setSkippedOpen };
 }
