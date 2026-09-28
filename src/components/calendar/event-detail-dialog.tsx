@@ -282,7 +282,7 @@ export function EventDetailDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 text-sm">
+        <div className="flex min-w-0 flex-col gap-3 text-sm">
           {/*
             仮の予定（issue #688）。まだ本決まりでないという状態を、日時より先に伝える
             （中止・不参加の帯と同じ考え方）。

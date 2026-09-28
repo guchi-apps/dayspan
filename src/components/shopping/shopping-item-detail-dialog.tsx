@@ -192,7 +192,7 @@ export function ShoppingItemDetailDialog({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="flex flex-col gap-4 text-sm">
+            <div className="flex min-w-0 flex-col gap-4 text-sm">
               {!item.wishlisted && (
                 <label className="-my-1 flex min-h-11 items-center gap-3 px-4 text-base select-none md:text-sm">
                   <Checkbox
