@@ -52,7 +52,6 @@ import { EMPTY_PLACE_CATALOG, type PlaceCatalog } from "@/services/notion/places
 import { EMPTY_TAG_CATALOG, type TagCatalog } from "@/services/notion/tag-options";
 import type { RunningActivityItem } from "@/types/activity";
 import {
-  DEFAULT_TASK_LINK_TARGET,
   type CalendarEventItem,
   type CalendarLoadResult,
   type ReminderItem,
@@ -576,6 +575,16 @@ export function CalendarShell({
     setViewingTravel(travel);
   };
 
+  /**
+   * 予定の表示画面から、その予定に紐づくタスクへ移る（issue #835）。
+   *
+   * 移動と同じく、画面のどこに何が乗っているかに関係なく、予定の側からたどれるようにする。
+   */
+  const openTaskFromEvent = (task: TaskItem) => {
+    setViewingEvent(null);
+    setViewingTask(task);
+  };
+
   const editTravel = (travel: TravelItem) => {
     if (offline) return;
     setViewingTravel(null);
@@ -991,6 +1000,7 @@ export function CalendarShell({
         onOpenReminder={openReminder}
         onOpenTravel={openTravel}
         onOpenTravelForEvent={openTravelFromEvent}
+        onOpenTaskForEvent={openTaskFromEvent}
         onEditEvent={editEvent}
         onDuplicateEvent={duplicateEvent}
         onEditTask={editTask}
@@ -1099,6 +1109,7 @@ function CalendarBody({
   onOpenReminder,
   onOpenTravel,
   onOpenTravelForEvent,
+  onOpenTaskForEvent,
   onEditEvent,
   onDuplicateEvent,
   onEditTask,
@@ -1174,6 +1185,8 @@ function CalendarBody({
   onOpenTravel: (travel: TravelItem) => void;
   /** 予定の表示画面から、その予定に紐づく移動を開く（issue #327）。 */
   onOpenTravelForEvent: (travel: TravelItem) => void;
+  /** 予定の表示画面から、その予定に紐づくタスクを開く（issue #835）。 */
+  onOpenTaskForEvent: (task: TaskItem) => void;
   onEditEvent: (event: CalendarEventItem) => void;
   onDuplicateEvent: (event: CalendarEventItem) => void;
   onEditTask: (task: TaskItem) => void;
@@ -1571,13 +1584,12 @@ function CalendarBody({
           )}
           onOpenTravel={onOpenTravelForEvent}
           onLinkTask={() => onLinkTaskForEvent(viewingEvent)}
-          onCreateTask={() =>
-            onCreateTaskForEvent(viewingEvent, "BEFORE_START", DEFAULT_TASK_LINK_TARGET)
-          }
-          // 消すと紐づけが外れるタスク。確認の前に示す（docs/spec.md §31）。
-          linkedTasks={data.tasks
-            .filter((task) => task.links.some((link) => link.eventId === viewingEvent.id))
-            .map((task) => task.title)}
+          // この予定に紐づいているタスク。通常表示では一覧を出し、削除の確認では
+          // 消すと紐づけが外れるタイトルだけを取り出して示す（docs/spec.md §31・issue #835）。
+          linkedTasks={data.tasks.filter((task) =>
+            task.links.some((link) => link.eventId === viewingEvent.id),
+          )}
+          onOpenTask={onOpenTaskForEvent}
           // 場所を地図で開くとき、登録済みの場所なら座標で開く（issue #426）。
           places={placeCatalog.places}
           onDeleted={handleSaved}
