@@ -68,6 +68,7 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | 予定の文字色は背景の明るさから選ぶ（ベタ塗りの場面だけ） | Google のパレットには淡い色があり、白固定では読めない。白で3.0を確保できる色だけ白のままにする。ただし選び直しが要るのは面をカレンダー色でベタ塗りする場面だけで、いまそれに当たるのは保存先を選ぶチップ（`calendar-chip-select.tsx`・面そのものが色見本）のみ。カレンダーの帯（`tintedEventColors`）は塗りが淡く下地が常に画面の背景になるため、テーマの `text-on-surface` に任せる |
 | 日をまたぐ予定はドラッグ対象外 | 複数日表示でどちらの日を動かしているか決まらないため |
 | 月表示はスクロールを契機に読み込み直さない | 再描画で開いていたダイアログが閉じ、操作を受け付けていないように見えるため |
+| 月表示のURL同期（`syncMonthUrl`・`history.replaceState`）は、`CalendarShell` の transition が保留中の間は行わず、明けてから見ている月で1回だけ反映する | Next.js の App Router は `history.replaceState` をパッチしており、呼ぶと `ACTION_RESTORE` を dispatch する。action queue は RESTORE を受けると保留中の `router.push` / `router.refresh` を破棄する（`app-router-instance.js`）。回線が遅いと、1日・3日表示→月表示の `router.push` の応答待ちの間に月表示のスクロール通知（位置合わせで `scrollTop` を書いた直後を含む）から replaceState が走り、遷移が捨てられて `nav`（useOptimistic）が元の表示形式へ戻っていた（URLだけ `view=month`・issue #848）。見出し・先読みは即時のまま、URLの書き換えだけを遅らせる。すでに同じ月を指すURLでは書き換えない（余分なRESTOREを出さない）。**別の `useTransition` で走る `router.refresh()`（`useReconnectRefresh`・`useRunningActivityStop`）はこのガードの対象外**で、保留中にスクロールすると取り直しが捨てられうる（症状が別のため未対応）。Next の内部の state（`__NA`）を偽って RESTORE を避ける方法は、ルーターの `canonicalUrl` が古いまま残り、以後の `router.refresh()` が前のURLを取り直すため採らない |
 | 繰り返しの曜日指定は `毎週(月・水・金)` の形で保存 | Notion の select プロパティ1つで表現する必要があるため |
 | 日表示は前後1期間ぶんまで先に取得する | 左右スワイプが指に追従して隣の期間を見せるため。表示中の期間だけだと動かした先が空欄になる |
 | 時間グリッドに並べる日は楽観的な anchor から決める | 前へ・次へ・スワイプで、取得の完了を待たずに隣の期間へ切り替わる必要があるため |

@@ -686,7 +686,6 @@ export function CalendarShell({
     setScrolledMonth(month);
     setMonthCenter(month);
     setScrollTarget((prev) => ({ month, day, nonce: prev.nonce + 1 }));
-    syncMonthUrl(month);
   };
 
   /**
@@ -735,13 +734,33 @@ export function CalendarShell({
   /** スクロールで見えている月が変わったとき。 */
   const handleVisibleMonthChange = (month: string) => {
     setScrolledMonth(month);
-    syncMonthUrl(month);
 
     // 窓の端へ近づいたら中心をずらし、先の月を前もって取りにいく。
     // 1ヶ月ごとにずらすと週の並びを組み直す回数が増えるため、2ヶ月離れてから動かす。
     // 張り直しても各週の位置は動かないため、スクロールの最中でも行ってよい。
     if (Math.abs(monthDistance(monthCenter, month)) >= 2) setMonthCenter(month);
   };
+
+  /**
+   * 月表示で見ている月をURLへ反映する（issue #848）。
+   *
+   * `history.replaceState` は Next.js の App Router にパッチされており、呼ぶと `ACTION_RESTORE`
+   * が dispatch される。action queue は RESTORE を受けると保留中の action（`router.push` /
+   * `router.refresh`）を破棄するため、回線が遅く1日・3日表示→月表示の `router.push` が応答を
+   * 待っている間に月表示のスクロール通知からここが走ると、月表示への遷移そのものが捨てられる。
+   * 遷移が終わると `nav`（useOptimistic）はサーバーの props（元の表示形式）へ戻り、URLだけ
+   * `view=month` のまま画面は元の表示へ戻っていた。
+   *
+   * そのため、このシェルの transition（`navigate`・`refreshAll`・`openActivity`）が保留中の間は
+   * 書き換えず、明けてから見ている月で1回だけ反映する。見出し（`scrolledMonth`）と先読み
+   * （`monthCenter`）は従来どおり即時に動かす。なお別の `useTransition` で走る `router.refresh()`
+   * （`useReconnectRefresh`・`useRunningActivityStop`）はこのガードの対象外で、保留中にスクロール
+   * すると取り直しが捨てられうる（表示形式が戻る症状とは別のため、ここでは扱っていない）。
+   */
+  useEffect(() => {
+    if (pending || nav.view !== "month") return;
+    syncMonthUrl(scrolledMonth);
+  }, [pending, nav.view, scrolledMonth]);
 
   /** スクロールで画面中央に来た週が変わったとき。 */
   const handleVisibleWeekChange = (weekKey: string) => {
@@ -1068,6 +1087,11 @@ export function CalendarShell({
  * （リロードや保存後の再取得のときに、見ていた月が起点になる）。
  */
 function syncMonthUrl(month: string) {
+  // すでにその月を指しているなら書き換えない。replaceState は Next.js の RESTORE になるため、
+  // マウント直後や日表示からの切り替え直後（`date=YYYY-MM-DD` で同じ月）に余分に走らせない。
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("view") === "month" && params.get("date")?.slice(0, 7) === month) return;
+
   window.history.replaceState(null, "", `/calendar?view=month&date=${month}-01`);
   rememberCalendarView("month", `${month}-01`);
 }
