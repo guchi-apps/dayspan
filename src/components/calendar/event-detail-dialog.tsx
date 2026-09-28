@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import { mapLink } from "@/lib/map-link";
 import type { PlaceItem } from "@/services/notion/places";
 import { cn } from "@/lib/utils";
@@ -319,9 +320,7 @@ export function EventDetailDialog({
               <EventOutcomeMark className="mt-0.5 size-4" />
               <div className="flex min-w-0 flex-col">
                 <span className="font-bold">{EVENT_OUTCOME_KIND_LABELS[outcome.kind]}</span>
-                {outcome.note && (
-                  <span className="break-words opacity-90">{outcome.note}</span>
-                )}
+                {outcome.note && <LinkifiedText as="span" className="opacity-90" text={outcome.note} />}
               </div>
             </div>
           )}
@@ -375,7 +374,7 @@ export function EventDetailDialog({
           )}
 
           {event.description && (
-            <p className="whitespace-pre-wrap text-on-surface-variant">{event.description}</p>
+            <LinkifiedText className="text-on-surface-variant" text={event.description} />
           )}
 
           {event.readOnly && (

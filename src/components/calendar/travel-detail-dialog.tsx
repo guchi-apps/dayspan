@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import { TRAVEL_MODE_LABELS, type TravelItem } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
@@ -125,9 +126,7 @@ export function TravelDetailDialog({
             </span>
           </DetailRow>
 
-          {travel.note && (
-            <p className="whitespace-pre-wrap text-on-surface-variant">{travel.note}</p>
-          )}
+          {travel.note && <LinkifiedText className="text-on-surface-variant" text={travel.note} />}
 
           {/* 書き出せていない移動はDaySpanの中だけに見える。他の端末で探しても出てこないため伝える。 */}
           {!travel.exported && (
