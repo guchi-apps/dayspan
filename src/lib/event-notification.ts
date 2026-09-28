@@ -7,17 +7,24 @@
  */
 
 import type { EventNotificationOverride } from "@/types/calendar";
-import { EVENT_LEAD_MINUTES } from "@/types/notification";
+import { MAX_EVENT_LEAD_MINUTES } from "@/types/notification";
 
 /**
- * 許容される値だけを残し、重複を除いて昇順に並べる。
+ * 予定ごとの通知の上書きで「何分前」として有効な値か（0以上・上限以下の整数）。
+ * UIの入力チェックと、下記の正規化の両方で使う。
+ */
+export function isValidLeadMinutes(minutes: number): boolean {
+  return Number.isInteger(minutes) && minutes >= 0 && minutes <= MAX_EVENT_LEAD_MINUTES;
+}
+
+/**
+ * 有効な値だけを残し、重複を除いて昇順に並べる。
  *
- * 選択肢（EVENT_LEAD_MINUTES）に無い値が紛れ込むのは、DaySpanのAPIや将来のMCPから
- * 画面を経由せず直接呼ばれた場合。UIで絞っているだけの値をそのまま保存しない。
+ * 範囲外の値（負・非整数・MAX_EVENT_LEAD_MINUTES超え）が紛れ込むのは、DaySpanのAPIや
+ * 将来のMCPから画面を経由せず直接呼ばれた場合。UIで絞っているだけの値をそのまま保存しない。
  */
 export function normalizeLeadMinutes(input: number[]): number[] {
-  const allowed = new Set<number>(EVENT_LEAD_MINUTES);
-  const unique = new Set(input.filter((minutes) => allowed.has(minutes)));
+  const unique = new Set(input.filter(isValidLeadMinutes));
   return [...unique].sort((a, b) => a - b);
 }
 
@@ -36,11 +43,47 @@ export function resolveEventLeadMinutes(
   return override.leadMinutes;
 }
 
-/** 「10分前」「1時間前」「ちょうど」のような表示用ラベル。 */
+/** 「1時間30分」のような、時間と分を組み合わせた表記。0分未満は呼ばない前提。 */
+function formatLeadDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${hours}時間` : `${hours}時間${remainder}分`;
+}
+
+/**
+ * 「10分前」「1時間30分前」「ちょうど」のような、設定値として使う表示用ラベル
+ * （チップ・編集画面・詳細画面で使う）。
+ */
 export function eventLeadLabel(minutes: number): string {
   if (minutes === 0) return "ちょうど";
-  if (minutes < 60) return `${minutes}分前`;
-  return `${minutes / 60}時間前`;
+  return `${formatLeadDuration(minutes)}前`;
+}
+
+/**
+ * 「10分後」「1時間30分後」のような、通知タイトル専用の言い方（services/notifications/plan.ts）。
+ *
+ * eventLeadLabel の「◯◯前」は設定値としての言い方で、通知タイトルにそのまま使うと
+ * 「◯◯前に届いた」と読める（届いた時刻からの経過だと誤解される）。これから始まることが
+ * 分かる「◯◯後」を使う。0分（ちょうど）では呼ばれない前提（呼び出し側が予定名そのままにする）。
+ */
+export function eventLeadAnnouncement(minutes: number): string {
+  return `${formatLeadDuration(minutes)}後`;
+}
+
+/**
+ * 予定編集画面の「通知」ボタンに出す短い要約。
+ *
+ * EventDetailDialog（表示画面）と同じ「10分前・30分前」のように値をすべて連結すると、
+ * 予定ごとの上書きが任意の値を受け付ける以上、狭い画面でボタン（shrink-0・whitespace-nowrap
+ * で折り返さない）がダイアログの外へはみ出しうる。選んだ値のうち最初（最小）の1件だけを
+ * 出し、2件目以降は件数でまとめる。
+ */
+export function eventNotificationSummary(override: EventNotificationOverride | null): string {
+  if (!override?.enabled || override.leadMinutes.length === 0) return "通知";
+  const [first, ...rest] = override.leadMinutes;
+  const label = `通知：${eventLeadLabel(first)}`;
+  return rest.length > 0 ? `${label} ほか${rest.length}件` : label;
 }
 
 /**

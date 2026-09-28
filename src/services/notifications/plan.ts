@@ -2,7 +2,7 @@ import type { NotificationKind } from "@prisma/client";
 
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { localInputToIso } from "@/components/calendar/datetime-fields";
-import { resolveEventLeadMinutes } from "@/lib/event-notification";
+import { eventLeadAnnouncement, resolveEventLeadMinutes } from "@/lib/event-notification";
 import { db } from "@/lib/db";
 import { loadGoogleEvents } from "@/services/calendar/load";
 import { getNotionConnection } from "@/services/calendar/write-context";
@@ -11,7 +11,7 @@ import { getNotificationSettings } from "@/services/notifications/settings";
 import { createNotionClient } from "@/services/notion/client";
 import { listAllTasks } from "@/services/notion/tasks";
 import type { CalendarEventItem, TaskItem } from "@/types/calendar";
-import type { NotificationSettings } from "@/types/notification";
+import { PLAN_WINDOW_HOURS, type NotificationSettings } from "@/types/notification";
 
 /**
  * 通知の下書きを作る（docs/spec.md §32）。
@@ -25,9 +25,6 @@ import type { NotificationSettings } from "@/types/notification";
 
 /** 下書きを作り直す間隔。 */
 export const PLAN_INTERVAL_MINUTES = 30;
-
-/** 何時間先までの下書きを作るか。作り直しの間隔より十分長く取り、日をまたぐ手前で切れないようにする。 */
-const PLAN_WINDOW_HOURS = 36;
 
 /** まとめ通知の本文に並べるタスク名の数。 */
 const DIGEST_TITLE_LIMIT = 3;
@@ -226,7 +223,7 @@ function planEvents(
 
     for (const leadMinutes of leadList) {
       const scheduledAt = new Date(start.getTime() - leadMinutes * 60_000);
-      // 通知の時刻が過ぎている予定は作らない。始まってから「まもなく」と知らせても意味が変わる。
+      // 通知の時刻が過ぎている予定は作らない。始まってから「10分後」と知らせても意味が変わる。
       if (scheduledAt <= now) continue;
 
       drafts.push({
@@ -235,7 +232,9 @@ function planEvents(
         // 複数回通知するとき、同じ予定・同じ開始時刻でも別々の下書きになるようにするため。
         dedupeKey: `event:${event.id}:${event.start}:${leadMinutes}`,
         scheduledAt,
-        title: toDraftTitle(leadMinutes === 0 ? event.title : `まもなく ${event.title}`),
+        title: toDraftTitle(
+          leadMinutes === 0 ? event.title : `${eventLeadAnnouncement(leadMinutes)} ${event.title}`,
+        ),
         body: event.location ? `${timeRange} ・ ${event.location}` : timeRange,
         url: `/calendar?date=${utils.itemDateKey(event.start)}`,
       });

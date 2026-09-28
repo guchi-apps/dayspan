@@ -12,7 +12,7 @@ import { DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { dateKeyDiffDays } from "@/lib/calendar-range";
-import { sameNotificationOverride } from "@/lib/event-notification";
+import { eventNotificationSummary, sameNotificationOverride } from "@/lib/event-notification";
 import type { PlaceCatalog } from "@/services/notion/places";
 import type { CalendarEventItem, EventNotificationOverride, WritableCalendar } from "@/types/calendar";
 
@@ -398,7 +398,7 @@ export function EventForm({
               ) : (
                 <Bell className="size-4" />
               )}
-              通知
+              {eventNotificationSummary(notification)}
             </Button>
             {recurrence.frequency !== "none" && (
               <span className="type-label-small text-on-surface-variant">
