@@ -28,6 +28,16 @@ test("resolveInternalPath: 外部サイトを指すnextはCookie値へ落ちる�
   assert.equal(resolveInternalPath("https://evil.com", "/work"), "/work");
 });
 
+test("resolveInternalPath: タブ・改行を挟んで//evil.comへ化けるnextもCookie値へ落ちる（issue #838）", () => {
+  assert.equal(resolveInternalPath("/\t/evil.com", "/work"), "/work");
+  assert.equal(resolveInternalPath("/\n/evil.com", "/work"), "/work");
+  assert.equal(resolveInternalPath("/\r\\evil.com", "/work"), "/work");
+});
+
+test("resolveInternalPath: クエリ・フラグメント付きの安全なnextはそのまま使う", () => {
+  assert.equal(resolveInternalPath("/tasks?foo=bar#section", "/work"), "/tasks?foo=bar#section");
+});
+
 test("isStartPath: 下部ナビ5画面のみ許可する", () => {
   assert.equal(isStartPath("/calendar"), true);
   assert.equal(isStartPath("/tasks"), true);

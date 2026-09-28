@@ -60,12 +60,45 @@ export function startPathLabel(path: string | null | undefined): string {
 }
 
 /**
+ * `resolveInternalPath` が安全性を確かめるためだけに使うダミーの基点。
+ * 実在するオリジンにしないのは、万一の実装ミスでこの値がどこかへ渡っても実害が無いようにするため。
+ */
+const INTERNAL_PATH_BASE = "http://dayspan.invalid";
+
+/** タブ・改行（`\t` `\n` `\r`）を含む制御文字全般。WHATWG URLの解析はこれらを除去してから
+ * パースするため（issue #838）、除去後の結果だけで判定すると入力の見た目と挙動が乖離する。
+ * 先に弾いておけば、除去によってホストが変わるケース自体を作らせない。 */
+const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
+
+/**
+ * `param` が同一オリジン内の相対パスとして安全に解釈できるなら `pathname + search + hash` を、
+ * そうでなければ `null` を返す。
+ *
+ * 文字列の形（先頭が `//` か `/\` か）で判定していたが、2文字目にタブ・改行（`%09` / `%0A` /
+ * `%0D`）が来る値は素通りしていた。WHATWG URLの解析はこれらを取り除いてからパースするため、
+ * `/\t/evil.com` は `//evil.com`（プロトコル相対URL）として解釈され `https://evil.com/` になる
+ * （issue #838。issue #596 で塞いだ `//` `/\` の抜け道）。
+ * 実際に `new URL(param, ダミー基点)` を解析させ、`origin` がダミー基点と一致するかだけを見れば、
+ * WHATWG URL自身が行う正規化（タブ・改行の除去を含む）の結果を直接確かめられ、個別の文字を
+ * 列挙して弾く必要が無い。
+ */
+function safeInternalPath(param: string): string | null {
+  if (!param.startsWith("/") || CONTROL_CHAR_PATTERN.test(param)) return null;
+
+  let url: URL;
+  try {
+    url = new URL(param, INTERNAL_PATH_BASE);
+  } catch {
+    return null;
+  }
+  if (url.origin !== INTERNAL_PATH_BASE) return null;
+
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/**
  * ログイン後の戻り先（`next` / `callbackUrl`）を、外部へ飛ばされない形に整える。
  *
- * `/` で始まっても2文字目が `/` か `\` なら弾くのは、WHATWG URLの解析では特殊スキームの
- * ホストで `\` が `/` と等価に扱われるため。`//example.com` はプロトコル相対URL、
- * `/\evil.com` も `new URL()` に渡すと `https://evil.com/` になり、どちらも外部サイトを指す
- * （guchi-apps/dayspan#596）。
  * 判定を1か所に置くのは、`/`・`/auth/signin`・`/auth/callback`・`/login`・ミドルウェアの
  * 5経路で同じ既定値を使う必要があり、`start_url` とずれるとiPhoneウィジェットの着地点の
  * 前提（docs/spec.md §28）まで崩れるため。
@@ -77,7 +110,8 @@ export function resolveInternalPath(
   param: string | null | undefined,
   startPathCookieValue?: string | null,
 ): string {
-  if (param && param.startsWith("/") && !/^\/[/\\]/.test(param)) return param;
+  const safe = param ? safeInternalPath(param) : null;
+  if (safe) return safe;
   if (isStartPath(startPathCookieValue)) return startPathCookieValue as string;
   return DEFAULT_HOME_PATH;
 }
