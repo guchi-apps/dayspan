@@ -520,6 +520,12 @@ Node 24（`.github/workflows/ci.yml` と揃えている）なら `node --test` �
 追加のパッケージ（`@notionhq/client` など）に依存する重いモジュールへは実行時importを
 向けないよう気をつける（`place-text.ts` が `PlaceItem` を `import type` にしているのはこのため）。
 
+`pnpm lint`（ESLint）にはPrettierの自動整形が統合されておらず、`.prettierrc` も無い。
+`npx prettier --write` を直接実行すると、デフォルト設定（`printWidth: 80`）で既存コードの
+改行方針（1行に収まる限り改行しない）と食い違い、変更していない箇所まで巻き込んで
+広範囲を再フォーマットしてしまう（issue #843）。コードスタイルは`pnpm lint`が検出する範囲に
+留め、フォーマッターで一括整形しない。
+
 ## 外部APIの扱い
 
 - Google Calendar / Notion への呼び出しは `src/services/` を経由し、UIコンポーネントから直接叩かない（`docs/spec.md` §22）。

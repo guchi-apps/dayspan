@@ -56,6 +56,34 @@ export function buildAuthUrl({ origin, state }: { origin: string; state: string 
   return `${AUTH_ENDPOINT}?${params.toString()}`;
 }
 
+/**
+ * トークンエンドポイントがエラーを返したときの例外。HTTPステータスとGoogleのエラーコード
+ * （`invalid_grant`等）を呼び出し側が判定できるよう保持する。リフレッシュトークンの失効
+ * （invalid_grant・400）だけが利用者の再接続を要する原因で、それ以外（タイムアウト・5xx・
+ * 一時的な失敗）と区別できるようにするため `Error` のメッセージへ埋め込まず専用のフィールドに
+ * 持つ（issue #843）。
+ */
+export class GoogleTokenEndpointError extends Error {
+  readonly status: number;
+  readonly code: string | undefined;
+
+  constructor(status: number, code: string | undefined, detail: string) {
+    super(`Google token endpoint returned ${status}: ${detail}`);
+    this.name = "GoogleTokenEndpointError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+function parseTokenErrorCode(detail: string): string | undefined {
+  try {
+    const parsed = JSON.parse(detail) as { error?: unknown };
+    return typeof parsed.error === "string" ? parsed.error : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function postToken(body: Record<string, string>): Promise<GoogleTokenResponse> {
   const response = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
@@ -65,7 +93,7 @@ async function postToken(body: Record<string, string>): Promise<GoogleTokenRespo
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`Google token endpoint returned ${response.status}: ${detail}`);
+    throw new GoogleTokenEndpointError(response.status, parseTokenErrorCode(detail), detail);
   }
 
   return (await response.json()) as GoogleTokenResponse;

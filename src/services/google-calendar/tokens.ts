@@ -3,7 +3,7 @@ import type { GoogleAccount } from "@prisma/client";
 import { decryptSecret, encryptSecret } from "@/lib/crypto/secret-cipher";
 import { db } from "@/lib/db";
 
-import { refreshAccessToken } from "./oauth";
+import { GoogleTokenEndpointError, refreshAccessToken } from "./oauth";
 
 // 期限ぎりぎりのトークンでAPIを叩くと、通信中に期限切れになることがある。
 // 余裕を持って更新する。
@@ -51,11 +51,21 @@ async function refreshAndStore(account: GoogleAccount): Promise<string> {
   } catch (error) {
     // リフレッシュトークンは、認可の取り消し・OAuthクライアントの入れ替え（GCPプロジェクトの
     // 分離など）で失効する。同意画面の公開ステータスが「テスト」の間は7日でも失効するため、
-    // 本番にして運用する（docs/spec.md §17）。いずれもユーザーに再接続してもらうしかないので、
-    // 握りつぶさず呼び出し側へ伝える。
-    throw new GoogleReauthRequiredError(
-      error instanceof Error ? error.message : "リフレッシュに失敗しました",
-    );
+    // 本番にして運用する（docs/spec.md §17）。この場合Googleはトークンエンドポイントから
+    // invalid_grant（400）を返し、利用者に再接続してもらうしかない。
+    // 一方、タイムアウト・5xx・TOKEN_ENCRYPTION_KEYの設定ミスによる復号失敗などは一時的な
+    // 障害で、再接続しても直らない。それらまで「再接続が必要」に変換すると原因が分からない
+    // まま利用者へ再接続を促すことになるため（CLAUDE.md「外部APIの扱い」）、invalid_grantの
+    // ときだけ変換し、それ以外は元の例外をそのまま投げて呼び出し側の externalApiError /
+    // externalApiMessage にメッセージを出させる（issue #843）。
+    if (
+      error instanceof GoogleTokenEndpointError &&
+      error.status === 400 &&
+      error.code === "invalid_grant"
+    ) {
+      throw new GoogleReauthRequiredError(error.message);
+    }
+    throw error;
   }
 
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
