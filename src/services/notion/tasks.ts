@@ -290,6 +290,44 @@ function toProperties(
   return properties;
 }
 
+/** タスクDB以外のページを書き換えようとしたときのエラー。API側で403に変える。 */
+export class TaskNotEditableError extends Error {
+  constructor() {
+    super("This page is not in the task data source");
+    this.name = "TaskNotEditableError";
+  }
+}
+
+/**
+ * 対象ページがタスクDBのものか確かめ、取得したページをそのまま返す。
+ *
+ * ゴミの日DB・勤務記録DBのように外部アプリ（myroom）や別画面が正で、DaySpanから無条件に
+ * 書き込んでよいとは限らないページを、APIから直接書き換えられないようにする。UIで入口を
+ * 隠すだけだと、DaySpanのAPIや将来のMCPから直接呼ばれた要求が素通りするため、経路によらず
+ * 同じ結果になるここで断る（買い物・勤務・日付リマインド・場所と同じ考え方）。
+ *
+ * 戻り値は `completeTask` が「変更前のタスク」を読むのにも使う（往復を増やさないため）。
+ */
+async function assertTaskPage(
+  notion: Client,
+  connection: NotionConnection,
+  taskId: string,
+): Promise<NotionPage> {
+  if (!connection.taskDataSourceId) throw new TaskNotEditableError();
+
+  const page = await notion.pages.retrieve({ page_id: taskId });
+  const parent = "parent" in page ? page.parent : null;
+  const dataSourceId = parent?.type === "data_source_id" ? parent.data_source_id : null;
+  // NotionのIDはハイフン付き・無しのどちらの表記でも同じものを指す。比較の前に揃える。
+  const sameId = (a: string | null, b: string | null) =>
+    a !== null &&
+    b !== null &&
+    a.replaceAll("-", "").toLowerCase() === b.replaceAll("-", "").toLowerCase();
+
+  if (!sameId(dataSourceId, connection.taskDataSourceId)) throw new TaskNotEditableError();
+  return page as NotionPage;
+}
+
 /** 完了状態のプロパティがcheckboxかstatusかを、既存ページの値から判別する。 */
 async function resolveDoneType(
   notion: Client,
@@ -333,7 +371,11 @@ export async function createTask(
   return { id: page.id };
 }
 
-export async function updateTask(
+/**
+ * プロパティを書き込む本体。対象ページがタスクDBのものかの確認（`assertTaskPage`）を
+ * 済ませたあとに呼ぶ内部関数で、単体では公開しない。
+ */
+async function writeTaskProperties(
   notion: Client,
   connection: NotionConnection,
   taskId: string,
@@ -348,6 +390,16 @@ export async function updateTask(
   });
 }
 
+export async function updateTask(
+  notion: Client,
+  connection: NotionConnection,
+  taskId: string,
+  input: TaskWriteInput,
+): Promise<void> {
+  await assertTaskPage(notion, connection, taskId);
+  await writeTaskProperties(notion, connection, taskId, input);
+}
+
 /**
  * タスクを完了にする。繰り返し設定があれば次回分を新規作成する。
  * 完了した回は履歴としてNotionに残す（削除しない。docs/spec.md §12・§13）。
@@ -360,12 +412,14 @@ export async function completeTask(
 ): Promise<{ nextTaskId: string | null }> {
   const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
 
-  const page = await notion.pages.retrieve({ page_id: taskId });
-  const current = "properties" in page ? normalizeTask(page as NotionPage, propertyMap) : null;
+  const page = await assertTaskPage(notion, connection, taskId);
+  const current = "properties" in page ? normalizeTask(page, propertyMap) : null;
 
   // 「対応しない」から完了へ変える操作では、対応状況を外す（完了と対応しないは両立しない）。
   // 他の値（利用者が独自に足した選択肢）は触らない。
-  await updateTask(notion, connection, taskId, {
+  // 対象ページの確認は上ですでに済んでいるため、往復を増やさないよう updateTask ではなく
+  // writeTaskProperties を直接呼ぶ。
+  await writeTaskProperties(notion, connection, taskId, {
     done,
     ...(current?.skipped ? { outcome: null } : {}),
   });
@@ -421,6 +475,11 @@ export async function skipTask(
  * 繰り返しタスクは完了のたびに次回分を別ページとして作る方式のため、
  * ここで消えるのはこの回だけで、すでに作られた次回分は残る。
  */
-export async function deleteTask(notion: Client, taskId: string): Promise<void> {
+export async function deleteTask(
+  notion: Client,
+  connection: NotionConnection,
+  taskId: string,
+): Promise<void> {
+  await assertTaskPage(notion, connection, taskId);
   await notion.pages.update({ page_id: taskId, in_trash: true });
 }
