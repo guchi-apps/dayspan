@@ -42,3 +42,26 @@ export function eventLeadLabel(minutes: number): string {
   if (minutes < 60) return `${minutes}分前`;
   return `${minutes / 60}時間前`;
 }
+
+/**
+ * 実質的に同じ設定かどうか（issue #834）。
+ *
+ * 編集画面で選び直した値を保存前の値と比べ、変わっていなければAPIを呼ばずに済ませるために使う。
+ * 両方とも無効なら、leadMinutesの中身が違っていても「変わっていない」とみなす
+ * （無効なときの数値はどうせ使われないため）。
+ */
+export function sameNotificationOverride(
+  a: EventNotificationOverride | null,
+  b: EventNotificationOverride | null,
+): boolean {
+  const aEnabled = a?.enabled === true;
+  const bEnabled = b?.enabled === true;
+  if (aEnabled !== bEnabled) return false;
+  if (!aEnabled) return true;
+
+  const aMinutes = normalizeLeadMinutes(a!.leadMinutes);
+  const bMinutes = normalizeLeadMinutes(b!.leadMinutes);
+  return (
+    aMinutes.length === bMinutes.length && aMinutes.every((value, index) => value === bMinutes[index])
+  );
+}

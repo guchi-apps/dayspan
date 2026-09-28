@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { normalizeLeadMinutes, resolveEventLeadMinutes } from "@/lib/event-notification";
+import {
+  normalizeLeadMinutes,
+  resolveEventLeadMinutes,
+  sameNotificationOverride,
+} from "@/lib/event-notification";
 
 test("normalizeLeadMinutes: 許容値のみ残し、重複を除いて昇順に並べる", () => {
   assert.deepEqual(normalizeLeadMinutes([30, 10, 10, 0]), [0, 10, 30]);
@@ -31,4 +35,46 @@ test("resolveEventLeadMinutes: 通知を入れた予定は指定のleadMinutes�
 
 test("resolveEventLeadMinutes: アカウントの予定通知がオフなら入れた予定も空", () => {
   assert.deepEqual(resolveEventLeadMinutes({ enabled: true, leadMinutes: [10] }, false), []);
+});
+
+test("sameNotificationOverride: 両方nullは同じ", () => {
+  assert.equal(sameNotificationOverride(null, null), true);
+});
+
+test("sameNotificationOverride: 両方無効（leadMinutesが違っても）は同じ", () => {
+  assert.equal(
+    sameNotificationOverride(
+      { enabled: false, leadMinutes: [10] },
+      { enabled: false, leadMinutes: [30] },
+    ),
+    true,
+  );
+});
+
+test("sameNotificationOverride: nullと無効は同じ扱い", () => {
+  assert.equal(sameNotificationOverride(null, { enabled: false, leadMinutes: [10] }), true);
+});
+
+test("sameNotificationOverride: 有効↔無効は違う", () => {
+  assert.equal(sameNotificationOverride(null, { enabled: true, leadMinutes: [10] }), false);
+});
+
+test("sameNotificationOverride: leadMinutesの並びが違っても集合が同じなら同じ", () => {
+  assert.equal(
+    sameNotificationOverride(
+      { enabled: true, leadMinutes: [30, 10] },
+      { enabled: true, leadMinutes: [10, 30] },
+    ),
+    true,
+  );
+});
+
+test("sameNotificationOverride: leadMinutesの集合が違えば違う", () => {
+  assert.equal(
+    sameNotificationOverride(
+      { enabled: true, leadMinutes: [10] },
+      { enabled: true, leadMinutes: [10, 30] },
+    ),
+    false,
+  );
 });
