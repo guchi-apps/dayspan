@@ -28,7 +28,7 @@ const UPDATE_FIELDS = [
  * 送った項目だけを変える。対象は `calendarId` と予定のIDで必ず名指しさせる。
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ eventId: string }> }) {
-  const unauthorized = requireInternalEventsApiKey(request);
+  const unauthorized = await requireInternalEventsApiKey(request);
   if (unauthorized) return unauthorized;
 
   let body: InternalUpdateEventRequest;
@@ -92,7 +92,7 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ eventId: string }> },
 ) {
-  const unauthorized = requireInternalEventsApiKey(request);
+  const unauthorized = await requireInternalEventsApiKey(request);
   if (unauthorized) return unauthorized;
 
   const searchParams = new URL(request.url).searchParams;

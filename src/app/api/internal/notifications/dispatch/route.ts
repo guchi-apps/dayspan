@@ -9,7 +9,7 @@ import { runTick } from "@/services/notifications/scheduler";
  * 二重に走っても、送信済みの印を送る前に立てているため同じ通知は2回送られない。
  */
 export async function POST(request: Request) {
-  const denied = requireInternalApiKey(request);
+  const denied = await requireInternalApiKey(request);
   if (denied) return denied;
 
   await runTick();
