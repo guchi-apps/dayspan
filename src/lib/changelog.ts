@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.34.2",
+    date: "2026-09-29",
+    changes: [
+      "アプリの名前を「Koyomio」に変更し、アイコンをカレンダーをモチーフにした紫のデザインに統一しました。画面やメニュー、設定画面の表記も新しい名前に合わせています。",
+    ],
+  },
+  {
     version: "3.34.0",
     date: "2026-09-28",
     changes: [
