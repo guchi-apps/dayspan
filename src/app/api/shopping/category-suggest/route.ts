@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const userId = await requireUserId();
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  if (!hasTypeSafeApiKey()) {
+  if (!(await hasTypeSafeApiKey())) {
     return NextResponse.json(
       { error: "not_configured", message: "カテゴリの自動判定が設定されていません（TYPESAFE_API_KEY が未設定です）。" },
       { status: 503 },

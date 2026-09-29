@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { db } from "@/lib/db";
+import { getSharedToken } from "@/lib/shared-token";
 
 /**
  * サーバー間参照用API（`/api/internal/*`）の認証（docs/internal-api.md）。
@@ -12,8 +13,8 @@ import { db } from "@/lib/db";
  * 通過した場合は null を返す。既存ルートの `if (!userId) return ...` と同じ書き味に合わせ、
  * 呼び出し側が「返り値があればそのまま返す」だけで済むようにする。
  */
-export function requireInternalApiKey(request: Request): Response | null {
-  return requireBearerKey(request, "INTERNAL_API_KEY", "internal_api_not_configured");
+export async function requireInternalApiKey(request: Request): Promise<Response | null> {
+  return requireBearerKey(request, "DAYSPAN_INTERNAL_API_KEY", "INTERNAL_API_KEY", "internal_api_not_configured");
 }
 
 /**
@@ -23,16 +24,23 @@ export function requireInternalApiKey(request: Request): Response | null {
  * 読み取り用のキーが漏れても予定を書き込まれないようにするための分離で、比較・未設定時の
  * 扱いは読み取り用とまったく同じ。
  */
-export function requireInternalEventsApiKey(request: Request): Response | null {
-  return requireBearerKey(request, "INTERNAL_EVENTS_API_KEY", "internal_events_api_not_configured");
+export async function requireInternalEventsApiKey(request: Request): Promise<Response | null> {
+  return requireBearerKey(
+    request,
+    "DAYSPAN_INTERNAL_EVENTS_API_KEY",
+    "INTERNAL_EVENTS_API_KEY",
+    "internal_events_api_not_configured",
+  );
 }
 
-function requireBearerKey(
+async function requireBearerKey(
   request: Request,
-  envVarName: "INTERNAL_API_KEY" | "INTERNAL_EVENTS_API_KEY",
+  sharedTokenName: "DAYSPAN_INTERNAL_API_KEY" | "DAYSPAN_INTERNAL_EVENTS_API_KEY",
+  fallbackEnvName: "INTERNAL_API_KEY" | "INTERNAL_EVENTS_API_KEY",
   notConfiguredError: string,
-): Response | null {
-  const expected = process.env[envVarName];
+): Promise<Response | null> {
+  // 正は issue-deck の共有トークン。取得できないときだけ従来の環境変数へ落ちる（issue #860）。
+  const expected = await getSharedToken(sharedTokenName, fallbackEnvName);
 
   // 未設定を「素通り」にはしない。設定漏れがそのまま認証なしの公開に化けるのを防ぐ。
   if (!expected) {

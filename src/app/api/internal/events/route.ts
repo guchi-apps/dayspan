@@ -21,7 +21,7 @@ const TIME_KEY = /^([01]\d|2[0-3]):[0-5]\d$/;
  * 作成だけを持つ。編集・削除は無い（取り消せない操作をサーバー間経路へ出さないため）。
  */
 export async function POST(request: Request) {
-  const unauthorized = requireInternalEventsApiKey(request);
+  const unauthorized = await requireInternalEventsApiKey(request);
   if (unauthorized) return unauthorized;
 
   let body: InternalCreateEventRequest;

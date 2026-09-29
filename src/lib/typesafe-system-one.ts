@@ -7,6 +7,7 @@
 
 import { recordAiCall } from "@/lib/anthropic-messages";
 import { extractUsageTokens, type AiFeature, type AnthropicUsage } from "@/lib/ai-usage";
+import { getSharedToken } from "@/lib/shared-token";
 
 const DEFAULT_BASE_URL = "https://api.typesafe.ai";
 const DEFAULT_MODEL = "jev-latest";
@@ -34,8 +35,13 @@ type SystemOneResponse = {
   usage?: AnthropicUsage;
 };
 
-export function hasTypeSafeApiKey(): boolean {
-  return Boolean(process.env.TYPESAFE_API_KEY);
+/** 共有トークン（issue-deck）→ 環境変数の順で引く（issue #860）。 */
+function typeSafeApiKey(): Promise<string | undefined> {
+  return getSharedToken("TYPESAFE_API_KEY", "TYPESAFE_API_KEY");
+}
+
+export async function hasTypeSafeApiKey(): Promise<boolean> {
+  return Boolean(await typeSafeApiKey());
 }
 
 function systemOneUrl(): string {
@@ -51,7 +57,7 @@ export async function askChoice(options: {
   question: ChoiceQuestion;
   timeoutMs?: number;
 }): Promise<string | null> {
-  const apiKey = process.env.TYPESAFE_API_KEY;
+  const apiKey = await typeSafeApiKey();
   if (!apiKey) return null;
 
   let response: Response;

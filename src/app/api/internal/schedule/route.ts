@@ -40,7 +40,7 @@ const MAX_OVERDUE_DAYS = 90;
  * ここで書き直すと、同じ日を画面で見たときと違う結果が返る。
  */
 export async function GET(request: Request) {
-  const unauthorized = requireInternalApiKey(request);
+  const unauthorized = await requireInternalApiKey(request);
   if (unauthorized) return unauthorized;
 
   // 引数の検査はDBを見る前に済ませる。形式が違うだけの要求でDBへ問い合わせる理由が無い。
