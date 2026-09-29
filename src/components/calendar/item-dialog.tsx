@@ -21,7 +21,8 @@ export type ItemKind = "event" | "task" | "reminder" | "travel";
  *
  * 予定だけにしている。種類の切り替えタブを持たない（issue #729）ため、「＋」が開く入力は
  * 1種類に決まる。タスクはタスク画面、日付リマインドは専用一覧（/reminders）、
- * 移動は予定の表示画面の「移動を追加」から作る。
+ * 移動は予定の表示画面の「移動を追加」から作る。ほかに、予定の入力で保存先に移動
+ * カレンダーを選び直したときの入口（`TravelEntryHint`・issue #895）からも入れる。
  */
 export type AddableKind = Extract<ItemKind, "event">;
 
@@ -65,6 +66,8 @@ export function ItemDialog({
   weekStartsOn = 0,
   onClose,
   onSaved,
+  travelCalendarId,
+  onOpenTravel,
 }: {
   initialKind: ItemKind;
   drafts: ItemDrafts;
@@ -81,6 +84,9 @@ export function ItemDialog({
   /** 保存後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   /** 第2引数は予定を保存したときの楽観的な反映（issue #787）。 */
   onSaved: (touched: TouchedRange[] | null, change?: OptimisticEventChange) => void;
+  /** 移動の書き出し先カレンダー。予定の入力に移動への入口を出すのに使う（issue #895）。 */
+  travelCalendarId?: string | null;
+  onOpenTravel?: (range: { start: string; end: string }) => void;
 }) {
   const kind = initialKind;
   const [title, setTitle] = useState(() => draftTitle(initialKind, drafts));
@@ -124,6 +130,8 @@ export function ItemDialog({
             calendars={calendars}
             placeCatalog={placeCatalog}
             weekStartsOn={weekStartsOn}
+            travelCalendarId={travelCalendarId}
+            onOpenTravel={onOpenTravel}
           />
         )}
         {kind === "task" && drafts.task && (
