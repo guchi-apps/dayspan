@@ -23,6 +23,7 @@ import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { EventNotificationDialog } from "./event-notification-dialog";
 import { ItemFormActions } from "./item-form-actions";
 import { LocationInput } from "./location-input";
+import { TravelEntryHint } from "./travel-entry-hint";
 import { RecurrenceFields } from "./recurrence-fields";
 import {
   buildRecurrenceRule,
@@ -52,6 +53,8 @@ export type EventDraft = {
   notification?: EventNotificationOverride | null;
   /** 簡易入力から移ってきた入力。通知の設定ボタンを出さない（issue #739）。 */
   fromQuick?: boolean;
+  /** 簡易入力で保存先に移動カレンダーを選び直していたか（issue #895）。移動の入口を出し続ける。 */
+  pickedTravel?: boolean;
 };
 
 /**
@@ -68,6 +71,8 @@ export function EventForm({
   autoFocusTitle,
   onTitleChange,
   onSaved,
+  travelCalendarId,
+  onOpenTravel,
 }: {
   draft: EventDraft;
   calendars: WritableCalendar[];
@@ -86,6 +91,10 @@ export function EventForm({
    * 第2引数は、取り直しを待たずに画面へ重ねる保存後の予定（issue #787）。
    */
   onSaved: (touched: TouchedRange[] | null, change?: OptimisticEventChange) => void;
+  /** 移動の書き出し先カレンダー。設定が無ければ移動への入口は出さない（issue #895）。 */
+  travelCalendarId?: string | null;
+  /** 入力中の日時を持ったまま、予定に紐づかない移動の入力へ移る。 */
+  onOpenTravel?: (range: { start: string; end: string }) => void;
 }) {
   const editing = draft.event;
 
@@ -102,6 +111,9 @@ export function EventForm({
     editing?.notification ?? draft.notification ?? null,
   );
   const [editingNotification, setEditingNotification] = useState(false);
+  // 保存先に移動カレンダーを利用者が選び直したか（issue #895）。値で判定すると、複製の
+  // 引き継ぎや既定の保存先が移動カレンダーのときも入口が出てしまうため、選んだ操作で立てる。
+  const [pickedTravel, setPickedTravel] = useState(draft.pickedTravel ?? false);
   const [recurrence, setRecurrence] = useState<RecurrenceInput>(NO_RECURRENCE);
   const [calendarId, setCalendarId] = useState(
     editing?.calendarId ??
@@ -372,8 +384,18 @@ export function EventForm({
           label="保存先カレンダー"
           value={calendarId}
           calendars={calendars}
-          onChange={setCalendarId}
+          onChange={(next) => {
+            setCalendarId(next);
+            setPickedTravel(Boolean(travelCalendarId) && next === travelCalendarId);
+          }}
         />
+
+        {/* 時刻のある新規の入力だけ。終日は開始・終了が日付だけで移動の欄の形と合わない。 */}
+        {pickedTravel &&
+          !editing &&
+          !allDay &&
+          calendarId === travelCalendarId &&
+          onOpenTravel && <TravelEntryHint onOpen={() => onOpenTravel({ start, end })} />}
 
         {/*
           予定ごとの通知設定（issue #708）。新規作成・既存の編集どちらもこのフォームから選ぶ
