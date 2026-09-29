@@ -14,7 +14,7 @@ module.exports = {
       // メモリ2GBのVPS上でNext.jsが10本常駐しており、Nodeの既定ヒープ上限
       // （1プロセスあたり約1006MB）ではGCが働かず各プロセスが数百MBを抱え込む。
       // 上限を明示して早めにGCさせる。max_memory_restart は暴走時の保険。
-      // 詳細: https://github.com/guchi-apps/dayspan/issues/191
+      // 詳細: https://github.com/guchi-apps/koyomio/issues/191
       node_args: "--max-old-space-size=128",
       max_memory_restart: "320M",
       // PM2 は max_memory_restart による再起動やサーバー再起動後の resurrect で

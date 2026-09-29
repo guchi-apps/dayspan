@@ -15,7 +15,7 @@ import type { JapaneseAddressParts } from "./japanese-address";
 const OVERPASS_API = "https://overpass-api.de/api/interpreter";
 
 /** 呼び出し元を名乗る。Nominatimと同じ理由。 */
-const USER_AGENT = "DaySpan/1.0 (+https://github.com/guchi-apps/dayspan)";
+const USER_AGENT = "DaySpan/1.0 (+https://github.com/guchi-apps/koyomio)";
 
 /**
  * 番地を引くのに使ってよい時間の合計。Nominatimの上限と同じ長さにする。

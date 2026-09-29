@@ -14,7 +14,7 @@ import { composeJapaneseAddress, type JapaneseAddressParts } from "./japanese-ad
 const NOMINATIM_API = "https://nominatim.openstreetmap.org";
 
 /** 呼び出し元を名乗る。Nominatimの利用規約が求めており、名乗らないと遮断されうる。 */
-const USER_AGENT = "DaySpan/1.0 (+https://github.com/guchi-apps/dayspan)";
+const USER_AGENT = "DaySpan/1.0 (+https://github.com/guchi-apps/koyomio)";
 
 /** 返答が遅いときに画面を待たせ続けない。住所は無くても登録は通せる。 */
 const TIMEOUT_MS = 8000;
