@@ -134,6 +134,13 @@ export type TaskItem = {
    * 書き込む先が無い。画面が選択肢を出すかどうかを、追加の取得なしで決めるために持たせる。
    */
   canSkip: boolean;
+  /**
+   * 進捗（「承認待ち」など。issue #873）。完了状態とは独立で、選択肢はNotionのプロパティ定義が一次情報源。
+   * Service Workerに残る古い応答には無いため、読む側は `?? null` で欠けを受ける。
+   */
+  progress: string | null;
+  /** 進捗のプロパティ（`PropertyMap.progress`）がタスクDBにあるか。無いと欄・バッジを出さない。 */
+  canProgress: boolean;
   priority: TaskPriority;
   tags: string[];
   memo: string | null;

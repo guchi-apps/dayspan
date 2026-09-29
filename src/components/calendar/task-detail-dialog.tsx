@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { TagChipList } from "@/components/tags/tag-chip";
+import { TagPicker } from "@/components/tags/tag-picker";
 import { LinkifiedText } from "@/components/ui/linkified-text";
 import { cn } from "@/lib/utils";
 import type { TagOption } from "@/services/notion/tag-options";
@@ -35,6 +36,7 @@ import { taskRanges, type TouchedRange } from "./use-calendar-chunks";
 export function TaskDetailDialog({
   task,
   tagOptions,
+  progressOptions = null,
   timeZone,
   readOnly = false,
   onClose,
@@ -46,6 +48,8 @@ export function TaskDetailDialog({
   task: TaskItem;
   /** 登録済みのタグ。色を引くために渡す。取得できていないときは空でよい。 */
   tagOptions: TagOption[];
+  /** 進捗（「承認待ち」など。issue #873）の選択肢。取得できていないときは null。 */
+  progressOptions?: TagOption[] | null;
   timeZone: string;
   /** 閲覧のみにする。オフライン中に使う（docs/spec.md §21）。 */
   readOnly?: boolean;
@@ -69,6 +73,8 @@ export function TaskDetailDialog({
   // 別の項目に現れるため。編集画面まで往復させると何が変わったのか追いにくい。
   // 行き先ごとに1件のため、多くても期限と予定日の2件が並ぶ。
   const [links, setLinks] = useState(task.links);
+  // 進捗は保存を挟まずその場で切り替える（「承認待ちにした」を1タップで残すため）。
+  const [progress, setProgress] = useState(task.progress ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 削除は押した直後には実行せず、確認を挟む。
@@ -176,6 +182,32 @@ export function TaskDetailDialog({
     }
   };
 
+  const changeProgress = async (next: string | null) => {
+    const before = progress;
+    setProgress(next);
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ progress: next }),
+      });
+      if (!response.ok) {
+        setProgress(before);
+        setError(await readErrorMessage(response, "進捗を更新できませんでした。"));
+        return;
+      }
+      // 期限・予定日は動かないため、いまの枠だけ取り直せばよい。
+      onChanged(taskRanges(task));
+    } catch (cause) {
+      setProgress(before);
+      setError(cause instanceof Error ? cause.message : "進捗を更新できませんでした。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggleDone = async (value: boolean) => {
     const wasSkipped = skipped;
     setDone(value);
@@ -257,6 +289,22 @@ export function TaskDetailDialog({
           </div>
 
           {readOnly && <p className="px-4 text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
+
+          {/* 完了・対応しないでは進捗の意味が無いため、切り替えを出さない（Notionの値は残る）。 */}
+          {(task.canProgress || progressOptions !== null) && !done && (
+            <div className="px-4">
+              <TagPicker
+                label="進捗"
+                options={progressOptions ?? []}
+                value={progress ? [progress] : []}
+                multiple={false}
+                onChange={(next) => {
+                  if (busy || readOnly) return;
+                  void changeProgress(next[0] ?? null);
+                }}
+              />
+            </div>
+          )}
 
           {task.due && (
             <DetailField
