@@ -58,7 +58,7 @@ scripts/sync-github-secrets.sh --only VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_S
 次の順に確かめると最短で分かれる。
 
 ```bash
-gh secret list --repo guchi-apps/koyomio
+gh secret list
 ```
 
 1. `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` が並ばない → 同期されていない（→「本番へ配る」）。

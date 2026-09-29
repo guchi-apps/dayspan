@@ -101,7 +101,7 @@ export function NotificationSection({
           スイッチを押しても何も起きない状態になるため、理由を先に出す。 */}
       {state.ready && state.needsInstall && (
         <p className="type-body-medium rounded-lg bg-primary-container/70 px-3 py-2 text-on-primary-container">
-          この端末では、Safariで開いた画面から通知を許可できません。共有ボタンから「ホーム画面に追加」でKoyomioを追加し、そのアイコンから開いてください。
+          この端末では、Safariで開いた画面から通知を許可できません。共有ボタンから「ホーム画面に追加」でYoteiFlowを追加し、そのアイコンから開いてください。
         </p>
       )}
 

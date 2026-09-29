@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BellRing, ChevronRight, History, MapPin, Menu, Moon, Settings } from "lucide-react";
 
+import { Wordmark } from "@/components/brand/wordmark";
 import { NAV_ITEMS, type NavKey } from "@/components/nav/nav-items";
 import { isPlainClick, useOfflineNavigate } from "@/components/nav/offline-navigate";
 import { Button } from "@/components/ui/button";
@@ -67,7 +68,9 @@ export function AppMenuButton({
         showCloseButton={false}
         className="bg-surface-container-low pt-[calc(1rem_+_env(safe-area-inset-top,0px))] pb-[max(0.5rem,env(safe-area-inset-bottom))]"
       >
-        <DialogTitle className="px-6 pb-2 text-base font-semibold">Koyomio</DialogTitle>
+        <DialogTitle className="px-6 pb-2">
+          <Wordmark size={24} compact className="text-base" />
+        </DialogTitle>
         {/* 読み上げ用。見出しだけでは、ここが何の一覧なのかが読み上げでは伝わらない。 */}
         <DialogDescription className="sr-only">画面の切り替えと設定</DialogDescription>
 

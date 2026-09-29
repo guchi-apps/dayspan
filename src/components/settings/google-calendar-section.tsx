@@ -152,7 +152,7 @@ export function GoogleCalendarSection({
                 <span className="font-medium text-on-surface">表示</span>
                 はカレンダー画面に予定を出すかどうか、
                 <span className="font-medium text-on-surface">使用</span>
-                はそのカレンダーへ書き込んでよいかどうかです。使用がオフのカレンダーには、Koyomioの画面からも外部アプリからも書き込みません。
+                はそのカレンダーへ書き込んでよいかどうかです。使用がオフのカレンダーには、YoteiFlowの画面からも外部アプリからも書き込みません。
               </p>
               <p>
                 上下の矢印で並べ替えます。ここでの並びは、予定の入力画面に出る保存先カレンダーの
@@ -346,7 +346,7 @@ function ConnectResultMessage({ result }: { result: string }) {
     state_mismatch: { text: "接続の検証に失敗しました。もう一度お試しください。", tone: "error" },
     exchange_failed: { text: "Googleとのトークン交換に失敗しました。", tone: "error" },
     no_refresh_token: {
-      text: "更新用トークンを取得できませんでした。Googleアカウントの「サードパーティ製のアプリとサービス」からKoyomioのアクセス権を削除してから、もう一度接続してください。",
+      text: "更新用トークンを取得できませんでした。Googleアカウントの「サードパーティ製のアプリとサービス」からYoteiFlowのアクセス権を削除してから、もう一度接続してください。",
       tone: "error",
     },
     no_identity: { text: "Googleアカウントを特定できませんでした。", tone: "error" },

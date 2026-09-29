@@ -97,7 +97,7 @@ prepare_issue() {
 
   echo "#$n: Issue内容を取得しています..."
   local issue_json
-  if ! issue_json="$(gh issue view "$n" --repo guchi-apps/koyomio --json number,title,body,labels,comments)"; then
+  if ! issue_json="$(gh issue view "$n" --repo "$(gh repo view --json nameWithOwner -q .nameWithOwner)" --json number,title,body,labels,comments)"; then
     echo "Error: issue #$n の取得に失敗しました。" >&2
     exit 1
   fi

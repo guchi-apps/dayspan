@@ -163,7 +163,7 @@ function escapeForJsString(value: string): string {
   return JSON.stringify(value).slice(1, -1);
 }
 
-const SCRIPTABLE_TEMPLATE = String.raw`// Koyomio ウィジェット
+const SCRIPTABLE_TEMPLATE = String.raw`// YoteiFlow ウィジェット
 //
 // 設定 > iPhoneウィジェット から生成された台本です。
 // トークンが入っているので、そのまま他人へ渡さないでください。
@@ -210,7 +210,7 @@ const REFRESH_MINUTES = __DAYSPAN_REFRESH_MINUTES__;
 // Parameter に入れられる値。
 const VIEWS = ["activity", "schedule", "tasks", "shopping"];
 
-// Koyomioの画面と同じ配色。記録中だけ色を変え、色でも記録中かどうかが分かるようにする。
+// YoteiFlowの画面と同じ配色。記録中だけ色を変え、色でも記録中かどうかが分かるようにする。
 const RUN_BG = Color.dynamic(new Color("#eaddff"), new Color("#4f378b"));
 const RUN_INK = Color.dynamic(new Color("#21005d"), new Color("#eaddff"));
 const IDLE_BG = Color.dynamic(new Color("#fef7ff"), new Color("#1d1b20"));
@@ -286,7 +286,7 @@ async function load(view) {
     }
     return { summary: json };
   } catch (error) {
-    return { error: "Koyomioへつながりませんでした。" };
+    return { error: "YoteiFlowへつながりませんでした。" };
   }
 }
 
@@ -339,7 +339,7 @@ function renderActivity(widget, ink, summary) {
 function renderSmall(widget, ink, summary) {
   const running = summary.running;
 
-  addHeader(widget, ink, running ? "記録中" : "Koyomio", running !== null);
+  addHeader(widget, ink, running ? "記録中" : "YoteiFlow", running !== null);
   widget.addSpacer(6);
 
   const title = addText(widget, ink, running ? running.title : "記録していません", Font.semiboldSystemFont(15));
@@ -375,7 +375,7 @@ function renderMedium(widget, ink, summary) {
   left.layoutVertically();
   left.size = new Size(124, 0);
 
-  addHeader(left, ink, running ? "記録中" : "Koyomio", running !== null);
+  addHeader(left, ink, running ? "記録中" : "YoteiFlow", running !== null);
   left.addSpacer(6);
 
   const title = addText(left, ink, running ? running.title : "記録していません", Font.semiboldSystemFont(15));
@@ -880,7 +880,7 @@ function renderError(widget, ink, message) {
     return;
   }
 
-  addHeader(widget, ink, "Koyomio", false);
+  addHeader(widget, ink, "YoteiFlow", false);
   widget.addSpacer(6);
 
   const title = addText(widget, ink, "表示できません", Font.semiboldSystemFont(14));
@@ -1011,7 +1011,7 @@ function formatDuration(minutes) {
 }
 
 /**
- * 設定タイムゾーンでの時刻。端末のタイムゾーンではなくKoyomioの設定に合わせる。
+ * 設定タイムゾーンでの時刻。端末のタイムゾーンではなくYoteiFlowの設定に合わせる。
  * 端末側で時差のある場所にいても、アプリの画面と同じ時刻が出る必要がある。
  */
 function formatTime(iso, timeZone) {

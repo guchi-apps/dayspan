@@ -198,7 +198,7 @@ export function ReminderDetailDialog({
 
           {reminder.source === "garbage" && (
             <p className="text-xs text-on-surface-variant">
-              ゴミの日はmyroomが毎日書き直すため、Koyomioからは変更できません。
+              ゴミの日はmyroomが毎日書き直すため、YoteiFlowからは変更できません。
             </p>
           )}
 

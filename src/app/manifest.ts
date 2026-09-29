@@ -4,8 +4,8 @@ import { APP_ICON_BACKGROUND } from "@/lib/app-icon-glyph";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Koyomio",
-    short_name: "Koyomio",
+    name: "YoteiFlow",
+    short_name: "YoteiFlow",
     description: "Google CalendarとNotionタスクを統合表示するカレンダー",
     // 起動画面は設定 ▸ 表示で選べる（`START_PATH_COOKIE`・issue #637）。ここを固定パスに
     // すると選んだ画面へ振り分けられないため、判定を挟む `/`（src/app/page.tsx）にする。
@@ -23,10 +23,12 @@ export default function manifest(): MetadataRoute.Manifest {
     // ダークでは layout.tsx の <meta name="theme-color"> が media ごとに上書きする。
     theme_color: "#f3f3f8",
     icons: [
-      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
-      { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-      { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      // 原本（フルブリード）は any 用。maskable は円形マスクの安全域（中心80%）へ収めた別画像
+      // （scripts/generate-brand-assets.sh・issue #890）。同じ画像を両方に使うと角が欠ける。
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }

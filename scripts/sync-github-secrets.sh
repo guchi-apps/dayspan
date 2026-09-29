@@ -23,7 +23,9 @@
 #   org項目  … gh の `admin:org` スコープ
 set -euo pipefail
 
-REPO="${REPO:-guchi-apps/koyomio}"
+# リポジトリ名は固定せず、いま開いているリポジトリ（origin）から求める。改名（koyomio → yoteiflow・
+# issue #890）の前後どちらでも同じスクリプトで動くようにするため。
+REPO="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 ORG="${ORG:-guchi-apps}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$REPO_ROOT/.github/secrets-manifest.tsv"

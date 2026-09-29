@@ -234,17 +234,17 @@ export function WidgetSection({
 
             <ol className="type-body-medium flex list-decimal flex-col gap-1 pl-5 text-on-surface-variant">
               <li>
-                iPhoneのSafariでKoyomioを開き、共有 → <span className="text-on-surface">ホーム画面に追加</span>
+                iPhoneのSafariでYoteiFlowを開き、共有 → <span className="text-on-surface">ホーム画面に追加</span>
                 （ウィジェットから開く先がこのアプリになります）
               </li>
               <li>App Storeから「Scriptable」を入れる</li>
               <li>
                 上の<span className="text-on-surface">台本をコピー</span>を押す
               </li>
-              <li>Scriptableで新しいスクリプトを作り、貼り付けて「Koyomio」と名前を付ける</li>
+              <li>Scriptableで新しいスクリプトを作り、貼り付けて「YoteiFlow」と名前を付ける</li>
               <li>
                 ホーム画面を長押し → ウィジェットを追加 → Scriptable →
-                スクリプトに「Koyomio」を選ぶ
+                スクリプトに「YoteiFlow」を選ぶ
               </li>
               <li>
                 置いたウィジェットを長押し → <span className="text-on-surface">ウィジェットを編集</span>
@@ -264,7 +264,7 @@ export function WidgetSection({
 
               <dl className="flex flex-col gap-2">
                 <SettingRow label="Script">
-                  Koyomio<span className="text-on-surface-variant">（4で付けた名前）</span>
+                  YoteiFlow<span className="text-on-surface-variant">（4で付けた名前）</span>
                 </SettingRow>
                 <SettingRow label="When Interacting">Open URL</SettingRow>
                 <SettingRow label="URL">
@@ -417,7 +417,7 @@ export function WidgetSection({
                 <p className="type-body-small text-on-surface-variant">
                   いまhttpのアドレスでこの画面を開いているため、ホーム画面のアプリを開くURL
                   （<code className="mx-1">webapp://</code>
-                  ）も、そこへ渡すための受け渡しページも作れません。上のURLはブラウザでKoyomioを
+                  ）も、そこへ渡すための受け渡しページも作れません。上のURLはブラウザでYoteiFlowを
                   開きます。httpsのアドレスで開き直すと、そちらのURLが出ます。
                 </p>
               )}
@@ -439,7 +439,7 @@ export function WidgetSection({
               <li>時計の下のウィジェットの枠を押す</li>
               <li>一覧から Scriptable を選び、置きたい形を押す</li>
               <li>
-                置いたウィジェットを押して、スクリプトに「Koyomio」を選ぶ（
+                置いたウィジェットを押して、スクリプトに「YoteiFlow」を選ぶ（
                 <code className="mx-1">When Interacting</code>と
                 <code className="mx-1">URL</code>は上と同じ値にする）
               </li>
@@ -487,7 +487,7 @@ export function WidgetSection({
               </p>
               <p>
                 同じものを見る枠が複数あっても外部への問い合わせが増えないよう、取得した内容は
-                サーバー側で3分だけ持ち回します。Koyomioの画面で買い物にチェックを付けたり
+                サーバー側で3分だけ持ち回します。YoteiFlowの画面で買い物にチェックを付けたり
                 タスクを完了にした直後は、ウィジェットに反映されるまで最大3分かかります。
               </p>
               <p>
