@@ -17,7 +17,7 @@ import {
  */
 const notEditable = () =>
   NextResponse.json(
-    { error: "not_editable", message: "この場所はKoyomioからは変更できません。" },
+    { error: "not_editable", message: "この場所はYoteiFlowからは変更できません。" },
     { status: 403 },
   );
 

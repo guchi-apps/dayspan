@@ -45,10 +45,10 @@ const DATABASE_LABELS: Record<DatabaseKind, string> = {
 };
 
 const DATABASE_DEFAULT_TITLES: Record<DatabaseKind, string> = {
-  task: "Koyomio タスク",
-  place: "Koyomio 場所",
-  work: "Koyomio 勤務記録",
-  shopping: "Koyomio 買い物リスト",
+  task: "YoteiFlow タスク",
+  place: "YoteiFlow 場所",
+  work: "YoteiFlow 勤務記録",
+  shopping: "YoteiFlow 買い物リスト",
 };
 
 /** Notionが返したメッセージがあればそれを見せる。原因が分からないまま止まらないようにする。 */
@@ -722,7 +722,7 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium">ゴミの日DBを選択</span>
               <p className="text-xs text-muted-foreground">
-                myroomが書き出すゴミの収集日をカレンダーに表示します。Koyomioからは読むだけで、
+                myroomが書き出すゴミの収集日をカレンダーに表示します。YoteiFlowからは読むだけで、
                 編集・削除はできません（myroomが毎日書き直すため）。タイトルと日付が必要です。
                 日付に時刻が入っていれば、終日ではなくその時刻の位置に表示します。
               </p>

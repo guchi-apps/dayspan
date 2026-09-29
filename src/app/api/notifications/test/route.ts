@@ -28,7 +28,7 @@ export async function POST() {
   const badge = (await loadBadgeCounts(userId)).total;
 
   const summary = await sendToUser(userId, {
-    title: "Koyomioのテスト通知",
+    title: "YoteiFlowのテスト通知",
     body:
       badge === null
         ? "この通知が出れば、通知の設定は完了です。"

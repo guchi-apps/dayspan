@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Square } from "lucide-react";
 
+import { Wordmark } from "@/components/brand/wordmark";
 import { formatElapsed } from "@/components/calendar/activity-format";
 import { DrawerNavContent, RunningDot, useWorkTodoCount } from "@/components/nav/app-drawer";
 import type { NavKey } from "@/components/nav/nav-items";
@@ -45,7 +46,9 @@ export function AppSidebar({
       onPointerEnter={() => setTouched(true)}
       onFocus={() => setTouched(true)}
     >
-      <div className="px-6 pb-2 text-base font-semibold">Koyomio</div>
+      <div className="px-6 pb-2">
+        <Wordmark size={24} compact className="text-base" />
+      </div>
       <DrawerNavContent
         current={current}
         activityRunning={activityRunning}

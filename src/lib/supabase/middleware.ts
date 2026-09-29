@@ -194,7 +194,7 @@ function serviceUnavailable(pathname: string): NextResponse {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Koyomio</title>
+    <title>YoteiFlow</title>
   </head>
   <body style="font-family: system-ui, sans-serif; display: grid; place-items: center; height: 100dvh; margin: 0; text-align: center;">
     <div>

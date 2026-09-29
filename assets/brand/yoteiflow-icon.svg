@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 256 256" role="img" aria-label="YoteiFlow app icon: a white calendar with a flowing violet route on a solid purple background">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E9E7FF"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="1" x2="1" y2="0">
+      <stop stop-color="#4A42B9"/>
+      <stop offset=".52" stop-color="#8173ED"/>
+      <stop offset="1" stop-color="#E5A879"/>
+    </linearGradient>
+    <filter id="paperShadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="9" stdDeviation="9" flood-color="#241C73" flood-opacity=".32"/>
+    </filter>
+  </defs>
+  <rect width="256" height="256" fill="#544FC1"/>
+  <g filter="url(#paperShadow)">
+    <rect x="43" y="46" width="170" height="166" rx="23" fill="url(#paper)"/>
+    <path d="M43 87h170" stroke="#D7D2F8" stroke-width="4"/>
+    <path d="M83 36v29M173 36v29" stroke="#FFFFFF" stroke-width="13" stroke-linecap="round"/>
+  </g>
+  <path d="M74 168C94 174 100 139 121 143S147 168 165 131S185 122 192 107" fill="none" stroke="#CFC8F8" stroke-width="25" stroke-linecap="round" opacity=".58"/>
+  <path d="M74 168C94 174 100 139 121 143S147 168 165 131S185 122 192 107" fill="none" stroke="url(#ribbon)" stroke-width="15" stroke-linecap="round"/>
+  <circle cx="74" cy="168" r="11" fill="#5148BA" stroke="#FFFFFF" stroke-width="5"/>
+  <circle cx="192" cy="107" r="12" fill="#F2BA8B" stroke="#FFFFFF" stroke-width="5"/>
+  <path d="M69 190h80" stroke="#CCC7F4" stroke-width="5" stroke-linecap="round"/>
+</svg>

@@ -38,7 +38,7 @@ export default async function ShortcutsSettingsPage() {
   return (
     <SettingsShell
       title="iPhoneショートカット"
-      description="iPhoneの個人用オートメーション（就寝時・アラームの停止時）とヘルスケアの睡眠分析から睡眠を活動記録として残し、Koyomioで付けた睡眠をヘルスケアへ送ります。"
+      description="iPhoneの個人用オートメーション（就寝時・アラームの停止時）とヘルスケアの睡眠分析から睡眠を活動記録として残し、YoteiFlowで付けた睡眠をヘルスケアへ送ります。"
       backHref="/settings"
       backLabel="設定"
     >

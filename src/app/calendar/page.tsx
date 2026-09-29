@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { CalendarDays } from "lucide-react";
 
+import { Wordmark } from "@/components/brand/wordmark";
 import { CalendarShell } from "@/components/calendar/calendar-shell";
 import { AppBadgeSync } from "@/components/notifications/app-badge-sync";
 import { createCalendarDateUtils } from "@/components/calendar/item-layout";
@@ -152,10 +152,7 @@ export default async function CalendarPage({
 function ConnectPrompt() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-      <div className="flex items-center gap-2 text-xl font-semibold">
-        <CalendarDays className="size-6 text-primary" />
-        Koyomio
-      </div>
+      <Wordmark size={32} className="text-xl" />
 
       <Card>
         <CardHeader>
