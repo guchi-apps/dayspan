@@ -2,7 +2,7 @@
 
 予定の前とタスクの期限に知らせる機能（docs/spec.md §32）の、鍵の作り方と動作確認の手順。
 
-- 経緯: guchi-apps/dayspan#345
+- 経緯: guchi-apps/koyomio#345
 - 実装: `src/lib/web-push/`（送信）・`src/services/notifications/`（下書き・送信・設定）・`public/sw.js`（受け取り）
 - 依存パッケージは追加していない。VAPIDの署名（RFC 8292）とペイロードの暗号化（RFC 8291）は `node:crypto` で行う
 
@@ -58,7 +58,7 @@ scripts/sync-github-secrets.sh --only VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_S
 次の順に確かめると最短で分かれる。
 
 ```bash
-gh secret list --repo guchi-apps/dayspan
+gh secret list --repo guchi-apps/koyomio
 ```
 
 1. `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` が並ばない → 同期されていない（→「本番へ配る」）。

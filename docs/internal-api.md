@@ -2,7 +2,7 @@
 
 同一VPS上で動く他アプリ（現状は [guchi-apps/aide](https://github.com/guchi-apps/aide)）が、その日の予定・タスク・日付リマインド・移動を参照するためのAPI（通知の送信を走らせる入口もここに置く）。ブラウザからの利用は想定しておらず、Supabaseのセッションではなく**共有シークレット1本**で守る。
 
-- 経緯: guchi-apps/dayspan#236、guchi-apps/question#7
+- 経緯: guchi-apps/koyomio#236、guchi-apps/question#7
 - 到達経路: DaySpanはVPS上で `127.0.0.1:3113`（`deploy/ecosystem.config.js` の `PORT`）で待ち受ける。呼び出し元も同じVPS上にいるため、**呼び出しにインターネットを経由する必要はない**
 - ただし **`https://dayspan.gucchii.com/api/internal/...` として外部からも到達する。** Apacheがドメイン配下を丸ごと `127.0.0.1:3113` へ渡しており、このパスだけを閉じてはいない。守りは共有シークレット1本だけなので、**キーは推測できない長さの乱数にする**（`openssl rand -base64 32`）
 - 同じ方式の先行事例: guchi-apps/subscription-lists の `docs/internal-api.md`（環境変数名・認証の作りを揃えてある）
