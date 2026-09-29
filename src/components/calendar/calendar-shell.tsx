@@ -665,6 +665,31 @@ export function CalendarShell({
     end: dateKeyPlusMinutes(dateKey, Math.min(minutes + 60, 23 * 60 + 30)),
   });
 
+  /**
+   * 予定の入力から、予定に紐づかない移動の入力へ移る（issue #895）。
+   *
+   * 保存先に移動カレンダーを選び直した入力に出る入口から呼ばれる。日時は入力中の値
+   * （時刻あり）をそのまま出発・到着の初期値にし、乗換案内の貼り付けで上書きされる。
+   * 予定が無いので復路は作らない。
+   */
+  const openStandaloneTravel = (range: { start: string; end: string }) => {
+    if (offline) return;
+    setQuickDraft(null);
+    setItemDialog({
+      initialKind: "travel",
+      drafts: {
+        travel: {
+          origin: travelSettings.defaultOrigin ?? "",
+          destination: "",
+          mode: travelSettings.defaultMode,
+          departAt: range.start,
+          arriveAt: range.end,
+          roundTrip: false,
+        },
+      },
+    });
+  };
+
   /** 簡易入力から通常の入力画面へ移る。入力済みの値はそのまま引き継ぐ。 */
   const openEventForm = (draft: EventDraft) => {
     setQuickDraft(null);
@@ -1041,6 +1066,8 @@ export function CalendarShell({
           setQuickDraft(toQuickEventDraft(dateKey, DEFAULT_START_MINUTES));
         }}
         onOpenEventForm={openEventForm}
+        travelCalendarId={travelSettings.calendarId}
+        onOpenStandaloneTravel={openStandaloneTravel}
         onDragCommit={commitDrag}
         onAllDayDragCommit={commitAllDayDrag}
         onAdd={openAdd}
@@ -1146,6 +1173,8 @@ function CalendarBody({
   onSelectRange,
   onQuickAddOnDay,
   onOpenEventForm,
+  travelCalendarId,
+  onOpenStandaloneTravel,
   onDragCommit,
   onAllDayDragCommit,
   onAdd,
@@ -1230,6 +1259,8 @@ function CalendarBody({
   onSelectRange: (commit: SlotRangeCommit) => void;
   onQuickAddOnDay: (dateKey: string) => void;
   onOpenEventForm: (draft: EventDraft) => void;
+  travelCalendarId: string | null;
+  onOpenStandaloneTravel: (range: { start: string; end: string }) => void;
   onDragCommit: (commit: DragCommit) => void;
   onAllDayDragCommit: (commit: AllDayDragCommit) => void;
   /** 右下の「＋」。作れる種類を渡し、ひな型は呼び出し側で作る。 */
@@ -1578,6 +1609,8 @@ function CalendarBody({
           weekStartsOn={weekStartsOn}
           onClose={onCloseDialogs}
           onSaved={handleSaved}
+          travelCalendarId={travelCalendarId}
+          onOpenTravel={onOpenStandaloneTravel}
         />
       )}
 
@@ -1590,6 +1623,8 @@ function CalendarBody({
           onClose={onCloseDialogs}
           onSaved={handleSaved}
           onOpenDetail={onOpenEventForm}
+          travelCalendarId={travelCalendarId}
+          onOpenTravel={onOpenStandaloneTravel}
         />
       )}
 

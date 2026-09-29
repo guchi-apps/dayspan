@@ -13,6 +13,7 @@ import type { EventDraft } from "./event-form";
 import { ItemFormActions } from "./item-form-actions";
 import { MINUTES_PER_DAY } from "./item-layout";
 import { buildOptimisticEvent, type OptimisticEventChange } from "./optimistic-events";
+import { TravelEntryHint } from "./travel-entry-hint";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export type QuickEventDraft = {
@@ -62,6 +63,8 @@ export function QuickEventSheet({
   onClose,
   onSaved,
   onOpenDetail,
+  travelCalendarId,
+  onOpenTravel,
 }: {
   draft: QuickEventDraft;
   calendars: WritableCalendar[];
@@ -72,6 +75,10 @@ export function QuickEventSheet({
   onSaved: (touched: TouchedRange[] | null, change?: OptimisticEventChange) => void;
   /** 入力済みの値を持ったまま、通常の入力画面へ移る。 */
   onOpenDetail: (draft: EventDraft) => void;
+  /** 移動の書き出し先カレンダー。設定が無ければ移動への入口は出さない（issue #895）。 */
+  travelCalendarId?: string | null;
+  /** 入力中の日時を持ったまま、予定に紐づかない移動の入力へ移る。 */
+  onOpenTravel?: (range: { start: string; end: string }) => void;
 }) {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(draft.date);
@@ -82,6 +89,9 @@ export function QuickEventSheet({
       calendars[0]?.calendarId ??
       "",
   );
+  // 保存先に移動カレンダーを利用者が選び直したか（issue #895）。既定の保存先が移動
+  // カレンダーでも、選んでいない間は入口を出さない。
+  const [pickedTravel, setPickedTravel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -175,6 +185,7 @@ export function QuickEventSheet({
           title,
           calendarId,
           fromQuick: true,
+          pickedTravel: pickedTravel && calendarId === travelCalendarId,
         }),
       150,
     );
@@ -243,8 +254,23 @@ export function QuickEventSheet({
             label="保存先カレンダー"
             value={calendarId}
             calendars={calendars}
-            onChange={setCalendarId}
+            onChange={(next) => {
+              setCalendarId(next);
+              setPickedTravel(Boolean(travelCalendarId) && next === travelCalendarId);
+            }}
           />
+
+          {pickedTravel && calendarId === travelCalendarId && onOpenTravel && (
+            <TravelEntryHint
+              onOpen={() => {
+                setOpen(false);
+                setTimeout(
+                  () => onOpenTravel({ start: join(date, startTime), end: join(date, endTime) }),
+                  150,
+                );
+              }}
+            />
+          )}
 
           {rangeError && <p className="text-sm text-destructive">{rangeError}</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}
