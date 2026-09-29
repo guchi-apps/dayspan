@@ -25,7 +25,7 @@ type Body = TaskWriteInput & { completeAction?: boolean; skipped?: boolean };
  */
 const notEditable = () =>
   NextResponse.json(
-    { error: "not_editable", message: "この項目はKoyomioからは変更できません。" },
+    { error: "not_editable", message: "この項目はYoteiFlowからは変更できません。" },
     { status: 403 },
   );
 

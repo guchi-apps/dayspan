@@ -66,7 +66,7 @@ export type TagOption = {
  * 選択肢と色がNotionのプロパティ定義そのもので、追加・削除・改名・並び替えの手順も
  * タグとまったく同じため。別の経路を作ると、同じ操作が2か所に増える。
  */
-export type TagKind = "task" | "reminder" | "work" | "shopping" | "place";
+export type TagKind = "task" | "reminder" | "work" | "shopping" | "place" | "progress";
 
 /**
  * 複数選択（multi_select）で持っている種別。書き戻すときの構成がここだけ違う。
@@ -84,6 +84,12 @@ const MULTI_SELECT_KINDS: ReadonlySet<TagKind> = new Set<TagKind>(["task", "plac
  */
 export type TagCatalog = {
   task: TagOption[] | null;
+  /**
+   * タスクの進捗（issue #873）の選択肢。タグと同じタスクDBにあるため、`loadTagCatalog` は
+   * 1回の `dataSources.retrieve` から両方を読む（往復を増やさない）。Service Workerに残る古い応答には
+   * 無いため、読む側は `?? null` で受ける。
+   */
+  progress?: TagOption[] | null;
   reminder: TagOption[] | null;
   work: TagOption[] | null;
   shopping: TagOption[] | null;
@@ -91,6 +97,7 @@ export type TagCatalog = {
 
 export const EMPTY_TAG_CATALOG: TagCatalog = {
   task: null,
+  progress: null,
   reminder: null,
   work: null,
   shopping: null,
@@ -108,6 +115,12 @@ type TagLocation = { dataSourceId: string; propertyName: string };
 export function tagLocation(connection: NotionConnection, kind: TagKind): TagLocation | null {
   if (kind === "task") {
     const propertyName = (connection.propertyMap as PropertyMap | null)?.tags;
+    if (!connection.taskDataSourceId || !propertyName) return null;
+    return { dataSourceId: connection.taskDataSourceId, propertyName };
+  }
+
+  if (kind === "progress") {
+    const propertyName = (connection.propertyMap as PropertyMap | null)?.progress;
     if (!connection.taskDataSourceId || !propertyName) return null;
     return { dataSourceId: connection.taskDataSourceId, propertyName };
   }
@@ -192,22 +205,32 @@ export async function loadTagCatalog(connection: NotionConnection | null): Promi
   if (!connection) return EMPTY_TAG_CATALOG;
 
   const taskLocation = tagLocation(connection, "task");
+  const progressLocation = tagLocation(connection, "progress");
   const reminderLocation = tagLocation(connection, "reminder");
   const workLocation = tagLocation(connection, "work");
   const shoppingLocation = tagLocation(connection, "shopping");
-  if (!taskLocation && !reminderLocation && !workLocation && !shoppingLocation) {
+  if (!taskLocation && !progressLocation && !reminderLocation && !workLocation && !shoppingLocation) {
     return EMPTY_TAG_CATALOG;
   }
 
   try {
     const notion = createNotionClient(connection);
-    const [task, reminder, work, shopping] = await Promise.all([
-      taskLocation ? fetchOptions(notion, taskLocation) : null,
+    // タグと進捗はどちらもタスクDBのプロパティ。retrieveは1回で済ませて両方を読む。
+    const taskSource = taskLocation ?? progressLocation;
+    const taskProperties = taskSource
+      ? ((await notion.dataSources.retrieve({ data_source_id: taskSource.dataSourceId }))
+          .properties as Record<string, PropertyConfig>)
+      : null;
+    const [task, progress, reminder, work, shopping] = await Promise.all([
+      taskLocation && taskProperties ? readOptions(taskProperties[taskLocation.propertyName]) : null,
+      progressLocation && taskProperties
+        ? readOptions(taskProperties[progressLocation.propertyName])
+        : null,
       reminderLocation ? fetchOptions(notion, reminderLocation) : null,
       workLocation ? fetchOptions(notion, workLocation) : null,
       shoppingLocation ? fetchOptions(notion, shoppingLocation) : null,
     ]);
-    return { task, reminder, work, shopping };
+    return { task, progress, reminder, work, shopping };
   } catch {
     return EMPTY_TAG_CATALOG;
   }

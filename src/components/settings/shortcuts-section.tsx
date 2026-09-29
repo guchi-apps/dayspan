@@ -196,7 +196,7 @@ export function ShortcutsSection({
           <div className="flex flex-col gap-3">
             <p className="type-body-medium text-on-surface-variant">
               就寝と起床は、まさにアプリを開いて押せない時刻です。iPhoneの個人用オートメーション
-              からKoyomioを呼べば、記録の画面で押したときとまったく同じ経路で
+              からYoteiFlowを呼べば、記録の画面で押したときとまったく同じ経路で
               「{sleepTitle}」の記録になります。
             </p>
             <p className="type-body-medium text-on-surface-variant">
@@ -421,13 +421,13 @@ export function ShortcutsSection({
               ほかの経路と同じく手順を日本語のアクション名で並べる。
             */}
             <span className="type-label-large text-on-surface-variant">
-              Koyomioの睡眠をヘルスケアへ送る（ショートカット）
+              YoteiFlowの睡眠をヘルスケアへ送る（ショートカット）
             </span>
 
             <p className="type-body-medium text-on-surface-variant">
               記録の画面や上のオートメーションで付けた「{sleepTitle}」を、iPhoneのヘルスケアの
               睡眠分析へ書き込みます。Webアプリからはヘルスケアへ直接書けないため、
-              ショートカットがKoyomioから「まだ送っていない{sleepTitle}」を受け取って書き込みます。
+              ショートカットがYoteiFlowから「まだ送っていない{sleepTitle}」を受け取って書き込みます。
             </p>
 
             <p className="type-body-small text-on-surface-variant">
@@ -545,7 +545,7 @@ export function ShortcutsSection({
                 見分けが付かないため、初回に直近2日ぶんを送るときだけ重なることがあります。
               </p>
               <p>
-                送ったあとにKoyomioで時刻を直した・消した{sleepTitle}は、次の実行で
+                送ったあとにYoteiFlowで時刻を直した・消した{sleepTitle}は、次の実行で
                 変更後の時間帯をもう一度送ります（直近{EDIT_LOOKBACK_DAYS}日ぶん）。
                 <span className="text-on-surface">
                   ヘルスケアに送った時点の時間帯は残るため、通知に出る時間帯を睡眠分析で削除してください
@@ -617,7 +617,7 @@ export function ShortcutsSection({
                 <span className="text-on-surface">同じ範囲をもう一度送ると、ヘルスケアに同じ夜が
                 2件並びます</span>。毎朝の送信ですでに送った夜や、Apple Watchで入っている夜と
                 重なる日も同様です。ヘルスケアの睡眠分析で1件ずつ消してください。
-                また、この送り方で送った夜は履歴に残らないため、あとでKoyomioで直してもヘルスケアへは
+                また、この送り方で送った夜は履歴に残らないため、あとでYoteiFlowで直してもヘルスケアへは
                 反映されません。
               </p>
             </div>

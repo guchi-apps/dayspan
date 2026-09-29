@@ -12,12 +12,12 @@ import { AppReady } from "@/components/launch/app-ready";
 import { ServiceWorkerRegistration } from "@/components/offline/service-worker";
 
 export const metadata: Metadata = {
-  title: "Koyomio",
+  title: "YoteiFlow",
   description: "Google Calendarの予定とNotionのタスクを1つのカレンダーUIで統合して確認・操作するWebアプリ",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Koyomio",
+    title: "YoteiFlow",
   },
 };
 

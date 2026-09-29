@@ -12,7 +12,8 @@ export type TaskField =
   | "priority"
   | "recurrence"
   | "tags"
-  | "outcome";
+  | "outcome"
+  | "progress";
 
 type FieldRequirement = {
   field: TaskField;
@@ -21,6 +22,11 @@ type FieldRequirement = {
   required: boolean;
   /** プロパティ名の自動推定に使う候補。ユーザーが別名を付けていても拾えるようにする。 */
   nameHints: string[];
+  /**
+   * 名前がヒントに当たったときだけ対応付け、型だけでの割り当て（2巡目）には使わない。
+   * 「プロジェクト」「担当」のような別用途のselectを進捗と取り違え、そこへ書き込むのを避ける。
+   */
+  hintOnly?: boolean;
 };
 
 export const TASK_FIELD_REQUIREMENTS: FieldRequirement[] = [
@@ -37,7 +43,13 @@ export const TASK_FIELD_REQUIREMENTS: FieldRequirement[] = [
   // 「対応しない」の置き場（issue #750）。完了状態がcheckboxでも使えるよう、完了とは別のselectにする。
   // 名前が当たったときだけ対応付ける。型だけで割り当てると優先度・繰り返しと取り違える。
   { field: "outcome", label: "対応状況", types: ["select"], required: false, nameHints: ["対応状況", "対応", "outcome", "resolution"] },
+  // 「承認待ち」などの途中の状態（issue #873）。完了状態とは独立し、選択肢は利用者が決める。
+  // 「ステータス」「status」は完了状態のヒントと重なるため、ヒントに含めない。
+  { field: "progress", label: "進捗", types: ["select"], required: false, nameHints: ["進捗", "進行", "progress"], hintOnly: true },
 ];
+
+/** 新規作成・プロパティ追加で入れる進捗の初期の選択肢。以後はNotion側・設定画面で自由に直せる。 */
+export const DEFAULT_PROGRESS_OPTIONS = ["未着手", "進行中", "承認待ち", "保留"] as const;
 
 export type PropertyMap = Partial<Record<TaskField, string>>;
 
@@ -129,7 +141,9 @@ export function buildPropertyMap(
   for (const requirement of TASK_FIELD_REQUIREMENTS) {
     if (propertyMap[requirement.field]) continue;
 
-    const chosen = entries.find(
+    const chosen = requirement.hintOnly
+      ? undefined
+      : entries.find(
       (p) =>
         requirement.types.includes(p.type) &&
         !used.has(p.name) &&
@@ -196,6 +210,7 @@ export const TASK_DATABASE_TEMPLATE = {
   recurrence: "繰り返し",
   tags: "タグ",
   outcome: "対応状況",
+  progress: "進捗",
 } as const satisfies Required<Record<TaskField, string>>;
 
 export const PRIORITY_OPTIONS = ["高", "中", "低"];
@@ -274,6 +289,9 @@ export async function createTaskDatabase(
         // タグの選択肢はユーザーが自由に増やすものなので、初期値は作らない。
         [TASK_DATABASE_TEMPLATE.tags]: { multi_select: {} },
         [TASK_DATABASE_TEMPLATE.outcome]: { select: { options: [{ name: SKIPPED_OUTCOME }] } },
+        [TASK_DATABASE_TEMPLATE.progress]: {
+          select: { options: DEFAULT_PROGRESS_OPTIONS.map((name) => ({ name })) },
+        },
       },
     },
   });
@@ -323,6 +341,8 @@ function optionalPropertyConfig(field: TaskField): Record<string, unknown> | nul
       return { multi_select: {} };
     case "outcome":
       return { select: { options: [{ name: SKIPPED_OUTCOME }] } };
+    case "progress":
+      return { select: { options: DEFAULT_PROGRESS_OPTIONS.map((name) => ({ name })) } };
     default:
       return null;
   }

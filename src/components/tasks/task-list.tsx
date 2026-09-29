@@ -254,6 +254,7 @@ export function TaskList({
       // 兼ねている他のタグは残して、どの区分にも出ていることが分かるようにする。
       hideTagName={section.tagName}
       tagOptions={tagOptions}
+      progressOptions={tagCatalog.progress ?? null}
       utils={utils}
       todayKey={todayKey}
       sort={sort}
@@ -385,6 +386,7 @@ export function TaskList({
                 task={task}
                 hideTagName={null}
                 tagOptions={tagOptions}
+                progressOptions={null}
                 utils={utils}
                 todayKey={todayKey}
                 sort={sort}
@@ -406,6 +408,7 @@ export function TaskList({
                 task={task}
                 hideTagName={null}
                 tagOptions={tagOptions}
+                progressOptions={null}
                 utils={utils}
                 todayKey={todayKey}
                 sort={sort}
@@ -462,6 +465,7 @@ export function TaskList({
         <TaskDetailDialog
           task={viewingTask}
           tagOptions={tagCatalog.task ?? []}
+          progressOptions={tagCatalog.progress ?? null}
           timeZone={timeZone}
           readOnly={offline}
           onClose={() => setViewingTask(null)}
@@ -550,6 +554,7 @@ function TaskRow({
   task,
   hideTagName,
   tagOptions,
+  progressOptions,
   utils,
   todayKey,
   sort,
@@ -561,6 +566,8 @@ function TaskRow({
   /** 見出しに出ているため行からは外すタグ。期限での分類では null。 */
   hideTagName: string | null;
   tagOptions: TagOption[];
+  /** 進捗（issue #873）の色を引くために渡す。 */
+  progressOptions: TagOption[] | null;
   utils: ReturnType<typeof createCalendarDateUtils>;
   todayKey: string;
   /** 分類・超過表示の基準日を期限にするか予定日優先にするかを決める（issue #572）。 */
@@ -615,6 +622,10 @@ function TaskRow({
         </div>
 
         <div className="type-label-small flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-normal text-on-surface-variant">
+          {/* 進捗は片付いていないタスクにだけ出す。完了・対応しないでは意味が無い（issue #873）。 */}
+          {task.progress && !task.done && (
+            <TagChip name={task.progress} color={tagColorOf(progressOptions ?? [], task.progress)} />
+          )}
           {task.skipped && (
             <span className="inline-flex items-center gap-0.5">
               <Ban className="size-3" aria-hidden />

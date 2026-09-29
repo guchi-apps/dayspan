@@ -15,6 +15,8 @@ function makeTask(overrides: Partial<TaskItem> & { id: string }): TaskItem {
     done: false,
     skipped: false,
     canSkip: true,
+    progress: null,
+    canProgress: false,
     priority: null,
     tags: [],
     memo: null,

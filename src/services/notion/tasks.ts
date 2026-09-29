@@ -88,6 +88,9 @@ export function normalizeTask(page: NotionPage, propertyMap: PropertyMap): TaskI
     done: readDone(get("done")) || skipped,
     skipped,
     canSkip: Boolean(propertyMap.outcome),
+    // 進捗（issue #873）。完了とは独立に持つ。プロパティが無いDBでは null / false。
+    progress: readChoice(get("progress")),
+    canProgress: Boolean(propertyMap.progress),
     priority: readChoice(get("priority")),
     tags: (get("tags")?.multi_select ?? []).map((tag) => tag.name ?? "").filter(Boolean),
     memo: plainText(get("memo")?.rich_text) || null,
@@ -225,6 +228,8 @@ export type TaskWriteInput = {
   recurrence?: string | null;
   /** 対応状況。null は未設定（issue #750）。 */
   outcome?: string | null;
+  /** 進捗（「承認待ち」など。issue #873）。null は未設定。 */
+  progress?: string | null;
 };
 
 /**
@@ -285,6 +290,10 @@ function toProperties(
 
   if (input.outcome !== undefined) {
     set("outcome", { select: input.outcome ? { name: input.outcome } : null });
+  }
+
+  if (input.progress !== undefined) {
+    set("progress", { select: input.progress ? { name: input.progress } : null });
   }
 
   return properties;

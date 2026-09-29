@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "parentPageId is required" }, { status: 400 });
   }
 
-  const title = body.title?.trim() || "Koyomio 場所";
+  const title = body.title?.trim() || "YoteiFlow 場所";
 
   let created;
   try {

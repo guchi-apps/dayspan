@@ -1,6 +1,6 @@
-import { CalendarDays } from "lucide-react";
 import { cookies } from "next/headers";
 
+import { Wordmark } from "@/components/brand/wordmark";
 import { ClearOfflineCache } from "@/components/offline/clear-offline-cache";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,10 +20,7 @@ export default async function LoginPage({
     <div className="flex h-app flex-col items-center justify-center gap-8 bg-surface-container-low p-4">
       <ClearOfflineCache />
 
-      <div className="type-headline-small flex items-center gap-2">
-        <CalendarDays className="size-7 text-primary" />
-        Koyomio
-      </div>
+      <Wordmark size={40} className="type-headline-small" />
 
       <Card className="w-full max-w-sm bg-surface-container-high">
         <CardHeader>

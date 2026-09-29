@@ -11,7 +11,7 @@ export default async function AccountSettingsPage() {
   return (
     <SettingsShell
       title="アカウント"
-      description="Koyomioへのログインに使っているGoogleアカウントです。"
+      description="YoteiFlowへのログインに使っているGoogleアカウントです。"
       backHref="/settings"
       backLabel="設定"
     >
