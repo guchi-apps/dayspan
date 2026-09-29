@@ -96,6 +96,7 @@ export function TaskForm({
   draft,
   timeZone,
   tagOptions,
+  progressOptions = null,
   weekStartsOn = 0,
   title,
   autoFocusTitle,
@@ -106,6 +107,11 @@ export function TaskForm({
   timeZone: string;
   /** 設定画面で登録済みのタグ。無い名前もここから足せる（Notionが選択肢を増やす）。 */
   tagOptions: TagOption[];
+  /**
+   * 進捗（「承認待ち」など。issue #873）の選択肢。null はタスクDBに進捗のプロパティが無い
+   * （または取得できなかった）ことを表し、欄ごと出さない。
+   */
+  progressOptions?: TagOption[] | null;
   /** 予定を選ぶ月グリッドの週の始まり。 */
   weekStartsOn?: number;
   /** タイトルは種類を切り替えても引き継ぐため、ItemDialog が持つ。 */
@@ -123,6 +129,8 @@ export function TaskForm({
   const [plannedMode, setPlannedMode] = useState<DueMode>(draft.plannedMode ?? "none");
   const [planned, setPlanned] = useState(draft.planned ?? "");
   const [done, setDone] = useState(editing?.done ?? false);
+  const progressAvailable = progressOptions !== null || Boolean(editing?.canProgress);
+  const [progress, setProgress] = useState<string[]>(editing?.progress ? [editing.progress] : []);
   const [priority, setPriority] = useState(editing?.priority ?? NO_VALUE);
   const [memo, setMemo] = useState(editing?.memo ?? "");
   const [tags, setTags] = useState<string[]>(editing?.tags ?? []);
@@ -295,6 +303,8 @@ export function TaskForm({
         // 「対応しない」のタスクを未完了へ戻すときは対応状況も外す。残すと読み取りが片付いた扱いのままになる。
         ...(editing?.skipped && !done ? { outcome: null } : {}),
         priority: priority === NO_VALUE ? null : priority,
+        // プロパティが無いDBには送らない（書き込む先が無い）。
+        ...(progressAvailable ? { progress: progress[0] ?? null } : {}),
         memo: memo.trim() || null,
         tags,
         recurrence,
@@ -556,6 +566,16 @@ export function TaskForm({
         </div>
 
         <TagPicker label="タグ" options={tagOptions} value={tags} multiple onChange={setTags} />
+
+        {progressAvailable && (
+          <TagPicker
+            label="進捗"
+            options={progressOptions ?? []}
+            value={progress}
+            multiple={false}
+            onChange={setProgress}
+          />
+        )}
 
         <Textarea
           id="task-memo"

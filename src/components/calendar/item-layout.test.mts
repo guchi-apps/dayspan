@@ -20,6 +20,8 @@ function task(overrides: Partial<TaskItem>): TaskItem {
     done: false,
     skipped: false,
     canSkip: false,
+    progress: null,
+    canProgress: false,
     priority: null,
     tags: [],
     memo: null,
