@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LinearProgress } from "@/components/ui/linear-progress";
+import { ACTIVITY_ICONS, resolveActivityIcon } from "@/lib/activity-icons";
 import type { ActivityPresetItem, RunningActivityItem } from "@/types/activity";
 
 /**
@@ -403,6 +404,7 @@ export function ActivityScreen({
                       disabled={startDisabled || current}
                       onClick={() => start({ presetId: preset.id })}
                     >
+                      <PresetIcon preset={preset} />
                       <span className="truncate">{preset.name}</span>
                     </Button>
                   );
@@ -615,4 +617,13 @@ function RunningCard({
  */
 function runningKey(running: RunningActivityItem | null): string {
   return running ? `${running.title} ${running.startedAt}` : "";
+}
+
+/** 項目のアイコン（issue #907）。未設定で名前にも既定が無ければ何も出さない。 */
+function PresetIcon({ preset }: { preset: ActivityPresetItem }) {
+  const key = resolveActivityIcon(preset.name, preset.icon);
+  if (!key) return null;
+
+  const Icon = ACTIVITY_ICONS[key];
+  return <Icon aria-hidden className="size-5 shrink-0" />;
 }

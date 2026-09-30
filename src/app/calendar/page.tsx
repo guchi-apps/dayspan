@@ -22,6 +22,8 @@ import {
 import { CALENDAR_VIEW_COOKIE, parseCalendarMemory } from "@/lib/calendar-view-memory";
 import { db } from "@/lib/db";
 import { getRunningActivity } from "@/services/activity/running";
+import { ActivityIconProvider } from "@/components/calendar/activity-icon-context";
+import { listActivityPresetIcons } from "@/services/activity/presets";
 import { listActivityCalendarIds } from "@/services/activity/settings";
 import { listHolidayCalendarIds } from "@/services/calendar/holiday-settings";
 import { loadCalendarData } from "@/services/calendar/load";
@@ -105,12 +107,14 @@ export default async function CalendarPage({
   // どちらもDaySpanのDBだけで完結するため、外部APIを待たずにここで解決しておく。
   // 移動の既定値（docs/spec.md §29）も同じくDaySpanのDBだけで完結する。
   // 予定から移動を足すときの初期値に使うため、画面と一緒に渡しておく。
-  const [runningActivity, activityCalendarIds, holidayCalendarIds, travelSettings] =
+  const [runningActivity, activityCalendarIds, holidayCalendarIds, travelSettings, activityIcons] =
     await Promise.all([
       getRunningActivity(user.id),
       listActivityCalendarIds(user.id),
       listHolidayCalendarIds(user.id),
       getTravelSettings(user.id),
+      // 読み取り専用。listActivityPresets は初期項目を書き込むためここでは呼ばない（issue #907）。
+      listActivityPresetIcons(user.id),
     ]);
 
   return (
@@ -118,6 +122,7 @@ export default async function CalendarPage({
       {/* バッジの件数は期限が今日以前のタスク（docs/spec.md §32）。カレンダーが取っているのは
           表示中の期間ぶんだけで、期限切れがその外にあると数が合わない。この画面では取り直す。 */}
       <AppBadgeSync />
+      <ActivityIconProvider value={activityIcons}>
       <CalendarShell
         view={view}
         anchorKey={toDateKey(anchor)}
@@ -145,6 +150,7 @@ export default async function CalendarPage({
         timeZone={timeZone}
         autoRefreshSeconds={uiSetting?.autoRefreshSeconds ?? 300}
       />
+      </ActivityIconProvider>
     </>
   );
 }

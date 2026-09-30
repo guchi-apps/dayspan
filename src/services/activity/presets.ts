@@ -88,18 +88,33 @@ export async function createActivityPreset(
 export async function updateActivityPreset(
   userId: string,
   presetId: string,
-  input: { name?: string },
+  input: { name?: string; icon?: string | null },
 ): Promise<ActivityPresetItem | null> {
   const result = await db.activityPreset.updateMany({
     where: { id: presetId, userId },
     data: {
       ...(input.name === undefined ? {} : { name: input.name }),
+      ...(input.icon === undefined ? {} : { icon: input.icon }),
     },
   });
   if (result.count === 0) return null;
 
   const updated = await db.activityPreset.findUnique({ where: { id: presetId } });
   return updated ? toItem(updated) : null;
+}
+
+/**
+ * 項目名 → アイコンキーの写像（カレンダー用・読み取り専用）。
+ *
+ * `listActivityPresets` は項目が無いと初期項目を書き込むため、カレンダーを開くだけの経路からは
+ * 呼ばない。項目が無い利用者でも表示は変わらない（resolveActivityIcon が名前から既定を引く）。
+ */
+export async function listActivityPresetIcons(userId: string): Promise<Record<string, string>> {
+  const rows = await db.activityPreset.findMany({
+    where: { userId, icon: { not: null } },
+    select: { name: true, icon: true },
+  });
+  return Object.fromEntries(rows.flatMap((row) => (row.icon ? [[row.name, row.icon]] : [])));
 }
 
 export async function deleteActivityPreset(userId: string, presetId: string): Promise<boolean> {
@@ -129,6 +144,10 @@ export async function reorderActivityPresets(userId: string, ids: string[]): Pro
   return true;
 }
 
-function toItem(preset: { id: string; name: string }): ActivityPresetItem {
-  return { id: preset.id, name: preset.name };
+function toItem(preset: {
+  id: string;
+  name: string;
+  icon: string | null;
+}): ActivityPresetItem {
+  return { id: preset.id, name: preset.name, icon: preset.icon };
 }

@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +22,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  ACTIVITY_ICON_KEYS,
+  ACTIVITY_ICONS,
+  resolveActivityIcon,
+} from "@/lib/activity-icons";
+import { cn } from "@/lib/utils";
 import type { ActivityPresetItem } from "@/types/activity";
 import type { WritableCalendar } from "@/types/calendar";
 
@@ -47,6 +60,7 @@ export function ActivitySection({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [iconTarget, setIconTarget] = useState<ActivityPresetItem | null>(null);
 
   const defaultCalendarName =
     calendars.find((calendar) => calendar.isCreateDefault)?.name ?? calendars[0]?.name;
@@ -110,6 +124,21 @@ export function ActivitySection({
         body: JSON.stringify({ name: trimmed }),
       },
       "名前を変更できませんでした。",
+      (body) => replace(body.preset as ActivityPresetItem),
+    );
+  };
+
+  /** アイコンを選ぶ（null で解除）。解除しても初期項目は名前の既定に戻る。 */
+  const changeIcon = async (preset: ActivityPresetItem, icon: string | null) => {
+    setIconTarget(null);
+    await send(
+      `/api/activities/presets/${encodeURIComponent(preset.id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ icon }),
+      },
+      "アイコンを変更できませんでした。",
       (body) => replace(body.preset as ActivityPresetItem),
     );
   };
@@ -225,6 +254,16 @@ export function ActivitySection({
         <ul className="flex flex-col divide-y divide-rule border-t border-rule pt-1">
           {items.map((preset, index) => (
             <li key={preset.id} className="flex min-w-0 items-center gap-2 py-2">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label={`${preset.name} のアイコンを選ぶ`}
+                disabled={busy}
+                onClick={() => setIconTarget(preset)}
+              >
+                <PresetIconView preset={preset} />
+              </Button>
+
               {/* 名前は打ち終えて欄から離れた時点で保存する。1文字ごとに送ると、
                   打っている途中の名前が保存されてしまう。 */}
               <Input
@@ -300,6 +339,60 @@ export function ActivitySection({
           </div>
         </div>
       </CardContent>
+
+      <Dialog open={iconTarget !== null} onOpenChange={(open) => !open && setIconTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{iconTarget?.name} のアイコン</DialogTitle>
+            <DialogDescription>
+              カレンダーの記録と、記録画面のボタンに出ます。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-5 gap-2 sm:grid-cols-6">
+            {ACTIVITY_ICON_KEYS.map((key) => {
+              const Icon = ACTIVITY_ICONS[key];
+              const selected = iconTarget
+                ? resolveActivityIcon(iconTarget.name, iconTarget.icon) === key
+                : false;
+
+              return (
+                <Button
+                  key={key}
+                  variant={selected ? "secondary" : "outline"}
+                  size="icon"
+                  aria-label={key}
+                  aria-pressed={selected}
+                  className={cn("size-11", selected && "ring-2 ring-primary")}
+                  onClick={() => iconTarget && changeIcon(iconTarget, key)}
+                >
+                  <Icon className="size-5" />
+                </Button>
+              );
+            })}
+          </div>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            onClick={() => iconTarget && changeIcon(iconTarget, null)}
+          >
+            アイコンを外す（初期項目は既定に戻る）
+          </Button>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
+}
+
+/** 行のボタンに出す現在のアイコン。無ければ円（カレンダーの ActivityMark と同じ）。 */
+function PresetIconView({ preset }: { preset: ActivityPresetItem }) {
+  const key = resolveActivityIcon(preset.name, preset.icon);
+  if (!key) {
+    return <span aria-hidden className="size-2 rounded-full border-[1.5px] border-current" />;
+  }
+
+  const Icon = ACTIVITY_ICONS[key];
+  return <Icon aria-hidden className="size-4" />;
 }

@@ -5,6 +5,8 @@
 export type ActivityPresetItem = {
   id: string;
   name: string;
+  /** アイコンのキー。未設定は null（名前から既定を引く。resolveActivityIcon）。 */
+  icon: string | null;
 };
 
 /**
