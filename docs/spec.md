@@ -3842,3 +3842,14 @@ Google Calendarの `Event.status`（`tentative`）フィールドをそのまま
 - `POST /api/internal/events` に任意の `tentative` を追加。秘書（AIDE）側が「多分この時間に」の
   ような曖昧な発話のときだけ `true` を付ける想定。確定・仮への戻しはこのAPIには無い（作成専用の
   ため）。詳細は `docs/internal-api.md`
+
+## 45. iOSアプリ
+
+本番YoteiFlowをiPhoneのホーム画面から独立して使うための、SwiftUI + WKWebView の殻（`ios/`・issue #908）。**画面と機能はWeb版が正本**で、Web/PWAの挙動は変えない。表示名 `YoteiFlow`・Bundle ID `com.gucchii.yoteiflow`・iOS 18以上。仕組みと手順は `ios/README.md`、判断の理由は `CLAUDE.md` の決定事項（issue #908の行）。
+
+- **Googleログイン**: 認証シート（エフェメラル）で `/auth/native/start` を開き、`/auth/callback?native=1` が許可判定・ユーザー作成のあと、一度限り・60秒の引き継ぎコードだけを `yoteiflow://auth-callback` で返す。WebViewが `POST /auth/native/consume`（コード＋PKCEの `code_verifier`）で通常のSSR Cookieを受け取る。トークンはURL・ログに出ない。許可リスト外は拒否
+- **Google Calendar連携**: ログイン済みのWebViewが一度限りのintent（60秒）を発行し、認証シートで `/api/google/connect?intent=` を開く。intentはconnectで使い捨て、callbackはintentのユーザーへだけ資格情報を保存する
+- **外部リンク**: YoteiFlowと同一オリジンだけWebViewで開き、他はSafariで開く
+- **オフライン**: アプリ内ではService Workerを使えないため、PWAの保存済み画面は出ず、再試行の画面を出す
+- **初回スコープ外**: TestFlight配布・APNs・WidgetKit・App Store公開・オフライン対応・ネイティブ画面
+

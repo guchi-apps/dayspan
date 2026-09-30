@@ -82,7 +82,7 @@ const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
  * WHATWG URL自身が行う正規化（タブ・改行の除去を含む）の結果を直接確かめられ、個別の文字を
  * 列挙して弾く必要が無い。
  */
-function safeInternalPath(param: string): string | null {
+export function safeInternalPath(param: string): string | null {
   if (!param.startsWith("/") || CONTROL_CHAR_PATTERN.test(param)) return null;
 
   let url: URL;
