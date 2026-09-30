@@ -1,14 +1,26 @@
-import { dateKeyDiffDays } from "@/lib/calendar-range";
+import { addDays, dateKeyDiffDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import type { TaskItem } from "@/types/calendar";
 
 // タスク画面の分類（docs/spec.md §11）。表示だけの都合なので外部APIには依存させず、
 // 取得済みのタスクと「今日」の日付から決める。
 
-export type TaskBucketKey = "overdue" | "today" | "upcoming" | "someday" | "done" | "skipped";
+export type TaskBucketKey =
+  | "overdue"
+  | "today"
+  | "tomorrow"
+  | "thisWeek"
+  | "nextWeek"
+  | "upcoming"
+  | "someday"
+  | "done"
+  | "skipped";
 
 export const TASK_BUCKET_LABELS: Record<TaskBucketKey, string> = {
   overdue: "期限切れ",
   today: "今日",
+  tomorrow: "明日",
+  thisWeek: "今週",
+  nextWeek: "来週",
   upcoming: "今後",
   someday: "期限未設定",
   done: "完了",
@@ -25,25 +37,6 @@ export const TASK_SORT_LABELS: Record<TaskSort, string> = {
   planned: "予定順",
 };
 
-/**
- * 予定順で分類しているときの見出し。期限だけでなく予定日も基準に含むため、
- * 「期限」という言葉のままだと、予定日だけが過ぎている・予定日だけがあるタスクの区分として
- * 誤解を招く（issue #572 計画レビュー指摘）。
- */
-export const TASK_BUCKET_LABELS_PLANNED: Record<TaskBucketKey, string> = {
-  overdue: "超過",
-  today: "今日",
-  upcoming: "今後",
-  someday: "未設定",
-  done: "完了",
-  skipped: "対応しない",
-};
-
-/** 並び順に応じた区分見出し。並び順ごとに分類の基準日が変わるため、見出しもそれに合わせる。 */
-export function taskBucketLabels(sort: TaskSort): Record<TaskBucketKey, string> {
-  return sort === "planned" ? TASK_BUCKET_LABELS_PLANNED : TASK_BUCKET_LABELS;
-}
-
 const PRIORITY_ORDER: Record<string, number> = { 高: 0, 中: 1, 低: 2 };
 
 function priorityRank(priority: string | null): number {
@@ -58,29 +51,47 @@ function priorityRank(priority: string | null): number {
 type DateKeyOf = (due: string) => string;
 
 /**
- * 分類・超過表示の基準にする日付。予定順のときだけ予定日を優先し、無ければ期限で代える
- * （issue #572）。期限順・優先度順のときは従来どおり期限だけを見る。
+ * 分類の基準にする日付。予定日があれば予定日、無ければ期限（issue #903）。
+ * 分類の基準は並び順と切り離して常にこれにする。期限と予定日を別々に分類すると、同じタスクが
+ * どの区分に入るのか読めなくなるため。
  *
- * `classifyTasks` と `TaskRow`（画面側の超過表示）の両方から呼ぶため、判定を1か所に置く。
+ * バッジ・ウィジェットは期限だけで数えるため、`"due"` を渡して従来どおりにする。
  */
-export function classifyDateOf(task: TaskItem, sort: TaskSort): string | null {
-  return sort === "planned" ? (task.planned ?? task.due) : task.due;
+export type TaskClassifyBasis = "due" | "planned";
+
+export function classifyDateOf(task: TaskItem, basis: TaskClassifyBasis): string | null {
+  return basis === "planned" ? (task.planned ?? task.due) : task.due;
+}
+
+/** 今週・来週の境目（次の週の開始日）を日付キーで返す。`weekStartsOn` は0=日曜〜6=土曜。 */
+function nextWeekStartKey(todayKey: string, weekStartsOn: number): string {
+  const today = parseDateKey(todayKey);
+  const offset = (today.getUTCDay() - weekStartsOn + 7) % 7;
+  return toDateKey(addDays(today, 7 - offset));
 }
 
 export function classifyTasks(
   tasks: TaskItem[],
   todayKey: string,
   dateKeyOf: DateKeyOf,
-  sort: TaskSort = "due",
+  basis: TaskClassifyBasis = "due",
+  weekStartsOn = 0,
 ): Record<TaskBucketKey, TaskItem[]> {
   const buckets: Record<TaskBucketKey, TaskItem[]> = {
     overdue: [],
     today: [],
+    tomorrow: [],
+    thisWeek: [],
+    nextWeek: [],
     upcoming: [],
     someday: [],
     done: [],
     skipped: [],
   };
+
+  const tomorrowKey = toDateKey(addDays(parseDateKey(todayKey), 1));
+  const nextWeekStart = nextWeekStartKey(todayKey, weekStartsOn);
+  const weekAfterNextStart = toDateKey(addDays(parseDateKey(nextWeekStart), 7));
 
   for (const task of tasks) {
     // 完了・対応しないは期限に関わらず末尾へ入れる。履歴として残すため（docs/spec.md §12）。
@@ -90,7 +101,7 @@ export function classifyTasks(
       continue;
     }
 
-    const classifyDate = classifyDateOf(task, sort);
+    const classifyDate = classifyDateOf(task, basis);
     if (!classifyDate) {
       buckets.someday.push(task);
       continue;
@@ -99,6 +110,9 @@ export function classifyTasks(
     const dateKey = dateKeyOf(classifyDate);
     if (dateKey < todayKey) buckets.overdue.push(task);
     else if (dateKey === todayKey) buckets.today.push(task);
+    else if (dateKey === tomorrowKey) buckets.tomorrow.push(task);
+    else if (dateKey < nextWeekStart) buckets.thisWeek.push(task);
+    else if (dateKey < weekAfterNextStart) buckets.nextWeek.push(task);
     else buckets.upcoming.push(task);
   }
 
@@ -244,7 +258,7 @@ export function groupTasksByTag(
 const OVERDUE_DAYS_FORMAT = new Intl.NumberFormat("ja-JP");
 
 /**
- * 基準日（期限、予定順のときは予定日）を過ぎたタスクに添える超過日数のラベル（「5日超過」）。
+ * 基準日（予定日があれば予定日、無ければ期限）を過ぎたタスクに添える超過日数のラベル（「5日超過」）。
  * 今日・これからの基準日では null。
  *
  * 「期限切れ」「超過」に入っていることは分類で分かるが、昨日過ぎたのか半年放置しているのかは分からない。
