@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { isTextInput } from "@/lib/text-input";
 import { cn } from "@/lib/utils";
 import {
   ANNUAL_LEAVE_OPTIONS,
@@ -235,12 +236,24 @@ export function WorkRecordDialog({
   const preApplyLockedByKindChange =
     Boolean(existing) && (kind === "trip" || kind === "leave") && kind !== originalKind;
 
+  // 閉じる前に入力欄のフォーカスを外し、キーボードをダイアログが残っている間に閉じさせる
+  // （issue #899）。iOSではボタンを押しても入力欄のフォーカスが外れず、キーボードを出したまま
+  // 保存するとフォーカス中の欄ごとダイアログが消える。そのときiOSは、欄を見せるためにずらした
+  // 文書のスクロールを戻さず、画面全体が上にずれたまま残る。戻し切らなかった分は
+  // `StrandedScrollReset`（AppFrame）が拾う。
+  const blurTextInput = () => {
+    const active = document.activeElement;
+    if (isTextInput(active)) active.blur();
+  };
+
   const close = () => {
+    blurTextInput();
     setOpen(false);
     setTimeout(onClose, 150);
   };
 
   const finish = () => {
+    blurTextInput();
     setOpen(false);
     setTimeout(onSaved, 150);
   };
