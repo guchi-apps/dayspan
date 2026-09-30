@@ -255,6 +255,7 @@ Google Calendarの日表示に近い形式とする。
 - 活動記録であることを示す印（塗らない円）を上に置き、その下へ項目名を縦書きで流す
 - レーンの記録は掴んで動かせない。時刻を直すときは押して表示画面から編集へ入る
 - 記録中の活動（§27）も同じレーンへ置く。枠線は破線のままにして、保存前であることを示す
+- 項目にアイコンがあれば、印の円の代わりにその線画（10px）を出す（issue #907）。設定 ▸ 活動記録の項目ごとに一覧から選び、未設定の初期項目は名前から既定を引く。幅が14px未満（記録が重なった日）は円へ戻す。記録中の帯は点滅の点を残し、アイコンを隣へ足す。移動・買い物・出張の印と同じ図柄は選べない
 
 記録は後から見返す事実で、これから動くために見る予定とは読む理由が違う。予定と同じ幅を取ると、
 睡眠のように長い記録が入った日は時間グリッドがほぼ記録の面になり、同じ時間帯の予定・移動が
@@ -3841,3 +3842,14 @@ Google Calendarの `Event.status`（`tentative`）フィールドをそのまま
 - `POST /api/internal/events` に任意の `tentative` を追加。秘書（AIDE）側が「多分この時間に」の
   ような曖昧な発話のときだけ `true` を付ける想定。確定・仮への戻しはこのAPIには無い（作成専用の
   ため）。詳細は `docs/internal-api.md`
+
+## 45. iOSアプリ
+
+本番YoteiFlowをiPhoneのホーム画面から独立して使うための、SwiftUI + WKWebView の殻（`ios/`・issue #908）。**画面と機能はWeb版が正本**で、Web/PWAの挙動は変えない。表示名 `YoteiFlow`・Bundle ID `com.gucchii.yoteiflow`・iOS 18以上。仕組みと手順は `ios/README.md`、判断の理由は `CLAUDE.md` の決定事項（issue #908の行）。
+
+- **Googleログイン**: 認証シート（エフェメラル）で `/auth/native/start` を開き、`/auth/callback?native=1` が許可判定・ユーザー作成のあと、一度限り・60秒の引き継ぎコードだけを `yoteiflow://auth-callback` で返す。WebViewが `POST /auth/native/consume`（コード＋PKCEの `code_verifier`）で通常のSSR Cookieを受け取る。トークンはURL・ログに出ない。許可リスト外は拒否
+- **Google Calendar連携**: ログイン済みのWebViewが一度限りのintent（60秒）を発行し、認証シートで `/api/google/connect?intent=` を開く。intentはconnectで使い捨て、callbackはintentのユーザーへだけ資格情報を保存する
+- **外部リンク**: YoteiFlowと同一オリジンだけWebViewで開き、他はSafariで開く
+- **オフライン**: アプリ内ではService Workerを使えないため、PWAの保存済み画面は出ず、再試行の画面を出す
+- **初回スコープ外**: TestFlight配布・APNs・WidgetKit・App Store公開・オフライン対応・ネイティブ画面
+

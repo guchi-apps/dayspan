@@ -24,19 +24,20 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  googleAccounts    GoogleAccount[]
-  calendarSettings  CalendarSetting[]
-  notionConnection  NotionConnection?
-  uiSetting         UiSetting?
-  activityPresets   ActivityPreset[]
-  runningActivity   RunningActivity?
-  widgetToken       WidgetToken?
-  shortcutToken     ShortcutToken?
-  sleepHealthSent   SleepHealthSent[]
-  travelPlans       TravelPlan[]
-  taskEventLinks    TaskEventLink[]
-  eventOutcomes     EventOutcome[]
-  annualLeaveGrants AnnualLeaveGrant[]
+  googleAccounts       GoogleAccount[]
+  googleConnectIntents GoogleConnectIntent[]
+  calendarSettings     CalendarSetting[]
+  notionConnection     NotionConnection?
+  uiSetting            UiSetting?
+  activityPresets      ActivityPreset[]
+  runningActivity      RunningActivity?
+  widgetToken          WidgetToken?
+  shortcutToken        ShortcutToken?
+  sleepHealthSent      SleepHealthSent[]
+  travelPlans          TravelPlan[]
+  taskEventLinks       TaskEventLink[]
+  eventOutcomes        EventOutcome[]
+  annualLeaveGrants    AnnualLeaveGrant[]
 
   pushSubscriptions         PushSubscription[]
   notificationSetting       NotificationSetting?
@@ -78,7 +79,7 @@ model CalendarSetting {
   googleAccountId String
   calendarId      String // Google Calendar API上のカレンダーID
 
-  visible Boolean @default(true) // カレンダー画面に予定を出すか
+  visible         Boolean @default(true) // カレンダー画面に予定を出すか
   // 書き込んでよいか。表示とは別に持つ。見たいだけのカレンダー（共有された予定表など）へ
   // 書き込ませないため、また画面に出さないカレンダーを保存先には使えるようにするため。
   // 判定は services/calendar/write-context.ts で行い、UIではなくサービス層で塞ぐ。
@@ -274,6 +275,9 @@ model ActivityPreset {
 
   name      String
   sortOrder Int    @default(0)
+
+  // カレンダー等に出すアイコンのキー（src/lib/activity-icons.ts）。未設定は名前から既定を引く。
+  icon String?
 
   // 保存先カレンダーはここには持たない。項目によらず1つ（UiSetting.activityCalendarId）。
 
@@ -652,7 +656,7 @@ model EventOutcome {
 
   kind EventOutcomeKind
   // 理由（体調・都合）は場面ごとに違うため選択肢にせず自由入力にする。空のままでもよい。
-  note String? @db.Text
+  note String?          @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -718,4 +722,53 @@ model AiUsageLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+// --- iOSアプリ（issue #908）---
+// ASWebAuthenticationSession と WKWebView はCookieを共有しないため、外部認証で確立した
+// セッションをWebViewへ引き継ぐための一度限りの記録。docs/spec.md「iOSアプリ」・CLAUDE.md参照。
+
+/// ログインの引き継ぎ。認証シート側の /auth/callback が作り、WKWebView側の /auth/native/consume が
+/// 一度だけ消費する。コードはハッシュで持ち、セッションのトークンは暗号化して短時間だけ置く。
+model NativeAuthHandoff {
+  id            String    @id @default(cuid())
+  /// 引き継ぎコード（アプリへ返す値）のSHA-256。値そのものは保存しない
+  codeHash      String    @unique @db.VarChar(64)
+  /// 用途。別フローのコードを拒否するため（現状は "login" のみ）
+  purpose       String    @db.VarChar(32)
+  /// アプリが持つ code_verifier のS256。消費時に verifier と突き合わせる
+  challengeHash String    @db.VarChar(64)
+  /// access/refresh token を secret-cipher.ts で暗号化したJSON
+  sessionCipher String    @db.Text
+  /// ログイン後の遷移先（resolveInternalPath で確かめてから使う）
+  next          String?   @db.VarChar(512)
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([expiresAt])
+}
+
+/// Google Calendar連携の開始intent。ログイン済みのWKWebViewが発行し、Cookieを持たない認証シートで
+/// 一度だけ使う。GET のクエリにトークンが載るため、connect の時点で使い捨てにする。
+model GoogleConnectIntent {
+  id             String    @id @default(cuid())
+  userId         String
+  /// intentトークンのSHA-256
+  tokenHash      String    @unique @db.VarChar(64)
+  /// connect（開始）の時点で立てる。以後このintentでは開始できない
+  usedAt         DateTime?
+  /// 発行から60秒。ログに残った値を後から使っても通らない
+  expiresAt      DateTime
+  /// OAuthのstateのSHA-256。callbackがこれでintentを引く
+  stateHash      String?   @unique @db.VarChar(64)
+  /// connect後、同意画面で操作する時間。callbackはこの期限内だけ受ける
+  stateExpiresAt DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }

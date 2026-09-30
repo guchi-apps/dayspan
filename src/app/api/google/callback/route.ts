@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { externalApiMessage } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
-import { encryptSecret } from "@/lib/crypto/secret-cipher";
-import { db } from "@/lib/db";
+import { completeIntent } from "@/lib/native-auth/google-intent";
+import { nativeGoogleResultUrl } from "@/lib/native-auth/native-app";
+import { intentStore } from "@/lib/native-auth/stores";
 import { getRequestOrigin } from "@/lib/request-origin";
-import { exchangeCodeForTokens, parseIdToken } from "@/services/google-calendar/oauth";
+import { linkGoogleAccount } from "@/services/google-calendar/link-account";
 
 import { OAUTH_STATE_COOKIE } from "../connect/route";
 
@@ -16,15 +16,40 @@ function settingsRedirect(origin: string, result: string) {
 export async function GET(request: NextRequest) {
   const origin = getRequestOrigin(request);
 
-  const userId = await requireUserId();
-  if (!userId) {
-    return NextResponse.redirect(`${origin}/login`);
-  }
-
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const state = searchParams.get("state");
   const expectedState = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
+
+  // iOSアプリの認証シート（issue #908）。ログインCookieの有無ではなく、stateがintent由来かで
+  // 先に分ける。SafariのCookieが共有されてログイン済みに見えても、シートはアプリへ戻す必要がある。
+  const intent = await completeIntent({
+    store: intentStore,
+    state,
+    cookieState: expectedState ?? null,
+    now: new Date(),
+  });
+
+  if (intent.kind === "rejected") {
+    return NextResponse.redirect(nativeGoogleResultUrl("state_mismatch"));
+  }
+
+  if (intent.kind === "ok") {
+    // ユーザーはintentからしか取らない。同意画面でキャンセルされた場合もここへ来る。
+    const nativeResult =
+      searchParams.get("error") || !code
+        ? "cancelled"
+        : await linkGoogleAccount({ userId: intent.userId, code, origin });
+
+    const response = NextResponse.redirect(nativeGoogleResultUrl(nativeResult));
+    response.cookies.delete(OAUTH_STATE_COOKIE);
+    return response;
+  }
+
+  const userId = await requireUserId();
+  if (!userId) {
+    return NextResponse.redirect(`${origin}/login`);
+  }
 
   // ユーザーが同意画面でキャンセルした場合も error 付きで戻ってくる。
   if (searchParams.get("error") || !code) {
@@ -35,53 +60,10 @@ export async function GET(request: NextRequest) {
     return settingsRedirect(origin, "state_mismatch");
   }
 
-  let tokens;
-  try {
-    tokens = await exchangeCodeForTokens({ code, origin });
-  } catch (error) {
-    // リダイレクト先には定型のクエリ値しか渡せないため、理由はログにだけ残す
-    // （CLAUDE.md「外部APIの扱い」）。
-    externalApiMessage("google", "OAuthトークン交換", error);
-    return settingsRedirect(origin, "exchange_failed");
-  }
+  const result = await linkGoogleAccount({ userId, code, origin });
 
-  // access_type=offline & prompt=consent を付けているので通常は返るが、返らなかった場合は
-  // トークン更新ができず連携が成立しないため、保存せずにやり直してもらう。
-  if (!tokens.refresh_token) {
-    return settingsRedirect(origin, "no_refresh_token");
-  }
-
-  const identity = tokens.id_token ? parseIdToken(tokens.id_token) : null;
-  if (!identity) {
-    return settingsRedirect(origin, "no_identity");
-  }
-
-  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
-
-  await db.googleAccount.upsert({
-    where: {
-      userId_googleUserId: { userId, googleUserId: identity.sub },
-    },
-    create: {
-      userId,
-      googleUserId: identity.sub,
-      email: identity.email,
-      accessToken: encryptSecret(tokens.access_token),
-      accessTokenExpiresAt: expiresAt,
-      refreshToken: encryptSecret(tokens.refresh_token),
-      scope: tokens.scope,
-    },
-    update: {
-      email: identity.email,
-      accessToken: encryptSecret(tokens.access_token),
-      accessTokenExpiresAt: expiresAt,
-      refreshToken: encryptSecret(tokens.refresh_token),
-      scope: tokens.scope,
-    },
-  });
-
-  const response = settingsRedirect(origin, "connected");
-  response.cookies.delete(OAUTH_STATE_COOKIE);
+  const response = settingsRedirect(origin, result);
+  if (result === "connected") response.cookies.delete(OAUTH_STATE_COOKIE);
 
   return response;
 }

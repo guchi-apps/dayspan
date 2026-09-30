@@ -58,7 +58,7 @@ export function ActivityLaneBlock({
       }}
       title={`${timeText} ${event.title}`}
     >
-      <ActivityMark className="size-1.5" />
+      <ActivityMark className="size-1.5" title={showTitle ? event.title : undefined} />
       {showTitle && (
         <span
           className="min-h-0 overflow-hidden text-[9px] leading-none font-semibold"
