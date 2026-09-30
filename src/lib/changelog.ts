@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.36.1",
+    date: "2026-09-30",
+    changes: [
+      "iPhoneで勤務の記録を保存したあと、画面全体が上にずれたまま戻らなくなる問題を直しました。",
+    ],
+  },
+  {
     version: "3.36.0",
     date: "2026-09-30",
     changes: [
