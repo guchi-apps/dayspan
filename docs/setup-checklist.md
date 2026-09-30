@@ -65,6 +65,7 @@ gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPI
   - `https://dayspan.gucchii.com/auth/callback`
   - `http://localhost:3000/auth/callback`（ローカル開発用）
   - 実機確認をする場合は `http://<LAN IP>.sslip.io:3000/auth/callback`
+  - iOSアプリ（`ios/`・issue #908）用に新しく足すURLは無い（戻り先は同じ `/auth/callback`。クエリ付きが弾かれたら実機確認で分かる。`ios/README.md`）
 - Google プロバイダは既に有効化済みのものを使う。**カレンダーのスコープはここに追加しない**（他アプリのログインに影響するため。下記3で別クライアントを用意する）
 
 ## 3. Google Cloud Console（DaySpan専用のGCPプロジェクト）

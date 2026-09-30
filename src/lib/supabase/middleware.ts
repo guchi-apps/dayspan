@@ -5,13 +5,9 @@ import { isAllowedEmail } from "@/lib/allowed-users";
 import { SUPABASE_USER_ID_HEADER } from "@/lib/auth-header";
 import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { isPublicPath } from "@/lib/supabase/public-paths";
 import { WIDGET_OPEN_BRIDGE_PATH } from "@/lib/widget-open-bridge";
 
-const publicPaths = ["/login", "/auth/signin", "/auth/callback"];
-
-function isPublicPath(pathname: string): boolean {
-  return publicPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-}
 
 /**
  * Supabaseのセッションではなく、それぞれ専用のトークン・APIキーで認証するAPI。
