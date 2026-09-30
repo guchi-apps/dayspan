@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isActivityIconKey } from "@/lib/activity-icons";
 import { requireUserId } from "@/lib/auth-user";
 import {
   ACTIVITY_NAME_MAX_LENGTH,
@@ -8,9 +9,9 @@ import {
   updateActivityPreset,
 } from "@/services/activity/presets";
 
-type Body = { name?: string };
+type Body = { name?: string; icon?: string | null };
 
-/** 選択肢の名前を変える。保存先カレンダーは項目ごとではなく設定（PATCH /api/activities/settings）で持つ。 */
+/** 選択肢の名前・アイコンを変える。保存先カレンダーは項目ごとではなく設定（PATCH /api/activities/settings）で持つ。 */
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ presetId: string }> },
@@ -44,7 +45,12 @@ export async function PATCH(
     }
   }
 
-  const updated = await updateActivityPreset(userId, presetId, { name });
+  // icon は省略＝触らない、null＝解除。一覧に無いキーは受けない。
+  if (body.icon !== undefined && body.icon !== null && !isActivityIconKey(body.icon)) {
+    return NextResponse.json({ error: "invalid_icon" }, { status: 400 });
+  }
+
+  const updated = await updateActivityPreset(userId, presetId, { name, icon: body.icon });
 
   if (!updated) {
     return NextResponse.json({ error: "preset_not_found" }, { status: 404 });

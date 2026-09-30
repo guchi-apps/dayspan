@@ -275,6 +275,9 @@ model ActivityPreset {
   name      String
   sortOrder Int    @default(0)
 
+  // カレンダー等に出すアイコンのキー（src/lib/activity-icons.ts）。未設定は名前から既定を引く。
+  icon String?
+
   // 保存先カレンダーはここには持たない。項目によらず1つ（UiSetting.activityCalendarId）。
 
   createdAt DateTime @default(now())

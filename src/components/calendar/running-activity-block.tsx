@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import type { RunningActivityItem } from "@/types/activity";
 
+import { ActivityMark } from "./activity-mark";
 import { formatElapsed } from "./activity-format";
 import { MIN_EVENT_HEIGHT, MINUTES_PER_DAY, type CalendarDateUtils } from "./item-layout";
 import { useNowIso } from "./use-clock";
@@ -73,6 +74,8 @@ export function RunningActivityBlock({
     >
       {/* 動いていることを形でも示す。色だけだと、止め忘れているのか保存済みなのかが分からない。 */}
       <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+      {/* アイコンは点滅の点の隣へ足すだけ。点は「記録中」の合図なので消さない（issue #907）。 */}
+      {width >= 14 && <ActivityMark title={running.title} className="hidden" />}
       <span
         className="min-h-0 overflow-hidden text-[9px] leading-none font-semibold"
         // 縦書きはTailwindのユーティリティに無いため直接指定する（ActivityLaneBlockと同じ）。

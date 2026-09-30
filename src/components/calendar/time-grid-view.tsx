@@ -1704,7 +1704,7 @@ function AllDayEventChip({
       }}
       title={statusPrefix ? `${statusPrefix}: ${event.title}` : event.title}
     >
-      {quiet && !continuesBefore && <ActivityMark className="size-1.5" />}
+      {quiet && !continuesBefore && <ActivityMark className="size-1.5" title={event.title} />}
       {outcome && !continuesBefore && <EventOutcomeMark className="size-2.5" />}
       <span className={cn("clip-nowrap", outcome && "line-through")}>{event.title}</span>
       {event.tentative && <span className="sr-only">（仮の予定）</span>}
