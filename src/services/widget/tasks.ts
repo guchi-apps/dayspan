@@ -71,7 +71,11 @@ export async function buildWidgetTasks(userId: string): Promise<WidgetTasksPaylo
   const ordered: { task: TaskItem; bucket: WidgetTaskItem["bucket"] }[] = [
     ...sortTasks(buckets.overdue, "due").map((task) => ({ task, bucket: "overdue" as const })),
     ...sortTasks(buckets.today, "due").map((task) => ({ task, bucket: "today" as const })),
-    ...sortTasks(buckets.upcoming, "due").map((task) => ({ task, bucket: "upcoming" as const })),
+    // 明日・今週・来週も、ウィジェットでは従来どおり「これから」の1区分として扱う（issue #903）。
+    ...sortTasks(
+      [...buckets.tomorrow, ...buckets.thisWeek, ...buckets.nextWeek, ...buckets.upcoming],
+      "due",
+    ).map((task) => ({ task, bucket: "upcoming" as const })),
   ];
 
   return {
