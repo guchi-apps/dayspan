@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 
 import type { CalendarView } from "@/lib/calendar-range";
+import { isTextInput } from "@/lib/text-input";
 
 import type { AddableKind } from "./item-dialog";
 
@@ -60,6 +61,7 @@ export function useCalendarShortcuts(args: CalendarShortcutsArgs) {
       const { offline, available, actions } = argsRef.current;
 
       if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+      // 文字入力欄にフォーカスがあるときは発火させず、通常の入力を優先する。
       if (isTextInput(event.target)) return;
       // ドロワー・下部ナビのシート・入力/詳細/確認ダイアログなど、アプリ内のダイアログは
       // すべて同じ `Dialog`（Radix）を通るため、role属性1つでまとめて判定できる。
@@ -107,11 +109,4 @@ export function useCalendarShortcuts(args: CalendarShortcutsArgs) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
-}
-
-/** 文字入力欄にフォーカスがあるとき。ここでは発火させず、通常の入力を優先する。 */
-function isTextInput(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }

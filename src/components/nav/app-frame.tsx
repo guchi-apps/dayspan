@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { AppSidebar } from "@/components/nav/app-sidebar";
 import type { NavKey } from "@/components/nav/nav-items";
+import { StrandedScrollReset } from "@/components/nav/stranded-scroll-reset";
 import type { RunningActivitySummary } from "@/types/activity";
 
 /**
@@ -28,6 +29,9 @@ export function AppFrame({
     <div className="flex h-app">
       <AppSidebar current={current} activityRunning={activityRunning} running={running} />
       <div className="@container/main flex min-w-0 flex-1 flex-col">{children}</div>
+      {/* 文書はスクロールしない前提の枠なので、iOSのキーボードがずらしたまま残した位置を戻す
+          （issue #899）。 */}
+      <StrandedScrollReset />
     </div>
   );
 }
