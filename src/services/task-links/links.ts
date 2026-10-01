@@ -4,8 +4,9 @@ import { db } from "@/lib/db";
 import { placeDisplayName } from "@/lib/place-text";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { getEvent, toCalendarItems } from "@/services/google-calendar/events";
+import { createNotionClient } from "@/services/notion/client";
 import type { PropertyMap } from "@/services/notion/task-database";
-import { updateTask, type TaskWriteInput } from "@/services/tasks";
+import { updateTask, type TaskWriteInput } from "@/services/notion/tasks";
 import type {
   CalendarEventItem,
   TaskEventLinkItem,
@@ -251,15 +252,14 @@ async function writeResolvedDate(
   const input: TaskWriteInput = target === "DUE" ? { due: date } : { planned: date };
 
   const propertyMap = (connection.propertyMap as PropertyMap | null) ?? {};
-  // タスクをYoteiFlowのDBに置いているときは期限も予定日も常にある（issue #919）。
-  if (!connection.tasksInDb && !propertyMap[target === "DUE" ? "due" : "planned"]) {
+  if (!propertyMap[target === "DUE" ? "due" : "planned"]) {
     throw new TaskLinkError(
       `タスクDBに「${label}」のプロパティがありません。Notionへ足してから、設定画面でタスクDBを選び直してください。`,
     );
   }
 
   try {
-    await updateTask(connection, taskId, input);
+    await updateTask(createNotionClient(connection), connection, taskId, input);
   } catch (error) {
     throw new TaskLinkExternalError("notion", `タスクの${label}の更新`, error);
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { externalApiError } from "@/lib/api-error";
-import { TaskNotEditableError } from "@/services/tasks";
+import { TaskNotEditableError } from "@/services/notion/tasks";
 
 import { TaskLinkError, TaskLinkExternalError } from "./links";
 

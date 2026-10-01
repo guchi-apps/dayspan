@@ -28,10 +28,10 @@ DaySpan は、Google Calendar の予定と Notion のタスクを同じカレン
 ## データの一次情報源
 
 - Google Calendar の予定本体: Google Calendar
-- タスク本体: 既定はNotion。設定 ▸ Notion で「YoteiFlowのDBへ移す」を選んだユーザーは YoteiFlow の MariaDB（`Task`。issue #919）
+- タスク本体: Notion。#919・#928 でYoteiFlowのDBへ移せるようにしたが、#942 で撤去しNotionを正に戻した（`Task`・`Reminder`・`TaskOption` は削除マイグレーションで破棄。再度DB化するなら #919・#928 のコミットが参考になる）
 - DaySpan 固有設定・連携メタデータ: DaySpan の MariaDB
 
-Google Calendar の予定本体を DaySpan DB へ恒久的に二重保存しない。タスクは Notion と DB の**どちらか一方だけ**を正とし（`NotionConnection.tasksInDb`）、両方へ同時に書かない（二重保存しない）。Notionが応答しなくても使えるようにするため、Notion依存を種類ごとに段階的に外す方針（タスク→日付リマインド→買い物→勤務→場所。issue #919・#928）。
+Google Calendar の予定本体および Notion タスク本体を、DaySpan DBへ恒久的に二重保存しない。
 
 ## 認証
 
@@ -54,7 +54,6 @@ UIコンポーネントから外部APIを直接操作する構造を避け、将
 | 決定 | 理由 |
 |---|---|
 | Prisma は 6 系を使う | 7 系は `datasource url` が廃止され driver adapter が必須。他アプリの構成から外れる |
-| タスクの読み書きは `src/services/tasks`（切替層）を通し、`tasksInDb` でNotion／DBを切り替える。移行は取り込み（Notionのページ IDをそのまま `Task.id` にする）か空で開始。移行後はNotionへ書き戻さない | Notionが同一ワークスペースだけ internal_server_error・504を返し続け、タスクの表示も操作もできなくなった（2026-10-01・issue #919。案Bで実施と決定）。`TaskEventLink.taskId` の指す先を変えないよう、取り込みはページIDを維持する。取り込み前のユーザーは従来のNotion経路のまま動く（段階導入・戻せる）。タグ・進捗の選択肢は `TaskOption`（取り込み時にNotionの定義から写し、保存時に未知の名前は自動で足す）。DB経路の範囲絞り込みは日付部分（先頭10文字）の比較で、Notion版のフィルタと同じ。**日付リマインドも同じ形でDB化した**（issue #928。`NotionConnection.remindersInDb`・`Reminder`・種類の選択肢は `TaskOption` の `REMINDER`・切替層 `src/services/reminders`・`POST /api/reminders/storage`。毎年の項目の展開はNotion版と共通の `expandAnnual()`）。ゴミの日・買い物の購入予定日はNotionのまま。**未対応（後続PR）**: 設定画面でのタグ・進捗・リマインド種類の編集（DB経路ではNotionへは書かない）、買い物・勤務・場所のDB化、Notion連携の廃止。DBスキーマ変更を含むため自動マージ不可 |
 | 設定ファイルは `next.config.mjs` にし、TypeScriptに戻さない | `next.config.ts` だと本番の `next start` が設定ファイルをトランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐する。`.mjs` なら読み込まれない。ローカルで本番と同じ形（`node --max-old-space-size=128 next start`）に起動して測ると、`next-swc` のマップは4→0、`Threads` は35→23、`VmHWM` は164MB→138MBだった（issue #675。ops-dashboardのカナリアの横展開）。型は先頭の `// @ts-check` とJSDocで付け、`tsconfig.json` の `include` に `next.config.mjs` を足して `tsc --noEmit` の対象に入れている。`deploy.yml` の掃除の `rm -rf` に `next.config.ts` も残すのは、本番に既にある古いファイルを消す手段を無くさないため |
 | `prisma.config.ts` の `loadEnv()` には `quiet: true` を付ける | dotenv v17は読み込み結果の案内文を **stdout** へ出す。`prisma migrate dev` / `migrate diff --script` が生成するSQLも同じstdoutへ流れるため、案内文が `migration.sql` の1行目へ混ざる。本番の `prisma migrate deploy` がその行で構文エラー（MariaDB 1064 → P3018）になり、さらに `_prisma_migrations` へ失敗が記録されて以後のデプロイがP3009で止まる（VPS上での `migrate resolve --rolled-back` が要る）。実例は `guchi-apps/aide-bot#10` |
 | Notion は `taskDataSourceId` を一次キーにする | API 2025-09-03 以降、プロパティとクエリの対象はデータベースではなくデータソース |

@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { getNotionReminderConnection } from "@/services/calendar/write-context";
-import { createReminder, type ReminderWriteInput } from "@/services/reminders";
+import { createNotionClient } from "@/services/notion/client";
+import { createReminder, type ReminderWriteInput } from "@/services/notion/reminders";
 
 export async function POST(request: Request) {
   const userId = await requireUserId();
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const created = await createReminder(connection, {
+    const created = await createReminder(createNotionClient(connection), connection, {
       ...body,
       title: body.title.trim(),
     });

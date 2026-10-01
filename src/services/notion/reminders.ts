@@ -73,7 +73,7 @@ export function sameDayOfYear(year: number, month: string, day: string): string 
  * 展開した項目は元ページと同じ内容だが、月ごとの保持・描画で1件に潰されないよう
  * IDへ日付を足して回ごとに別物にする（use-calendar-chunks.ts）。
  */
-export function expandAnnual(reminder: ReminderItem, range: { from: string; to: string }): ReminderItem[] {
+function expandAnnual(reminder: ReminderItem, range: { from: string; to: string }): ReminderItem[] {
   const baseDate = reminder.date.slice(0, 10);
   const time = reminder.hasTime ? reminder.date.slice(10) : "";
   const month = baseDate.slice(5, 7);
