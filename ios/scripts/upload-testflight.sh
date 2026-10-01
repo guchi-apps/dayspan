@@ -9,8 +9,11 @@
 #   ASC_ISSUER_ID    Issuer ID
 # 任意:
 #   IOS_BUILD_NUMBER ビルド番号（既定は日時 YYYYMMDDHHMM。アップロードのたびに増えれば足りる）
+#   IOS_BRANCH       取り込むブランチ（既定 main。Webが本番へ出た後の殻を配るため）
+#   IOS_SKIP_PULL=1  git の取り込みを省く（手元の変更をそのまま上げたいとき）
 #
 # ビルド番号は Archive 時に上書きするだけで pbxproj は書き換えない（コミットが要らない）。
+# subpc からは ios/scripts/remote-upload-testflight.sh で Mac へSSHして実行できる（#929）。
 # 版番号（MARKETING_VERSION）は事前に `node ios/scripts/sync-version.mjs` で package.json に揃える。
 set -euo pipefail
 
@@ -30,6 +33,21 @@ if [ ! -f "$ASC_KEY_PATH" ]; then
 fi
 
 IOS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$IOS_DIR/.." && pwd)"
+BRANCH="${IOS_BRANCH:-main}"
+
+if [ "${IOS_SKIP_PULL:-}" != "1" ]; then
+  cd "$REPO_ROOT"
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "作業ツリーに未コミットの変更があるため中止します。退避してから再実行するか、IOS_SKIP_PULL=1 を付けてください。" >&2
+    exit 1
+  fi
+  git fetch origin "$BRANCH"
+  git checkout "$BRANCH"
+  git merge --ff-only "origin/$BRANCH"
+fi
+echo "ビルド対象: $(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD) @ $(git -C "$REPO_ROOT" rev-parse --short HEAD)"
+
 BUILD_NUMBER="${IOS_BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 ARCHIVE="$(mktemp -d)/YoteiFlow.xcarchive"
 
