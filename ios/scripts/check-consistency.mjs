@@ -56,10 +56,39 @@ export function checkConsistency() {
   if (!pbxproj.includes("PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow;")) problems.push("Bundle ID が com.gucchii.yoteiflow ではありません");
   if (!pbxproj.includes("INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;")) problems.push("表示名が YoteiFlow ではありません");
 
-  // 開発用のURLをコミットしていない
-  if (!/baseURL = URL\(string: "https:\/\/dayspan\.gucchii\.com\/"\)!/.test(appConfig)) {
-    problems.push("AppConfig.baseURL が本番URLではありません（開発用のまま？）");
+  // 開発用のURLをコミットしていない（アプリもウィジェットも Shared/SharedConfig.swift の値を読む）
+  const sharedConfig = read("ios/Shared/SharedConfig.swift");
+  if (!/baseURL = URL\(string: "https:\/\/dayspan\.gucchii\.com\/"\)!/.test(sharedConfig)) {
+    problems.push("SharedConfig.baseURL が本番URLではありません（開発用のまま？）");
   }
+  if (!appConfig.includes("baseURL = SharedConfig.baseURL")) {
+    problems.push("AppConfig.baseURL が SharedConfig.baseURL を読んでいません");
+  }
+
+  // ウィジェット（#926）: App Group・ディープリンクのスキーム・埋め込みが揃っている
+  const appGroup = sharedConfig.match(/appGroup = "([^"]+)"/)?.[1];
+  for (const entitlements of ["ios/Config/YoteiFlow.entitlements", "ios/Config/YoteiFlowWidget.entitlements"]) {
+    if (!appGroup || !read(entitlements).includes(`<string>${appGroup}</string>`)) {
+      problems.push(`${entitlements} の App Group が SharedConfig.appGroup（${appGroup}）と一致しません`);
+    }
+  }
+  const deepLinkScheme = sharedConfig.match(/deepLinkScheme = "([^"]+)"/)?.[1];
+  if (!deepLinkScheme || !read("ios/Config/YoteiFlow-Info.plist").includes(`<string>${deepLinkScheme}</string>`)) {
+    problems.push("YoteiFlow-Info.plist の URL スキームが SharedConfig.deepLinkScheme と一致しません");
+  }
+  if (deepLinkScheme !== swiftScheme) {
+    problems.push("ウィジェットのディープリンクのスキームが認証シートの戻り先スキームと違います（Info.plist の登録を共用している）");
+  }
+  if (!pbxproj.includes("PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.widget;")) {
+    problems.push("ウィジェット拡張の Bundle ID が com.gucchii.yoteiflow.widget ではありません");
+  }
+  if (!pbxproj.includes("YoteiFlowWidget.appex in Embed Foundation Extensions")) {
+    problems.push("ウィジェット拡張がアプリへ埋め込まれていません");
+  }
+  // 取得はトークン付きの既存ウィジェットAPIだけ。新しいAPIは増やさない
+  const widgetApi = read("ios/YoteiFlowWidget/WidgetAPI.swift");
+  if (!widgetApi.includes('"api/widget/\\(surface)"')) problems.push("WidgetAPI.swift が /api/widget/* を読んでいません");
+  if (!webViewModel.includes("/api/settings/widget/native")) problems.push("WebViewModel.swift がウィジェット用トークンを受け取っていません");
 
   return problems;
 }

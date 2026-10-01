@@ -3,6 +3,7 @@ import Network
 import SwiftUI
 import UIKit
 import WebKit
+import WidgetKit
 
 /// Web版を開く WKWebView と、その読み込み状態を持つ。
 final class WebViewModel: NSObject, ObservableObject {
@@ -18,6 +19,10 @@ final class WebViewModel: NSObject, ObservableObject {
     /// 最後に開こうとしたメインフレームのURL。読み込みに失敗すると `webView.url` は
     /// 直前に表示できていた画面のままなので、再試行はこちらを開き直す
     private var lastRequestedURL: URL?
+    /// ウィジェット用トークンをこの起動で共有済みか（#926）
+    private var hasSyncedWidgetToken = false
+    /// 起動前（WebViewがまだ何も開いていない間）にウィジェットから渡された開き先
+    private var pendingPath: String?
 
     override init() {
         let configuration = WKWebViewConfiguration()
@@ -50,7 +55,23 @@ final class WebViewModel: NSObject, ObservableObject {
             DispatchQueue.main.async { self?.networkChanged(available: available) }
         }
         pathMonitor.start(queue: .main)
-        load(AppConfig.baseURL)
+        if let pendingPath {
+            self.pendingPath = nil
+            loadAppPath(pendingPath)
+        } else {
+            load(AppConfig.baseURL)
+        }
+    }
+
+    /// ウィジェットの押下（`yoteiflow://open?path=/tasks`）。許可した画面だけ開く。
+    /// 起動の途中で届いたものは、最初の読み込みを置き換える形で保持する
+    func openFromWidget(_ url: URL) {
+        guard let path = SharedConfig.path(fromDeepLink: url) else { return }
+        if hasStarted {
+            loadAppPath(path)
+        } else {
+            pendingPath = path
+        }
     }
 
     func retry() {
@@ -289,6 +310,7 @@ extension WebViewModel: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isRetrying = false
         failure = nil
+        updateWidgetToken(for: webView.url)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -302,6 +324,51 @@ extension WebViewModel: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // メモリ不足などでWebの描画プロセスが落ちると、白い画面のまま戻らない
         load(lastRequestedURL ?? AppConfig.baseURL)
+    }
+}
+
+// MARK: - ウィジェットへのトークンの受け渡し（#926）
+
+extension WebViewModel {
+    /// ログイン済みの画面が開けたら、ウィジェット用トークンをログイン済みのWebViewから受け取り、
+    /// App Group の Keychain へ置く。ウィジェットはWebViewのCookieを持てず、アプリが動いていない間も
+    /// 更新されるため。`/login` が開いたら（未ログイン・ログアウト後）共有トークンを消し、ウィジェットが
+    /// ログアウト後も中身を出し続けないようにする。
+    fileprivate func updateWidgetToken(for url: URL?) {
+        guard let url, AppConfig.isAppURL(url) else { return }
+
+        if url.path == "/login" {
+            hasSyncedWidgetToken = false
+            WidgetCredentials.clear()
+            WidgetCenter.shared.reloadAllTimelines()
+            return
+        }
+        // 画面が変わるたびに呼び直さない。1回の起動で共有できれば足りる
+        guard !hasSyncedWidgetToken, url.path != "/auth/native/start" else { return }
+        hasSyncedWidgetToken = true
+
+        Task {
+            let script = """
+            const response = await fetch('/api/settings/widget/native', {
+              method: 'POST',
+              credentials: 'same-origin'
+            });
+            if (!response.ok) { return null; }
+            const body = await response.json();
+            return body.token;
+            """
+            let value = try? await webView.callAsyncJavaScript(script, contentWorld: .page)
+            guard let token = value as? String, !token.isEmpty else {
+                // 未ログインや一時的な失敗。次の画面で取り直す
+                hasSyncedWidgetToken = false
+                return
+            }
+            if WidgetCredentials.save(token: token) {
+                WidgetCenter.shared.reloadAllTimelines()
+            } else {
+                hasSyncedWidgetToken = false
+            }
+        }
     }
 }
 
