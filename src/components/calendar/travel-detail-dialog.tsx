@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { CalendarClock, CloudOff, MapPin, Pencil, Route, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronRight, CloudOff, MapPin, Pencil, Route, Trash2 } from "lucide-react";
 
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { placeDisplayName } from "@/lib/place-text";
@@ -16,9 +16,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LinkifiedText } from "@/components/ui/linkified-text";
-import { TRAVEL_MODE_LABELS, type TravelItem } from "@/types/calendar";
+import { cn } from "@/lib/utils";
+import { TRAVEL_MODE_LABELS, type TaskItem, type TravelItem } from "@/types/calendar";
 
 import { DeleteItemDialog } from "./delete-item-dialog";
+import { TaskLinkDialog } from "./task-link-dialog";
+import { taskLinkTargetLabel } from "./task-link-label";
+import { TaskStageMark } from "./task-stage-mark";
 import { estimateSourceLabel } from "./travel-estimate-notes";
 import type { TouchedRange } from "./use-calendar-chunks";
 
@@ -34,6 +38,9 @@ export function TravelDetailDialog({
   onClose,
   onEdit,
   onDeleted,
+  linkedTasks = [],
+  onOpenTask,
+  onLinked,
 }: {
   travel: TravelItem;
   timeZone: string;
@@ -42,11 +49,18 @@ export function TravelDetailDialog({
   onClose: () => void;
   onEdit: () => void;
   onDeleted: (touched: TouchedRange[] | null) => void;
+  /** この移動に紐づいているタスク（issue #914）。出発前に確かめるタスクなどを置く。 */
+  linkedTasks?: TaskItem[];
+  /** 紐づいたタスクを開く。移動の表示画面は閉じてタスクの詳細へ移る。 */
+  onOpenTask?: (task: TaskItem) => void;
+  /** タスクを紐づけたあと。変わった期間を渡して取り直す。 */
+  onLinked?: (touched: TouchedRange[] | null) => void;
 }) {
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [linking, setLinking] = useState(false);
 
   const close = () => {
     setOpen(false);
@@ -58,6 +72,16 @@ export function TravelDetailDialog({
     setTimeout(onEdit, 150);
   };
 
+  const linkTask = () => {
+    setOpen(false);
+    setTimeout(() => setLinking(true), 150);
+  };
+
+  const openTask = (task: TaskItem) => {
+    setOpen(false);
+    setTimeout(() => onOpenTask?.(task), 150);
+  };
+
   const deleted = (touched: TouchedRange[] | null) => {
     setOpen(false);
     setTimeout(() => onDeleted(touched), 150);
@@ -67,6 +91,17 @@ export function TravelDetailDialog({
     1,
     Math.round((new Date(travel.end).getTime() - new Date(travel.start).getTime()) / 60_000),
   );
+
+  if (linking) {
+    return (
+      <TaskLinkDialog
+        travel={travel}
+        timeZone={timeZone}
+        onCancel={onClose}
+        onLinked={(touched) => onLinked?.(touched)}
+      />
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && close()}>
@@ -136,6 +171,57 @@ export function TravelDetailDialog({
               </span>
             </DetailRow>
           )}
+
+          {/* この移動に紐づいているタスク（issue #914）。出発前に確かめるものなど。 */}
+          {linkedTasks.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {linkedTasks.map((task) => {
+                const links = task.links.filter((link) => link.travelId === travel.id);
+                if (links.length === 0) return null;
+
+                return (
+                  <button
+                    key={task.id}
+                    type="button"
+                    onClick={() => openTask(task)}
+                    className="flex items-center gap-2 rounded-md border border-secondary-container bg-secondary-container/40 py-1.5 pr-2.5 text-left text-xs text-on-surface"
+                    style={{ borderLeftWidth: "3px", paddingLeft: "8px" }}
+                  >
+                    <TaskStageMark
+                      stage={links[0].stage}
+                      drifted={links.some((link) => link.drifted)}
+                      className="h-4 w-5 shrink-0"
+                    />
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 truncate",
+                        task.done && "text-on-surface-variant line-through",
+                      )}
+                    >
+                      {task.title}
+                      <span className="opacity-75">
+                        （{links.map((link) => taskLinkTargetLabel(link)).join("・")}）
+                      </span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 opacity-70" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-secondary-container text-on-secondary-container"
+              disabled={readOnly}
+              onClick={linkTask}
+            >
+              <TaskStageMark stage="BEFORE_START" className="h-4 w-5 text-on-secondary-container" />
+              タスクを登録
+            </Button>
+          </div>
 
           {readOnly && <p className="text-xs text-on-surface-variant">{OFFLINE_WRITE_MESSAGE}</p>}
         </div>

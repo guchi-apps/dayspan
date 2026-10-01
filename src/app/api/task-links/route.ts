@@ -9,6 +9,8 @@ type Body = {
   taskId?: string;
   calendarId?: string;
   eventId?: string;
+  /** 紐づけ先が移動のとき（issue #914）。calendarId / eventId の代わりに渡す。 */
+  travelId?: string;
   stage?: string;
   /** 決まった日時の行き先。省略時は予定日（行き先を足す前と同じ結果になる）。 */
   target?: string;
@@ -23,9 +25,12 @@ export async function POST(request: Request) {
 
   const body = (await request.json()) as Body;
 
-  if (!body.taskId || !body.calendarId || !body.eventId) {
+  if (!body.taskId || (!body.travelId && (!body.calendarId || !body.eventId))) {
     return NextResponse.json(
-      { error: "invalid_request", message: "taskId, calendarId, eventId は必須です。" },
+      {
+        error: "invalid_request",
+        message: "taskId と、calendarId・eventId または travelId は必須です。",
+      },
       { status: 400 },
     );
   }
@@ -52,8 +57,9 @@ export async function POST(request: Request) {
   try {
     const result = await linkTaskToEvent(userId, {
       taskId: body.taskId,
-      calendarId: body.calendarId,
-      eventId: body.eventId,
+      travelId: body.travelId,
+      calendarId: body.calendarId ?? "",
+      eventId: body.eventId ?? "",
       stage: body.stage,
       target,
     });

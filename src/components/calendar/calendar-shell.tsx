@@ -582,6 +582,7 @@ export function CalendarShell({
    */
   const openTaskFromEvent = (task: TaskItem) => {
     setViewingEvent(null);
+    setViewingTravel(null);
     setViewingTask(task);
   };
 
@@ -1701,6 +1702,12 @@ function CalendarBody({
           onClose={onCloseDialogs}
           onEdit={() => onEditTravel(viewingTravel)}
           onDeleted={handleSaved}
+          // この移動に紐づくタスク。出発前に確かめるものなどを置く（issue #914）。
+          linkedTasks={data.tasks.filter((task) =>
+            task.links.some((link) => link.travelId === viewingTravel.id),
+          )}
+          onOpenTask={onOpenTaskForEvent}
+          onLinked={handleSaved}
         />
       )}
 

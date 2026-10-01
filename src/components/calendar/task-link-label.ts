@@ -1,6 +1,7 @@
 import {
   TASK_EVENT_STAGE_LABELS,
   TASK_LINK_TARGET_LABELS,
+  TRAVEL_TASK_STAGE_LABELS,
   type TaskEventLinkItem,
   type TaskItem,
 } from "@/types/calendar";
@@ -20,12 +21,17 @@ import type { TaskDateField } from "./item-layout";
 
 /** 「終了後」。カレンダーの枠に添える短い形。 */
 export function taskLinkStageLabel(link: TaskEventLinkItem): string {
-  return TASK_EVENT_STAGE_LABELS[link.stage];
+  return stageLabel(link);
+}
+
+/** 移動への紐づけは出発・到着の呼び名にする（issue #914）。 */
+function stageLabel(link: Pick<TaskEventLinkItem, "stage" | "travelId">): string {
+  return link.travelId ? TRAVEL_TASK_STAGE_LABELS[link.stage] : TASK_EVENT_STAGE_LABELS[link.stage];
 }
 
 /** 「定例会議 の終了後」。一覧の行・詳細画面で使う。 */
 export function taskLinkFullLabel(link: TaskEventLinkItem): string {
-  return `${link.eventTitle} の${TASK_EVENT_STAGE_LABELS[link.stage]}`;
+  return `${link.eventTitle} の${stageLabel(link)}`;
 }
 
 /** 「期限」「予定日」。1つのタスクに2件並びうるため、どちらの日付の話かを示す。 */

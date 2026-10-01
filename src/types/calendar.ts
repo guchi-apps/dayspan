@@ -166,6 +166,14 @@ export const TASK_EVENT_STAGE_LABELS: Record<TaskEventStage, string> = {
   AFTER_END: "終了後",
 };
 
+/** 紐づけ先が移動のときの段階の呼び名。出発・到着に置き換える（issue #914）。 */
+export const TRAVEL_TASK_STAGE_LABELS: Record<TaskEventStage, string> = {
+  BEFORE_START: "出発まで",
+  DURING: "移動中",
+  BEFORE_END: "到着まで",
+  AFTER_END: "到着後",
+};
+
 export function isTaskEventStage(value: unknown): value is TaskEventStage {
   return typeof value === "string" && (TASK_EVENT_STAGES as readonly string[]).includes(value);
 }
@@ -201,6 +209,8 @@ export type TaskEventLinkItem = {
   taskId: string;
   calendarId: string;
   eventId: string;
+  /** 紐づけ先が移動のときの移動ID。予定への紐づけでは null（issue #914）。 */
+  travelId?: string | null;
   stage: TaskEventStage;
   /** 決まった日時の行き先。期限と予定日で別の予定へ紐づけられる。 */
   target: TaskLinkTarget;
