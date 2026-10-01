@@ -17,7 +17,7 @@
 | 変えたもの | Web/PWA | iOSアプリ |
 |---|---|---|
 | 画面・機能（`src/`） | mainへマージ → 自動デプロイ | 何もしなくてよい（次に開いたとき本番の新しい画面が出る） |
-| アプリの殻（`ios/`） | 影響なし | Xcodeで入れ直す |
+| アプリの殻（`ios/`） | 影響なし | Xcodeで入れ直す／TestFlightへ新しいビルドを上げる |
 
 ## ビルド方法（Mac + Xcode）
 
@@ -29,6 +29,46 @@
 4. 初回は iPhone の 設定 → プライバシーとセキュリティ → デベロッパモード をオンにし、設定 → 一般 → VPNとデバイス管理 で開発者証明書を信頼する
 
 署名・App Store Connect APIキー・シェルの注意（終了コードをパイプで隠さない等）は kurashio の `ios/README.md`（`guchi-apps/myroom`）と `guchi-apps/docs#176` を参照してください。この殻は Widget / App Group を持たないため、kurashio より設定は少なくて済みます。
+
+## TestFlight で配布する（#920）
+
+Mac につながなくても、iPhone の TestFlight アプリからインストール・更新できるようにする手順です。**ビルドとアップロードは Mac でしかできません**（subpc に Xcode が無い）。開発用署名の入れ直し（約1年／無料チームなら7日）も TestFlight 版には要りません（TestFlight のビルドは90日で期限切れになるため、そのたびに新しいビルドを上げます）。
+
+| 項目 | 値・運用 |
+|---|---|
+| App Store Connect のアプリ | 名前 `YoteiFlow`・Bundle ID `com.gucchii.yoteiflow`・チーム `6AA3WFTR94`（初回だけ手作業） |
+| 輸出コンプライアンス | `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO`（pbxproj。標準のHTTPS通信のみで独自暗号化は無いため）。毎回の質問は出ない |
+| アイコン | `AppIcon.appiconset` の1024px（アルファ無し）。App Store 用はこれ1枚でよい |
+| 版番号（`MARKETING_VERSION`） | `package.json` の `version` と揃える。上げる前に `node ios/scripts/sync-version.mjs`（冪等）して、差分をコミットする |
+| ビルド番号（`CURRENT_PROJECT_VERSION`） | アップロードのたびに増える必要がある。スクリプトが Archive 時に日時（`YYYYMMDDHHMM`）で上書きするので、pbxproj は触らずコミットも要らない（`IOS_BUILD_NUMBER` で固定も可） |
+
+### 初回だけ（手作業）
+
+1. [App Store Connect](https://appstoreconnect.apple.com/) → マイApp → 「+」→ 新規App。プラットフォーム iOS・名前 YoteiFlow・プライマリ言語 日本語・Bundle ID `com.gucchii.yoteiflow`・SKU は任意（例 `yoteiflow`）
+2. 「ユーザとアクセス」→ 統合 → App Store Connect API でキー（アクセス権「App Manager」）を作り、`.p8`・キーID・Issuer ID を **1Password に保存**する（`.p8` はダウンロードが1回きり。リポジトリへは置かない）。署名まわりは `guchi-apps/docs#176` と kurashio の `ios/README.md` と同じ運用
+3. `ios/asc.env.tpl` の `op://` を実際の項目名に合わせる（`ASC_KEY_PATH` は `.p8` を置いたパス）
+4. TestFlight →「内部テスト」にグループを作り、自分（App Store Connect のユーザー）を追加。ビルドの暗号化の質問が出た場合は「いいえ（標準の暗号化のみ）」
+
+### ビルドを上げるたび
+
+```bash
+node ios/scripts/sync-version.mjs          # 版番号を package.json に揃える（差分があればコミット）
+op run --env-file=ios/asc.env.tpl -- ios/scripts/upload-testflight.sh
+```
+
+スクリプトは `check-consistency.mjs`（本番URLのまま・Bundle ID等）→ `xcodebuild archive` → `xcodebuild -exportArchive`（`ExportOptions.plist` の `destination: upload` で App Store Connect へ直接アップロード）を順に実行します。**終了コードをパイプで隠さないこと**（`| tee` 等を付けない）。App Store Connect 側の処理（数分〜）が終わると TestFlight に出ます。内部テスターへは審査なしで配布されます。
+
+### TestFlight 版の確認
+
+- [ ] iPhone の TestFlight アプリに YoteiFlow が出て、インストールできる
+- [ ] 起動してログイン（上の「実機確認手順」と同じ）でき、再起動してもログインしたまま
+- [ ] 新しいビルドを上げると TestFlight から更新できる
+
+> 開発用に Xcode から入れたアプリと TestFlight 版は Bundle ID が同じため上書きされます。入れ替える前にどちらか一方を削除すると確実です。
+
+### 自動化について
+
+`xcodebuild` + App Store Connect API キーでスクリプト化済みです（上記）。CI（GitHub Actions の macOS ランナー）からの自動アップロードは、Mac ランナーの費用・署名証明書の扱いが絡むため見送りました。必要になれば別Issueで扱います。
 
 ## 開発環境と本番の切り替え
 
@@ -87,4 +127,4 @@ WKWebView では Service Worker を使えません（App-Bound Domains を宣言
 
 ## 初回スコープ外（後続Issue）
 
-TestFlight配布と自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ WidgetKit・Live Activity（既存のScriptableウィジェットは維持）/ App Store公開 / `WKAppBoundDomains` によるオフライン対応 / ネイティブ画面への置き換え。
+TestFlight配布のCI自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ WidgetKit・Live Activity（既存のScriptableウィジェットは維持）/ App Store公開 / `WKAppBoundDomains` によるオフライン対応 / ネイティブ画面への置き換え。
