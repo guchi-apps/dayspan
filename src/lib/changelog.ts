@@ -29,6 +29,19 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.40.0",
+    date: "2026-10-01",
+    changes: [
+      "タスクの保存先をNotionからYoteiFlow内に切り替えられるようになりました。Notionが応答しないときでも、タスクを見たり変更したりできます。",
+    ],
+    usage: [
+      "設定 ▸ Notion を開き、「タスクの保存先」の欄を見ます。",
+      "「Notionから取り込んで移す」（今あるタスクを引き継ぐ）か「取り込まず空で始める」を押します。",
+      "「移行しました（◯件）。」と表示され、保存先が「YoteiFlow（Notionの応答に左右されません）」に変われば成功です。",
+      "移行後のタスクの追加・編集・完了はNotionへは反映されません（Notion側のタスクはそのまま残ります）。",
+    ],
+  },
+  {
     version: "3.39.0",
     date: "2026-10-01",
     changes: [
