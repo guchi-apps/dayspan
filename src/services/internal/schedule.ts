@@ -2,7 +2,8 @@ import { dateKeyDiffDays } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
 import type { CalendarDateUtils } from "@/components/calendar/item-layout";
 import { getNotionConnection } from "@/services/calendar/write-context";
-import { listTasksInRange } from "@/services/tasks";
+import { createNotionClient } from "@/services/notion/client";
+import { listTasksInRange } from "@/services/notion/tasks";
 import type {
   CalendarEventItem,
   CalendarLoadResult,
@@ -71,7 +72,7 @@ export async function loadOverdueSource(
   if (!connection) return { tasks: [], errors: [] };
 
   try {
-    const tasks = await listTasksInRange(connection, {
+    const tasks = await listTasksInRange(createNotionClient(connection), connection, {
       from: range.lookbackFrom,
       to: range.lastDay,
     });

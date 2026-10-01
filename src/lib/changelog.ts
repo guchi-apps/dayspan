@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.41.3",
+    date: "2026-10-02",
+    changes: [
+      "タスクと日付リマインドの保存先を、Notionに一本化しました。設定画面にあった「YoteiFlowのデータベースへ移す」切り替えは無くなり、これまでどおりNotionのデータをそのまま読み書きします。",
+    ],
+  },
+  {
     version: "3.41.0",
     date: "2026-10-01",
     changes: [

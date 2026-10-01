@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // XcodeプロジェクトのMARKETING_VERSIONを package.json の version に合わせる（#920）。
-// 手動で実行する（release-develop-to-main.yml は自動マージ不可カテゴリのため組み込んでいない）。
-// TestFlightへ上げる前に実行する。冪等で、リポジトリルート・ios/ のどちらからでも動く。
+// package.json の "version" lifecycleスクリプトから、リリースの版上げ（npm version）のたびに自動で実行される（#946）。
+// 手動でも実行できる（TestFlightへ上げる前の確認用）。冪等で、リポジトリルート・ios/ のどちらからでも動く。
 //
 //   node ios/scripts/sync-version.mjs
 

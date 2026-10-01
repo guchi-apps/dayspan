@@ -1,6 +1,6 @@
 {
   "name": "dayspan",
-  "version": "3.41.2",
+  "version": "3.41.3",
   "private": true,
   "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e",
   "scripts": {
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test:unit": "node --import ./scripts/test-register-path-alias.mjs --test \"src/**/*.test.mts\"",
     "test": "pnpm lint && pnpm typecheck && pnpm test:unit",
-    "version": "node scripts/update-changelog.mjs",
+    "version": "node ios/scripts/sync-version.mjs && node scripts/update-changelog.mjs",
     "postinstall": "prisma generate",
     "env:init": "cp -n .env.local.example .env.local && echo '.env.local を編集してください（DB / Supabase / Google / 暗号鍵）'",
     "db:setup": "bash scripts/setup-db.sh",

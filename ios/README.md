@@ -39,7 +39,7 @@ Mac につながなくても、iPhone の TestFlight アプリからインスト
 | App Store Connect のアプリ | 名前 `YoteiFlow`・Bundle ID `com.gucchii.yoteiflow`・チーム `6AA3WFTR94`（初回だけ手作業） |
 | 輸出コンプライアンス | `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO`（pbxproj。標準のHTTPS通信のみで独自暗号化は無いため）。毎回の質問は出ない |
 | アイコン | `AppIcon.appiconset` の1024px（アルファ無し）。App Store 用はこれ1枚でよい |
-| 版番号（`MARKETING_VERSION`） | `package.json` の `version` と揃える。上げる前に `node ios/scripts/sync-version.mjs`（冪等）して、差分をコミットする |
+| 版番号（`MARKETING_VERSION`） | `package.json` の `version` と揃える。リリースの版上げ（`npm version`）が `version` lifecycle から `sync-version.mjs` を実行し、バンプコミットへ含める（#946）。手で確かめるなら `node ios/scripts/sync-version.mjs`（冪等） |
 | ビルド番号（`CURRENT_PROJECT_VERSION`） | アップロードのたびに増える必要がある。スクリプトが Archive 時に日時（`YYYYMMDDHHMM`）で上書きするので、pbxproj は触らずコミットも要らない（`IOS_BUILD_NUMBER` で固定も可） |
 
 ### 初回だけ（手作業）
@@ -54,7 +54,7 @@ Mac につながなくても、iPhone の TestFlight アプリからインスト
 kurashio の `remote-install.sh` と同じ形で、subpc から Tailscale 越しに Mac（既定 `guchimac-mini`）へSSHして、取り込み → 整合チェック → Archive → アップロードまで行います。**Web側が main へデプロイされた後に**、`main` から上げます。
 
 ```bash
-node ios/scripts/sync-version.mjs          # 版番号を package.json に揃える（差分があればコミットしてmainへ）
+node ios/scripts/sync-version.mjs          # 版番号の確認（通常はリリースで同期済みで差分は出ない）
 ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、TestFlight へ上げる
 ```
 

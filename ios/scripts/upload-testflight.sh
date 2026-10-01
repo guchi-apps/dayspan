@@ -14,7 +14,7 @@
 #
 # ビルド番号は Archive 時に上書きするだけで pbxproj は書き換えない（コミットが要らない）。
 # subpc からは ios/scripts/remote-upload-testflight.sh で Mac へSSHして実行できる（#929）。
-# 版番号（MARKETING_VERSION）は事前に `node ios/scripts/sync-version.mjs` で package.json に揃える。
+# 版番号（MARKETING_VERSION）はリリースの版上げ（npm version）で sync-version.mjs が package.json に揃える。
 set -euo pipefail
 
 if [ "$(uname)" != "Darwin" ]; then
@@ -66,7 +66,7 @@ AUTH=(-allowProvisioningUpdates
   -authenticationKeyID "$ASC_KEY_ID"
   -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 
-echo "== Archive（ビルド番号 $BUILD_NUMBER）"
+echo "== Archive（ビルド番号 ${BUILD_NUMBER}）"
 xcodebuild archive \
   -project "$IOS_DIR/YoteiFlow.xcodeproj" \
   -scheme YoteiFlow \

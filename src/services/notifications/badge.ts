@@ -6,7 +6,7 @@ import { getNotionConnection } from "@/services/calendar/write-context";
 import { createNotionClient } from "@/services/notion/client";
 import { classifyTasks } from "@/services/notion/task-buckets";
 import { listShoppingItems, shoppingDatabaseReady } from "@/services/notion/shopping-items";
-import { listAllTasks } from "@/services/tasks";
+import { listAllTasks } from "@/services/notion/tasks";
 import { combineBadgeCounts, countDueShopping, type BadgeCounts } from "@/services/notifications/badge-count";
 import type { TaskItem } from "@/types/calendar";
 
@@ -48,7 +48,7 @@ export async function loadBadgeCounts(
 
   const [tasks, shopping] = await Promise.all([
     want.tasks
-      ? listAllTasks(connection).then(
+      ? listAllTasks(notion, connection).then(
           (list) => countDueTasks(list, timeZone),
           (error) => {
             console.error("[dayspan] badge count failed:", error);
