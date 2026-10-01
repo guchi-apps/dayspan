@@ -95,3 +95,14 @@ export async function deleteWidgetToken(userId: string): Promise<boolean> {
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
+
+/**
+ * 発行済みのトークンを返し、無ければ発行する（iOSアプリのウィジェット用）。
+ *
+ * `issueWidgetToken()` は作り直しのたびに前のトークンを失効させる。アプリは起動のたびにこれを
+ * 呼ぶため、そちらを使うと設定画面で配ったScriptableの台本が黙って動かなくなる。
+ */
+export async function getOrIssueWidgetToken(userId: string): Promise<string> {
+  const existing = await getWidgetToken(userId);
+  return existing ? existing.token : issueWidgetToken(userId);
+}
