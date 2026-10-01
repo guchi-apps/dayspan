@@ -61,6 +61,19 @@ export function checkConsistency() {
     problems.push("AppConfig.baseURL が本番URLではありません（開発用のまま？）");
   }
 
+  // App-Bound Domains（Service Worker）。宣言のホストが baseURL と一致し、WebView側で有効にしている
+  const plist = read("ios/AppInfo.plist");
+  const baseHost = appConfig.match(/baseURL = URL\(string: "https:\/\/([^\/"]+)/)?.[1];
+  const bound = plist.match(/<key>WKAppBoundDomains<\/key>\s*<array>([\s\S]*?)<\/array>/)?.[1] ?? "";
+  const boundHosts = [...bound.matchAll(/<string>([^<]+)<\/string>/g)].map((m) => m[1]);
+  if (!baseHost || !boundHosts.includes(baseHost)) {
+    problems.push(`WKAppBoundDomains に baseURL のホスト(${baseHost})がありません: ${boundHosts.join(", ")}`);
+  }
+  if (!pbxproj.includes("INFOPLIST_FILE = AppInfo.plist;")) problems.push("INFOPLIST_FILE が AppInfo.plist ではありません");
+  if (!webViewModel.includes("limitsNavigationsToAppBoundDomains = true")) {
+    problems.push("WebViewModel.swift が limitsNavigationsToAppBoundDomains を有効にしていません");
+  }
+
   return problems;
 }
 
