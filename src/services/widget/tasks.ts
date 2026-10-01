@@ -2,8 +2,9 @@ import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { addDays, parseDateKey, toDateKey } from "@/lib/calendar-range";
 import { db } from "@/lib/db";
 import { getNotionConnection } from "@/services/calendar/write-context";
+import { createNotionClient } from "@/services/notion/client";
 import { classifyTasks, overdueDaysLabel, sortTasks } from "@/services/notion/task-buckets";
-import { listTasksInRange } from "@/services/tasks";
+import { listTasksInRange } from "@/services/notion/tasks";
 import { readWidgetCache, writeWidgetCache } from "@/services/widget/cache";
 import type { TaskItem } from "@/types/calendar";
 import type { WidgetTaskItem, WidgetTasksPayload } from "@/types/widget";
@@ -116,7 +117,7 @@ async function loadSource(
   try {
     // 完了済みは `listTasksInRange()` が取得後に落とす。完了状態はcheckbox/statusのどちらでも
     // ありえ、Notion側のフィルタを型ごとに出し分けるより単純なため（同関数のコメント）。
-    tasks = await listTasksInRange(connection, {
+    tasks = await listTasksInRange(createNotionClient(connection), connection, {
       from: toDateKey(addDays(today, -LOOKBACK_DAYS)),
       to: toDateKey(addDays(today, LOOKAHEAD_DAYS)),
     });

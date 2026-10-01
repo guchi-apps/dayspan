@@ -13,8 +13,8 @@ import { canWriteCalendar, SETTING_ORDER } from "@/services/google-calendar/sett
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
 import { listGarbageDaysInRange } from "@/services/notion/garbage";
-import { listTasksInRange, taskSourceReady } from "@/services/tasks";
-import { listRemindersInRange, reminderSourceReady } from "@/services/reminders";
+import { listTasksInRange } from "@/services/notion/tasks";
+import { listRemindersInRange } from "@/services/notion/reminders";
 import { listShoppingPlansInRange, shoppingPlanReady } from "@/services/notion/shopping-plans";
 import { listWorkRecordsInRange, workDatabaseReady } from "@/services/notion/work-logs";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
@@ -328,7 +328,7 @@ async function loadNotionItems(
   if (
     !connection ||
     (!connection.taskDataSourceId &&
-      !reminderSourceReady(connection) &&
+      !connection.reminderDataSourceId &&
       !connection.garbageDataSourceId &&
       !connection.workDataSourceId &&
       !shoppingPlanReady(connection))
@@ -363,14 +363,15 @@ async function loadNotionItems(
     // 返す（docs/spec.md §9・§36）。勤務場所（docs/spec.md §34）は日付の見出しに出す別枠のため、
     // 混ぜずに分けて返す。
     const [tasks, reminders, garbageDays, workRecords, shoppingPlans] = await Promise.all([
-      taskSourceReady(connection)
+      connection.taskDataSourceId
         ? listTasksInRange(
+            notion,
             connection,
             dateRange,
             overdueRange,
           )
         : [],
-      reminderSourceReady(connection) ? listRemindersInRange(connection, dateRange) : [],
+      connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],
       connection.garbageDataSourceId ? listGarbageDaysInRange(notion, connection, dateRange) : [],
       workDatabaseReady(connection) ? listWorkRecordsInRange(notion, connection, dateRange) : [],
       shoppingPlanReady(connection) ? listShoppingPlansInRange(notion, connection, dateRange) : [],
@@ -379,8 +380,8 @@ async function loadNotionItems(
       tasks,
       reminders: [...reminders, ...garbageDays, ...shoppingPlans],
       workRecords,
-      ready: taskSourceReady(connection),
-      reminderReady: reminderSourceReady(connection),
+      ready: Boolean(connection.taskDataSourceId),
+      reminderReady: Boolean(connection.reminderDataSourceId),
       errors: [],
     };
   } catch (error) {
@@ -396,8 +397,8 @@ async function loadNotionItems(
       tasks: [],
       reminders: [],
       workRecords: [],
-      ready: taskSourceReady(connection),
-      reminderReady: reminderSourceReady(connection),
+      ready: Boolean(connection.taskDataSourceId),
+      reminderReady: Boolean(connection.reminderDataSourceId),
       errors: [
         {
           source: "notion",
