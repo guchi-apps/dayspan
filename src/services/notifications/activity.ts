@@ -1,7 +1,7 @@
 import { isoToLocalInput } from "@/components/calendar/datetime-fields";
 import { db } from "@/lib/db";
 import { ACTIVITY_NOTIFICATION_TAG } from "@/lib/notification-tags";
-import { isPushConfigured } from "@/lib/web-push/keys";
+import { isAnyPushConfigured } from "@/lib/push-configured";
 import { getNotificationSettings } from "@/services/notifications/settings";
 import { sendToUser } from "@/services/notifications/subscriptions";
 
@@ -18,7 +18,7 @@ export async function notifyActivityStarted(
   userId: string,
   running: { title: string; startedAt: Date },
 ): Promise<void> {
-  if (!isPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
 
   const settings = await getNotificationSettings(userId);
   if (!settings.activityEnabled) return;

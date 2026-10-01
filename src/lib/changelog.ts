@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.42.1",
+    date: "2026-10-02",
+    changes: [
+      "iOSアプリで、ホーム画面・ロック画面にウィジェットを置けるようになりました。また、iOSアプリでも予定やタスクの通知を受け取れるようになり、オフライン時や回線が遅いときの保存済み表示もアプリ内で使えるようになりました。",
+    ],
+  },
+  {
     version: "3.41.3",
     date: "2026-10-02",
     changes: [

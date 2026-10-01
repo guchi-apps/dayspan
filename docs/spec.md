@@ -1672,6 +1672,16 @@ Scriptableの一覧で台本のアイコンを押したときも、ウィジェ�
 ホーム画面のWebアプリにはActivityKitのAPIが無く、ScriptableにもLive Activityを扱うクラスが無い。
 出すには第三者のブリッジサービスか自前のネイティブアプリが要る。ロック画面のウィジェットに
 タイマー表示を置くことで、常駐で経過時間が進む点だけは同じにしてある。
+### iOSアプリのウィジェット（WidgetKit・issue #926）
+
+iOSアプリ（`ios/`）にも、Scriptableを介さないウィジェットを持たせた。**Scriptable版は残し、並行して使える。**
+面（活動記録・今日の予定・タスク・買い物リスト）・文言・取得先（`/api/widget/*`）はScriptable版と同じで、新しい取得APIは増やしていない。サーバー側の3分の持ち回し（§20）もそのまま効く。
+
+- ウィジェット拡張はWebViewのCookieを持てず、アプリが動いていない間も更新される。そのため、ログイン済みのWebViewが `POST /api/settings/widget/native` でウィジェット用トークンを受け取り、App Group の Keychain へ置く。このAPIは**作り直さずに**発行済みのトークンを返す（無ければ発行）。起動のたびに呼ばれるため、作り直すと設定画面で配ったScriptable台本のトークンが失効する
+- ログアウト（`/login` が開いたとき）で共有トークンを消す
+- Live Activity は入れない。記録の開始・停止はWebの中や他の端末で起き、現状へ追従させるにはAPNsのプッシュ更新の基盤が要る。ロック画面の経過時間は accessory ウィジェットの `Text(timerInterval:)` で代替する
+- 詳細・実機確認の手順は `ios/README.md`
+
 
 ## 29. 移動
 
@@ -2124,6 +2134,13 @@ DaySpanの外（Googleカレンダーのアプリなど）で予定が動いた�
 
 対象はiPhoneのホーム画面に追加したDaySpan（PWA）を第一に考える。Push通知そのものは
 Android・PCのブラウザでも同じ経路で届く。
+
+### iOSアプリ（APNs）
+
+iOSアプリ（`ios/`・SwiftUI + WKWebView）はWeb Pushが動かないため、APNsで同じ通知を受ける（#925）。
+文面・時刻・バッジの件数・通知を押したときの行き先はWeb Pushと共通で、送り先だけが増える
+（`ApnsDevice`・`sendToUser()`）。同じ端末のPWAとの二重通知は、アプリが届いている端末の系統
+（iPhone / iPad）のWeb Pushへは送らないことで避ける。詳細は `docs/notifications.md`「iOSアプリ（APNs）」。
 
 ### iOS側の制約
 

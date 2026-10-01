@@ -9,8 +9,9 @@ enum LoadFailure: Equatable {
 }
 
 /// 読み込めなかったときにWeb画面の上へ重ねる画面。Safariへは誘導せず、アプリの中で再試行させる。
-/// WKWebViewではService Workerを使えない（App-Bound Domainsを宣言しない）ため、PWAのような
-/// 保存済み画面のオフライン表示は無く、ここで理由と再試行だけを出す
+/// App-Bound Domainsを宣言してService Workerが動くため、保存済みの画面があればオフラインでも
+/// そちらが開き、ここへ来るのは Service Worker が返せない場合（初回起動・未保存の画面・
+/// Service Worker 登録前）だけ
 struct ConnectionErrorView: View {
     let failure: LoadFailure
     let isRetrying: Bool

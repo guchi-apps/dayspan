@@ -3,6 +3,7 @@ import Network
 import SwiftUI
 import UIKit
 import WebKit
+import WidgetKit
 
 /// Web版を開く WKWebView と、その読み込み状態を持つ。
 final class WebViewModel: NSObject, ObservableObject {
@@ -18,12 +19,23 @@ final class WebViewModel: NSObject, ObservableObject {
     /// 最後に開こうとしたメインフレームのURL。読み込みに失敗すると `webView.url` は
     /// 直前に表示できていた画面のままなので、再試行はこちらを開き直す
     private var lastRequestedURL: URL?
+    /// 今のデバイストークンをサーバーへ登録し終えたか。ログイン前（401）は登録できないので、
+    /// 次の画面の読み込みで続きをやる
+    private var registeredToken: String?
+    /// ウィジェット用トークンをこの起動で共有済みか（#926）
+    private var hasSyncedWidgetToken = false
+    /// 起動前（WebViewがまだ何も開いていない間）にウィジェットから渡された開き先
+    private var pendingPath: String?
 
     override init() {
         let configuration = WKWebViewConfiguration()
         // Cookie・localStorage（Supabaseのセッション）を端末に残し、再起動後もログインを保つ
         configuration.websiteDataStore = .default()
         configuration.applicationNameForUserAgent = AppConfig.userAgentApplicationName
+        // Service Worker を有効にする（Info.plist の WKAppBoundDomains と対）。PWAと同じ
+        // オフライン表示・低速回線での保存済み表示（public/sw.js）がアプリ内でも効く。
+        // 引き換えに、宣言外のドメインへの遷移はWebView内では開けない（外部はSafariで開く）
+        configuration.limitsNavigationsToAppBoundDomains = true
 
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
@@ -35,6 +47,12 @@ final class WebViewModel: NSObject, ObservableObject {
         webView.isOpaque = false
         webView.backgroundColor = UIColor(named: "HeaderBand")
         webView.scrollView.backgroundColor = UIColor(named: "HeaderBand")
+
+        // 通知を押されたら、その画面を開く（アプリが終了していた場合は起動後にここへ届く）
+        PushCoordinator.shared.onOpenPath = { [weak self] path in self?.loadAppPath(path) }
+        PushCoordinator.shared.onTokenChanged = { [weak self] in
+            Task { await self?.registerPushTokenIfPossible() }
+        }
     }
 
     deinit {
@@ -50,7 +68,24 @@ final class WebViewModel: NSObject, ObservableObject {
             DispatchQueue.main.async { self?.networkChanged(available: available) }
         }
         pathMonitor.start(queue: .main)
-        load(AppConfig.baseURL)
+        if let pendingPath {
+            self.pendingPath = nil
+            loadAppPath(pendingPath)
+        } else if lastRequestedURL == nil {
+            // 通知を押して起動したときは、すでにその画面を開こうとしている（上書きしない）
+            load(AppConfig.baseURL)
+        }
+    }
+
+    /// ウィジェットの押下（`yoteiflow://open?path=/tasks`）。許可した画面だけ開く。
+    /// 起動の途中で届いたものは、最初の読み込みを置き換える形で保持する
+    func openFromWidget(_ url: URL) {
+        guard let path = SharedConfig.path(fromDeepLink: url) else { return }
+        if hasStarted {
+            loadAppPath(path)
+        } else {
+            pendingPath = path
+        }
     }
 
     func retry() {
@@ -100,6 +135,37 @@ final class WebViewModel: NSObject, ObservableObject {
 
     private func openExternally(_ url: URL) {
         UIApplication.shared.open(url)
+    }
+}
+
+// MARK: - 通知（APNs）の登録
+
+extension WebViewModel {
+    /// デバイストークンを、ログイン済みのWebViewからサーバーへ渡す。
+    /// 未ログイン（401）・通信失敗のときは印を付けず、次の画面の読み込みでやり直す
+    fileprivate func registerPushTokenIfPossible() async {
+        guard
+            let token = PushCoordinator.shared.deviceToken,
+            token != registeredToken,
+            let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login")
+        else { return }
+
+        let script = """
+        const response = await fetch('/api/notifications/apns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ token: token, environment: environment })
+        });
+        return response.status;
+        """
+        let value = try? await webView.callAsyncJavaScript(
+            script,
+            arguments: ["token": token, "environment": PushCoordinator.shared.environment],
+            contentWorld: .page
+        )
+        // 登録できた（200）か、サーバー側で受けられない（鍵が未設定の503など）ときは繰り返さない
+        if let status = value as? Int, status != 401 { registeredToken = token }
     }
 }
 
@@ -289,6 +355,13 @@ extension WebViewModel: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         isRetrying = false
         failure = nil
+        updateWidgetToken(for: webView.url)
+
+        // ログイン後の画面が開けたら、通知の許可を求めてトークンをサーバーへ登録する
+        if let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login") {
+            PushCoordinator.shared.requestAuthorizationIfNeeded()
+            Task { await registerPushTokenIfPossible() }
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -302,6 +375,51 @@ extension WebViewModel: WKNavigationDelegate {
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         // メモリ不足などでWebの描画プロセスが落ちると、白い画面のまま戻らない
         load(lastRequestedURL ?? AppConfig.baseURL)
+    }
+}
+
+// MARK: - ウィジェットへのトークンの受け渡し（#926）
+
+extension WebViewModel {
+    /// ログイン済みの画面が開けたら、ウィジェット用トークンをログイン済みのWebViewから受け取り、
+    /// App Group の Keychain へ置く。ウィジェットはWebViewのCookieを持てず、アプリが動いていない間も
+    /// 更新されるため。`/login` が開いたら（未ログイン・ログアウト後）共有トークンを消し、ウィジェットが
+    /// ログアウト後も中身を出し続けないようにする。
+    fileprivate func updateWidgetToken(for url: URL?) {
+        guard let url, AppConfig.isAppURL(url) else { return }
+
+        if url.path == "/login" {
+            hasSyncedWidgetToken = false
+            WidgetCredentials.clear()
+            WidgetCenter.shared.reloadAllTimelines()
+            return
+        }
+        // 画面が変わるたびに呼び直さない。1回の起動で共有できれば足りる
+        guard !hasSyncedWidgetToken, url.path != "/auth/native/start" else { return }
+        hasSyncedWidgetToken = true
+
+        Task {
+            let script = """
+            const response = await fetch('/api/settings/widget/native', {
+              method: 'POST',
+              credentials: 'same-origin'
+            });
+            if (!response.ok) { return null; }
+            const body = await response.json();
+            return body.token;
+            """
+            let value = try? await webView.callAsyncJavaScript(script, contentWorld: .page)
+            guard let token = value as? String, !token.isEmpty else {
+                // 未ログインや一時的な失敗。次の画面で取り直す
+                hasSyncedWidgetToken = false
+                return
+            }
+            if WidgetCredentials.save(token: token) {
+                WidgetCenter.shared.reloadAllTimelines()
+            } else {
+                hasSyncedWidgetToken = false
+            }
+        }
     }
 }
 

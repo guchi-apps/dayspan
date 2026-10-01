@@ -131,3 +131,49 @@ curl -s -X POST -H "Authorization: Bearer $INTERNAL_API_KEY" \
 - Service Workerは本番ビルドでのみ登録する（`src/components/offline/service-worker.tsx`）。
   `pnpm dev` では購読を作れず、設定画面のスイッチは理由を出して止まる
 - ローカルで最後まで試すなら `pnpm build && pnpm start` で動かし、HTTPSで到達できるホスト名から開く
+
+## iOSアプリ（APNs）
+
+WKWebViewの中ではWeb Push（Service Workerの `push`）が動かないため、iOSアプリ（`ios/`）はAPNsで通知を受ける（#925）。
+Web Push（PWA・ブラウザ）はそのまま残し、同じ文面（`sendToUser()` の入力）を両方へ送る。
+
+### 仕組み
+
+1. アプリはログイン後の最初の画面が開けたところで通知の許可を求め、許可されたらAPNsへ登録する
+2. 受け取ったデバイストークンを、ログイン済みのWebViewから `POST /api/notifications/apns`（`token` と `environment`）で渡す。
+   `ApnsDevice` に1端末1行で保存する。`environment` はXcodeから入れた開発ビルドが `sandbox`、TestFlight・App Storeが `production`
+   （トークンは環境をまたいで使えない。サーバーはこの値で送り先のホストを分ける）
+3. 送信は `src/lib/apns/`（`node:http2` でAPNsへ直接。新しい依存は足していない）。通知の文面・時刻・バッジの件数は
+   Web Pushと共通で、`NotificationJob` の下書きもそのまま使う
+4. 通知を押すとペイロードの `path`（`/calendar?date=…` など）をWebViewで開く。相対パス以外は開かない
+
+### 鍵（認証キー）
+
+Apple Developer ▸ Certificates, Identifiers & Profiles ▸ Keys で「Apple Push Notifications service (APNs)」を有効にした
+キーを発行する（.p8 のダウンロードは1回きり）。`APNS_KEY_ID`（10文字）・`APNS_TEAM_ID`・`APNS_PRIVATE_KEY`（.p8 の中身）は、同じTeamの別アプリ（kurashio）が持つ1Passwordの `apps/MyRoom`（`apns-key-id`・`apns-team-id`・`apns-auth-key`）をそのまま参照する（キーはTeam単位で共有できるため・#957）。`sync-secrets.yml` で同期する（手順は `docs/setup-checklist.md`）。
+Bundle ID（`com.gucchii.yoteiflow`）は既定値で、変える場合だけ `APNS_BUNDLE_ID` を足す。
+鍵が未設定の環境では、APNsへは送らず登録APIは503を返す（Web Pushだけで動く）。
+App IDの Push Notifications capability はXcodeの自動署名が有効にする（`ios/YoteiFlow.entitlements`）。
+
+### PWAとアプリの二重通知
+
+同じ端末にアプリとホーム画面のPWAが並ぶと同じ通知が2通届く。端末ごとの設定は持たず、**アプリ（APNs）が届いている
+端末の系統（iPhone / iPad）では、同じ系統のWeb Pushの購読へは送らない**（`src/services/notifications/delivery.ts`）。
+系統は登録時のUser-Agentから決め、分からない購読（PC等）は外さない。APNsのトークンが失効して消えたときは、
+その系統のWeb Pushへ自動で戻る。副作用として、iPhoneのアプリを入れている間はiPhoneのPWAへは届かない
+（アプリを消すか、トークンが失効すればPWAが再び受ける）。
+
+### バッジ・取り消し
+
+バッジの件数は `aps.badge` で同じ値（期限が今日以前のタスク＋買い物）を送る。アプリ（WKWebView）では
+Webの `setAppBadge` が使えないため、バッジが更新されるのは通知が届いたときだけ（開いたときの取り直しは無い）。
+iOSがWeb Pushで「通知を出さないプッシュが続くと購読を取り消す」挙動は、APNsでは `apns-push-type: alert` の
+通常の通知だけを送っているため当てはまらない（サイレントプッシュ・バックグラウンド更新は使っていない）。
+ただし通知の許可をユーザーが切った端末はトークンがそのまま残り、送っても表示されない（`BadDeviceToken` /
+`Unregistered` が返れば自動で消える）。
+
+### 既知の制限
+
+- ログアウトしてもトークンは消さない。別アカウントでログインするとトークンの持ち主が書き換わる（`saveApnsDevice`）が、
+  ログアウトしたまま放置した端末には前の利用者の通知が届き続ける
+- 実機・APNsの本番との疎通はこの環境（Xcode・Apple Developerが無い）では確かめていない。TestFlightで確認する（#910）

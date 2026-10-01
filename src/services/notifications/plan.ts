@@ -67,10 +67,12 @@ export type PlanResult = {
 export async function listUsersToPlan(now: Date): Promise<string[]> {
   const staleBefore = new Date(now.getTime() - PLAN_INTERVAL_MINUTES * 60_000);
 
-  const rows = await db.pushSubscription.findMany({
-    distinct: ["userId"],
-    select: { userId: true },
-  });
+  const [webRows, apnsRows] = await Promise.all([
+    db.pushSubscription.findMany({ distinct: ["userId"], select: { userId: true } }),
+    db.apnsDevice.findMany({ distinct: ["userId"], select: { userId: true } }),
+  ]);
+  // Web Push（PWA）とAPNs（iOSアプリ）のどちらかに送り先がある利用者
+  const rows = [...new Map([...webRows, ...apnsRows].map((row) => [row.userId, row])).values()];
 
   if (rows.length === 0) return [];
 
