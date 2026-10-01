@@ -60,7 +60,7 @@ export async function getNotionConnection(userId: string): Promise<NotionConnect
 /** 日付リマインドの書き込み先。タスクDBとは別に選ぶため、設定済みかどうかも別に見る。 */
 export async function getNotionReminderConnection(userId: string): Promise<NotionConnection | null> {
   const connection = await db.notionConnection.findUnique({ where: { userId } });
-  return connection?.reminderDataSourceId ? connection : null;
+  return connection && (connection.remindersInDb || connection.reminderDataSourceId) ? connection : null;
 }
 
 /** 勤務記録の書き込み先（docs/spec.md §34）。他のDBと同じく、設定済みかどうかを別に見る。 */

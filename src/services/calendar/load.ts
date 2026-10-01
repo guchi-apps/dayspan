@@ -14,7 +14,7 @@ import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
 import { listGarbageDaysInRange } from "@/services/notion/garbage";
 import { listTasksInRange, taskSourceReady } from "@/services/tasks";
-import { listRemindersInRange } from "@/services/notion/reminders";
+import { listRemindersInRange, reminderSourceReady } from "@/services/reminders";
 import { listShoppingPlansInRange, shoppingPlanReady } from "@/services/notion/shopping-plans";
 import { listWorkRecordsInRange, workDatabaseReady } from "@/services/notion/work-logs";
 import { listTravelsInRange, toTravelItem } from "@/services/travel/plans";
@@ -328,7 +328,7 @@ async function loadNotionItems(
   if (
     !connection ||
     (!connection.taskDataSourceId &&
-      !connection.reminderDataSourceId &&
+      !reminderSourceReady(connection) &&
       !connection.garbageDataSourceId &&
       !connection.workDataSourceId &&
       !shoppingPlanReady(connection))
@@ -370,7 +370,7 @@ async function loadNotionItems(
             overdueRange,
           )
         : [],
-      connection.reminderDataSourceId ? listRemindersInRange(notion, connection, dateRange) : [],
+      reminderSourceReady(connection) ? listRemindersInRange(connection, dateRange) : [],
       connection.garbageDataSourceId ? listGarbageDaysInRange(notion, connection, dateRange) : [],
       workDatabaseReady(connection) ? listWorkRecordsInRange(notion, connection, dateRange) : [],
       shoppingPlanReady(connection) ? listShoppingPlansInRange(notion, connection, dateRange) : [],
@@ -380,7 +380,7 @@ async function loadNotionItems(
       reminders: [...reminders, ...garbageDays, ...shoppingPlans],
       workRecords,
       ready: taskSourceReady(connection),
-      reminderReady: Boolean(connection.reminderDataSourceId),
+      reminderReady: reminderSourceReady(connection),
       errors: [],
     };
   } catch (error) {
@@ -397,7 +397,7 @@ async function loadNotionItems(
       reminders: [],
       workRecords: [],
       ready: taskSourceReady(connection),
-      reminderReady: Boolean(connection.reminderDataSourceId),
+      reminderReady: reminderSourceReady(connection),
       errors: [
         {
           source: "notion",

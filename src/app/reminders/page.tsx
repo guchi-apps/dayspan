@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { createNotionClient } from "@/services/notion/client";
-import { listAllReminders } from "@/services/notion/reminders";
+import { listAllReminders, reminderSourceReady } from "@/services/reminders";
 import { loadTagCatalog } from "@/services/notion/tag-options";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { loadWritableCalendars } from "@/services/calendar/load";
@@ -22,7 +21,7 @@ export default async function RemindersPage() {
     db.uiSetting.findUnique({ where: { userId: user.id } }),
     db.notionConnection.findUnique({ where: { userId: user.id } }),
   ]);
-  if (!connection?.reminderDataSourceId) return <ConnectPrompt />;
+  if (!connection || !reminderSourceReady(connection)) return <ConnectPrompt />;
 
   let reminders: ReminderItem[] = [];
   let loadError: string | null = null;
@@ -31,9 +30,9 @@ export default async function RemindersPage() {
   const placeCatalogPromise = loadPlaceCatalog(connection);
   const calendarsPromise = loadWritableCalendars(user.id);
   try {
-    reminders = await listAllReminders(createNotionClient(connection), connection);
+    reminders = await listAllReminders(connection);
   } catch {
-    loadError = "Notionの日付リマインドを取得できませんでした。";
+    loadError = "日付リマインドを取得できませんでした。";
   }
   return (
     <>

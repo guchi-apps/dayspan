@@ -1,6 +1,7 @@
 import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
+import { loadReminderOptionsFromDb } from "@/services/reminders/db-store";
 import { loadTaskOptionsFromDb } from "@/services/tasks/db-store";
 
 import { createNotionClient } from "./client";
@@ -190,6 +191,9 @@ export async function loadTagOptions(
     const own = await loadTaskOptionsFromDb(connection.userId);
     return (kind === "task" ? own.task : own.progress) as TagOption[];
   }
+  if (connection.remindersInDb && kind === "reminder") {
+    return (await loadReminderOptionsFromDb(connection.userId)) as TagOption[];
+  }
   const location = tagLocation(connection, kind);
   if (!location) return null;
 
@@ -210,26 +214,30 @@ export async function loadTagOptions(
 export async function loadTagCatalog(connection: NotionConnection | null): Promise<TagCatalog> {
   if (!connection) return EMPTY_TAG_CATALOG;
 
-  // タスクをYoteiFlowのDBへ移したユーザーは、タグ・進捗をDBから読む（issue #919）。
-  // Notionの応答を待たないため、Notionが落ちていてもタスク画面の入力候補が出る。
-  if (connection.tasksInDb) {
-    const [own, rest] = await Promise.all([
-      loadTaskOptionsFromDb(connection.userId),
-      loadTagCatalogWithout(connection),
-    ]);
-    return { ...rest, task: own.task as TagOption[], progress: own.progress as TagOption[] };
-  }
-
-  return loadTagCatalogWithout(connection, false);
+  // タスク・日付リマインドをYoteiFlowのDBへ移したユーザーは、その選択肢をDBから読む
+  // （issue #919・#928）。Notionの応答を待たないため、Notionが落ちていても入力候補が出る。
+  const skipTask = connection.tasksInDb;
+  const skipReminder = connection.remindersInDb;
+  const [ownTask, ownReminder, rest] = await Promise.all([
+    skipTask ? loadTaskOptionsFromDb(connection.userId) : null,
+    skipReminder ? loadReminderOptionsFromDb(connection.userId) : null,
+    loadTagCatalogWithout(connection, skipTask, skipReminder),
+  ]);
+  return {
+    ...rest,
+    ...(ownTask ? { task: ownTask.task as TagOption[], progress: ownTask.progress as TagOption[] } : {}),
+    ...(ownReminder ? { reminder: ownReminder as TagOption[] } : {}),
+  };
 }
 
 async function loadTagCatalogWithout(
   connection: NotionConnection,
-  skipTask = true,
+  skipTask: boolean,
+  skipReminder: boolean,
 ): Promise<TagCatalog> {
   const taskLocation = skipTask ? null : tagLocation(connection, "task");
   const progressLocation = skipTask ? null : tagLocation(connection, "progress");
-  const reminderLocation = tagLocation(connection, "reminder");
+  const reminderLocation = skipReminder ? null : tagLocation(connection, "reminder");
   const workLocation = tagLocation(connection, "work");
   const shoppingLocation = tagLocation(connection, "shopping");
   if (!taskLocation && !progressLocation && !reminderLocation && !workLocation && !shoppingLocation) {
