@@ -45,8 +45,8 @@ Mac につながなくても、iPhone の TestFlight アプリからインスト
 ### 初回だけ（手作業）
 
 1. [App Store Connect](https://appstoreconnect.apple.com/) → マイApp → 「+」→ 新規App。プラットフォーム iOS・名前 YoteiFlow・プライマリ言語 日本語・Bundle ID `com.gucchii.yoteiflow`・SKU は任意（例 `yoteiflow`）
-2. 「ユーザとアクセス」→ 統合 → App Store Connect API でキー（アクセス権「App Manager」）を作り、`.p8`・キーID・Issuer ID を **1Password に保存**する（`.p8` はダウンロードが1回きり。リポジトリへは置かない）。署名まわりは `guchi-apps/docs#176` と kurashio の `ios/README.md` と同じ運用
-3. `ios/asc.env.tpl` の `op://` を実際の項目名に合わせる（`ASC_KEY_PATH` は `.p8` を置いたパス）
+2. App Store Connect API キーは**新しく作らず、kurashio と共用**する（APIキーはチーム単位のため YoteiFlow にもそのまま使える）。1Password の項目 `apps/MyRoom` の `asc-key-id`・`asc-issuer-id`・`asc-key-p8`（`.p8` の中身をbase64の1行にした値）を `ios/asc.env.tpl` が参照している。**キーの発行・登録は不要**
+3. スクリプトは `asc-key-p8` を復号して Mac 上の一時ファイル（権限600）へ書き出し、`xcodebuild` に渡して、終了時（失敗時も）に消す。鍵の中身・パスはログに出さない
 4. TestFlight →「内部テスト」にグループを作り、自分（App Store Connect のユーザー）を追加。ビルドの暗号化の質問が出た場合は「いいえ（標準の暗号化のみ）」
 
 ### ビルドを上げるたび（subpc から1コマンド・#929）
