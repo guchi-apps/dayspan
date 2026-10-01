@@ -74,6 +74,20 @@ export function checkConsistency() {
     problems.push("WebViewModel.swift が limitsNavigationsToAppBoundDomains を有効にしていません");
   }
 
+  // APNs（#925）。entitlement・登録API・サーバー側のBundle IDの既定が、アプリと揃っている
+  const entitlements = read("ios/YoteiFlow.entitlements");
+  if (!/<key>aps-environment<\/key>/.test(entitlements)) problems.push("YoteiFlow.entitlements に aps-environment がありません");
+  if (!pbxproj.includes("CODE_SIGN_ENTITLEMENTS = YoteiFlow.entitlements;")) {
+    problems.push("CODE_SIGN_ENTITLEMENTS が YoteiFlow.entitlements ではありません");
+  }
+  if (!webViewModel.includes("/api/notifications/apns")) problems.push("WebViewModel.swift が /api/notifications/apns を使っていません");
+  const apnsConfig = read("src/lib/apns/config.ts");
+  const apnsTopic = apnsConfig.match(/DEFAULT_APNS_TOPIC = "([^"]+)"/)?.[1];
+  const bundleId = pbxproj.match(/PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/)?.[1];
+  if (!apnsTopic || apnsTopic !== bundleId) {
+    problems.push(`APNsのtopic（DEFAULT_APNS_TOPIC）が Bundle ID と一致しません: TS=${apnsTopic} / Xcode=${bundleId}`);
+  }
+
   return problems;
 }
 

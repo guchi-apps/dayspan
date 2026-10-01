@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- APNs（#925）。開発署名では development、アーカイブ（TestFlight・App Store）では
+	     Xcodeが配布用のプロビジョニングで production へ書き換える。送り先のホスト
+	     （sandbox / production）は、アプリがトークンと一緒にサーバーへ伝える（PushCoordinator） -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

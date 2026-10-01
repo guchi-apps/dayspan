@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
+import { isApnsConfigured } from "@/lib/apns/config";
+import { sendApns } from "@/lib/apns/send";
 import { db } from "@/lib/db";
+import { isPushConfigured } from "@/lib/web-push/keys";
+import { dropWebSubscriptionsCoveredByApp } from "@/services/notifications/delivery";
 import { buildPushPayload, type PushNotificationInput } from "@/lib/web-push/payload";
 import { sendWebPush } from "@/lib/web-push/send";
 
@@ -99,20 +103,58 @@ export type SendSummary = {
 };
 
 /**
- * その利用者の全ての端末へ1件送る。
+ * その利用者の全ての端末へ1件送る。Web Push（PWA・ブラウザ）とAPNs（iOSアプリ）の両方へ、
+ * 同じ文面を送る。
  *
  * 行き先の絶対URLは端末ごとに違いうる（本番のPWAとローカルの開発サーバー）ため、
- * ペイロードは購読ごとに組み立てる。
+ * Web Pushのペイロードは購読ごとに組み立てる。APNsは相対パスのまま渡す（アプリが自分の
+ * ベースURLで開く）。
+ *
+ * アプリ（APNs）を登録している端末の系統では、同じ系統のWeb Pushを送らない（delivery.ts）。
  */
 export async function sendToUser(
   userId: string,
   input: PushNotificationInput,
   options: { topic?: string; ttlSeconds?: number } = {},
 ): Promise<SendSummary> {
-  const subscriptions = await db.pushSubscription.findMany({ where: { userId } });
   const summary: SendSummary = { sent: 0, removed: 0, failed: 0 };
-
   const now = new Date();
+
+  const devices = isApnsConfigured() ? await db.apnsDevice.findMany({ where: { userId } }) : [];
+  // アプリへ届いている（または一時的に失敗しただけの）端末の系統。失効して消した端末は含めない
+  // （アプリを消した端末では、PWAのほうで受け続けられるようにする）。
+  const coveredLabels: Array<string | null> = [];
+
+  for (const device of devices) {
+    const result = await sendApns(
+      { token: device.token, environment: device.environment === "sandbox" ? "sandbox" : "production" },
+      input,
+      options,
+    );
+
+    if (result.status !== "gone") coveredLabels.push(device.label);
+
+    if (result.status === "sent") {
+      summary.sent += 1;
+      await db.apnsDevice.update({ where: { id: device.id }, data: { lastSuccessAt: now } });
+    } else if (result.status === "gone") {
+      // アプリを消した・環境違い。残すと以後ずっと失敗し続ける。次の起動で登録し直される。
+      summary.removed += 1;
+      await db.apnsDevice.delete({ where: { id: device.id } });
+    } else {
+      summary.failed += 1;
+      console.error(`[dayspan] apns failed (${device.label ?? "unknown"}):`, result.reason);
+      await db.apnsDevice.update({ where: { id: device.id }, data: { lastFailureAt: now } });
+    }
+  }
+
+  if (!isPushConfigured()) return summary;
+
+  const allSubscriptions = await db.pushSubscription.findMany({ where: { userId } });
+  // APNsへ実際に送れる設定のときだけ外す。鍵が無くて送れていないのに、PWAの通知まで止めない。
+  const subscriptions = isApnsConfigured()
+    ? dropWebSubscriptionsCoveredByApp(allSubscriptions, coveredLabels)
+    : allSubscriptions;
 
   for (const subscription of subscriptions) {
     const result = await sendWebPush(

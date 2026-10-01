@@ -92,6 +92,9 @@ jobs:
       VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
       VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
       VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      APNS_KEY_ID: ${{ secrets.APNS_KEY_ID }}
+      APNS_TEAM_ID: ${{ secrets.APNS_TEAM_ID }}
+      APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
 
     steps:
       - name: Checkout code

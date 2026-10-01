@@ -23,6 +23,9 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `vapid-public-key` | 通知（Web Push）の公開鍵。`node scripts/gen-vapid-keys.mjs mailto:自分のアドレス` の出力（docs/notifications.md） |
 | `vapid-private-key` | 同・秘密鍵。上のコマンドが公開鍵と対で出す |
 | `vapid-subject` | 同・連絡先。`mailto:` か `https://` で始める |
+| `apns-key-id` | iOSアプリ（APNs）の認証キーのID（Apple Developer ▸ Keys ▸ Apple Push Notifications service〔APNs〕で発行。10文字）（#925・docs/notifications.md） |
+| `apns-team-id` | 同・Apple DeveloperのチームID（`ios/YoteiFlow.xcodeproj` の `DEVELOPMENT_TEAM` と同じ） |
+| `apns-private-key` | 同・認証キー（`AuthKey_XXXX.p8`）の中身を `base64 -w0` した1行。**.p8 はダウンロードが1回きり**なので、1Passwordへ先に入れる |
 
 **`TRAINROUTE_TOKEN`（電車の所要時間を trainroute 経由で引くための共有シークレット）を撤去した。**
 交通系APIの窓口を `guchi-apps/trainroute` に置き、`op://apps/trainroute/internal-api-key` を
@@ -38,7 +41,7 @@ DaySpan側の連携コード・`.github/secrets-manifest.tsv` の参照を削除
 1Passwordへ入れたあとは、GitHub Secretsへの同期まで行って初めて本番へ届く。
 
 ```bash
-gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT
+gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT,APNS_KEY_ID,APNS_TEAM_ID,APNS_PRIVATE_KEY
 ```
 
 （手元から `scripts/sync-github-secrets.sh` を叩く場合は個人アカウントのセッションが要る。
