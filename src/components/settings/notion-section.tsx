@@ -64,6 +64,7 @@ async function errorText(response: Response, fallback: string): Promise<string> 
 export type NotionSectionState = {
   connected: boolean;
   workspaceName: string | null;
+  tasksInDb: boolean;
   taskDataSourceId: string | null;
   taskTitle: string | null;
   propertyMap: PropertyMap | null;
@@ -86,6 +87,69 @@ export type NotionSectionState = {
   sharedPages: SharedPageSummary[];
   dataSourcesFailed: boolean;
 };
+
+/**
+ * タスクの本体の置き場（issue #919）。Notionが応答しない間も使えるよう、YoteiFlowのDBへ移せる。
+ * 移すと以後のタスクの読み書きはNotionに触れない（Notion側のタスクは変わらず残る）。
+ */
+function TaskStoragePanel({ tasksInDb, disabled }: { tasksInDb: boolean; disabled: boolean }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [message, setMessage] = useState<string | null>(null);
+
+  const run = (mode: "import" | "fresh") => {
+    setMessage(null);
+    startTransition(async () => {
+      try {
+        const response = await fetch("/api/tasks/storage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode }),
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          imported?: number;
+          message?: string;
+        };
+        if (!response.ok) {
+          setMessage(data.message ?? "移行できませんでした。");
+          return;
+        }
+        setMessage(`移行しました（${data.imported ?? 0}件）。`);
+        router.refresh();
+      } catch {
+        setMessage("移行できませんでした。通信を確認してもう一度試してください。");
+      }
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+      <div className="flex items-center gap-2 text-sm">
+        <Badge variant="secondary">タスクの保存先</Badge>
+        <span className="font-medium">
+          {tasksInDb ? "YoteiFlow（Notionの応答に左右されません）" : "Notion"}
+        </span>
+      </div>
+      {!tasksInDb && (
+        <>
+          <p className="text-xs text-muted-foreground">
+            YoteiFlowのDBへ移すと、Notionが応答しない間もタスクを見たり変えたりできます。
+            移したあとのタスクはNotionへは反映されません（Notion側のタスクはそのまま残ります）。
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" disabled={disabled || pending} onClick={() => run("import")}>
+              Notionから取り込んで移す
+            </Button>
+            <Button variant="outline" size="sm" disabled={disabled || pending} onClick={() => run("fresh")}>
+              取り込まず空で始める
+            </Button>
+          </div>
+        </>
+      )}
+      {message && <p className="text-xs text-muted-foreground">{message}</p>}
+    </div>
+  );
+}
 
 export function NotionSection({ state }: { state: NotionSectionState }) {
   const router = useRouter();
@@ -509,6 +573,10 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
             </div>
 
             {state.taskDataSourceId && (
+              <TaskStoragePanel tasksInDb={state.tasksInDb} disabled={disabled} />
+            )}
+
+            {state.taskDataSourceId && !state.tasksInDb && (
               <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
                 <div className="flex items-center gap-2 text-sm">
                   <Badge variant="secondary">タスクDB</Badge>

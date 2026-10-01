@@ -41,7 +41,7 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
   let connection = await db.notionConnection.findUnique({ where: { userId } });
 
   // 設定画面を開いたときは間隔を待たず、Notion側で足した・直したプロパティを反映する。
-  if (connection?.taskDataSourceId) {
+  if (connection?.taskDataSourceId && !connection.tasksInDb) {
     connection = await refreshTaskPropertyMapIfStale(createNotionClient(connection), connection, {
       force: true,
     });
@@ -51,6 +51,7 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
     return {
       connected: false,
       workspaceName: null,
+      tasksInDb: false,
       taskDataSourceId: null,
       taskTitle: null,
       propertyMap: null,
@@ -96,6 +97,7 @@ async function loadNotionState(userId: string): Promise<NotionSectionState> {
   return {
     connected: true,
     workspaceName: connection.workspaceName,
+    tasksInDb: connection.tasksInDb,
     taskDataSourceId: connection.taskDataSourceId,
     taskTitle: connection.taskTitle,
     propertyMap: (connection.propertyMap as PropertyMap | null) ?? null,

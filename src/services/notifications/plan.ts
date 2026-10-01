@@ -9,7 +9,7 @@ import { getNotionConnection } from "@/services/calendar/write-context";
 import { countDueTasks, countShopping } from "@/services/notifications/badge";
 import { getNotificationSettings } from "@/services/notifications/settings";
 import { createNotionClient } from "@/services/notion/client";
-import { listAllTasks } from "@/services/notion/tasks";
+import { listAllTasks } from "@/services/tasks";
 import type { CalendarEventItem, TaskItem } from "@/types/calendar";
 import { PLAN_WINDOW_HOURS, type NotificationSettings } from "@/types/notification";
 
@@ -177,7 +177,7 @@ async function loadTasks(userId: string): Promise<TaskItem[] | null> {
   if (!connection) return null;
 
   try {
-    return await listAllTasks(createNotionClient(connection), connection);
+    return await listAllTasks(connection);
   } catch (error) {
     console.error("[dayspan] notification plan: notion fetch failed:", error);
     return null;

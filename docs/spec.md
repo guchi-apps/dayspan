@@ -20,7 +20,7 @@ Google Calendar の予定と Notion のタスクを1つのカレンダーUIで�
 - DB名: `app_dayspan`
 - Google Calendar を予定の一次情報源とする
 - Notion をタスクの一次情報源とする
-- DaySpan DBには予定・タスク本体を恒久的に二重保存しない
+- DaySpan DBには予定本体を恒久的に二重保存しない。タスク本体はNotionかDaySpan DBのどちらか一方を正とする（`tasksInDb`・issue #919）
 
 共通の技術・インフラ・ブランチ・CI/CD・Secrets・コーディング規約等については `m-guchi/docs` の最新ルールを参照する。
 
@@ -977,7 +977,7 @@ DaySpan側には以下を保持する。
 - 対象DB識別子
 - 必要な設定情報
 
-タスク本文の一次情報源はNotionとし、DaySpan DBへ恒久的なコピーを保存しない。
+タスク本文の一次情報源は既定でNotionとし、DaySpan DBへ恒久的なコピーを保存しない。ただしNotionが応答しない間も使えるよう、設定でタスクをDaySpan DB（`Task`）へ移せる（issue #919）。移した後はDBが唯一の正で、Notionへは書き戻さない。
 
 ## 19. DaySpan独自DB
 

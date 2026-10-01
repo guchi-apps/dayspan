@@ -4,10 +4,9 @@ import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { loadWritableCalendars } from "@/services/calendar/load";
 import { getNotionConnection } from "@/services/calendar/write-context";
-import { createNotionClient } from "@/services/notion/client";
 import { loadPlaceCatalog } from "@/services/notion/places";
 import { loadTagCatalog } from "@/services/notion/tag-options";
-import { listAllTasks } from "@/services/notion/tasks";
+import { listAllTasks } from "@/services/tasks";
 import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
 
 /**
@@ -27,7 +26,7 @@ export async function GET() {
 
   try {
     const [tasks, tagCatalog, placeCatalog, calendars, links] = await Promise.all([
-      listAllTasks(createNotionClient(connection), connection),
+      listAllTasks(connection),
       loadTagCatalog(connection),
       loadPlaceCatalog(connection),
       loadWritableCalendars(userId),
