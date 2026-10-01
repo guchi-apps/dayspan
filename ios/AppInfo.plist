@@ -9,5 +9,20 @@
 	<array>
 		<string>dayspan.gucchii.com</string>
 	</array>
+	<!-- ウィジェットのディープリンク（yoteiflow://open?path=…・#926）。認証シートの戻り先と同じスキームを共用し、
+	     ホスト（open）で分ける。SharedConfig.deepLinkScheme と同じにする（check-consistency.mjs が照合する） -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.gucchii.yoteiflow.widget-link</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>yoteiflow</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

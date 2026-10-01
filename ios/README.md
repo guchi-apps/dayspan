@@ -10,7 +10,9 @@
 | 署名 | Automatic（Apple Developer Program のチーム `6AA3WFTR94`。kurashioと同じチーム） |
 | 対応 | iPhone・縦向き・iOS 18以上 |
 | 認証シートの戻り先 | `yoteiflow://auth-callback`（ログイン）・`yoteiflow://google-connected`（Calendar連携） |
-| Associated Domains / Push / App Group | 使わない（初回スコープ外） |
+| App Group | `group.com.gucchii.yoteiflow`（アプリとウィジェットでトークンを共有する Keychain のアクセスグループ。#926） |
+| ウィジェット拡張 | `YoteiFlowWidget`（Bundle ID `com.gucchii.yoteiflow.widget`） |
+| Associated Domains / Push | 使わない（初回スコープ外） |
 
 ## 更新が要る場所
 
@@ -28,7 +30,7 @@
 3. スキーム `YoteiFlow`・実行先を自分のiPhoneにし、Signing & Capabilities の Team が Apple Developer Program のチームになっていることを確かめて ⌘R
 4. 初回は iPhone の 設定 → プライバシーとセキュリティ → デベロッパモード をオンにし、設定 → 一般 → VPNとデバイス管理 で開発者証明書を信頼する
 
-署名・App Store Connect APIキー・シェルの注意（終了コードをパイプで隠さない等）は kurashio の `ios/README.md`（`guchi-apps/myroom`）と `guchi-apps/docs#176` を参照してください。この殻は Widget / App Group を持たないため、kurashio より設定は少なくて済みます。
+署名・App Store Connect APIキー・シェルの注意（終了コードをパイプで隠さない等）は kurashio の `ios/README.md`（`guchi-apps/myroom`）と `guchi-apps/docs#176` を参照してください。Widget拡張と App Group（#926）を持つため、初回は Xcode の Signing & Capabilities で両ターゲット（YoteiFlow・YoteiFlowWidget）の Team が正しいことを確かめてください（App Group と拡張の App ID は自動署名＋`-allowProvisioningUpdates` で登録されます）。
 
 ## TestFlight で配布する（#920）
 
@@ -79,7 +81,7 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 
 ## 開発環境と本番の切り替え
 
-`YoteiFlow/AppConfig.swift` の `baseURL` だけを変えます。**LAN IP の `http://` のままではSupabase Authのリダイレクトが戻れない**ため、sslip.io などでホスト名にし、そのURLをSupabaseの許可リダイレクトURLに入れます（`sslip-io-lan-dev` の手順）。**戻すのを忘れてコミットしないこと**（`node ios/scripts/check-consistency.mjs` と `pnpm test:unit` が本番URLかを確かめます）。
+`Shared/SharedConfig.swift` の `baseURL` だけを変えます（アプリとウィジェット拡張が同じ値を読みます）。**LAN IP の `http://` のままではSupabase Authのリダイレクトが戻れない**ため、sslip.io などでホスト名にし、そのURLをSupabaseの許可リダイレクトURLに入れます（`sslip-io-lan-dev` の手順）。**戻すのを忘れてコミットしないこと**（`node ios/scripts/check-consistency.mjs` と `pnpm test:unit` が本番URLかを確かめます）。
 
 ## Google / Supabase 側の設定
 
@@ -127,6 +129,24 @@ App-Bound Domains の制約と扱い:
 - 宣言できるのは最大10件。いまは1件。将来ほかのドメインをWebView内で開く必要が出たら、その都度ここへ足す（足せない外部サービスは認証シートかSafariで開く）
 - Info.plist の配列はビルド設定（`INFOPLIST_KEY_*`）で書けないため、生成されるInfo.plistへ `AppInfo.plist` を統合している
 
+### ウィジェット（WidgetKit・#926）
+
+Scriptableなしで、ホーム画面・ロック画面に活動記録・今日の予定・タスク・買い物リストを出します。**既存のScriptableウィジェット（`src/lib/scriptable-widget.ts`）はそのまま残り、並行して使えます。**
+
+| 項目 | 内容 |
+|---|---|
+| 面 | 活動記録（`YoteiFlowActivity`）・今日の予定・タスク・買い物リストの4種類。ウィジェットギャラリーから選ぶ（Scriptableの `Parameter` のような切り替えは不要） |
+| 枠 | systemSmall / Medium / Large、accessoryRectangular / Circular / Inline。行数・文言はScriptable版に揃える |
+| 取得 | 既存の `/api/widget/*` を `Authorization: Bearer`（ウィジェット用トークン）で読む。**新しい取得APIは無い**。サーバー側の3分キャッシュはそのまま効く。15分ごとに更新を要求（iOSは目安として扱う） |
+| 経過時間 | `Text(timerInterval:)`。端末が数えるので、更新を待たずに進み続ける |
+| タップ | `yoteiflow://open?path=/tasks` などでアプリの該当画面（`/activity`・`/calendar`・`/tasks`・`/shopping`）を開く。許可した4パスだけ受ける |
+
+**トークンの受け渡し**: ウィジェット拡張はWebViewのCookieを持てず、アプリが動いていない間も更新される。そのため、ログイン済みのWebViewが `POST /api/settings/widget/native`（Supabaseセッションで認証。発行済みのトークンを返し、無ければ発行する。**作り直さない**ので設定画面で配ったScriptable用のトークンは失効しない）を呼び、アプリが App Group の Keychain（アクセスグループ＝App Group ID・初回アンロック後は読める・端末間同期なし）へ保存する。ウィジェットはそこから読む。`/login` が開いたとき（ログアウト・未ログイン）は共有トークンを消す。ウィジェットのトークンは読み取り専用で、4面しか読めない。
+
+**更新の合図**: 記録の開始・停止はWebの中で行われアプリへ伝わらないため、アプリが前面になったとき・トークンを保存したときに `WidgetCenter.reloadAllTimelines()` を呼ぶ。
+
+**Live Activity は入れない**: 記録の開始・停止はWeb（WebView）の中で起き、アプリを閉じていても別の端末（PWA・ショートカット）から変わりうる。Live Activity を現状に追従させるには、サーバーからAPNs（ActivityKitのプッシュ更新）で送るしかなく、APNsキーの管理・端末のpush tokenの登録・送信基盤が要る。Web Pushと別の基盤を足す割に、ロック画面の経過時間は accessory ウィジェットの `timerInterval` で代替できるため見送る。必要なら別Issueで扱う。
+
 ## 実機確認手順
 
 - [ ] ビルドして本人のiPhoneへ入れ、本番YoteiFlowが起動する
@@ -137,8 +157,11 @@ App-Bound Domains の制約と扱い:
 - [ ] 設定 ▸ Google Calendar で接続・再接続でき、予定の読み書きができる
 - [ ] 外部リンクがSafariで開く／一度開いた画面が機内モードでも保存済みで開く（未保存の画面は再試行画面が出て、戻すと自動で読み込む）／低速回線で「保存済みを表示中」が出る／`confirm`（削除の確認）が出る／ノッチ・ホームバー周りが崩れない
 - [ ] Safari・PWA・PCの既存ログイン、Calendar連携が今までどおり動く（アプリでログインしてもSafari側がログアウトされない）
+- [ ] （#926）ログイン後にホーム画面へ「YoteiFlow」のウィジェット（活動記録・今日の予定・タスク・買い物リスト）を追加でき、中身が出る。ロック画面の枠でも出る
+- [ ] （#926）記録中は経過時間が進み続け、タップでアプリの記録画面が開く（アプリが終了していても開く）
+- [ ] （#926）ログアウトするとウィジェットが「アプリを開いてログインすると表示されます」に変わる。Scriptableのウィジェットは引き続き動く
 - [ ] PRへ画面録画かスクリーンショットを添付する
 
 ## 初回スコープ外（後続Issue）
 
-TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ WidgetKit・Live Activity（既存のScriptableウィジェットは維持）/ App Store公開 / ネイティブ画面への置き換え。
+TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ Live Activity（WidgetKitのウィジェットは #926 で追加。既存のScriptableウィジェットも維持）/ App Store公開 / ネイティブ画面への置き換え。

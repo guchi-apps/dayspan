@@ -1,0 +1,360 @@
+import SwiftUI
+import WidgetKit
+
+// 面（活動記録・今日の予定・タスク・買い物リスト）と枠の大きさの対応は Scriptable 版（src/lib/scriptable-widget.ts）に揃える。
+// 文言も同じ。取得できなかった・連携が未設定のときに件数を出すと、0件だったのか読めなかったのかが分からないため、
+// 理由の文言だけを出す。
+
+/// 枠の大きさごとに出せる行数
+private func rowLimit(_ family: WidgetFamily) -> Int {
+    switch family {
+    case .systemSmall: 3
+    case .systemMedium: 3
+    case .systemLarge: 8
+    default: 2
+    }
+}
+
+/// 取得できなかった・未ログインのときの共通の面
+private struct NoticeView: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private func notice<P>(_ state: WidgetState<P>) -> String? {
+    switch state {
+    case .ready: nil
+    case .noToken: "YoteiFlowアプリを開いてログインすると表示されます"
+    case .unauthorized: "トークンが無効です。アプリを開き直してください"
+    case .failed: "取得できませんでした"
+    }
+}
+
+private struct Header: View {
+    let title: String
+    var trailing: String?
+    var body: some View {
+        HStack {
+            Text(title).font(.caption.bold()).foregroundStyle(.secondary)
+            Spacer()
+            if let trailing { Text(trailing).font(.caption.bold()) }
+        }
+    }
+}
+
+/// 行ごとの高さを揃えた一覧。残りは件数だけ出す
+private struct RowList<Row: View>: View {
+    let rows: [Row]
+    let total: Int
+    let limit: Int
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(rows.prefix(limit).enumerated()), id: \.offset) { _, row in row }
+            if total > limit {
+                Text("ほか \(total - limit)件").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - 活動記録
+
+struct ActivityWidgetView: View {
+    let entry: SurfaceEntry<ActivityPayload>
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        content
+            .widgetURL(SharedConfig.deepLink(path: "/activity"))
+            .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch entry.state {
+        case .ready(let payload): ready(payload)
+        default: NoticeView(text: notice(entry.state) ?? "")
+        }
+    }
+
+    @ViewBuilder private func ready(_ payload: ActivityPayload) -> some View {
+        if let running = payload.running, let start = ISODate.parse(running.startedAt) {
+            // 経過時間は端末に数えさせる。サーバーへ問い合わせ直さなくても進み続ける
+            let timer = Text(timerInterval: start...Date.distantFuture, countsDown: false)
+            switch family {
+            case .accessoryInline:
+                Text("\(running.title) ") + timer
+            case .accessoryCircular:
+                VStack(spacing: 0) {
+                    Image(systemName: "record.circle")
+                    timer.font(.caption2).monospacedDigit().multilineTextAlignment(.center)
+                }
+            case .accessoryRectangular:
+                VStack(alignment: .leading) {
+                    Text(running.title).font(.headline).lineLimit(1)
+                    timer.font(.title3).monospacedDigit()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            default:
+                VStack(alignment: .leading, spacing: 4) {
+                    Header(title: "記録中")
+                    Text(running.title).font(.headline).lineLimit(1)
+                    timer.font(.system(size: 34, weight: .bold)).monospacedDigit().minimumScaleFactor(0.6)
+                    if family != .systemSmall { totals(payload) }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            switch family {
+            case .accessoryInline:
+                Text(payload.today.map { "今日 \(MinutesLabel.text($0.totalMinutes))" } ?? "記録していません")
+            case .accessoryCircular:
+                VStack(spacing: 0) {
+                    Image(systemName: "stop.circle")
+                    Text(payload.today.map { MinutesLabel.text($0.totalMinutes) } ?? "−").font(.caption2)
+                }
+            case .accessoryRectangular:
+                VStack(alignment: .leading) {
+                    Text("記録していません").font(.headline)
+                    if let today = payload.today { Text("今日 \(MinutesLabel.text(today.totalMinutes))").font(.caption) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            default:
+                VStack(alignment: .leading, spacing: 4) {
+                    Header(title: "記録していません")
+                    if let today = payload.today {
+                        Text("今日 \(MinutesLabel.text(today.totalMinutes))").font(.title3.bold())
+                        if let last = today.last {
+                            Text("最後: \(last.title) \(ISODate.clock(last.endedAt, timeZone: payload.timeZone))まで")
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        if family != .systemSmall { totals(payload) }
+                    } else {
+                        Text(activityNote(payload.todayUnavailable)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder private func totals(_ payload: ActivityPayload) -> some View {
+        if let today = payload.today {
+            if today.items.isEmpty {
+                Text("まだ記録がありません").font(.caption).foregroundStyle(.secondary)
+            } else {
+                RowList(
+                    rows: today.items.map { item in
+                        HStack {
+                            Text(item.title).lineLimit(1)
+                            Spacer()
+                            Text(MinutesLabel.text(item.minutes)).foregroundStyle(.secondary)
+                        }
+                        .font(.caption)
+                    },
+                    total: today.items.count,
+                    limit: family == .systemLarge ? 8 : 2
+                )
+            }
+        } else {
+            Text(activityNote(payload.todayUnavailable)).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func activityNote(_ reason: String?) -> String {
+        reason == "google_unavailable"
+            ? "今日の記録を取得できませんでした"
+            : "設定で記録の保存先カレンダーを選ぶと、今日の合計も出ます"
+    }
+}
+
+// MARK: - 今日の予定
+
+struct ScheduleWidgetView: View {
+    let entry: SurfaceEntry<SchedulePayload>
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        content
+            .widgetURL(SharedConfig.deepLink(path: "/calendar"))
+            .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch entry.state {
+        case .ready(let payload): ready(payload)
+        default: NoticeView(text: notice(entry.state) ?? "")
+        }
+    }
+
+    @ViewBuilder private func ready(_ payload: SchedulePayload) -> some View {
+        let upcoming = payload.items.filter { !$0.past }
+        if let reason = payload.unavailable {
+            NoticeView(text: reason == "google_not_connected"
+                ? "設定でGoogleカレンダーを接続すると、今日の予定が出ます"
+                : "今日の予定を取得できませんでした")
+        } else if family == .accessoryInline {
+            Text(upcoming.first.map { "\(whenText($0, payload)) \($0.title)" } ?? "今日の予定なし")
+        } else if payload.items.isEmpty {
+            NoticeView(text: "今日の予定はありません")
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                if family != .accessoryRectangular { Header(title: "今日の予定", trailing: "\(upcoming.count)件") }
+                RowList(
+                    rows: payload.items.map { item in
+                        HStack(spacing: 6) {
+                            Text(whenText(item, payload)).monospacedDigit().foregroundStyle(.secondary)
+                            Text(item.title).lineLimit(1).strikethrough(item.outcome != nil)
+                        }
+                        .font(.caption)
+                        .opacity(item.past || item.outcome != nil ? 0.5 : 1)
+                    },
+                    total: payload.items.count,
+                    limit: rowLimit(family)
+                )
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func whenText(_ item: SchedulePayload.Item, _ payload: SchedulePayload) -> String {
+        item.allDay ? "終日" : ISODate.clock(item.start, timeZone: payload.timeZone)
+    }
+}
+
+// MARK: - タスク
+
+struct TasksWidgetView: View {
+    let entry: SurfaceEntry<TasksPayload>
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        content
+            .widgetURL(SharedConfig.deepLink(path: "/tasks"))
+            .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch entry.state {
+        case .ready(let payload): ready(payload)
+        default: NoticeView(text: notice(entry.state) ?? "")
+        }
+    }
+
+    @ViewBuilder private func ready(_ payload: TasksPayload) -> some View {
+        let due = payload.overdueCount + payload.todayCount
+        if let reason = payload.unavailable {
+            NoticeView(text: reason == "notion_not_connected"
+                ? "設定でNotionのタスクDBを選ぶと、タスクが出ます"
+                : "タスクを取得できませんでした")
+        } else if family == .accessoryInline {
+            Text(due > 0 ? "タスク 期限\(due)件" : "期限の来たタスクなし")
+        } else if family == .accessoryCircular {
+            VStack(spacing: 0) {
+                Image(systemName: "checklist")
+                Text("\(due)").font(.title3.bold())
+            }
+        } else if payload.items.isEmpty {
+            NoticeView(text: "期限のあるタスクはありません")
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                if family != .accessoryRectangular {
+                    Header(title: "タスク", trailing: due > 0 ? "期限 \(due)件" : nil)
+                }
+                RowList(
+                    rows: payload.items.map { item in
+                        HStack(spacing: 6) {
+                            Capsule().fill(priorityColor(item.priority)).frame(width: 3, height: 12)
+                            Text(item.title).lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(item.dueLabel)
+                                .foregroundStyle(item.bucket == "overdue" ? Color.red : Color.secondary)
+                        }
+                        .font(.caption)
+                    },
+                    total: payload.total,
+                    limit: rowLimit(family)
+                )
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+// MARK: - 買い物リスト
+
+struct ShoppingWidgetView: View {
+    let entry: SurfaceEntry<ShoppingPayload>
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        content
+            .widgetURL(SharedConfig.deepLink(path: "/shopping"))
+            .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch entry.state {
+        case .ready(let payload): ready(payload)
+        default: NoticeView(text: notice(entry.state) ?? "")
+        }
+    }
+
+    @ViewBuilder private func ready(_ payload: ShoppingPayload) -> some View {
+        if let reason = payload.unavailable {
+            NoticeView(text: reason == "shopping_not_ready"
+                ? "設定でNotionの買い物リストDBを選ぶと、残りが出ます"
+                : "買い物リストを取得できませんでした")
+        } else if family == .accessoryInline {
+            Text(payload.remaining > 0 ? "買い物 残り\(payload.remaining)" : "買うものなし")
+        } else if family == .accessoryCircular {
+            VStack(spacing: 0) {
+                Image(systemName: "cart")
+                Text("\(payload.remaining)").font(.title3.bold())
+            }
+        } else if payload.items.isEmpty {
+            NoticeView(text: "買うものはありません")
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                if family != .accessoryRectangular {
+                    Header(title: "買い物リスト", trailing: "残り \(payload.remaining)")
+                }
+                RowList(
+                    rows: payload.items.map { item in
+                        HStack(spacing: 6) {
+                            Capsule().fill(priorityColor(item.priority)).frame(width: 3, height: 12)
+                            Text(item.name).lineLimit(1)
+                            Spacer(minLength: 4)
+                            if let category = item.category {
+                                Text(category).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .font(.caption)
+                    },
+                    total: payload.remaining,
+                    limit: rowLimit(family)
+                )
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// 優先度の帯。高・中・低以外（未設定）は透明で、同じ幅の場所だけ空ける
+private func priorityColor(_ priority: String?) -> Color {
+    switch priority {
+    case "高": .red
+    case "中": .orange
+    case "低": .gray
+    default: .clear
+    }
+}

@@ -2,8 +2,9 @@ import Foundation
 
 /// アプリ全体で使う定数。画面・機能はすべてWeb版（正本）にあり、アプリはそれを開く殻に徹する（#908）。
 enum AppConfig {
-    /// Web版のURL。開発サーバーへ向けるときもここだけを変える（ios/README.md）
-    static let baseURL = URL(string: "https://dayspan.gucchii.com/")!
+    /// Web版のURL。開発サーバーへ向けるときは `Shared/SharedConfig.swift` の `baseURL` だけを変える
+    /// （ウィジェット拡張も同じ値を読むため。ios/README.md）
+    static let baseURL = SharedConfig.baseURL
 
     /// 認証シートの戻り先スキーム。サーバー側の `src/lib/native-auth/native-app.ts` の
     /// `NATIVE_SCHEME` と揃えること（`ios/scripts/check-consistency.mjs` が照合する）。
