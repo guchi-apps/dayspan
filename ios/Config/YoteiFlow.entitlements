@@ -6,5 +6,10 @@
 	<array>
 		<string>group.com.gucchii.yoteiflow</string>
 	</array>
+	<!-- APNs（#925）。開発署名では development、アーカイブ（TestFlight・App Store）では
+	     Xcodeが配布用のプロビジョニングで production へ書き換える。送り先のホスト
+	     （sandbox / production）は、アプリがトークンと一緒にサーバーへ伝える（PushCoordinator） -->
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

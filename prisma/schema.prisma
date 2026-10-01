@@ -40,6 +40,7 @@ model User {
   annualLeaveGrants    AnnualLeaveGrant[]
 
   pushSubscriptions         PushSubscription[]
+  apnsDevices               ApnsDevice[]
   notificationSetting       NotificationSetting?
   notificationJobs          NotificationJob[]
   eventNotificationSettings EventNotificationSetting[]
@@ -556,6 +557,36 @@ model PushSubscription {
   origin String @db.VarChar(255)
 
   /// 設定画面で端末を見分けるための表示名。User-Agentから作る。
+  label String?
+
+  lastSuccessAt DateTime?
+  lastFailureAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// iOSアプリ（WKWebView）の通知の送信先（APNsのデバイストークン）。
+///
+/// WKWebViewの中ではWeb Push（Service Worker の push）が動かないため、アプリはAPNsで受ける。
+/// PWA向けのWeb Push（PushSubscription）はそのまま残り、同じ文面を両方へ送る（docs/spec.md §32）。
+model ApnsDevice {
+  id     String @id @default(cuid())
+  userId String
+
+  /// APNsのデバイストークン（16進。長さはAppleが決めるため余裕を持たせる）。
+  token String @unique @db.VarChar(200)
+
+  /// トークンを発行したAPNsの環境。Xcodeから入れたビルドは sandbox、TestFlight・App Storeは
+  /// production で、トークンは環境をまたいで使えない。送り先のホストを分けるために持つ。
+  environment String @db.VarChar(16)
+
+  /// 端末を見分けるための表示名（iPhone / iPad）。同じ端末のPWAとの二重通知を避けるために
+  /// Web Pushの購読の表示名と突き合わせる。
   label String?
 
   lastSuccessAt DateTime?

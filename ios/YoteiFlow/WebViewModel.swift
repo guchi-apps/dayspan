@@ -19,6 +19,9 @@ final class WebViewModel: NSObject, ObservableObject {
     /// 最後に開こうとしたメインフレームのURL。読み込みに失敗すると `webView.url` は
     /// 直前に表示できていた画面のままなので、再試行はこちらを開き直す
     private var lastRequestedURL: URL?
+    /// 今のデバイストークンをサーバーへ登録し終えたか。ログイン前（401）は登録できないので、
+    /// 次の画面の読み込みで続きをやる
+    private var registeredToken: String?
     /// ウィジェット用トークンをこの起動で共有済みか（#926）
     private var hasSyncedWidgetToken = false
     /// 起動前（WebViewがまだ何も開いていない間）にウィジェットから渡された開き先
@@ -44,6 +47,12 @@ final class WebViewModel: NSObject, ObservableObject {
         webView.isOpaque = false
         webView.backgroundColor = UIColor(named: "HeaderBand")
         webView.scrollView.backgroundColor = UIColor(named: "HeaderBand")
+
+        // 通知を押されたら、その画面を開く（アプリが終了していた場合は起動後にここへ届く）
+        PushCoordinator.shared.onOpenPath = { [weak self] path in self?.loadAppPath(path) }
+        PushCoordinator.shared.onTokenChanged = { [weak self] in
+            Task { await self?.registerPushTokenIfPossible() }
+        }
     }
 
     deinit {
@@ -62,7 +71,8 @@ final class WebViewModel: NSObject, ObservableObject {
         if let pendingPath {
             self.pendingPath = nil
             loadAppPath(pendingPath)
-        } else {
+        } else if lastRequestedURL == nil {
+            // 通知を押して起動したときは、すでにその画面を開こうとしている（上書きしない）
             load(AppConfig.baseURL)
         }
     }
@@ -125,6 +135,37 @@ final class WebViewModel: NSObject, ObservableObject {
 
     private func openExternally(_ url: URL) {
         UIApplication.shared.open(url)
+    }
+}
+
+// MARK: - 通知（APNs）の登録
+
+extension WebViewModel {
+    /// デバイストークンを、ログイン済みのWebViewからサーバーへ渡す。
+    /// 未ログイン（401）・通信失敗のときは印を付けず、次の画面の読み込みでやり直す
+    fileprivate func registerPushTokenIfPossible() async {
+        guard
+            let token = PushCoordinator.shared.deviceToken,
+            token != registeredToken,
+            let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login")
+        else { return }
+
+        let script = """
+        const response = await fetch('/api/notifications/apns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ token: token, environment: environment })
+        });
+        return response.status;
+        """
+        let value = try? await webView.callAsyncJavaScript(
+            script,
+            arguments: ["token": token, "environment": PushCoordinator.shared.environment],
+            contentWorld: .page
+        )
+        // 登録できた（200）か、サーバー側で受けられない（鍵が未設定の503など）ときは繰り返さない
+        if let status = value as? Int, status != 401 { registeredToken = token }
     }
 }
 
@@ -315,6 +356,12 @@ extension WebViewModel: WKNavigationDelegate {
         isRetrying = false
         failure = nil
         updateWidgetToken(for: webView.url)
+
+        // ログイン後の画面が開けたら、通知の許可を求めてトークンをサーバーへ登録する
+        if let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login") {
+            PushCoordinator.shared.requestAuthorizationIfNeeded()
+            Task { await registerPushTokenIfPossible() }
+        }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

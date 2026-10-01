@@ -1,4 +1,4 @@
-import { isPushConfigured } from "@/lib/web-push/keys";
+import { isAnyPushConfigured } from "@/lib/push-configured";
 import { dispatchDueNotifications } from "@/services/notifications/dispatch";
 import { listUsersToPlan, planUserNotifications } from "@/services/notifications/plan";
 
@@ -24,8 +24,8 @@ export function startNotificationScheduler(): void {
 
   // 鍵が無い環境（開発中の worktree など）では、送る相手も購読も作れない。
   // 毎分DBを引くだけの空回りになるため、そもそも始めない。
-  if (!isPushConfigured()) {
-    console.info("[dayspan] notification scheduler: VAPIDの鍵が未設定のため起動しません。");
+  if (!isAnyPushConfigured()) {
+    console.info("[dayspan] notification scheduler: VAPID鍵・APNs認証キーのどちらも未設定のため起動しません。");
     return;
   }
 

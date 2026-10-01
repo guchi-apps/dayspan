@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
-import { isPushConfigured } from "@/lib/web-push/keys";
+import { isAnyPushConfigured } from "@/lib/push-configured";
 import { loadBadgeCounts } from "@/services/notifications/badge";
 import { sendToUser } from "@/services/notifications/subscriptions";
 
@@ -18,7 +18,7 @@ export async function POST() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  if (!isPushConfigured()) {
+  if (!isAnyPushConfigured()) {
     return NextResponse.json(
       { error: "push_not_configured", message: "サーバーで通知の鍵が設定されていません。" },
       { status: 503 },

@@ -2135,6 +2135,13 @@ DaySpanの外（Googleカレンダーのアプリなど）で予定が動いた�
 対象はiPhoneのホーム画面に追加したDaySpan（PWA）を第一に考える。Push通知そのものは
 Android・PCのブラウザでも同じ経路で届く。
 
+### iOSアプリ（APNs）
+
+iOSアプリ（`ios/`・SwiftUI + WKWebView）はWeb Pushが動かないため、APNsで同じ通知を受ける（#925）。
+文面・時刻・バッジの件数・通知を押したときの行き先はWeb Pushと共通で、送り先だけが増える
+（`ApnsDevice`・`sendToUser()`）。同じ端末のPWAとの二重通知は、アプリが届いている端末の系統
+（iPhone / iPad）のWeb Pushへは送らないことで避ける。詳細は `docs/notifications.md`「iOSアプリ（APNs）」。
+
 ### iOS側の制約
 
 - 通知を許可できるのは**ホーム画面に追加したWebアプリ**から開いたときだけ（iOS 16.4以降）。
