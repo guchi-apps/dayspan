@@ -23,6 +23,7 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `vapid-public-key` | 通知（Web Push）の公開鍵。`node scripts/gen-vapid-keys.mjs mailto:自分のアドレス` の出力（docs/notifications.md） |
 | `vapid-private-key` | 同・秘密鍵。上のコマンドが公開鍵と対で出す |
 | `vapid-subject` | 同・連絡先。`mailto:` か `https://` で始める |
+| （App Store Connect） | `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_P8`（TestFlight自動配信・#961）は専用の項目を持たず、`op://apps/AppStoreConnect/key-id`・`issuer-id`・`key-p8` を参照する（kurashioのCIと同じ。キーの正を1か所にする）。`key-p8` は `.p8` の中身をbase64の1行にした値。内部グループが複数あるときだけ GitHub の variable `TESTFLIGHT_GROUP` にグループ名を置く |
 | （APNs） | `APNS_KEY_ID`・`APNS_TEAM_ID`・`APNS_PRIVATE_KEY` は専用の項目を持たず、kurashio（MyRoom）の `op://apps/MyRoom/apns-key-id`・`apns-team-id`・`apns-auth-key` をそのまま参照する。APNsの認証キー（.p8）はApple DeveloperのTeam単位で、同じTeamの全アプリに使えるため（#957）。`apns-auth-key` はPEMのままでよい（デプロイが改行を `\n` へ直して `.env` へ書く）。YoteiFlowのBundle IDはコード側の既定値（`com.gucchii.yoteiflow`）で分ける |
 
 **`TRAINROUTE_TOKEN`（電車の所要時間を trainroute 経由で引くための共有シークレット）を撤去した。**
@@ -40,6 +41,12 @@ DaySpan側の連携コード・`.github/secrets-manifest.tsv` の参照を削除
 
 ```bash
 gh workflow run sync-secrets.yml -f only=VAPID_PUBLIC_KEY,VAPID_PRIVATE_KEY,VAPID_SUBJECT,APNS_KEY_ID,APNS_TEAM_ID,APNS_PRIVATE_KEY
+```
+
+ASC_*（TestFlight自動配信）をマニフェストへ足した直後は、行がまだ `develop` に無いため、**足したブランチを指定して**同期する（ワークフローは起動したrefのマニフェストを読む。`--ref` が無いと対象が0件になる）。マージ後は上と同じ形でよい。
+
+```bash
+gh workflow run sync-secrets.yml --ref <ブランチ名> -f only=ASC_KEY_ID,ASC_ISSUER_ID,ASC_KEY_P8
 ```
 
 （手元から `scripts/sync-github-secrets.sh` を叩く場合は個人アカウントのセッションが要る。

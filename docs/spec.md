@@ -3882,4 +3882,4 @@ Google Calendarの `Event.status`（`tentative`）フィールドをそのまま
 - **外部リンク**: YoteiFlowと同一オリジンだけWebViewで開き、他はSafariで開く
 - **オフライン**: アプリ内ではService Workerを使えないため、PWAの保存済み画面は出ず、再試行の画面を出す
 - **初回スコープ外**: TestFlight配布・APNs・WidgetKit・App Store公開・オフライン対応・ネイティブ画面
-
+- **TestFlightへの自動配信**（issue #961）: `Deploy to Production` が `main` で成功すると、`ios-testflight-trigger.yml` が `ios-testflight.yml`（ワークフロー名 `iOS TestFlight`）を起動する。`ios/scripts/ios-changes.mjs` が、最後に配布した印（タグ `ios-testflight/<ビルド番号>`）との差分から「iOS側の更新が要るか」を判定し、要る場合だけ署名・ビルド・アップロード→処理待ち→内部テストグループへ配布→印のタグ付けを行う（Webのみの更新はスキップ）。issue-deckのブランチ（リリース）画面の「iOS配布（TestFlight）の結果」は、このワークフローのrun・ジョブ名・タグを読んで表示する（kurashioと同じ契約。表示側は issue-deck の `webview-ios-repos.ts` への登録が要る）。手動の `ios/scripts/remote-upload-testflight.sh` も残す
