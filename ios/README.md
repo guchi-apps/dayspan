@@ -49,12 +49,19 @@ Mac につながなくても、iPhone の TestFlight アプリからインスト
 3. `ios/asc.env.tpl` の `op://` を実際の項目名に合わせる（`ASC_KEY_PATH` は `.p8` を置いたパス）
 4. TestFlight →「内部テスト」にグループを作り、自分（App Store Connect のユーザー）を追加。ビルドの暗号化の質問が出た場合は「いいえ（標準の暗号化のみ）」
 
-### ビルドを上げるたび
+### ビルドを上げるたび（subpc から1コマンド・#929）
+
+kurashio の `remote-install.sh` と同じ形で、subpc から Tailscale 越しに Mac（既定 `guchimac-mini`）へSSHして、取り込み → 整合チェック → Archive → アップロードまで行います。**Web側が main へデプロイされた後に**、`main` から上げます。
 
 ```bash
-node ios/scripts/sync-version.mjs          # 版番号を package.json に揃える（差分があればコミット）
-op run --env-file=ios/asc.env.tpl -- ios/scripts/upload-testflight.sh
+node ios/scripts/sync-version.mjs          # 版番号を package.json に揃える（差分があればコミットしてmainへ）
+ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、TestFlight へ上げる
 ```
+
+- Mac 側の前提: チェックアウトが `$HOME/apps/yoteiflow` にある（別の場所なら `MAC_REPO_DIR='$HOME/x'`。チルダ付きで渡さない）・Xcode・1Password CLI（`op`）にサインイン済み・ログインキーチェーンが開いている（codesign が失敗したら Mac で `security unlock-keychain ~/Library/Keychains/login.keychain-db` を一度）
+- `MAC_HOST`・`MAC_REPO_DIR`・`IOS_BRANCH`（既定 main）・`IOS_SKIP_PULL=1`・`IOS_BUILD_NUMBER` を環境変数で上書きできる。作業ツリーに未コミットの変更があると中止する
+- Mac の前にいるなら、Mac のチェックアウトで直接 `op run --env-file=ios/asc.env.tpl -- ios/scripts/upload-testflight.sh`
+- **subpc からは実行結果を確かめられない**（Xcode が無い）。初回は Mac で1回通して確かめる
 
 スクリプトは `check-consistency.mjs`（本番URLのまま・Bundle ID等）→ `xcodebuild archive` → `xcodebuild -exportArchive`（`ExportOptions.plist` の `destination: upload` で App Store Connect へ直接アップロード）を順に実行します。**終了コードをパイプで隠さないこと**（`| tee` 等を付けない）。App Store Connect 側の処理（数分〜）が終わると TestFlight に出ます。内部テスターへは審査なしで配布されます。
 
@@ -68,7 +75,7 @@ op run --env-file=ios/asc.env.tpl -- ios/scripts/upload-testflight.sh
 
 ### 自動化について
 
-`xcodebuild` + App Store Connect API キーでスクリプト化済みです（上記）。CI（GitHub Actions の macOS ランナー）からの自動アップロードは、Mac ランナーの費用・署名証明書の扱いが絡むため見送りました。必要になれば別Issueで扱います。
+`xcodebuild` + App Store Connect API キーでスクリプト化し、subpc から Mac へSSHして1コマンドで上げられます（上記・#929）。CI（GitHub Actions の macOS ランナー）からの自動アップロードは、Mac ランナーの費用・署名証明書の扱いが絡むため、kurashio と同じく見送っています。
 
 ## 開発環境と本番の切り替え
 
@@ -127,4 +134,4 @@ WKWebView では Service Worker を使えません（App-Bound Domains を宣言
 
 ## 初回スコープ外（後続Issue）
 
-TestFlight配布のCI自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ WidgetKit・Live Activity（既存のScriptableウィジェットは維持）/ App Store公開 / `WKAppBoundDomains` によるオフライン対応 / ネイティブ画面への置き換え。
+TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ WidgetKit・Live Activity（既存のScriptableウィジェットは維持）/ App Store公開 / `WKAppBoundDomains` によるオフライン対応 / ネイティブ画面への置き換え。

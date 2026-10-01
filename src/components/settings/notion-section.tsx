@@ -65,6 +65,7 @@ export type NotionSectionState = {
   connected: boolean;
   workspaceName: string | null;
   tasksInDb: boolean;
+  remindersInDb: boolean;
   taskDataSourceId: string | null;
   taskTitle: string | null;
   propertyMap: PropertyMap | null;
@@ -92,7 +93,19 @@ export type NotionSectionState = {
  * タスクの本体の置き場（issue #919）。Notionが応答しない間も使えるよう、YoteiFlowのDBへ移せる。
  * 移すと以後のタスクの読み書きはNotionに触れない（Notion側のタスクは変わらず残る）。
  */
-function TaskStoragePanel({ tasksInDb, disabled }: { tasksInDb: boolean; disabled: boolean }) {
+function TaskStoragePanel({
+  tasksInDb,
+  disabled,
+  label = "タスク",
+  endpoint = "/api/tasks/storage",
+  canImport = true,
+}: {
+  tasksInDb: boolean;
+  disabled: boolean;
+  label?: string;
+  endpoint?: string;
+  canImport?: boolean;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
@@ -101,7 +114,7 @@ function TaskStoragePanel({ tasksInDb, disabled }: { tasksInDb: boolean; disable
     setMessage(null);
     startTransition(async () => {
       try {
-        const response = await fetch("/api/tasks/storage", {
+        const response = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mode }),
@@ -125,7 +138,7 @@ function TaskStoragePanel({ tasksInDb, disabled }: { tasksInDb: boolean; disable
   return (
     <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
       <div className="flex items-center gap-2 text-sm">
-        <Badge variant="secondary">タスクの保存先</Badge>
+        <Badge variant="secondary">{label}の保存先</Badge>
         <span className="font-medium">
           {tasksInDb ? "YoteiFlow（Notionの応答に左右されません）" : "Notion"}
         </span>
@@ -133,13 +146,15 @@ function TaskStoragePanel({ tasksInDb, disabled }: { tasksInDb: boolean; disable
       {!tasksInDb && (
         <>
           <p className="text-xs text-muted-foreground">
-            YoteiFlowのDBへ移すと、Notionが応答しない間もタスクを見たり変えたりできます。
-            移したあとのタスクはNotionへは反映されません（Notion側のタスクはそのまま残ります）。
+            YoteiFlowのDBへ移すと、Notionが応答しない間も{label}を見たり変えたりできます。
+            移したあとの{label}はNotionへは反映されません（Notion側の{label}はそのまま残ります）。
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" disabled={disabled || pending} onClick={() => run("import")}>
-              Notionから取り込んで移す
-            </Button>
+            {canImport && (
+              <Button variant="outline" size="sm" disabled={disabled || pending} onClick={() => run("import")}>
+                Notionから取り込んで移す
+              </Button>
+            )}
             <Button variant="outline" size="sm" disabled={disabled || pending} onClick={() => run("fresh")}>
               取り込まず空で始める
             </Button>
@@ -674,7 +689,14 @@ export function NotionSection({ state }: { state: NotionSectionState }) {
               <p className="text-xs text-muted-foreground">
                 記念日や更新日など、完了して消化するものではない日付を管理します。タイトルと日付が必要です。
               </p>
-              {state.reminderDataSourceId && (
+              <TaskStoragePanel
+                tasksInDb={state.remindersInDb}
+                disabled={disabled}
+                label="日付リマインド"
+                endpoint="/api/reminders/storage"
+                canImport={Boolean(state.reminderDataSourceId)}
+              />
+              {state.reminderDataSourceId && !state.remindersInDb && (
                 <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
                   <div className="flex items-center gap-2 text-sm">
                     <Badge variant="secondary">日付リマインドDB</Badge>
