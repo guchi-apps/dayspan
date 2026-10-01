@@ -1,6 +1,8 @@
 import type { Client } from "@notionhq/client";
 import type { NotionConnection } from "@prisma/client";
 
+import { loadTaskOptionsFromDb } from "@/services/tasks/db-store";
+
 import { createNotionClient } from "./client";
 import type { PlacePropertyMap } from "./place-database";
 import type { ReminderPropertyMap } from "./reminder-database";
@@ -184,6 +186,10 @@ export async function loadTagOptions(
   kind: TagKind,
 ): Promise<TagOption[] | null> {
   if (!connection) return null;
+  if (connection.tasksInDb && (kind === "task" || kind === "progress")) {
+    const own = await loadTaskOptionsFromDb(connection.userId);
+    return (kind === "task" ? own.task : own.progress) as TagOption[];
+  }
   const location = tagLocation(connection, kind);
   if (!location) return null;
 
@@ -204,8 +210,25 @@ export async function loadTagOptions(
 export async function loadTagCatalog(connection: NotionConnection | null): Promise<TagCatalog> {
   if (!connection) return EMPTY_TAG_CATALOG;
 
-  const taskLocation = tagLocation(connection, "task");
-  const progressLocation = tagLocation(connection, "progress");
+  // タスクをYoteiFlowのDBへ移したユーザーは、タグ・進捗をDBから読む（issue #919）。
+  // Notionの応答を待たないため、Notionが落ちていてもタスク画面の入力候補が出る。
+  if (connection.tasksInDb) {
+    const [own, rest] = await Promise.all([
+      loadTaskOptionsFromDb(connection.userId),
+      loadTagCatalogWithout(connection),
+    ]);
+    return { ...rest, task: own.task as TagOption[], progress: own.progress as TagOption[] };
+  }
+
+  return loadTagCatalogWithout(connection, false);
+}
+
+async function loadTagCatalogWithout(
+  connection: NotionConnection,
+  skipTask = true,
+): Promise<TagCatalog> {
+  const taskLocation = skipTask ? null : tagLocation(connection, "task");
+  const progressLocation = skipTask ? null : tagLocation(connection, "progress");
   const reminderLocation = tagLocation(connection, "reminder");
   const workLocation = tagLocation(connection, "work");
   const shoppingLocation = tagLocation(connection, "shopping");

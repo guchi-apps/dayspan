@@ -13,7 +13,7 @@ import { canWriteCalendar, SETTING_ORDER } from "@/services/google-calendar/sett
 import { GoogleReauthRequiredError } from "@/services/google-calendar/tokens";
 import { createNotionClient } from "@/services/notion/client";
 import { listGarbageDaysInRange } from "@/services/notion/garbage";
-import { listTasksInRange } from "@/services/notion/tasks";
+import { listTasksInRange, taskSourceReady } from "@/services/tasks";
 import { listRemindersInRange } from "@/services/notion/reminders";
 import { listShoppingPlansInRange, shoppingPlanReady } from "@/services/notion/shopping-plans";
 import { listWorkRecordsInRange, workDatabaseReady } from "@/services/notion/work-logs";
@@ -363,9 +363,8 @@ async function loadNotionItems(
     // 返す（docs/spec.md §9・§36）。勤務場所（docs/spec.md §34）は日付の見出しに出す別枠のため、
     // 混ぜずに分けて返す。
     const [tasks, reminders, garbageDays, workRecords, shoppingPlans] = await Promise.all([
-      connection.taskDataSourceId
+      taskSourceReady(connection)
         ? listTasksInRange(
-            notion,
             connection,
             dateRange,
             overdueRange,
@@ -380,7 +379,7 @@ async function loadNotionItems(
       tasks,
       reminders: [...reminders, ...garbageDays, ...shoppingPlans],
       workRecords,
-      ready: Boolean(connection.taskDataSourceId),
+      ready: taskSourceReady(connection),
       reminderReady: Boolean(connection.reminderDataSourceId),
       errors: [],
     };
@@ -397,7 +396,7 @@ async function loadNotionItems(
       tasks: [],
       reminders: [],
       workRecords: [],
-      ready: Boolean(connection.taskDataSourceId),
+      ready: taskSourceReady(connection),
       reminderReady: Boolean(connection.reminderDataSourceId),
       errors: [
         {
