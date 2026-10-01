@@ -118,6 +118,7 @@ export async function loadCalendarData(
     notion.tasks,
     taskLinks,
     new Map(events.items.map((item) => [item.id, item])),
+    new Map(travels.map((travel) => [travel.id, travel])),
   );
 
   return {

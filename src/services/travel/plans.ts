@@ -10,6 +10,7 @@ import {
   type TravelMode,
 } from "@/types/calendar";
 
+import { dropLinksForTravel, syncLinksForTravel } from "@/services/task-links/links";
 import { exportTravelToGoogle, removeTravelFromGoogle, type TravelExportResult } from "./google-sync";
 import { resolveTravelCalendarId } from "./settings";
 
@@ -178,6 +179,15 @@ export async function updateTravel(
     data: toWriteData(input),
   });
 
+  // 紐づいたタスクの日付を追随させる（issue #914）。失敗しても移動の更新は成功のまま扱う
+  // （追随できなかった分は日付のずれとして画面に出る）。
+  await syncLinksForTravel(userId, updated.id, updated).catch((error: unknown) => {
+    console.error(
+      "[dayspan] travel task link sync failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+  });
+
   const calendarId = await resolveTravelCalendarId(userId);
   const exported = await exportTravelToGoogle(userId, updated, calendarId, await getTimeZone(userId));
 
@@ -206,6 +216,8 @@ export async function deleteTravel(userId: string, travelId: string): Promise<bo
 
   await removeTravelFromGoogle(userId, existing);
   await db.travelPlan.delete({ where: { id: existing.id } });
+  // 紐づいたタスクの紐づけは外し、入っている日付は残す（予定を消したときと同じ扱い）。
+  await dropLinksForTravel(userId, existing.id);
 
   return true;
 }
