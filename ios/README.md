@@ -118,9 +118,16 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 - 上端はヘッダーと同じ色（`HeaderBand`）で塗り、WebViewはステータスバーの下から始める
 - ログイン状態は WKWebView の既定データストアに残り、再起動しても維持される
 
-### オフライン表示について
+### オフライン表示（Service Worker）
 
-WKWebView では Service Worker を使えません（App-Bound Domains を宣言していないため）。PWA で効く「保存済みの画面をオフラインで開く・低速回線で保存済みへ切り替える」仕組みは、**アプリ内では効きません**。代わりに再試行の画面を出します。対応するなら `WKAppBoundDomains` の宣言が要るため、後続Issueで扱います。
+`ios/AppInfo.plist` で `WKAppBoundDomains`（`dayspan.gucchii.com`）を宣言し、WebViewで `limitsNavigationsToAppBoundDomains = true` にしています（#927）。これでWKWebViewでもService Workerが動き、PWAと同じ「保存済みの画面をオフラインで開く」「低速回線（3秒）で保存済みへ切り替える」（`public/sw.js`・docs/spec.md §21）がアプリ内で効きます。`ConnectionErrorView` が出るのは、Service Workerが保存済みを返せない場合（初回起動・未保存の画面・Service Worker登録前）だけです。
+
+App-Bound Domains の制約と扱い:
+
+- 宣言外のドメインへの遷移・JavaScript注入はWebView内で制限される。外部リンクは元からSafariで開いており（`AppConfig.isAppURL`）、Google認証・Calendar連携は認証シート（`ASWebAuthenticationSession`）なので影響しない。`callAsyncJavaScript`（引き継ぎコードの消費・intent発行）は宣言したドメインのページ上でだけ実行される
+- **宣言は `baseURL` のホストと一致させる**（`check-consistency.mjs` が本番側を照合する）。開発用に `baseURL` を sslip.io 等へ向けるときは、`AppInfo.plist` にも同じホストを足すこと（足さないとWebViewが読み込めない／Service Workerが動かない）。コミット前に本番の値へ戻す
+- 宣言できるのは最大10件。いまは1件。将来ほかのドメインをWebView内で開く必要が出たら、その都度ここへ足す（足せない外部サービスは認証シートかSafariで開く）
+- Info.plist の配列はビルド設定（`INFOPLIST_KEY_*`）で書けないため、生成されるInfo.plistへ `AppInfo.plist` を統合している
 
 ### ウィジェット（WidgetKit・#926）
 
@@ -148,7 +155,7 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 - [ ] ログアウト後に保護画面（`/calendar` 等）へ戻れない
 - [ ] 許可リスト外のGoogleアカウントは「許可されていません」でログインできない
 - [ ] 設定 ▸ Google Calendar で接続・再接続でき、予定の読み書きができる
-- [ ] 外部リンクがSafariで開く／機内モードで再試行画面が出て、戻すと自動で読み込む／`confirm`（削除の確認）が出る／ノッチ・ホームバー周りが崩れない
+- [ ] 外部リンクがSafariで開く／一度開いた画面が機内モードでも保存済みで開く（未保存の画面は再試行画面が出て、戻すと自動で読み込む）／低速回線で「保存済みを表示中」が出る／`confirm`（削除の確認）が出る／ノッチ・ホームバー周りが崩れない
 - [ ] Safari・PWA・PCの既存ログイン、Calendar連携が今までどおり動く（アプリでログインしてもSafari側がログアウトされない）
 - [ ] （#926）ログイン後にホーム画面へ「YoteiFlow」のウィジェット（活動記録・今日の予定・タスク・買い物リスト）を追加でき、中身が出る。ロック画面の枠でも出る
 - [ ] （#926）記録中は経過時間が進み続け、タップでアプリの記録画面が開く（アプリが終了していても開く）
@@ -157,4 +164,4 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 
 ## 初回スコープ外（後続Issue）
 
-TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ Live Activity（WidgetKitのウィジェットは #926 で追加。既存のScriptableウィジェットも維持）/ App Store公開 / `WKAppBoundDomains` によるオフライン対応 / ネイティブ画面への置き換え。
+TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ Live Activity（WidgetKitのウィジェットは #926 で追加。既存のScriptableウィジェットも維持）/ App Store公開 / ネイティブ画面への置き換え。

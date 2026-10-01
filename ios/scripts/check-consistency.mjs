@@ -73,8 +73,8 @@ export function checkConsistency() {
     }
   }
   const deepLinkScheme = sharedConfig.match(/deepLinkScheme = "([^"]+)"/)?.[1];
-  if (!deepLinkScheme || !read("ios/Config/YoteiFlow-Info.plist").includes(`<string>${deepLinkScheme}</string>`)) {
-    problems.push("YoteiFlow-Info.plist の URL スキームが SharedConfig.deepLinkScheme と一致しません");
+  if (!deepLinkScheme || !read("ios/AppInfo.plist").includes(`<string>${deepLinkScheme}</string>`)) {
+    problems.push("AppInfo.plist の URL スキームが SharedConfig.deepLinkScheme と一致しません");
   }
   if (deepLinkScheme !== swiftScheme) {
     problems.push("ウィジェットのディープリンクのスキームが認証シートの戻り先スキームと違います（Info.plist の登録を共用している）");
@@ -89,6 +89,19 @@ export function checkConsistency() {
   const widgetApi = read("ios/YoteiFlowWidget/WidgetAPI.swift");
   if (!widgetApi.includes('"api/widget/\\(surface)"')) problems.push("WidgetAPI.swift が /api/widget/* を読んでいません");
   if (!webViewModel.includes("/api/settings/widget/native")) problems.push("WebViewModel.swift がウィジェット用トークンを受け取っていません");
+
+  // App-Bound Domains（Service Worker）。宣言のホストが baseURL と一致し、WebView側で有効にしている
+  const plist = read("ios/AppInfo.plist");
+  const baseHost = sharedConfig.match(/baseURL = URL\(string: "https:\/\/([^\/"]+)/)?.[1];
+  const bound = plist.match(/<key>WKAppBoundDomains<\/key>\s*<array>([\s\S]*?)<\/array>/)?.[1] ?? "";
+  const boundHosts = [...bound.matchAll(/<string>([^<]+)<\/string>/g)].map((m) => m[1]);
+  if (!baseHost || !boundHosts.includes(baseHost)) {
+    problems.push(`WKAppBoundDomains に baseURL のホスト(${baseHost})がありません: ${boundHosts.join(", ")}`);
+  }
+  if (!pbxproj.includes("INFOPLIST_FILE = AppInfo.plist;")) problems.push("INFOPLIST_FILE が AppInfo.plist ではありません");
+  if (!webViewModel.includes("limitsNavigationsToAppBoundDomains = true")) {
+    problems.push("WebViewModel.swift が limitsNavigationsToAppBoundDomains を有効にしていません");
+  }
 
   return problems;
 }

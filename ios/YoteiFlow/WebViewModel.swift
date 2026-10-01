@@ -29,6 +29,10 @@ final class WebViewModel: NSObject, ObservableObject {
         // Cookie・localStorage（Supabaseのセッション）を端末に残し、再起動後もログインを保つ
         configuration.websiteDataStore = .default()
         configuration.applicationNameForUserAgent = AppConfig.userAgentApplicationName
+        // Service Worker を有効にする（Info.plist の WKAppBoundDomains と対）。PWAと同じ
+        // オフライン表示・低速回線での保存済み表示（public/sw.js）がアプリ内でも効く。
+        // 引き換えに、宣言外のドメインへの遷移はWebView内では開けない（外部はSafariで開く）
+        configuration.limitsNavigationsToAppBoundDomains = true
 
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
