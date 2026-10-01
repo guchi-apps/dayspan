@@ -150,8 +150,7 @@ Web Push（PWA・ブラウザ）はそのまま残し、同じ文面（`sendToUs
 ### 鍵（認証キー）
 
 Apple Developer ▸ Certificates, Identifiers & Profiles ▸ Keys で「Apple Push Notifications service (APNs)」を有効にした
-キーを発行する（.p8 のダウンロードは1回きり）。`APNS_KEY_ID`（10文字）・`APNS_TEAM_ID`・`APNS_PRIVATE_KEY`（.p8 を
-`base64 -w0` した1行）を1Passwordの `apps/dayspan` へ入れ、`sync-secrets.yml` で同期する（手順は `docs/setup-checklist.md`）。
+キーを発行する（.p8 のダウンロードは1回きり）。`APNS_KEY_ID`（10文字）・`APNS_TEAM_ID`・`APNS_PRIVATE_KEY`（.p8 の中身）は、同じTeamの別アプリ（kurashio）が持つ1Passwordの `apps/MyRoom`（`apns-key-id`・`apns-team-id`・`apns-auth-key`）をそのまま参照する（キーはTeam単位で共有できるため・#957）。`sync-secrets.yml` で同期する（手順は `docs/setup-checklist.md`）。
 Bundle ID（`com.gucchii.yoteiflow`）は既定値で、変える場合だけ `APNS_BUNDLE_ID` を足す。
 鍵が未設定の環境では、APNsへは送らず登録APIは503を返す（Web Pushだけで動く）。
 App IDの Push Notifications capability はXcodeの自動署名が有効にする（`ios/YoteiFlow.entitlements`）。
