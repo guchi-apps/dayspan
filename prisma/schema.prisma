@@ -478,7 +478,13 @@ model TaskEventLink {
 
   taskId     String // Notionのページ ID
   calendarId String
-  eventId    String // 繰り返し予定は展開した1回分のID
+  eventId    String // 繰り返し予定は展開した1回分のID。移動への紐づけ（travelId あり）では空文字
+
+  // 紐づけ先が移動（TravelPlan）のときの移動ID。nullなら予定への紐づけ（issue #914）。
+  // 移動は予定から作る派生データで、出発前に確かめるタスクを置く先として使う。
+  // calendarId / eventId を nullable にすると既存の型・クエリの全てに波及するため、
+  // 移動のときは空文字を入れ、travelId の有無で見分ける。
+  travelId String?
 
   stage TaskEventStage
 
@@ -505,6 +511,8 @@ model TaskEventLink {
   @@unique([userId, taskId, target])
   // 予定を動かした・消したときに、その予定に紐づくタスクを引くため。
   @@index([userId, eventId])
+  // 移動を動かした・消したときに、その移動に紐づくタスクを引くため。
+  @@index([userId, travelId])
 }
 
 // --- 通知 ---

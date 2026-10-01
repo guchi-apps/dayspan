@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { TASK_EVENT_STAGES, TASK_EVENT_STAGE_LABELS, type TaskEventStage } from "@/types/calendar";
+import { TASK_EVENT_STAGES, TASK_EVENT_STAGE_LABELS, TRAVEL_TASK_STAGE_LABELS, type TaskEventStage } from "@/types/calendar";
 
 import { TaskStageMark } from "./task-stage-mark";
 
@@ -18,11 +18,14 @@ export function TaskStagePicker({
   value,
   disabled = false,
   label = "いつやるか",
+  travel = false,
   onChange,
 }: {
   value: TaskEventStage;
   disabled?: boolean;
   label?: string;
+  /** 移動に紐づけるとき、段階を出発・到着の呼び名にする（issue #914）。 */
+  travel?: boolean;
   onChange: (stage: TaskEventStage) => void;
 }) {
   return (
@@ -43,7 +46,7 @@ export function TaskStagePicker({
               onClick={() => onChange(stage)}
             >
               <TaskStageMark stage={stage} className="h-3 w-4" />
-              {TASK_EVENT_STAGE_LABELS[stage]}
+              {(travel ? TRAVEL_TASK_STAGE_LABELS : TASK_EVENT_STAGE_LABELS)[stage]}
             </Button>
           );
         })}

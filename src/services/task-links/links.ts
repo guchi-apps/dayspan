@@ -1,6 +1,7 @@
 import type { GoogleAccount, TaskEventLink } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { placeDisplayName } from "@/lib/place-text";
 import { getNotionConnection } from "@/services/calendar/write-context";
 import { getEvent, toCalendarItems } from "@/services/google-calendar/events";
 import { createNotionClient } from "@/services/notion/client";
@@ -12,6 +13,7 @@ import type {
   TaskEventStage,
   TaskItem,
   TaskLinkTarget,
+  TravelItem,
 } from "@/types/calendar";
 import { TASK_LINK_TARGET_LABELS } from "@/types/calendar";
 
@@ -60,6 +62,8 @@ export class TaskLinkExternalError extends Error {
 
 export type TaskLinkInput = {
   taskId: string;
+  /** 紐づけ先が移動のときは travelId を渡す（calendarId / eventId は使わない）。 */
+  travelId?: string;
   calendarId: string;
   eventId: string;
   stage: TaskEventStage;
@@ -121,6 +125,7 @@ export function attachTaskLinks(
   tasks: TaskItem[],
   links: TaskEventLink[],
   eventsById?: Map<string, CalendarEventItem>,
+  travelsById?: Map<string, Pick<TravelItem, "start" | "end" | "title">>,
 ): TaskItem[] {
   if (links.length === 0) return tasks;
 
@@ -137,7 +142,12 @@ export function attachTaskLinks(
     if (!found) return task;
 
     const items = found.map((link) => {
-      const event = eventsById?.get(link.eventId);
+      // 移動への紐づけは移動の出発・到着から決まる。移動は終日にならない。
+      const travel = link.travelId ? travelsById?.get(link.travelId) : undefined;
+      const event: Pick<CalendarEventItem, "allDay" | "start" | "end" | "title"> | undefined =
+        link.travelId
+          ? travel && { allDay: false, start: travel.start, end: travel.end, title: travel.title }
+          : eventsById?.get(link.eventId);
       const stage = link.stage as TaskEventStage;
       const target = link.target as TaskLinkTarget;
       const expected = event ? resolveStageDate(event, stage) : null;
@@ -153,6 +163,7 @@ export function attachTaskLinks(
         taskId: link.taskId,
         calendarId: link.calendarId,
         eventId: link.eventId,
+        travelId: link.travelId,
         stage,
         target,
         eventTitle: event?.title ?? link.eventTitle,
@@ -254,6 +265,30 @@ async function writeResolvedDate(
   }
 }
 
+/** 移動の表示名。toTravelItem() と同じく、住所を除いた場所名で組み立てる。 */
+function travelTitle(plan: { origin: string; destination: string }): string {
+  return `${placeDisplayName(plan.origin)} → ${placeDisplayName(plan.destination)}`;
+}
+
+/**
+ * 紐づけ先の移動を1件取得する（issue #914）。移動の本体はDaySpanのDBにあり、外部APIの往復は無い。
+ * 段階の起点は出発（start）と到着（end）。移動は必ず時刻を持つため終日にはならない。
+ */
+async function fetchLinkedTravel(
+  userId: string,
+  travelId: string,
+): Promise<Pick<CalendarEventItem, "allDay" | "start" | "end" | "title"> | null> {
+  const plan = await db.travelPlan.findFirst({ where: { id: travelId, userId } });
+  if (!plan) return null;
+
+  return {
+    allDay: false,
+    start: plan.departAt.toISOString(),
+    end: plan.arriveAt.toISOString(),
+    title: travelTitle(plan),
+  };
+}
+
 /** Googleが「その予定は無い」と答えたか。googleCalendarFetch はステータスを文面に含める。 */
 function isMissingEventError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -268,17 +303,24 @@ export async function linkTaskToEvent(
   userId: string,
   input: TaskLinkInput,
 ): Promise<{ link: TaskEventLink; date: string }> {
-  const event = await fetchLinkedEvent(userId, input.calendarId, input.eventId);
+  const travelId = input.travelId ?? null;
+  // 移動への紐づけでは、移動をDBから引いて出発・到着を段階の起点にする（issue #914）。
+  const event = travelId
+    ? await fetchLinkedTravel(userId, travelId)
+    : await fetchLinkedEvent(userId, input.calendarId, input.eventId);
   if (!event) {
-    throw new TaskLinkError("紐づけ先の予定が見つかりませんでした。");
+    throw new TaskLinkError(
+      travelId ? "紐づけ先の移動が見つかりませんでした。" : "紐づけ先の予定が見つかりませんでした。",
+    );
   }
 
   const resolved = resolveStageDate(event, input.stage);
   await writeResolvedDate(userId, input.taskId, input.target, resolved.date);
 
   const data = {
-    calendarId: input.calendarId,
-    eventId: input.eventId,
+    calendarId: travelId ? "" : input.calendarId,
+    eventId: travelId ? "" : input.eventId,
+    travelId,
     stage: input.stage,
     eventTitle: toEventTitle(event.title),
     ...toResolvedColumns(resolved),
@@ -311,10 +353,14 @@ export async function resyncTaskLink(
     throw new TaskLinkError("紐づけが見つかりませんでした。");
   }
 
-  const event = await fetchLinkedEvent(userId, existing.calendarId, existing.eventId);
+  const event = existing.travelId
+    ? await fetchLinkedTravel(userId, existing.travelId)
+    : await fetchLinkedEvent(userId, existing.calendarId, existing.eventId);
   if (!event) {
     throw new TaskLinkError(
-      "紐づけ先の予定が見つかりませんでした。予定が消えている場合は紐づけを解除してください。",
+      existing.travelId
+        ? "紐づけ先の移動が見つかりませんでした。移動が消えている場合は紐づけを解除してください。"
+        : "紐づけ先の予定が見つかりませんでした。予定が消えている場合は紐づけを解除してください。",
     );
   }
 
@@ -420,5 +466,54 @@ export async function dropLinksForEvent(
     },
   });
 
+  return result.count;
+}
+
+/**
+ * 移動が動いたときに、紐づいたタスクの日付（行き先）を追随させる（issue #914）。
+ * 予定の場合（syncLinksForEvent）と同じく、失敗しても移動の更新そのものは成功のまま扱う。
+ */
+export async function syncLinksForTravel(
+  userId: string,
+  travelId: string,
+  travel: { departAt: Date; arriveAt: Date; origin: string; destination: string },
+): Promise<{ synced: number; failed: number }> {
+  const links = await db.taskEventLink.findMany({ where: { userId, travelId } });
+  if (links.length === 0) return { synced: 0, failed: 0 };
+
+  const event = {
+    allDay: false,
+    start: travel.departAt.toISOString(),
+    end: travel.arriveAt.toISOString(),
+    title: travelTitle(travel),
+  };
+
+  let synced = 0;
+  let failed = 0;
+
+  for (const link of links) {
+    const resolved = resolveStageDate(event, link.stage as TaskEventStage);
+    try {
+      await writeResolvedDate(userId, link.taskId, link.target as TaskLinkTarget, resolved.date);
+      await db.taskEventLink.update({
+        where: { id: link.id },
+        data: { eventTitle: toEventTitle(event.title), ...toResolvedColumns(resolved) },
+      });
+      synced += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(
+        "[dayspan] task link sync (travel) failed:",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  return { synced, failed };
+}
+
+/** 移動を消したときに紐づけを外す（入っている日付は残す）。 */
+export async function dropLinksForTravel(userId: string, travelId: string): Promise<number> {
+  const result = await db.taskEventLink.deleteMany({ where: { userId, travelId } });
   return result.count;
 }

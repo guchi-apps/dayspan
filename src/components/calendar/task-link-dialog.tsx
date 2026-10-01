@@ -27,6 +27,7 @@ import {
   type TaskEventStage,
   type TaskItem,
   type TaskLinkTarget,
+  type TravelItem,
 } from "@/types/calendar";
 
 import { formatLinkedDate, taskLinkTargetLabel, taskLinkTargetedLabel } from "./task-link-label";
@@ -47,20 +48,35 @@ import { taskRanges, withTaskLinks, type TouchedRange } from "./use-calendar-chu
  * 「いつやるか決まっていない」＝紐づけたいタスクであるため、ここで別に取りにいく。
  */
 export function TaskLinkDialog({
-  event,
+  event: eventProp,
+  travel,
   timeZone,
   onCancel,
   onCreateTask,
   onLinked,
 }: {
-  event: CalendarEventItem;
+  /** 紐づけ先が予定のとき。移動のときは travel を渡す。 */
+  event?: CalendarEventItem;
+  /** 紐づけ先が移動のとき（issue #914）。段階は出発・到着の呼び名になり、新規作成は出さない。 */
+  travel?: TravelItem;
   timeZone: string;
   onCancel: () => void;
   /** 紐づけた状態で新しいタスクを作る。入力画面へ渡す。 */
-  onCreateTask: (stage: TaskEventStage, target: TaskLinkTarget) => void;
+  onCreateTask?: (stage: TaskEventStage, target: TaskLinkTarget) => void;
   /** 紐づけ後の処理。変わった期間を渡し、呼び出し側がそこだけ取り直せるようにする。 */
   onLinked: (touched: TouchedRange[] | null) => void;
 }) {
+  // 移動は終日にならない。段階の起点（出発・到着）と表示名だけ予定と同じ形に直して以降は共通に扱う。
+  const event = (eventProp ??
+    (travel && {
+      title: travel.title,
+      calendarId: "",
+      id: "",
+      allDay: false,
+      start: travel.start,
+      end: travel.end,
+    })) as CalendarEventItem;
+
   // 開いたままアンマウントすると、Radixが<body>へ付けたpointer-events:noneの後始末が
   // 走らず、画面全体が操作を受け付けなくなることがある。閉じ切ってから呼び出し元へ返す。
   const [open, setOpen] = useState(true);
@@ -138,8 +154,9 @@ export function TaskLinkDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           taskId: selected.id,
-          calendarId: event.calendarId,
-          eventId: event.id,
+          ...(travel
+            ? { travelId: travel.id }
+            : { calendarId: event.calendarId, eventId: event.id }),
           stage,
           target,
         }),
@@ -175,7 +192,7 @@ export function TaskLinkDialog({
 
   const createTask = () => {
     setOpen(false);
-    setTimeout(() => onCreateTask(stage, target), 150);
+    setTimeout(() => onCreateTask?.(stage, target), 150);
   };
 
   return (
@@ -184,7 +201,7 @@ export function TaskLinkDialog({
         <DialogHeader>
           <DialogTitle>「{event.title}」にタスクを登録</DialogTitle>
           <DialogDescription className="type-body-small text-on-surface-variant">
-            選んだ段階から決まる日時が、タスクの{targetLabel}に入ります。予定を動かすと{targetLabel}
+            選んだ段階から決まる日時が、タスクの{targetLabel}に入ります。{travel ? "移動" : "予定"}を動かすと{targetLabel}
             も動きます。
           </DialogDescription>
         </DialogHeader>
@@ -216,7 +233,7 @@ export function TaskLinkDialog({
             </div>
           </div>
 
-          <TaskStagePicker value={stage} onChange={setStage} />
+          <TaskStagePicker value={stage} travel={Boolean(travel)} onChange={setStage} />
 
           <div className="flex flex-col gap-1.5">
             <Label>タスク</Label>
@@ -233,15 +250,17 @@ export function TaskLinkDialog({
                 （issue #794）ため、一覧の先頭に固定し、既存タスクから選ぶのと対等な選択肢にする。
                 読み込み中・0件でも押せる（既存タスクの有無に関わらず新規作成はできるため）。
               */}
-              <button
-                type="button"
-                onClick={createTask}
-                disabled={busy || offline}
-                className="flex w-full items-center gap-2 border-b border-outline-variant bg-secondary-container px-3 py-2 text-left text-sm font-medium text-on-secondary-container hover:brightness-95 disabled:opacity-38"
-              >
-                <Plus className="size-4" />
-                新しいタスクを作る
-              </button>
+              {!travel && (
+                <button
+                  type="button"
+                  onClick={createTask}
+                  disabled={busy || offline}
+                  className="flex w-full items-center gap-2 border-b border-outline-variant bg-secondary-container px-3 py-2 text-left text-sm font-medium text-on-secondary-container hover:brightness-95 disabled:opacity-38"
+                >
+                  <Plus className="size-4" />
+                  新しいタスクを作る
+                </button>
+              )}
 
               {tasks === null && (
                 <p className="px-3 py-4 text-sm text-muted-foreground">読み込んでいます…</p>
