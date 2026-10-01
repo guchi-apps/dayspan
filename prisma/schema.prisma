@@ -40,6 +40,7 @@ model User {
   annualLeaveGrants    AnnualLeaveGrant[]
   tasks                Task[]
   taskOptions          TaskOption[]
+  reminders            Reminder[]
 
   pushSubscriptions         PushSubscription[]
   notificationSetting       NotificationSetting?
@@ -163,6 +164,9 @@ model NotionConnection {
   // 取り込み（またはまっさらから開始）の時点でtrueにし、以後Notionのタスクは読み書きしない。
   tasksInDb Boolean @default(false)
 
+  // 日付リマインドの本体をYoteiFlowのDB（Reminder）に置くか（issue #928）。tasksInDb と同じ考え方。
+  remindersInDb Boolean @default(false)
+
   lastValidatedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -203,6 +207,8 @@ model Task {
 enum TaskOptionKind {
   TAG
   PROGRESS
+  // 日付リマインドの種類（issue #928）。タスクの選択肢と同じ表に相乗りさせる。
+  REMINDER
 }
 
 model TaskOption {
@@ -216,6 +222,28 @@ model TaskOption {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, kind, name])
+}
+
+// --- 日付リマインド（YoteiFlow DBが正・issue #928） ---
+// `NotionConnection.remindersInDb` が true のユーザーの日付リマインド本体。Notionから取り込んだ行は
+// NotionのページIDをそのままidにする。日付は ReminderItem と同じ文字列（YYYY-MM-DD / ISO 8601）。
+// 毎年の項目（annual）は登録した日を起点に、表示範囲の各年へ展開して返す。
+model Reminder {
+  id     String @id
+  userId String
+
+  title    String
+  date     String  @db.VarChar(40)
+  category String?
+  memo     String? @db.Text
+  annual   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
 }
 
 // --- UI表示設定 ---
