@@ -4,7 +4,6 @@ import { externalApiError } from "@/lib/api-error";
 
 import { requireUserId } from "@/lib/auth-user";
 import { getNotionConnection } from "@/services/calendar/write-context";
-import { createNotionClient } from "@/services/notion/client";
 import {
   completeTask,
   deleteTask,
@@ -12,7 +11,7 @@ import {
   TaskNotEditableError,
   updateTask,
   type TaskWriteInput,
-} from "@/services/notion/tasks";
+} from "@/services/tasks";
 import { getTaskLinkByTaskId, unlinkTask, unlinkTaskByTaskId } from "@/services/task-links/links";
 import { isSameTaskDate } from "@/services/task-links/stage";
 import { TASK_LINK_TARGETS, type TaskLinkTarget } from "@/types/calendar";
@@ -45,23 +44,22 @@ export async function PATCH(
 
   const { taskId } = await params;
   const body = (await request.json()) as Body;
-  const notion = createNotionClient(connection);
 
   try {
     // 完了操作は繰り返しの次回作成を伴うため、単なるプロパティ更新とは経路を分ける
     // （docs/spec.md §13）。
     // 「対応しない」の付け外し（issue #750）。次回分は作らないため完了とも別に扱う。
     if (body.completeAction && body.skipped && body.done !== undefined) {
-      await skipTask(notion, connection, taskId, body.done);
+      await skipTask(connection, taskId, body.done);
       return NextResponse.json({ ok: true, nextTaskId: null });
     }
 
     if (body.completeAction && body.done !== undefined) {
-      const result = await completeTask(notion, connection, taskId, body.done);
+      const result = await completeTask(connection, taskId, body.done);
       return NextResponse.json({ ok: true, nextTaskId: result.nextTaskId });
     }
 
-    await updateTask(notion, connection, taskId, body);
+    await updateTask(connection, taskId, body);
     await dropLinksIfDateOverridden(userId, taskId, body);
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -87,7 +85,7 @@ export async function DELETE(
   const { taskId } = await params;
 
   try {
-    await deleteTask(createNotionClient(connection), connection, taskId);
+    await deleteTask(connection, taskId);
     // 消したタスクの紐づけは残しても指す先が無い。予定を動かすたびに、消えたページへ
     // 日付を書きにいくことにもなる。
     await unlinkTaskByTaskId(userId, taskId);

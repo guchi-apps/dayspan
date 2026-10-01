@@ -4,8 +4,7 @@ import { externalApiError } from "@/lib/api-error";
 
 import { requireUserId } from "@/lib/auth-user";
 import { getNotionConnection } from "@/services/calendar/write-context";
-import { createNotionClient } from "@/services/notion/client";
-import { createTask, listAllTasks, type TaskWriteInput } from "@/services/notion/tasks";
+import { createTask, listAllTasks, type TaskWriteInput } from "@/services/tasks";
 import { attachTaskLinks, listTaskLinks } from "@/services/task-links/links";
 
 /**
@@ -27,7 +26,7 @@ export async function GET() {
   }
 
   try {
-    const tasks = await listAllTasks(createNotionClient(connection), connection);
+    const tasks = await listAllTasks(connection);
     // すでに別の予定へ紐づいているタスクを画面で示せるようにする。紐づけはDaySpanのDBに
     // あるため、外部APIの往復は増えない。
     const links = await listTaskLinks(userId);
@@ -56,7 +55,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const created = await createTask(createNotionClient(connection), connection, {
+    const created = await createTask(connection, {
       ...body,
       title: body.title.trim(),
     });
