@@ -4,7 +4,7 @@
 #   op run --env-file=ios/asc.env.tpl -- ios/scripts/upload-testflight.sh
 #
 # 環境変数（必須。値は1Passwordで管理し、リポジトリへは置かない）:
-#   ASC_KEY_PATH     App Store Connect API キー（.p8）のパス
+#   ASC_KEY_P8       App Store Connect API キー（.p8）の中身をbase64の1行にした値（kurashioと共用の apps/MyRoom/asc-key-p8）
 #   ASC_KEY_ID       キーID
 #   ASC_ISSUER_ID    Issuer ID
 # 任意:
@@ -21,14 +21,22 @@ if [ "$(uname)" != "Darwin" ]; then
   echo "このスクリプトは Mac（Xcode入り）で実行します。" >&2
   exit 1
 fi
-for v in ASC_KEY_PATH ASC_KEY_ID ASC_ISSUER_ID; do
+for v in ASC_KEY_P8 ASC_KEY_ID ASC_ISSUER_ID; do
   if [ -z "${!v:-}" ]; then
     echo "$v が未設定です。1Password の値を op run で渡してください（ios/README.md 参照）。" >&2
     exit 1
   fi
 done
-if [ ! -f "$ASC_KEY_PATH" ]; then
-  echo "ASC_KEY_PATH のファイルがありません: $ASC_KEY_PATH" >&2
+
+# .p8 は一時ファイル（権限600）へ書き出し、終了時（失敗時も）に消す。中身・パスはログに出さない。
+# xcodebuild は -authenticationKeyPath で任意のパスを受けるため、altool の private_keys/ 置き場所は要らない
+ASC_KEY_DIR="$(mktemp -d)"
+trap 'rm -rf "$ASC_KEY_DIR"' EXIT
+chmod 700 "$ASC_KEY_DIR"
+ASC_KEY_PATH="$ASC_KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+( umask 077; printf '%s' "$ASC_KEY_P8" | { base64 -D 2>/dev/null || base64 -d; } > "$ASC_KEY_PATH" )
+if ! grep -q 'BEGIN PRIVATE KEY' "$ASC_KEY_PATH"; then
+  echo "ASC_KEY_P8 をbase64として復号できないか、.p8 の形式ではありません。" >&2
   exit 1
 fi
 
