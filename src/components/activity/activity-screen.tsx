@@ -10,13 +10,12 @@ import { invalidEnd, invalidStartAt, savedRangeLabel } from "@/components/activi
 import { formatElapsed } from "@/components/calendar/activity-format";
 import { DateTimeInput } from "@/components/calendar/date-time-input";
 import { isoToLocalInput, localInputToIso } from "@/components/calendar/datetime-fields";
-import { readErrorMessage } from "@/components/calendar/response-error";
 import { useNowIso } from "@/components/calendar/use-clock";
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { AppFrame } from "@/components/nav/app-frame";
 import { BottomNav } from "@/components/nav/main-nav";
 import { closeActivityNotification } from "@/components/notifications/activity-notification";
-import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
+import { OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { Button } from "@/components/ui/button";
@@ -24,6 +23,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LinearProgress } from "@/components/ui/linear-progress";
 import { ACTIVITY_ICONS, resolveActivityIcon } from "@/lib/activity-icons";
+import { submitActivityOp, type SubmitInput, type SubmitResult } from "@/lib/activity-queue/flush";
+import { useEffectiveRunning } from "@/lib/activity-queue/use-effective-running";
 import type { ActivityPresetItem, RunningActivityItem } from "@/types/activity";
 
 /**
@@ -45,7 +46,8 @@ export function ActivityScreen({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  // オフライン中は書き込みを止める（docs/spec.md §21）。記録の開始・停止はすべて書き込み。
+  // 記録の開始・停止はオフラインでも受け付け、端末にためて通信が戻ったときに同期する
+  // （issue #974・docs/spec.md §21）。ほかの書き込みと違い、ここだけは止めない。
   const offline = useOffline();
   useReconnectRefresh();
 
@@ -53,7 +55,9 @@ export function ActivityScreen({
   // ナビからの移動はソフトナビゲーションで、Service Worker が保存できないため。
   useWarmOfflinePage("/activity");
 
-  const [running, setRunning] = useState(initialRunning);
+  // サーバーから受け取った記録。まだ届いていない操作は useEffectiveRunning が重ねる。
+  const [serverRunning, setRunning] = useState(initialRunning);
+  const running = useEffectiveRunning(serverRunning);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -92,25 +96,20 @@ export function ActivityScreen({
     setRunning(initialRunning);
   }
 
-  const send = async (
-    path: string,
-    init: RequestInit,
-    fallback: string,
-  ): Promise<Record<string, unknown> | null> => {
-    if (offline) {
-      setError(OFFLINE_WRITE_MESSAGE);
-      return null;
-    }
-
+  /**
+   * 記録の操作を受け付ける。オンラインならその場で送り、オフライン・通信の失敗ならためる。
+   * 失敗の理由は画面へ出し、null を返す。
+   */
+  const submit = async (input: SubmitInput, fallback: string): Promise<SubmitResult | null> => {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(path, init);
-      if (!response.ok) {
-        setError(await readErrorMessage(response, fallback));
+      const result = await submitActivityOp(input, serverRunning, offline);
+      if (result.status === "error") {
+        setError(result.message || fallback);
         return null;
       }
-      return (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      return result;
     } catch {
       setError(fallback);
       return null;
@@ -127,23 +126,20 @@ export function ActivityScreen({
     // 時刻の欄を開いて、実際に直したときだけその時刻を添える。閉じているあいだと
     // 初期値のままのときはサーバーの時計で決める（端末の時計のずれを、記録した
     // 時間帯そのもののずれにしないため）。
-    const startedAt =
+    const at =
       startAtOpen && startAtTouched && startAtInput
         ? localInputToIso(startAtInput, timeZone)
         : undefined;
+    const name =
+      body.title ?? presets.find((preset) => preset.id === body.presetId)?.name ?? "";
 
-    const result = await send(
-      "/api/activities/start",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, startedAt }),
-      },
+    const result = await submit(
+      { kind: "start", presetId: body.presetId, title: name, at },
       "記録を開始できませんでした。",
     );
     if (!result) return;
 
-    setRunning((result.running as RunningActivityItem) ?? null);
+    if (result.status === "done") setRunning(result.running ?? null);
     setTitle("");
     // 指定は1回ぶん。開いたままにすると、次に押した項目まで気付かないうちに
     // 過去の時刻から始まる。
@@ -153,18 +149,10 @@ export function ActivityScreen({
 
   /** 記録を止める。時刻を渡さなければ、サーバーがその時点で止める。 */
   const stop = async (endedAt?: string) => {
-    const result = await send(
-      "/api/activities/stop",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(endedAt ? { endedAt } : {}),
-      },
-      "記録を保存できませんでした。",
-    );
+    const result = await submit({ kind: "stop", at: endedAt }, "記録を保存できませんでした。");
     if (!result) return;
 
-    setRunning(null);
+    if (result.status === "done") setRunning(null);
     setEditingEnd(false);
     // 「記録中」の通知は止めた時点で事実と違う（docs/spec.md §32）。この端末のぶんを消す。
     void closeActivityNotification();
@@ -178,14 +166,10 @@ export function ActivityScreen({
     );
     if (!confirmed) return;
 
-    const result = await send(
-      "/api/activities/running",
-      { method: "DELETE" },
-      "記録を取り消せませんでした。",
-    );
+    const result = await submit({ kind: "discard" }, "記録を取り消せませんでした。");
     if (!result) return;
 
-    setRunning(null);
+    if (result.status === "done") setRunning(null);
     void closeActivityNotification();
     startTransition(() => router.refresh());
   };
@@ -193,18 +177,13 @@ export function ActivityScreen({
   const saveStart = async () => {
     if (!startInput) return;
 
-    const result = await send(
-      "/api/activities/running",
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startedAt: localInputToIso(startInput, timeZone) }),
-      },
+    const result = await submit(
+      { kind: "updateStart", startedAt: localInputToIso(startInput, timeZone) },
       "開始時刻を変更できませんでした。",
     );
     if (!result) return;
 
-    setRunning(result.running as RunningActivityItem);
+    if (result.status === "done" && result.running) setRunning(result.running);
     setEditingStart(false);
     startTransition(() => router.refresh());
   };
@@ -245,7 +224,7 @@ export function ActivityScreen({
     ? invalidStartAt(startAtInput, nowInput, running, timeZone)
     : null;
 
-  const disabled = busy || offline;
+  const disabled = busy;
   const startDisabled = disabled || startAtInvalid !== null;
 
   return (

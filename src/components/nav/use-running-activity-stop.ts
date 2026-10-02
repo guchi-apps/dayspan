@@ -5,8 +5,8 @@ import { useOffline } from "next/offline";
 import { useState, useTransition } from "react";
 
 import { useNowIso } from "@/components/calendar/use-clock";
-import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { stopRunningActivityNow } from "@/components/nav/stop-running-activity";
+import { useEffectiveRunning } from "@/lib/activity-queue/use-effective-running";
 import type { RunningActivitySummary } from "@/types/activity";
 
 /**
@@ -29,28 +29,25 @@ export function useRunningActivityStop(running: RunningActivitySummary | null) {
   // （activity-screen.tsx の runningKey と同じ派生stateのパターン）。
   const serverKey = runningKey(running);
   const [knownKey, setKnownKey] = useState(serverKey);
-  const [localRunning, setLocalRunning] = useState(running);
+  const [serverRunning, setServerRunning] = useState(running);
+  // まだ届いていない操作（オフライン中の開始・停止）を重ねた見かけの記録（issue #974）。
+  const localRunning = useEffectiveRunning(serverRunning);
   if (knownKey !== serverKey) {
     setKnownKey(serverKey);
-    setLocalRunning(running);
+    setServerRunning(running);
     setError(null);
   }
 
   const stop = async () => {
-    if (offline) {
-      setError(OFFLINE_WRITE_MESSAGE);
-      return;
-    }
-
     setBusy(true);
     setError(null);
-    const result = await stopRunningActivityNow();
+    const result = await stopRunningActivityNow(serverRunning, offline);
     setBusy(false);
     if (!result.ok) {
       setError(result.message);
       return;
     }
-    setLocalRunning(null);
+    setServerRunning(null);
     startTransition(() => router.refresh());
   };
 

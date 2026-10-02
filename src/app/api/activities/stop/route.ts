@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 
 import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
-import {
-  ActivityCalendarNotFoundError,
-  ActivityTimeRangeError,
-  stopRunningActivity,
-} from "@/services/activity/running";
+import { activityConflictResponse, parseExpected } from "@/app/api/activities/shared";
+import { ActivityCalendarNotFoundError, stopRunningActivity } from "@/services/activity/running";
 
 type Body = {
   /** 終了時刻（ISO 8601）。止め忘れに気付いたとき以外は送らない。 */
   endedAt?: string;
+  /** 止める記録の開始時刻・項目名（issue #974）。違う記録なら止めず409を返す。 */
+  expectedStartedAt?: string;
+  expectedTitle?: string;
 };
 
 /**
@@ -35,8 +35,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "endedAt is invalid" }, { status: 400 });
   }
 
+  const expected = parseExpected(body.expectedStartedAt, body.expectedTitle);
+  if (expected === null) {
+    return NextResponse.json({ error: "expectedStartedAt is invalid" }, { status: 400 });
+  }
+
   try {
-    const result = await stopRunningActivity(userId, endedAt);
+    const result = await stopRunningActivity(userId, endedAt, { expected });
 
     if (result.status === "not_running") {
       return NextResponse.json({ error: "not_running" }, { status: 404 });
@@ -44,9 +49,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ saved: result.range });
   } catch (error) {
-    if (error instanceof ActivityTimeRangeError) {
-      return NextResponse.json({ error: "invalid_time", message: error.message }, { status: 400 });
-    }
+    const conflict = activityConflictResponse(error);
+    if (conflict) return conflict;
     if (error instanceof ActivityCalendarNotFoundError) {
       return NextResponse.json(
         { error: "calendar_not_found", message: error.message },

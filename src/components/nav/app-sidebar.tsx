@@ -9,7 +9,6 @@ import { formatElapsed } from "@/components/calendar/activity-format";
 import { DrawerNavContent, RunningDot, useWorkTodoCount } from "@/components/nav/app-drawer";
 import type { NavKey } from "@/components/nav/nav-items";
 import { useRunningActivityStop } from "@/components/nav/use-running-activity-stop";
-import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import type { RunningActivitySummary } from "@/types/activity";
 
@@ -53,7 +52,7 @@ export function AppSidebar({
         current={current}
         activityRunning={activityRunning}
         workTodoCount={workTodoCount}
-        footer={running && <SidebarRunningCard running={running} />}
+        footer={<SidebarRunningCard running={running} />}
       />
     </aside>
   );
@@ -63,8 +62,8 @@ export function AppSidebar({
  * サイドバーの下端の記録中カード。狭い画面で下部ナビの直上に出す帯（running-activity-bar.tsx）と
  * 同じ役割で、止めるまでの最短経路。詳しい操作は記録画面に閉じる。
  */
-function SidebarRunningCard({ running }: { running: RunningActivitySummary }) {
-  const { running: current, nowIso, busy, error, offline, stop } = useRunningActivityStop(running);
+function SidebarRunningCard({ running }: { running: RunningActivitySummary | null }) {
+  const { running: current, nowIso, busy, error, stop } = useRunningActivityStop(running);
 
   if (!current) return null;
 
@@ -85,8 +84,7 @@ function SidebarRunningCard({ running }: { running: RunningActivitySummary }) {
       <Button
         size="sm"
         className="self-start"
-        disabled={busy || offline}
-        title={offline ? OFFLINE_WRITE_MESSAGE : undefined}
+        disabled={busy}
         onClick={stop}
       >
         <Square className="fill-current" />
