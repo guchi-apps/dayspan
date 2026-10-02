@@ -100,5 +100,6 @@ struct YoteiFlowWidgetBundle: WidgetBundle {
         ScheduleWidget()
         TasksWidget()
         ShoppingWidget()
+        RecordingLiveActivity()
     }
 }

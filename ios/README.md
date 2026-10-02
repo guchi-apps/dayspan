@@ -167,7 +167,15 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 
 **更新の合図**: 記録の開始・停止はWebの中で行われアプリへ伝わらないため、アプリが前面になったとき・トークンを保存したときに `WidgetCenter.reloadAllTimelines()` を呼ぶ。
 
-**Live Activity は入れない**: 記録の開始・停止はWeb（WebView）の中で起き、アプリを閉じていても別の端末（PWA・ショートカット）から変わりうる。Live Activity を現状に追従させるには、サーバーからAPNs（ActivityKitのプッシュ更新）で送るしかなく、APNsキーの管理・端末のpush tokenの登録・送信基盤が要る。Web Pushと別の基盤を足す割に、ロック画面の経過時間は accessory ウィジェットの `timerInterval` で代替できるため見送る。必要なら別Issueで扱う。
+**Live Activity（#971）**: 記録中の項目・経過時間・停止ボタンをロック画面・Dynamic Islandに出す。記録の開始・停止はWebの中や他端末でも起きるため、サーバーがAPNs（liveactivity）で追従させる（push-to-start で始め、activity push token へ update / end）。停止ボタンは `ios/Shared/` の `StopRecordingIntent`（LiveActivityIntent）が、Keychainの停止専用トークンで `/api/shortcuts/activity/stop` を呼ぶ。詳細は `docs/spec.md` §43。
+
+実機確認の手順（Xcode・iOS 17.2以降の実機。ライブアクティビティはシミュレータの push に制限がある）:
+1. Xcodeでビルドして実機へ入れ、ログインして1度アプリを開く（停止専用トークンとpush-to-startトークンが登録される）
+2. 設定 ▸ iPhoneで「ライブアクティビティ」が許可されていることを確かめる
+3. アプリを閉じた状態で、Web（PCのブラウザ）から記録を始める → ロック画面に項目名と経過時間が出る
+4. ロック画面の「停止」を押す → 記録が止まり、表示が消える（Webでも止まっている）
+5. 記録中にWeb側で別の項目へ切り替える → 表示が項目名だけ入れ替わる（2つ並ばない）
+6. アプリのログアウト後、表示が消えることを確かめる
 
 ## 実機確認手順
 
@@ -187,4 +195,4 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 
 ## 初回スコープ外（後続Issue）
 
-TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ Live Activity（WidgetKitのウィジェットは #926 で追加。既存のScriptableウィジェットも維持）/ App Store公開 / ネイティブ画面への置き換え。
+TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ （WidgetKitのウィジェットは #926、Live Activity は #971 で追加。既存のScriptableウィジェットも維持）/ App Store公開 / ネイティブ画面への置き換え。

@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { requireUserId } from "@/lib/auth-user";
 import { activityConflictResponse, parseExpected } from "@/app/api/activities/shared";
 import { discardRunningActivity, updateRunningActivityStart } from "@/services/activity/running";
+import { notifyLiveActivity } from "@/services/live-activity/notify";
 
 type Body = {
   startedAt?: string;
@@ -41,6 +42,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "not_running" }, { status: 404 });
     }
 
+    after(() => notifyLiveActivity(userId, { type: "updated", running }));
+
     return NextResponse.json({ running });
   } catch (error) {
     // 未来の時刻は開始・停止と同じ判定で断る（サービス側の resolveRecordTime）。
@@ -71,6 +74,7 @@ export async function DELETE(request: Request) {
     if (conflict) return conflict;
     throw error;
   }
+  after(() => notifyLiveActivity(userId, { type: "stopped" }));
   if (!discarded) {
     return NextResponse.json({ error: "not_running" }, { status: 404 });
   }

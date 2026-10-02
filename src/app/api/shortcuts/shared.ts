@@ -10,6 +10,7 @@ import {
 } from "@/services/activity/running";
 import { getActivityCalendarId } from "@/services/activity/settings";
 import { resolveUserIdByShortcutToken } from "@/services/activity/shortcut-token";
+import { resolveUserIdByActivityStopToken } from "@/services/live-activity/devices";
 
 /**
  * iPhoneショートカット用APIの認証と応答（docs/spec.md §40）。
@@ -47,6 +48,24 @@ export async function resolveShortcutUserId(
     };
   }
 
+  return { ok: true, userId };
+}
+
+/**
+ * ライブアクティビティの停止ボタン用トークンで本人を特定する（issue #971）。
+ * 許可するのは `/api/shortcuts/activity/` の2経路（停止・activity tokenの登録）だけ。
+ */
+export async function resolveActivityStopUserId(
+  request: Request,
+): Promise<{ ok: true; userId: string } | { ok: false; response: NextResponse }> {
+  const token = readBearerToken(request.headers.get("authorization"));
+  const userId = token ? await resolveUserIdByActivityStopToken(token) : null;
+  if (!userId) {
+    return {
+      ok: false,
+      response: unauthorized("トークンが無効です。アプリでログインし直してください。"),
+    };
+  }
   return { ok: true, userId };
 }
 

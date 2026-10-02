@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { externalApiError } from "@/lib/api-error";
 import { requireUserId } from "@/lib/auth-user";
 import { activityConflictResponse, parseExpected } from "@/app/api/activities/shared";
 import { ActivityCalendarNotFoundError, stopRunningActivity } from "@/services/activity/running";
+import { notifyLiveActivity } from "@/services/live-activity/notify";
 
 type Body = {
   /** 終了時刻（ISO 8601）。止め忘れに気付いたとき以外は送らない。 */
@@ -42,6 +43,9 @@ export async function POST(request: Request) {
 
   try {
     const result = await stopRunningActivity(userId, endedAt, { expected });
+
+    // ライブアクティビティ（#971）。止まっていた場合も、取り残された表示を片付けるために送る
+    after(() => notifyLiveActivity(userId, { type: "stopped" }));
 
     if (result.status === "not_running") {
       return NextResponse.json({ error: "not_running" }, { status: 404 });

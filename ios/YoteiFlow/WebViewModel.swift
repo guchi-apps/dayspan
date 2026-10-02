@@ -29,6 +29,8 @@ final class WebViewModel: NSObject, ObservableObject {
     private var lastPushHTTPStatus: Int?
     /// ウィジェット用トークンをこの起動で共有済みか（#926）
     private var hasSyncedWidgetToken = false
+    /// サーバーへ登録できた push-to-start トークン（ログアウトで消す）
+    fileprivate var registeredLiveActivityStartToken: String?
     /// 起動前（WebViewがまだ何も開いていない間）にウィジェットから渡された開き先
     private var pendingPath: String?
 
@@ -64,6 +66,11 @@ final class WebViewModel: NSObject, ObservableObject {
         PushCoordinator.shared.onTokenChanged = { [weak self] in
             Task { await self?.registerPushTokenIfPossible() }
         }
+        // ライブアクティビティ（#971）。push-to-start トークンはログイン済みのWebViewから登録する
+        LiveActivityCoordinator.shared.onPushToStartToken = { [weak self] in
+            Task { await self?.registerLiveActivityStartToken() }
+        }
+        LiveActivityCoordinator.shared.startObserving()
     }
 
     deinit {
@@ -514,6 +521,10 @@ extension WebViewModel {
         if url.path == "/login" {
             hasSyncedWidgetToken = false
             WidgetCredentials.clear()
+            // 停止ボタン用トークンも消し、表示中のアクティビティを終わらせる（ログアウト後に
+            // 前のアカウントの記録を出し続けたり、止められたりしないように。#971）
+            LiveActivityCoordinator.shared.signOut()
+            registeredLiveActivityStartToken = nil
             WidgetCenter.shared.reloadAllTimelines()
             return
         }
@@ -539,10 +550,61 @@ extension WebViewModel {
             }
             if WidgetCredentials.save(token: token) {
                 WidgetCenter.shared.reloadAllTimelines()
+                await syncLiveActivity()
             } else {
                 hasSyncedWidgetToken = false
             }
         }
+    }
+}
+
+// MARK: - ライブアクティビティ（#971）
+
+extension WebViewModel {
+    /// 停止ボタン用トークンを受け取ってKeychainへ置き、push-to-start トークンを登録し、
+    /// 手元のアクティビティをサーバーの記録中と突き合わせる
+    fileprivate func syncLiveActivity() async {
+        let script = """
+        const response = await fetch('/api/settings/live-activity/native', {
+          method: 'POST',
+          credentials: 'same-origin'
+        });
+        if (!response.ok) { return null; }
+        const body = await response.json();
+        return body.token;
+        """
+        let value = try? await webView.callAsyncJavaScript(script, contentWorld: .page)
+        if let token = value as? String, !token.isEmpty {
+            ActivityStopCredentials.save(token: token)
+        }
+        await registerLiveActivityStartToken()
+        await LiveActivityCoordinator.shared.reconcile()
+    }
+
+    /// push-to-start トークンをログイン済みのWebViewからサーバーへ渡す。通知を切っている（`pushOptOut`）間は登録しない
+    fileprivate func registerLiveActivityStartToken() async {
+        guard
+            !PushCoordinator.shared.isOptedOut,
+            let token = LiveActivityCoordinator.shared.pushToStartToken,
+            token != registeredLiveActivityStartToken,
+            let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login")
+        else { return }
+
+        let script = """
+        const response = await fetch('/api/live-activity/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ token: token, environment: environment })
+        });
+        return response.status;
+        """
+        let value = try? await webView.callAsyncJavaScript(
+            script,
+            arguments: ["token": token, "environment": LiveActivityClient.environment],
+            contentWorld: .page
+        )
+        if (value as? Int) == 200 { registeredLiveActivityStartToken = token }
     }
 }
 

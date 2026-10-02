@@ -97,6 +97,23 @@ export function checkConsistency() {
   if (!widgetApi.includes('"api/widget/\\(surface)"')) problems.push("WidgetAPI.swift が /api/widget/* を読んでいません");
   if (!webViewModel.includes("/api/settings/widget/native")) problems.push("WebViewModel.swift がウィジェット用トークンを受け取っていません");
 
+  // ライブアクティビティ（#971）。停止ボタンの Intent は両ターゲットに入る Shared/ に置く
+  let liveActivityClient = "";
+  try {
+    liveActivityClient = read("ios/Shared/LiveActivityClient.swift");
+  } catch {
+    // 無ければ下で指摘する
+  }
+  if (!liveActivityClient.includes("struct StopRecordingIntent: LiveActivityIntent")) {
+    problems.push("StopRecordingIntent が ios/Shared/ にありません（アプリ本体のターゲットに型が入らず停止が動かない）");
+  }
+  if (!read("ios/AppInfo.plist").includes("<key>NSSupportsLiveActivities</key>")) {
+    problems.push("AppInfo.plist に NSSupportsLiveActivities がありません");
+  }
+  if (!read("ios/YoteiFlowWidget/YoteiFlowWidgetBundle.swift").includes("RecordingLiveActivity()")) {
+    problems.push("ウィジェットバンドルに RecordingLiveActivity がありません");
+  }
+
   // App-Bound Domains（Service Worker）。宣言のホストが baseURL と一致し、WebView側で有効にしている
   const plist = read("ios/AppInfo.plist");
   const baseHost = sharedConfig.match(/baseURL = URL\(string: "https:\/\/([^\/"]+)/)?.[1];
