@@ -95,6 +95,7 @@ struct ShoppingWidget: Widget {
 @main
 struct YoteiFlowWidgetBundle: WidgetBundle {
     var body: some Widget {
+        TodayWidget()
         ActivityWidget()
         ScheduleWidget()
         TasksWidget()
