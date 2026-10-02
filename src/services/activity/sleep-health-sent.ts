@@ -12,8 +12,8 @@ import type { SleepHealthPlan, SleepHealthSentRecord } from "@/lib/sleep-health"
  *
  * 履歴を進めるのは**送り終えたあと**（POST）だけにする。GETの時点で進めると、ヘルスケアの
  * 書き込み許可を出していない等で途中で止まったとき、送っていない睡眠が送ったことになる
- * （送り終えた印 `sleepHealthExportedUntil` と同じ理由）。GETが返した内容は控えとして
- * `ShortcutToken.sleepHealthPending` へ置き、POSTがそれを確定する。
+ * （送り終えた印 `SleepHealthExport.exportedUntil` と同じ理由）。GETが返した内容は控えとして
+ * `SleepHealthExport.pending` へ置き、POSTがそれを確定する。
  */
 
 /** GETが返した内容の控え。POSTの `until` が一致したときだけ履歴へ反映する。 */
@@ -70,9 +70,12 @@ export async function savePendingSleepHealth(
     pruneBefore: pruneBefore.toISOString(),
   };
 
-  await db.shortcutToken.updateMany({
+  const pending = hasWork ? (payload as Prisma.InputJsonValue) : Prisma.DbNull;
+  // 行が無くてもトークン（ショートカット）の有無に関わらず置く
+  await db.sleepHealthExport.upsert({
     where: { userId },
-    data: { sleepHealthPending: hasWork ? (payload as Prisma.InputJsonValue) : Prisma.DbNull },
+    create: { userId, pending },
+    update: { pending },
   });
 }
 
@@ -85,12 +88,12 @@ export async function savePendingSleepHealth(
  * 稀なため許容している。
  */
 export async function commitPendingSleepHealth(userId: string, until: Date): Promise<boolean> {
-  const row = await db.shortcutToken.findUnique({
+  const row = await db.sleepHealthExport.findUnique({
     where: { userId },
-    select: { sleepHealthPending: true },
+    select: { pending: true },
   });
 
-  const pending = row?.sleepHealthPending as PendingPayload | null | undefined;
+  const pending = row?.pending as PendingPayload | null | undefined;
   if (!pending || new Date(pending.until).getTime() !== until.getTime()) return false;
 
   await db.$transaction([
@@ -108,7 +111,7 @@ export async function commitPendingSleepHealth(userId: string, until: Date): Pro
     ),
     db.sleepHealthSent.deleteMany({ where: { userId, eventId: { in: pending.goneEventIds } } }),
     db.sleepHealthSent.deleteMany({ where: { userId, end: { lte: new Date(pending.pruneBefore) } } }),
-    db.shortcutToken.updateMany({ where: { userId }, data: { sleepHealthPending: Prisma.DbNull } }),
+    db.sleepHealthExport.updateMany({ where: { userId }, data: { pending: Prisma.DbNull } }),
   ]);
 
   return true;

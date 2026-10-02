@@ -34,6 +34,7 @@ model User {
   widgetToken          WidgetToken?
   shortcutToken        ShortcutToken?
   sleepHealthSent      SleepHealthSent[]
+  sleepHealthExport    SleepHealthExport?
   travelPlans          TravelPlan[]
   taskEventLinks       TaskEventLink[]
   eventOutcomes        EventOutcome[]
@@ -411,15 +412,29 @@ model ShortcutToken {
   // 最後に使われた日時。オートメーションが効いているかを設定画面から読めるようにする。
   lastUsedAt DateTime?
 
-  // ヘルスケアへ送り終えた睡眠の終わり（docs/spec.md §40「ヘルスケアへ送る」）。
-  // これより後に終わった睡眠だけを次に返す。ショートカットが書き終えたあとの
-  // POST でだけ進める（取得した時点で進めると、途中で止まった夜が二度と返らない）。
-  sleepHealthExportedUntil DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ヘルスケアへ送った位置の印と控え（docs/spec.md §40「ヘルスケアへ送る」）。ユーザーに1行。
+//
+// 以前は ShortcutToken にあったが、ショートカットを設定していないiOSアプリ利用者では行が無く、
+// 印も控えも保存されないため毎回同じ睡眠を送り直してしまう。送った履歴（SleepHealthSent）は
+// ユーザー単位なので、印も同じ単位にし、ショートカットとアプリのどちらが進めても
+// 他方は同じ夜を返さない。トークンの生死とは無関係に持つ。
+model SleepHealthExport {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // これより後に終わった睡眠だけを次に返す。書き終えたあとの POST でだけ進める
+  // （取得した時点で進めると、途中で止まった夜が二度と返らない）。
+  exportedUntil DateTime?
 
   // 直近のGETが返した内容の控え（docs/spec.md §40「送ったあとの変更」）。POSTが `until` の一致を
-  // 確かめてから SleepHealthSent へ反映する。GETの時点で反映すると、ショートカットが途中で
-  // 止まったときに「送っていないのに送った」ことになる。
-  sleepHealthPending Json?
+  // 確かめてから SleepHealthSent へ反映する。
+  pending Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

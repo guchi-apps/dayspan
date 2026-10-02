@@ -84,6 +84,7 @@ export default async function SleepPage({
       days={days}
       activityTitle={sleep.title}
       healthOutdated={healthOutdated}
+      timeZone={timeZone}
       loadError={
         loaded.ok
           ? null

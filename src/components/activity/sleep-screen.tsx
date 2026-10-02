@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { HeartPulse, Settings2 } from "lucide-react";
 
 import { SleepChart } from "@/components/activity/sleep-chart";
@@ -17,6 +18,13 @@ import {
   summarizeSleepNights,
   type SleepNight,
 } from "@/lib/sleep";
+import { isoToLocalInput } from "@/components/calendar/datetime-fields";
+import {
+  hasNativeHealth,
+  nativeHealthSummary,
+  syncNativeHealth,
+  type NativeHealthRange,
+} from "@/lib/native-health";
 import { SLEEP_HEALTH_SHORTCUT_NAME } from "@/lib/sleep-health";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +42,7 @@ export function SleepScreen({
   days,
   activityTitle,
   healthOutdated = 0,
+  timeZone,
   loadError = null,
 }: {
   /** 古い順の行。 */
@@ -48,12 +57,17 @@ export function SleepScreen({
    * 0 なら何も出さない（送っていない・ヘルスケアへ送る設定をしていないときも 0）。
    */
   healthOutdated?: number;
+  /** 利用者のタイムゾーン。ヘルスケアに残る古い時間帯の日時を出すために使う。 */
+  timeZone: string;
   /** Googleから読めなかったときの理由。画面は開いたまま、何が起きたかだけを伝える。 */
   loadError?: string | null;
 }) {
   useReconnectRefresh();
   // オフラインでもこの画面を開けるよう、表示中にHTMLを保存しておく（issue #321）。
   useWarmOfflinePage("/activity/sleep");
+
+  // アプリ内ではブリッジでその場で反映できるため、ショートカットの案内は出さない。
+  const inApp = useNativeHealthAvailable();
 
   const summary = summarizeSleepNights(nights, targetMinutes);
 
@@ -80,7 +94,9 @@ export function SleepScreen({
         </p>
       )}
 
-      {healthOutdated > 0 && (
+      <NativeHealthSync title={activityTitle} timeZone={timeZone} />
+
+      {healthOutdated > 0 && !inApp && (
         // ショートカットを走らせるきっかけ。素の <a> にするのは、スクリプトから開くとアプリが
         // 入っていても開けないことがあるため（Yahoo!乗換案内のリンクと同じ・CLAUDE.md）。
         <div className="type-body-medium flex flex-col gap-2 rounded-lg bg-secondary-container px-3 py-2 text-on-secondary-container sm:flex-row sm:items-center sm:justify-between">
@@ -215,6 +231,79 @@ function Stat({
       >
         {value}
       </dd>
+    </div>
+  );
+}
+
+/** アプリのブリッジの有無。サーバーの描画では false にし、マウント後に実際の値へ切り替える。 */
+function useNativeHealthAvailable(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    hasNativeHealth,
+    () => false,
+  );
+}
+
+function formatRange({ start, end }: NativeHealthRange, timeZone: string): string {
+  const startLabel = isoToLocalInput(start, timeZone);
+  return `${startLabel.slice(5, 10).replace("-", "/")} ${startLabel.slice(11)}〜${isoToLocalInput(end, timeZone).slice(11)}`;
+}
+
+/**
+ * iOSアプリの中だけ出る、ヘルスケアへの直接の送信（issue #976・docs/spec.md §40）。
+ *
+ * ブリッジ（アプリ）の有無はマウント後に決める（サーバーの描画と食い違うとハイドレーションが
+ * 一致しない）。開いたとき1回だけ自動で送り、ボタンでもう一度送れる。ブラウザ・ホーム画面の
+ * Webアプリでは出ない（ショートカットの導線のまま）。
+ */
+function NativeHealthSync({ title, timeZone }: { title: string; timeZone: string }) {
+  const available = useNativeHealthAvailable();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [staleLeft, setStaleLeft] = useState<NativeHealthRange[]>([]);
+  const started = useRef(false);
+
+  async function run() {
+    setBusy(true);
+    try {
+      const result = await syncNativeHealth();
+      setMessage(nativeHealthSummary(result, title));
+      setStaleLeft(result.staleLeft);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "ヘルスケアへ送れませんでした。");
+      setStaleLeft([]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!available || started.current) return;
+    started.current = true;
+    void run();
+    // 開いたとき1回だけ（run は毎回作り直されるが、中身は同じ）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [available]);
+
+  if (!available) return null;
+
+  return (
+    <div className="type-body-medium flex flex-col gap-2 rounded-lg bg-secondary-container px-3 py-2 text-on-secondary-container sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-2" aria-live="polite">
+        <HeartPulse className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <div className="flex flex-col gap-1">
+          <span>{busy ? "ヘルスケアへ送っています…" : (message ?? "ヘルスケアへ送ります。")}</span>
+          {staleLeft.length > 0 && (
+            <span>
+              ヘルスケアには送ったときの時間帯が残っています。睡眠分析から削除してください（
+              {staleLeft.map((range) => formatRange(range, timeZone)).join("、")}）。
+            </span>
+          )}
+        </div>
+      </div>
+      <Button variant="outline" size="sm" className="shrink-0" disabled={busy} onClick={() => void run()}>
+        ヘルスケアへ送る
+      </Button>
     </div>
   );
 }
