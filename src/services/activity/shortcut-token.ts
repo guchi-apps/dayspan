@@ -92,16 +92,16 @@ export async function resolveUserIdByShortcutToken(token: string): Promise<strin
 /**
  * ヘルスケアへ送り終えた睡眠の終わり（docs/spec.md §40「ヘルスケアへ送る」）。未送信なら null。
  *
- * トークンの作り直しでは消さない（作り直しても送ったものは送ったままで、消すとその直近ぶんが
- * ヘルスケアへもう一度入る）。トークンを削除したときは行ごと消え、次は直近2日から始まる。
+ * ユーザーに1つで、ショートカットとiOSアプリが共有する（どちらが進めても他方は同じ夜を返さない）。
+ * トークンの作り直し・削除では消さない（消すとその直近ぶんがヘルスケアへもう一度入る）。
  */
 export async function getSleepHealthExportedUntil(userId: string): Promise<Date | null> {
-  const row = await db.shortcutToken.findUnique({
+  const row = await db.sleepHealthExport.findUnique({
     where: { userId },
-    select: { sleepHealthExportedUntil: true },
+    select: { exportedUntil: true },
   });
 
-  return row?.sleepHealthExportedUntil ?? null;
+  return row?.exportedUntil ?? null;
 }
 
 /**
@@ -111,12 +111,14 @@ export async function getSleepHealthExportedUntil(userId: string): Promise<Date 
  * 印が戻って送り済みの睡眠がもう一度返ることを避ける。
  */
 export async function markSleepHealthExported(userId: string, until: Date): Promise<Date | null> {
-  await db.shortcutToken.updateMany({
-    where: {
-      userId,
-      OR: [{ sleepHealthExportedUntil: null }, { sleepHealthExportedUntil: { lt: until } }],
-    },
-    data: { sleepHealthExportedUntil: until },
+  await db.sleepHealthExport.upsert({
+    where: { userId },
+    create: { userId, exportedUntil: until },
+    update: {},
+  });
+  await db.sleepHealthExport.updateMany({
+    where: { userId, OR: [{ exportedUntil: null }, { exportedUntil: { lt: until } }] },
+    data: { exportedUntil: until },
   });
 
   return getSleepHealthExportedUntil(userId);
@@ -125,15 +127,11 @@ export async function markSleepHealthExported(userId: string, until: Date): Prom
 /**
  * トークンを削除する。以後どの端末のオートメーションからも記録できなくなる。
  *
- * ヘルスケアへ送った履歴（`SleepHealthSent`）も消す。送り終えた印と同じく、削除したあとは
- * 「何も送っていない」状態から始まる（次は直近2日から）。履歴だけ残すと、印が無いのに
- * 送った扱いの睡眠があることになる。
+ * ヘルスケアへ送った印・履歴（`SleepHealthExport`・`SleepHealthSent`）には触れない。これらは
+ * ユーザーの状態で、アプリ（HealthKit直書き）も使う。消すと直近ぶんが再送される。
  */
 export async function deleteShortcutToken(userId: string): Promise<boolean> {
-  const [, result] = await db.$transaction([
-    db.sleepHealthSent.deleteMany({ where: { userId } }),
-    db.shortcutToken.deleteMany({ where: { userId } }),
-  ]);
+  const result = await db.shortcutToken.deleteMany({ where: { userId } });
   return result.count > 0;
 }
 

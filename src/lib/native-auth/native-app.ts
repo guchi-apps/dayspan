@@ -30,3 +30,9 @@ export function nativeGoogleResultUrl(result: string): string {
  * `ios/YoteiFlow/WebViewModel.swift` の `pushBridgeName` と揃える（check-consistency.mjs が照合する）。
  */
 export const NATIVE_PUSH_BRIDGE = "yoteiflowPush";
+
+/**
+ * 睡眠をHealthKitへ書くブリッジ（issue #976）。`ios/YoteiFlow/WebViewModel.swift` の
+ * `healthBridgeName` と揃える（check-consistency.mjs が照合する）。
+ */
+export const NATIVE_HEALTH_BRIDGE = "yoteiflowHealth";

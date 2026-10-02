@@ -13,6 +13,7 @@ final class WebViewModel: NSObject, ObservableObject {
     let webView: WKWebView
 
     private let auth = NativeAuth()
+    fileprivate let healthSync = HealthSleepSync()
     private let pathMonitor = NWPathMonitor()
     private var isNetworkAvailable = true
     private var hasStarted = false
@@ -51,6 +52,11 @@ final class WebViewModel: NSObject, ObservableObject {
         // （WKWebViewは生成時に設定を複製するため、生成後は webView 側の設定へ足す）
         webView.configuration.userContentController.addScriptMessageHandler(
             PushBridgeHandler(model: self), contentWorld: .page, name: Self.pushBridgeName
+        )
+
+        // 睡眠をヘルスケア（HealthKit）へ書くブリッジ（#976）
+        webView.configuration.userContentController.addScriptMessageHandler(
+            HealthBridgeHandler(model: self), contentWorld: .page, name: Self.healthBridgeName
         )
 
         webView.navigationDelegate = self
@@ -296,6 +302,67 @@ private final class PushBridgeHandler: NSObject, WKScriptMessageHandlerWithReply
             return (nil, "unavailable")
         }
         return (await model.handlePushBridge(message.body), nil)
+    }
+}
+
+// MARK: - 睡眠のヘルスケア連携とのブリッジ（#976）
+
+extension WebViewModel {
+    /// Web側の `NATIVE_HEALTH_BRIDGE`（src/lib/native-auth/native-app.ts）と揃える
+    static let healthBridgeName = "yoteiflowHealth"
+
+    /// 画面（Web）からの `sync`。返事は必ず返す（画面が固まらないように）
+    fileprivate func handleHealthBridge(_ body: Any) async -> [String: Any] {
+        let action = (body as? [String: Any])?["action"] as? String ?? "sync"
+        guard action == "sync" else { return ["permission": healthSync.permission()] }
+
+        return await healthSync.sync { [weak self] method, payload in
+            await self?.callSleepHealthAPI(method: method, payload: payload)
+        }
+    }
+
+    /// `/api/sleep/health` をログイン済みのWebViewのセッションで呼ぶ（通知の登録と同じ形）
+    private func callSleepHealthAPI(method: String, payload: [String: Any]?) async -> (status: Int, text: String)? {
+        guard let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login") else { return nil }
+
+        let script = """
+        const response = await fetch('/api/sleep/health', {
+          method: method,
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: method === 'GET' ? undefined : JSON.stringify(payload)
+        });
+        return { status: response.status, text: await response.text() };
+        """
+        let value = try? await webView.callAsyncJavaScript(
+            script,
+            arguments: ["method": method, "payload": payload ?? [:]],
+            contentWorld: .page
+        )
+        guard let dict = value as? [String: Any], let status = dict["status"] as? Int,
+              let text = dict["text"] as? String else { return nil }
+        return (status, text)
+    }
+}
+
+/// WKUserContentController は登録したハンドラを強く持つため、モデルとの循環を避ける薄い入れ物
+private final class HealthBridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
+    weak var model: WebViewModel?
+
+    init(model: WebViewModel) {
+        self.model = model
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) async -> (Any?, String?) {
+        guard message.frameInfo.isMainFrame,
+              let url = message.frameInfo.request.url, AppConfig.isAppURL(url),
+              let model else {
+            return (nil, "unavailable")
+        }
+        return (await model.handleHealthBridge(message.body), nil)
     }
 }
 

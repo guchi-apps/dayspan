@@ -31,6 +31,13 @@ export function checkConsistency() {
     problems.push(`通知ブリッジ名が一致しません: Swift=${swiftBridge} / TS=${tsBridge}`);
   }
 
+  // 睡眠をHealthKitへ書くブリッジ名（#976）
+  const swiftHealthBridge = webViewModel.match(/healthBridgeName = "([^"]+)"/)?.[1];
+  const tsHealthBridge = nativeApp.match(/NATIVE_HEALTH_BRIDGE = "([^"]+)"/)?.[1];
+  if (!swiftHealthBridge || swiftHealthBridge !== tsHealthBridge) {
+    problems.push(`ヘルスブリッジ名が一致しません: Swift=${swiftHealthBridge} / TS=${tsHealthBridge}`);
+  }
+
   // 戻り先のホスト（auth-callback / google-connected）
   for (const host of ["auth-callback", "google-connected"]) {
     if (!nativeApp.includes(`://${host}`)) problems.push(`native-app.ts に ${host} がありません`);
