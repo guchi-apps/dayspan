@@ -9,8 +9,8 @@ import { readWidgetCache, writeWidgetCache } from "@/services/widget/cache";
 import type { TaskItem } from "@/types/calendar";
 import type { WidgetTaskItem, WidgetTasksPayload } from "@/types/widget";
 
-/** 大きい枠に入る行数。残りは件数にだけ含める。 */
-const MAX_ITEMS = 8;
+/** 返す最大件数。ネイティブ版が枠の高さに入るだけ並べるための上限で、残りは件数にだけ含める（#969）。 */
+const MAX_ITEMS = 30;
 
 /**
  * 期限をどこまで遡るか（日）。

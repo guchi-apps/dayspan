@@ -1,8 +1,8 @@
 import SwiftUI
 import WidgetKit
 
-// 面（活動記録・今日の予定・タスク・買い物リスト）と枠の大きさの対応は Scriptable 版（src/lib/scriptable-widget.ts）に揃える。
-// 文言も同じ。取得できなかった・連携が未設定のときに件数を出すと、0件だったのか読めなかったのかが分からないため、
+// 面（活動記録・今日の予定・タスク・買い物リスト）と枠の大きさの対応、文言は Scriptable 版（src/lib/scriptable-widget.ts）に揃える。
+// ただし一覧の行数は揃えない（#969）。ネイティブ版は枠の高さに入るだけ並べ、Scriptable版は固定行数のまま。取得できなかった・連携が未設定のときに件数を出すと、0件だったのか読めなかったのかが分からないため、
 // 理由の文言だけを出す。
 
 /// 枠の大きさごとに出せる行数
@@ -59,6 +59,39 @@ private struct RowList<Row: View>: View {
                 Text("ほか \(total - limit)件").font(.caption2).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// 枠の高さに入るだけ並べる一覧（#969）。ヘッダーの下に置き、残りの高さを行の高さで割って行数を決める。
+/// 全件が入るなら「ほか」の行は出さず、入らないときだけその1行ぶんを空けて「ほか N件」を出す。
+/// 行の高さは文字サイズ（Dynamic Type）に追従させ、切れるより1行少なく出すほうを選ぶ。
+struct FittedRowList<Row: View>: View {
+    /// 並べられる行の数（取得できた件数）
+    let count: Int
+    /// 全体の件数（取得上限を超えたぶんも含め「ほか」に出す）
+    let total: Int
+    let row: (Int) -> Row
+
+    @ScaledMetric(relativeTo: .caption) private var rowHeight: CGFloat = 19
+    @ScaledMetric(relativeTo: .caption2) private var footerHeight: CGFloat = 16
+
+    var body: some View {
+        GeometryReader { proxy in
+            let shown = visibleCount(height: proxy.size.height)
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(0..<shown, id: \.self) { row($0) }
+                if total > shown {
+                    Text("ほか \(total - shown)件").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private func visibleCount(height: CGFloat) -> Int {
+        let all = Int(height / rowHeight)
+        if total <= all && count >= total { return min(count, total) }
+        return max(1, min(count, Int((height - footerHeight) / rowHeight)))
     }
 }
 
@@ -206,22 +239,32 @@ struct ScheduleWidgetView: View {
         } else {
             VStack(alignment: .leading, spacing: 3) {
                 if family != .accessoryRectangular { Header(title: "今日の予定", trailing: "\(upcoming.count)件") }
-                RowList(
-                    rows: payload.items.map { item in
-                        HStack(spacing: 6) {
-                            Text(whenText(item, payload)).monospacedDigit().foregroundStyle(.secondary)
-                            Text(item.title).lineLimit(1).strikethrough(item.outcome != nil)
-                        }
-                        .font(.caption)
-                        .opacity(item.past || item.outcome != nil ? 0.5 : 1)
-                    },
-                    total: payload.items.count,
-                    limit: rowLimit(family)
-                )
+                if isAccessory {
+                    RowList(
+                        rows: payload.items.map { scheduleRow($0, payload) },
+                        total: payload.items.count,
+                        limit: rowLimit(family)
+                    )
+                } else {
+                    FittedRowList(count: payload.items.count, total: payload.items.count) {
+                        scheduleRow(payload.items[$0], payload)
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var isAccessory: Bool { family == .accessoryRectangular }
+
+    private func scheduleRow(_ item: SchedulePayload.Item, _ payload: SchedulePayload) -> some View {
+        HStack(spacing: 6) {
+            Text(whenText(item, payload)).monospacedDigit().foregroundStyle(.secondary)
+            Text(item.title).lineLimit(1).strikethrough(item.outcome != nil)
+        }
+        .font(.caption)
+        .opacity(item.past || item.outcome != nil ? 0.5 : 1)
     }
 
     private func whenText(_ item: SchedulePayload.Item, _ payload: SchedulePayload) -> String {
@@ -248,6 +291,17 @@ struct TasksWidgetView: View {
         }
     }
 
+    private func taskRow(_ item: TasksPayload.Item) -> some View {
+        HStack(spacing: 6) {
+            Capsule().fill(priorityColor(item.priority)).frame(width: 3, height: 12)
+            Text(item.title).lineLimit(1)
+            Spacer(minLength: 4)
+            Text(item.dueLabel)
+                .foregroundStyle(item.bucket == "overdue" ? Color.red : Color.secondary)
+        }
+        .font(.caption)
+    }
+
     @ViewBuilder private func ready(_ payload: TasksPayload) -> some View {
         let due = payload.overdueCount + payload.todayCount
         if let reason = payload.unavailable {
@@ -268,20 +322,11 @@ struct TasksWidgetView: View {
                 if family != .accessoryRectangular {
                     Header(title: "タスク", trailing: due > 0 ? "期限 \(due)件" : nil)
                 }
-                RowList(
-                    rows: payload.items.map { item in
-                        HStack(spacing: 6) {
-                            Capsule().fill(priorityColor(item.priority)).frame(width: 3, height: 12)
-                            Text(item.title).lineLimit(1)
-                            Spacer(minLength: 4)
-                            Text(item.dueLabel)
-                                .foregroundStyle(item.bucket == "overdue" ? Color.red : Color.secondary)
-                        }
-                        .font(.caption)
-                    },
-                    total: payload.total,
-                    limit: rowLimit(family)
-                )
+                if family == .accessoryRectangular {
+                    RowList(rows: payload.items.map(taskRow), total: payload.total, limit: rowLimit(family))
+                } else {
+                    FittedRowList(count: payload.items.count, total: payload.total) { taskRow(payload.items[$0]) }
+                }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -308,6 +353,18 @@ struct ShoppingWidgetView: View {
         }
     }
 
+    private func shoppingRow(_ item: ShoppingPayload.Item) -> some View {
+        HStack(spacing: 6) {
+            Capsule().fill(priorityColor(item.priority)).frame(width: 3, height: 12)
+            Text(item.name).lineLimit(1)
+            Spacer(minLength: 4)
+            if let category = item.category {
+                Text(category).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .font(.caption)
+    }
+
     @ViewBuilder private func ready(_ payload: ShoppingPayload) -> some View {
         if let reason = payload.unavailable {
             NoticeView(text: reason == "shopping_not_ready"
@@ -327,21 +384,11 @@ struct ShoppingWidgetView: View {
                 if family != .accessoryRectangular {
                     Header(title: "買い物リスト", trailing: "残り \(payload.remaining)")
                 }
-                RowList(
-                    rows: payload.items.map { item in
-                        HStack(spacing: 6) {
-                            Capsule().fill(priorityColor(item.priority)).frame(width: 3, height: 12)
-                            Text(item.name).lineLimit(1)
-                            Spacer(minLength: 4)
-                            if let category = item.category {
-                                Text(category).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                        }
-                        .font(.caption)
-                    },
-                    total: payload.remaining,
-                    limit: rowLimit(family)
-                )
+                if family == .accessoryRectangular {
+                    RowList(rows: payload.items.map(shoppingRow), total: payload.remaining, limit: rowLimit(family))
+                } else {
+                    FittedRowList(count: payload.items.count, total: payload.remaining) { shoppingRow(payload.items[$0]) }
+                }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

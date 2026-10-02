@@ -142,7 +142,7 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 | 項目 | 内容 |
 |---|---|
 | 面 | 活動記録（`YoteiFlowActivity`）・今日の予定・タスク・買い物リストの4種類に加え、今日の予定とタスクを1枠に並べる「今日の予定とタスク」（`YoteiFlowToday`・#970。`/api/widget/schedule` と `/tasks` を並行して読み、片方が失敗・未設定でももう片方は出す。small=次の予定1件＋期限件数、medium=2列、large=縦2段）。ウィジェットギャラリーから選ぶ（Scriptableの `Parameter` のような切り替えは不要） |
-| 枠 | systemSmall / Medium / Large、accessoryRectangular / Circular / Inline。行数・文言はScriptable版に揃える |
+| 枠 | systemSmall / Medium / Large、accessoryRectangular / Circular / Inline。文言はScriptable版に揃える。行数はネイティブ版が枠の高さに入るだけ並べる（Scriptable版は固定行数・#969） |
 | 取得 | 既存の `/api/widget/*` を `Authorization: Bearer`（ウィジェット用トークン）で読む。**新しい取得APIは無い**。サーバー側の3分キャッシュはそのまま効く。15分ごとに更新を要求（iOSは目安として扱う） |
 | 経過時間 | `Text(timerInterval:)`。端末が数えるので、更新を待たずに進み続ける |
 | タップ | `yoteiflow://open?path=/tasks` などでアプリの該当画面（`/activity`・`/calendar`・`/tasks`・`/shopping`）を開く。許可した4パスだけ受ける |
