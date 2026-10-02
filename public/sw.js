@@ -93,7 +93,16 @@ const NEVER_CACHE_PREFIXES = ["/auth/", "/login", "/api/google/", "/api/notion/"
  * Notion を待たず、ここから背景取得するため、通信が遅いときも保存済みを返せる。
  * 新しいパスを足すだけで保存する応答の形は変わらないため、VERSION は上げない。
  */
-const CACHED_DATA_PATHS = new Set(["/api/calendar", "/api/tasks", "/api/shopping", "/api/tasks/all"]);
+const CACHED_DATA_PATHS = new Set([
+  "/api/calendar",
+  "/api/tasks",
+  "/api/shopping",
+  "/api/tasks/all",
+  // 勤務の月ごとの記録（issue #974）。月送りがRSC要求だと保存されず、オフライン・低速時に別の月を見られない。
+  "/api/work/month",
+  // 下部ナビの記録のクイックシートが開くときに読む項目と記録中の1件（issue #974）。
+  "/api/activities",
+]);
 
 self.addEventListener("install", () => {
   // 事前に貯めるものは無い。新しい版を待たせる理由もないため、すぐ有効化へ進む。

@@ -23,6 +23,9 @@ export const MIN_ACTIVITY_MINUTES = 1;
  */
 const FUTURE_TOLERANCE_MS = 60_000;
 
+/** 開始の再送を同じ操作とみなす、記録中の開始時刻との差の幅（issue #974）。 */
+const DUPLICATE_START_TOLERANCE_MS = 30_000;
+
 /**
  * 記録の時刻として受け取った値を、実際に使う時刻へ直す。
  *
@@ -37,7 +40,29 @@ export function resolveRecordTime(at: Date, now: Date, label: "開始" | "終了
   if (ahead <= 0) return at;
   if (ahead <= FUTURE_TOLERANCE_MS) return now;
 
-  throw new ActivityTimeRangeError(`${label}時刻に未来の時刻は指定できません。`);
+  throw new ActivityTimeRangeError(
+    `${label}時刻に未来の時刻は指定できません。`,
+    "future_time",
+  );
+}
+
+/**
+ * 操作が向けられた記録が、いまサーバーにある記録と同じものかの前提条件（issue #974）。
+ *
+ * オフライン中にためた操作や、保存済みの古い画面からの操作は、サーバー上の「いま記録中のもの」へ
+ * 無条件に効くと、その間に他の端末が始めた別の記録を止める・消す・書き換えてしまう。
+ * 操作した時点の記録の開始時刻と項目名を添えてもらい、違えば何もせず `ActivityRecordChangedError`
+ * を投げる（他の端末で処理済みとして扱える）。指定が無い従来の呼び出しは何も確かめない。
+ */
+export type ExpectedRunning = { startedAt: Date; title?: string };
+
+function matchesExpected(
+  running: { startedAt: Date; title: string },
+  expected: ExpectedRunning | undefined,
+): boolean {
+  if (!expected) return true;
+  if (running.startedAt.getTime() !== expected.startedAt.getTime()) return false;
+  return expected.title === undefined || running.title === expected.title;
 }
 
 /** 進行中の記録。無ければ null。 */
@@ -70,6 +95,29 @@ export async function startActivity(
   // それぞれで現在時刻を取ると、その間に何も記録していない数ミリ秒の隙間ができる。
   const now = new Date();
   const startedAt = input.startedAt ? resolveRecordTime(input.startedAt, now, "開始") : now;
+
+  // オフライン中にためた開始の再送で、通信が切れる前にサーバーへ届いていた場合の二重送信を防ぐ
+  // （issue #974）。同じ項目が同じ開始時刻で記録中なら、その記録をそのまま返す。
+  // 通信が切れる前にサーバーが開始していた場合、サーバーの時計で決めた開始と端末の時刻の指定との間に
+  // 数秒の差が出る。同じ項目で DUPLICATE_START_TOLERANCE_MS 以内なら同じ操作の再送とみなす。
+  if (input.startedAt) {
+    const current = await db.runningActivity.findUnique({ where: { userId } });
+    if (
+      current &&
+      current.title === input.title &&
+      Math.abs(current.startedAt.getTime() - input.startedAt.getTime()) <=
+        DUPLICATE_START_TOLERANCE_MS
+    ) {
+      return {
+        running: {
+          title: current.title,
+          calendarId: current.calendarId,
+          startedAt: current.startedAt.toISOString(),
+        },
+        saved: null,
+      };
+    }
+  }
 
   const saved = await stopRunningActivity(userId, startedAt, {
     earlierThanStartMessage:
@@ -127,10 +175,11 @@ export async function stopRunningActivity(
    * 切り替え（`startActivity`）ではこの時刻は「次の記録の開始」として指定されたもので、
    * 終了時刻を直したときと同じ文面を出すと、どの欄を直せばよいのか読めない。
    */
-  options?: { earlierThanStartMessage?: string },
+  options?: { earlierThanStartMessage?: string; expected?: ExpectedRunning },
 ): Promise<StopResult> {
   const running = await db.runningActivity.findUnique({ where: { userId } });
   if (!running) return { status: "not_running" };
+  if (!matchesExpected(running, options?.expected)) throw new ActivityRecordChangedError();
 
   // 未来の扱いは開始と同じ。切り替え（startActivity）から来た時刻はそこで済ませてあるため、
   // ここで断るのは終了時刻を指定して止めたときだけになる。
@@ -148,6 +197,7 @@ export async function stopRunningActivity(
     throw new ActivityTimeRangeError(
       options?.earlierThanStartMessage ??
         "終了時刻が記録の開始より前です。開始より後の時刻を指定してください。",
+      "before_running",
     );
   }
 
@@ -216,7 +266,20 @@ export async function stopRunningActivity(
  * 押し間違えて始めた記録まで予定として残すと、消しにいく手間のほうが大きい。
  * 予定を作る前に捨てられる経路をここだけに用意する。
  */
-export async function discardRunningActivity(userId: string): Promise<boolean> {
+export async function discardRunningActivity(
+  userId: string,
+  expected?: ExpectedRunning,
+): Promise<boolean> {
+  if (expected) {
+    const current = await db.runningActivity.findUnique({ where: { userId } });
+    if (!current) return false;
+    if (!matchesExpected(current, expected)) throw new ActivityRecordChangedError();
+
+    // 読んだ行（id）に限って消す。読んだあとに別の記録へ置き換わっていれば0件になる。
+    const result = await db.runningActivity.deleteMany({ where: { id: current.id } });
+    return result.count > 0;
+  }
+
   const result = await db.runningActivity.deleteMany({ where: { userId } });
   return result.count > 0;
 }
@@ -230,12 +293,21 @@ export async function discardRunningActivity(userId: string): Promise<boolean> {
 export async function updateRunningActivityStart(
   userId: string,
   startedAt: Date,
+  expected?: ExpectedRunning,
 ): Promise<RunningActivityItem | null> {
   // まだ来ていない時刻から記録していることにはできない（未来の扱いは開始・終了と同じ）。
   const resolved = resolveRecordTime(startedAt, new Date(), "開始");
 
+  let where: { userId: string; id?: string } = { userId };
+  if (expected) {
+    const current = await db.runningActivity.findUnique({ where: { userId } });
+    if (!current) return null;
+    if (!matchesExpected(current, expected)) throw new ActivityRecordChangedError();
+    where = { userId, id: current.id };
+  }
+
   const result = await db.runningActivity.updateMany({
-    where: { userId },
+    where,
     data: { startedAt: resolved },
   });
   if (result.count === 0) return null;
@@ -294,10 +366,31 @@ export class ActivityCalendarNotFoundError extends Error {
  *
  * 未来の時刻、開始より前の終了時刻がこれに当たる。外部APIの失敗ではなく入力の問題なので、
  * 呼び出し側は400と、この文面をそのまま画面へ出す。
+ *
+ * `code` で理由を分ける（issue #974）。端末の時計が進んでいるだけの `future_time` は、
+ * オフライン中にためた操作を現在時刻へ丸めて再送してよい。`before_running`（記録中の開始より前）は、
+ * 他の端末があとから始めた記録と重なっているため、丸めて再送すると他の端末の記録を締めてしまう。
  */
+export type ActivityTimeRangeCode = "future_time" | "before_running";
+
 export class ActivityTimeRangeError extends Error {
-  constructor(message: string) {
+  /** 理由。分けられない（睡眠など他経路の）ものは undefined。 */
+  readonly code: ActivityTimeRangeCode | undefined;
+
+  constructor(message: string, code?: ActivityTimeRangeCode) {
     super(message);
     this.name = "ActivityTimeRangeError";
+    this.code = code;
+  }
+}
+
+/**
+ * 操作が向けられた記録が、いまの記録と違う（他の端末で止められた・別の記録に置き換わった）。
+ * 呼び出し側は409を返し、キューの操作は「他で処理済み」として完了扱いにする。
+ */
+export class ActivityRecordChangedError extends Error {
+  constructor() {
+    super("この記録は他の端末ですでに変更されています。");
+    this.name = "ActivityRecordChangedError";
   }
 }

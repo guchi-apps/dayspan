@@ -6,29 +6,11 @@ import { createCalendarDateUtils } from "@/components/calendar/item-layout";
 import { WorkScreen } from "@/components/work/work-screen";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { externalApiMessage } from "@/lib/api-error";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { createNotionClient } from "@/services/notion/client";
-import { loadTagOptions, type TagOption } from "@/services/notion/tag-options";
-import {
-  listPendingWorkRecords,
-  listWorkRecordsInRange,
-  workCapabilities,
-  workDatabaseReady,
-  workTripPlaces,
-} from "@/services/notion/work-logs";
-import { normalizeWorkMinutes, type WorkRecordItem } from "@/types/work";
+import { workCapabilities, workDatabaseReady, workTripPlaces } from "@/services/notion/work-logs";
+import { normalizeWorkMinutes } from "@/types/work";
 import { getRunningActivity } from "@/services/activity/running";
-
-/** その月の初日と末日。日付の解釈は設定のタイムゾーンに閉じている（月の境目もそこで決まる）。 */
-function monthRange(monthKey: string): { from: string; to: string } {
-  const year = Number(monthKey.slice(0, 4));
-  const month = Number(monthKey.slice(5, 7));
-  // 翌月の0日目＝その月の末日。月ごとの日数を持たずに求められる。
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  return { from: `${monthKey}-01`, to: `${monthKey}-${String(lastDay).padStart(2, "0")}` };
-}
 
 const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -60,39 +42,13 @@ export default async function WorkPage({
   // データソースと必須プロパティが揃っていないと、読むことも書くこともできない。
   if (!connection || !workDatabaseReady(connection)) return <ConnectPrompt />;
 
-  const notion = createNotionClient(connection);
-  const range = monthRange(monthKey);
-
-  // 月ぶんの記録と、手続きが残っている記録を同時に取りにいく。未対応のものは月の外にも
-  // ありうる（先月の出張の事後登録・来月の年休の申請が残っている）ため、月の取得とは別に引く。
-  //
-  // Notionが失敗しても画面自体は開く。ここで投げるとNext.jsの汎用のエラー画面へ落ち、
-  // 何が起きたのかも、月を送り直せることも画面から分からなくなる（issue #402）。
-  // 失敗は握りつぶさず、Notionが返したメッセージをそのまま画面へ出す。
-  let records: WorkRecordItem[] = [];
-  let pending: WorkRecordItem[] = [];
-  let placeOptions: TagOption[] | null = null;
-  let loadError: string | null = null;
-
-  try {
-    [records, pending, placeOptions] = await Promise.all([
-      listWorkRecordsInRange(notion, connection, range),
-      listPendingWorkRecords(notion, connection),
-      loadTagOptions(connection, "work"),
-    ]);
-  } catch (error) {
-    loadError = `勤務記録を取得できませんでした。${externalApiMessage("notion", "勤務記録の取得", error)}`;
-  }
-
+  // 月ごとの記録はここでは読まない。画面が GET /api/work/month から取る（issue #974）。
+  // ここでNotionを待つと、月送りのたびにページの取り直しになり、オフライン・低速時に
+  // 別の月が開けない。ページはDBだけで即座に返し、Notionの遅さで画面の枠が出ないことも避ける。
   return (
     <WorkScreen
       monthKey={monthKey}
       todayKey={todayKey}
-      records={records}
-      openTrips={pending.filter((record) => record.businessTrip && !record.annualLeave)}
-      openLeaves={pending.filter((record) => record.annualLeave)}
-      placeOptions={placeOptions ?? []}
-      loadError={loadError}
       tripPlaces={workTripPlaces(connection)}
       capabilities={workCapabilities(connection)}
       runningActivity={runningActivity}

@@ -1,7 +1,10 @@
+"use client";
+
 import { LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { clearQueue } from "@/lib/activity-queue/store";
 
 export function AccountSection({ email, name }: { email: string | null; name: string | null }) {
   return (
@@ -15,7 +18,8 @@ export function AccountSection({ email, name }: { email: string | null; name: st
         </div>
 
         {/* JSの読み込みを待たずに押せるよう、fetchではなく素のフォーム送信にする。 */}
-        <form action="/auth/signout" method="post">
+        {/* 別のアカウントで入り直したとき、前のユーザーの未送信の記録操作を送らないよう捨てる（issue #974）。 */}
+        <form action="/auth/signout" method="post" onSubmit={() => clearQueue()}>
           <Button type="submit" variant="outline" size="sm">
             <LogOut className="size-4" />
             ログアウト

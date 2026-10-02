@@ -9,6 +9,7 @@ import "./globals.css";
 import { CalendarLaunchReset } from "@/components/calendar/calendar-launch-reset";
 import { AppLaunchScreen } from "@/components/launch/app-launch-screen";
 import { AppReady } from "@/components/launch/app-ready";
+import { ActivityQueueSync } from "@/components/offline/activity-queue-sync";
 import { ServiceWorkerRegistration } from "@/components/offline/service-worker";
 
 export const metadata: Metadata = {
@@ -53,6 +54,7 @@ export default function RootLayout({
         <CalendarLaunchReset />
         <AppReady />
         <ServiceWorkerRegistration />
+        <ActivityQueueSync />
       </body>
     </html>
   );
