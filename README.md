@@ -54,7 +54,7 @@ pnpm dev             # http://localhost:3000
 
 暗号鍵は `openssl rand -base64 32` で生成します。
 
-Googleログインを通すには、共有Supabaseプロジェクトの Redirect URLs に `http://localhost:3000/auth/callback` を登録し、`ALLOWED_GOOGLE_EMAILS` に自分のGoogleアカウントを設定しておく必要があります。
+Googleログインを通すには、共有Supabaseプロジェクトの Redirect URLs に `http://localhost:3000/auth/callback` を登録し、StatusHubの共通アクセス設定（`ACCESS_API_URL`・`ACCESS_APP_TOKEN`。管理画面でyoteiflowに自分のGoogleアカウントを許可する）が必要です（未設定だと全員拒否）。
 
 ### 本体チェックアウトの `.env.local` は worktree の前提
 
