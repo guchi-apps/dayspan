@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, verify } from "node:crypto";
 import { describe, it } from "node:test";
 
-import { createJwt, pickInternalGroup } from "./asc-api.mjs";
+import { createJwt, pickApiCreatedDevCertificates, pickInternalGroup } from "./asc-api.mjs";
 
 const g = (name, isInternalGroup) => ({ id: name, attributes: { name, isInternalGroup } });
 
@@ -37,5 +37,19 @@ describe("pickInternalGroup", () => {
   });
   it("指定した名前が無いと失敗する", () => {
     assert.throws(() => pickInternalGroup([g("A", true)], "Z"), /見つかりません/);
+  });
+});
+
+describe("pickApiCreatedDevCertificates", () => {
+  const c = (id, name, certificateType) => ({ id, attributes: { name, certificateType } });
+  it("API作成のDevelopment証明書だけを選ぶ（自分用・Distributionは残す）", () => {
+    const picked = pickApiCreatedDevCertificates([
+      c("1", "Created via API", "DEVELOPMENT"),
+      c("2", "Created via API", "IOS_DEVELOPMENT"),
+      c("3", "Kazuki Guchi", "DEVELOPMENT"),
+      c("4", "Created via API", "DISTRIBUTION"),
+      c("5", "Created via API", "IOS_DISTRIBUTION"),
+    ]);
+    assert.deepEqual(picked.map((x) => x.id), ["1", "2"]);
   });
 });
