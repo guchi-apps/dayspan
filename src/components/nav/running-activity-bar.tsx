@@ -4,7 +4,6 @@ import Link from "next/link";
 import { Square } from "lucide-react";
 
 import { formatElapsed } from "@/components/calendar/activity-format";
-import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { useRunningActivityStop } from "@/components/nav/use-running-activity-stop";
 import { Button } from "@/components/ui/button";
 import type { RunningActivitySummary } from "@/types/activity";
@@ -23,7 +22,7 @@ import type { RunningActivitySummary } from "@/types/activity";
  * 中身の下端を帯が塞がず、どの画面でも同じ位置に経過時間と停止が残る。
  */
 export function RunningActivityBar({ running }: { running: RunningActivitySummary | null }) {
-  const { running: current, nowIso, busy, error, offline, stop } = useRunningActivityStop(running);
+  const { running: current, nowIso, busy, error, stop } = useRunningActivityStop(running);
 
   if (!current) return null;
 
@@ -45,8 +44,7 @@ export function RunningActivityBar({ running }: { running: RunningActivitySummar
       <Button
         size="sm"
         className="shrink-0"
-        disabled={busy || offline}
-        title={offline ? OFFLINE_WRITE_MESSAGE : undefined}
+        disabled={busy}
         onClick={stop}
       >
         <Square className="fill-current" />

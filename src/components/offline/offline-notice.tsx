@@ -3,6 +3,8 @@
 import { CloudOff } from "lucide-react";
 import { useOffline } from "next/offline";
 
+import { ActivityQueueNotice } from "@/components/offline/activity-queue-sync";
+
 /** オフラインでできないことを伝える文言。書き込みを止めた箇所で使い回す（docs/spec.md §21）。 */
 export const OFFLINE_WRITE_MESSAGE = "オフラインのため編集できません。";
 
@@ -14,15 +16,20 @@ export const OFFLINE_WRITE_MESSAGE = "オフラインのため編集できませ
  */
 export function OfflineNotice() {
   const offline = useOffline();
-  if (!offline) return null;
+  if (!offline) return <ActivityQueueNotice />;
 
   return (
-    <div
-      role="status"
-      className="flex shrink-0 items-center gap-1.5 bg-tertiary-container px-3 py-2 text-xs text-on-tertiary-container"
-    >
-      <CloudOff className="size-4 shrink-0" />
-      <span>オフラインです。保存済みの内容を表示しています。編集はできません。</span>
-    </div>
+    <>
+      <ActivityQueueNotice />
+      <div
+        role="status"
+        className="flex shrink-0 items-center gap-1.5 bg-tertiary-container px-3 py-2 text-xs text-on-tertiary-container"
+      >
+        <CloudOff className="size-4 shrink-0" />
+        <span>
+          オフラインです。保存済みの内容を表示しています。活動記録の開始・停止以外の編集はできません。
+        </span>
+      </div>
+    </>
   );
 }

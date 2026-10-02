@@ -1,4 +1,5 @@
 import { dateKeyDiffDays } from "@/lib/calendar-range";
+import type { TagOption } from "@/services/notion/tag-options";
 
 /**
  * 勤務場所・出張・年休・会社休業日（docs/spec.md §34）。
@@ -305,3 +306,15 @@ export function formatLeaveHours(hours: number): string {
 export function coversDate(record: WorkRecordItem, dateKey: string): boolean {
   return record.startDate <= dateKey && dateKey <= record.endDate;
 }
+
+/**
+ * 勤務画面が月ごとに読む内容（`GET /api/work/month`・issue #974）。
+ * 出張・年休は、手続きが残っているものを月の外も含めて返す。
+ */
+export type WorkMonthData = {
+  /** 表示中の月にかかる記録。 */
+  records: WorkRecordItem[];
+  openTrips: WorkRecordItem[];
+  openLeaves: WorkRecordItem[];
+  placeOptions: TagOption[];
+};

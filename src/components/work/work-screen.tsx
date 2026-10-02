@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useOffline } from "next/offline";
 import {
   Briefcase,
@@ -20,17 +19,19 @@ import { BottomNav } from "@/components/nav/main-nav";
 import { RunningActivityBar } from "@/components/nav/running-activity-bar";
 import { OFFLINE_WRITE_MESSAGE, OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
+import { SlowNetworkNotice } from "@/components/offline/slow-network-notice";
+import { useApiResource } from "@/components/offline/use-api-resource";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
 import { tagChipClass } from "@/components/tags/tag-color";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import type { WorkMonthData } from "@/types/work";
 import { WorkRecordDialog, type WorkDraft } from "@/components/work/work-record-dialog";
 import { dayTone, OFF_DAY_TONE } from "@/lib/day-tone";
 import { japaneseHolidayName } from "@/lib/japanese-holidays";
 import { isAutoOffDay, weekdayOf } from "@/lib/work-days";
 import { cn } from "@/lib/utils";
-import type { TagOption } from "@/services/notion/tag-options";
 import {
   annualLeaveDays,
   annualLeaveHours,
@@ -60,31 +61,28 @@ import type { RunningActivitySummary } from "@/types/activity";
  * 記録画面へ混ぜず専用の画面に置いているのはそのため。
  */
 export function WorkScreen({
-  monthKey,
-  todayKey,
-  records,
-  openTrips,
-  openLeaves,
-  placeOptions,
-  loadError = null,
-  tripPlaces,
-  capabilities,
-  runningActivity = null,
-  timeZone,
-  workMinutesPerDay = DEFAULT_WORK_MINUTES_PER_DAY,
-}: {
+  monthKey: initialMonthKey,
+  ...rest
+}: Omit<WorkMonthScreenProps, "monthKey" | "onMonthChange"> & { monthKey: string }) {
+  // 月送りはページ（RSC）の取り直しにしない。取り直しだと、オフライン・低速時に別の月が開けない
+  // （issue #974）。月ごとの内容は GET /api/work/month から取り、Service Worker が保存済みへ倒す。
+  const [monthKey, setMonthKey] = useState(initialMonthKey);
+
+  const onMonthChange = useCallback((next: string) => {
+    setMonthKey(next);
+    // URLだけ合わせる。再読み込み・共有しても同じ月が開く。
+    window.history.replaceState(null, "", `/work?month=${next}`);
+  }, []);
+
+  // 月が変わったら内部の状態（取得結果・開いたダイアログ）を作り直す。
+  return <WorkMonthScreen key={monthKey} monthKey={monthKey} onMonthChange={onMonthChange} {...rest} />;
+}
+
+type WorkMonthScreenProps = {
   /** YYYY-MM */
   monthKey: string;
+  onMonthChange: (monthKey: string) => void;
   todayKey: string;
-  /** 表示中の月にかかる記録。 */
-  records: WorkRecordItem[];
-  /** 手続きが残っている出張。月の外のものも含む。 */
-  openTrips: WorkRecordItem[];
-  /** 事前申請が済んでいない年休。月の外のものも含む。 */
-  openLeaves: WorkRecordItem[];
-  placeOptions: TagOption[];
-  /** Notionから読めなかったときの理由。画面は開いたまま、何が起きたかだけを伝える。 */
-  loadError?: string | null;
   /** 出張扱いにする勤務場所の名前（docs/spec.md §34）。 */
   tripPlaces: string[];
   capabilities: WorkCapabilities;
@@ -97,16 +95,36 @@ export function WorkScreen({
   timeZone: string;
   /** 1日の所定労働時間（分）。入力ダイアログの時間休の上限に使う（issue #537）。 */
   workMinutesPerDay?: number;
-}) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
+};
 
+function WorkMonthScreen({
+  monthKey,
+  onMonthChange,
+  todayKey,
+  tripPlaces,
+  capabilities,
+  runningActivity = null,
+  timeZone,
+  workMinutesPerDay = DEFAULT_WORK_MINUTES_PER_DAY,
+}: WorkMonthScreenProps) {
   // 記録の追加・変更はすべて書き込み。オフライン中は押せないようにする（docs/spec.md §21）。
   const offline = useOffline();
   useReconnectRefresh();
 
   // オフラインでもこの画面を開けるよう、表示中にHTMLを保存しておく（issue #321）。
   useWarmOfflinePage("/work");
+
+  // 月ごとの内容。取得できるまでは前回の保存済み（Service Worker）が出る（issue #974）。
+  const resource = useApiResource<WorkMonthData>(
+    `/api/work/month?month=${monthKey}`,
+    "勤務記録を取得できませんでした。",
+  );
+  const records = useMemo(() => resource.data?.records ?? [], [resource.data]);
+  const openTrips = useMemo(() => resource.data?.openTrips ?? [], [resource.data]);
+  const openLeaves = useMemo(() => resource.data?.openLeaves ?? [], [resource.data]);
+  const placeOptions = useMemo(() => resource.data?.placeOptions ?? [], [resource.data]);
+  const loadError = resource.error;
+  const loaded = resource.data !== null;
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +148,7 @@ export function WorkScreen({
         setError(await readErrorMessage(response, fallback));
         return false;
       }
-      startTransition(() => router.refresh());
+      resource.reload();
       return true;
     } catch {
       setError(fallback);
@@ -277,6 +295,7 @@ export function WorkScreen({
         <span className="flex-1" />
       </header>
       <OfflineNotice />
+      {!offline && resource.stale && <SlowNetworkNotice />}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {/*
           広い画面では「片付ける手続き（出張・年休）」を左、「この月」を右に分ける（issue #636）。
@@ -318,7 +337,7 @@ export function WorkScreen({
                     todayKey={todayKey}
                     todos={["preApplied", "postRegistered"]}
                     emptyLabel="未対応の手続きはありません。"
-                    writeDisabled={busy || pending || offline}
+                    writeDisabled={busy || offline}
                     onToggle={toggleTodo}
                     onOpen={(record) => setDraft({ mode: "edit", record })}
                   />
@@ -353,7 +372,7 @@ export function WorkScreen({
                     todayKey={todayKey}
                     todos={["preApplied"]}
                     emptyLabel="未申請の年休はありません。"
-                    writeDisabled={busy || pending || offline}
+                    writeDisabled={busy || offline}
                     onToggle={toggleTodo}
                     onOpen={(record) => setDraft({ mode: "edit", record })}
                   />
@@ -368,16 +387,22 @@ export function WorkScreen({
               直前に置くことで、上（出張・年休）と下（この月の勤務場所）の境目をはっきりさせる。 */}
           <section className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
-              <Button variant="ghost" size="sm" asChild>
-                <Link href={`/work?month=${shiftMonth(monthKey, -1)}`} aria-label="前の月">
-                  <ChevronLeft className="size-4" />
-                </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="前の月"
+                onClick={() => onMonthChange(shiftMonth(monthKey, -1))}
+              >
+                <ChevronLeft className="size-4" />
               </Button>
               <h2 className="type-title-small tabular-nums">{monthLabel}の勤務場所</h2>
-              <Button variant="ghost" size="sm" asChild>
-                <Link href={`/work?month=${shiftMonth(monthKey, 1)}`} aria-label="次の月">
-                  <ChevronRight className="size-4" />
-                </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="次の月"
+                onClick={() => onMonthChange(shiftMonth(monthKey, 1))}
+              >
+                <ChevronRight className="size-4" />
               </Button>
             </div>
 
@@ -409,6 +434,8 @@ export function WorkScreen({
                         直すときは下の日付の一覧から
                       </span>
                     </p>
+                  ) : !loaded ? (
+                    <p className="type-body-small text-on-surface-variant">読み込んでいます…</p>
                   ) : placeOptions.length === 0 ? (
                     <p className="type-body-small text-on-surface-variant">
                       勤務場所の選択肢がありません。
@@ -425,7 +452,7 @@ export function WorkScreen({
                           <button
                             key={option.id}
                             type="button"
-                            disabled={busy || pending || offline}
+                            disabled={busy || offline}
                             aria-pressed={selected}
                             onClick={() => pickToday(option.name)}
                             className={cn(
@@ -665,7 +692,7 @@ export function WorkScreen({
           onClose={() => setDraft(null)}
           onSaved={() => {
             setDraft(null);
-            startTransition(() => router.refresh());
+            resource.reload();
           }}
         />
       )}
