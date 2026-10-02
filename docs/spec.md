@@ -1701,10 +1701,10 @@ Scriptableの一覧で台本のアイコンを押したときも、ウィジェ�
 置く手順はホーム画面と入口が違う（ロック画面を長押し ▸ カスタマイズ ▸ ロック画面 ▸
 時計の下の枠）。書かないと置けることに気付けないため、設定画面にホーム画面とは別の手順として出す。
 
-ライブアクティビティ（ダイナミックアイランドやロック画面の常駐表示）はDaySpanからは出せない。
-ホーム画面のWebアプリにはActivityKitのAPIが無く、ScriptableにもLive Activityを扱うクラスが無い。
-出すには第三者のブリッジサービスか自前のネイティブアプリが要る。ロック画面のウィジェットに
-タイマー表示を置くことで、常駐で経過時間が進む点だけは同じにしてある。
+ライブアクティビティ（ダイナミックアイランドやロック画面の常駐表示）は、PWA・Scriptableからは出せない
+（ホーム画面のWebアプリにはActivityKitのAPIが無く、ScriptableにもLive Activityを扱うクラスが無い）。
+ロック画面のウィジェットにタイマー表示を置くことで、常駐で経過時間が進む点だけは同じにしてある。
+iOSアプリ（`ios/`）では、記録中の項目・経過時間・停止ボタンをライブアクティビティで出す（§43）。
 ### iOSアプリのウィジェット（WidgetKit・issue #926）
 
 iOSアプリ（`ios/`）にも、Scriptableを介さないウィジェットを持たせた。**Scriptable版は残し、並行して使える。**
@@ -1712,7 +1712,7 @@ iOSアプリ（`ios/`）にも、Scriptableを介さないウィジェットを�
 
 - ウィジェット拡張はWebViewのCookieを持てず、アプリが動いていない間も更新される。そのため、ログイン済みのWebViewが `POST /api/settings/widget/native` でウィジェット用トークンを受け取り、App Group の Keychain へ置く。このAPIは**作り直さずに**発行済みのトークンを返す（無ければ発行）。起動のたびに呼ばれるため、作り直すと設定画面で配ったScriptable台本のトークンが失効する
 - ログアウト（`/login` が開いたとき）で共有トークンを消す
-- Live Activity は入れない。記録の開始・停止はWebの中や他の端末で起き、現状へ追従させるにはAPNsのプッシュ更新の基盤が要る。ロック画面の経過時間は accessory ウィジェットの `Text(timerInterval:)` で代替する
+- Live Activity は #971 で入れた（§43）。ロック画面の経過時間は accessory ウィジェットの `Text(timerInterval:)` も併用する
 - 詳細・実機確認の手順は `ios/README.md`
 
 
@@ -2278,7 +2278,7 @@ iOSアプリ（`ios/`・SwiftUI + WKWebView）はWeb Pushが動かないため�
   さかのぼる別の決め方が要る。予定の「何分前」とは決め方が違うため、ここには含めない）
 - 紐づけのずれ・紐づけ切れの通知（§31）
 - 通知からの操作（完了・スヌーズ）。押して画面を開いてから行う
-- ライブアクティビティ（§28。DaySpanからは出せない）
+- ライブアクティビティ（§28。PWA・Scriptableからは出せない。iOSアプリでは §43）
 
 ## 33. 起動画面
 
@@ -3916,3 +3916,15 @@ Google Calendarの `Event.status`（`tentative`）フィールドをそのまま
 - **オフライン**: アプリ内ではService Workerを使えないため、PWAの保存済み画面は出ず、再試行の画面を出す
 - **初回スコープ外**: TestFlight配布・APNs・WidgetKit・App Store公開・オフライン対応・ネイティブ画面
 - **TestFlightへの自動配信**（issue #961）: `Deploy to Production` が `main` で成功すると、`ios-testflight-trigger.yml` が `ios-testflight.yml`（ワークフロー名 `iOS TestFlight`）を起動する。`ios/scripts/ios-changes.mjs` が、最後に配布した印（タグ `ios-testflight/<ビルド番号>`）との差分から「iOS側の更新が要るか」を判定し、要る場合だけ署名・ビルド・アップロード→処理待ち→内部テストグループへ配布→印のタグ付けを行う（Webのみの更新はスキップ）。issue-deckのブランチ（リリース）画面の「iOS配布（TestFlight）の結果」は、このワークフローのrun・ジョブ名・タグを読んで表示する（kurashioと同じ契約。表示側は issue-deck の `webview-ios-repos.ts` への登録が要る）。手動の `ios/scripts/remote-upload-testflight.sh` も残す
+
+## 43. iOSアプリのライブアクティビティ（issue #971）
+
+記録中の項目・経過時間・停止ボタンを、ロック画面とダイナミックアイランド（compact / expanded / minimal）に出す。
+
+- 同期: 記録の開始・切り替え・停止・開始時刻の修正・取り消しは、Web・PWA・ショートカット・他端末のどこで起きても、サーバーが `notifyLiveActivity()` からAPNs（liveactivity）で送る。アプリが動いていなくても **push-to-start**（iOS 17.2以降）で始められ、表示中のものへは activity push token 宛に update / end を送る。切り替えは `update` 1通（end と start を別々に送らない）
+- 経過時間は端末の `Text(timerInterval:)` が数える。ContentState の時刻はUnix秒の数値（`startedAtEpoch`）
+- 停止ボタン: Keychain（App Group）の停止専用トークン（`ActivityStopToken`）で `POST /api/shortcuts/activity/stop`。許可は停止と `POST /api/shortcuts/activity/token`（activity push tokenの登録）だけ
+- 登録: push-to-start トークンは `POST /api/live-activity/register`（ログイン済みのWebViewから）、停止専用トークンの受け渡しは `POST /api/settings/live-activity/native`
+- 起動時・前面に戻ったとき、手元のアクティビティとサーバーの記録中を突き合わせて片付ける（二重表示・取り残しを防ぐ）
+- ログアウトで停止専用トークンを消し、表示中のアクティビティを終わらせる。サーバー側のトークン行は残す（失効は410で自然に消える）
+- 実機確認は Xcode が要る（`ios/README.md`）

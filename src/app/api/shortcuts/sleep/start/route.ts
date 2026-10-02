@@ -14,6 +14,7 @@ import { sleepNightKey } from "@/lib/sleep";
 import { getRunningActivity, startActivity } from "@/services/activity/running";
 import { getSleepSettings } from "@/services/activity/settings";
 import { notifyActivityStarted } from "@/services/notifications/activity";
+import { notifyLiveActivity } from "@/services/live-activity/notify";
 
 type Body = {
   /** 就寝時刻（ISO 8601）。オートメーションから走る場合は送らなくてよい。 */
@@ -96,6 +97,12 @@ export async function POST(request: Request) {
       } catch (error) {
         console.error("[dayspan] activity notification failed:", error);
       }
+      // ライブアクティビティ（#971）。切り替えは既存のアクティビティへの更新1通にする
+      await notifyLiveActivity(userId, {
+        type: "started",
+        running: result.running,
+        switched: result.saved !== null,
+      });
     });
 
     const startedLabel = clockLabel(result.running.startedAt, timeZone);

@@ -53,17 +53,78 @@ export async function sendApns(
   input: PushNotificationInput,
   options: { topic?: string; ttlSeconds?: number } = {},
 ): Promise<ApnsResult> {
+  return postToApns(device, JSON.stringify(buildApnsPayload(input)), {
+    pushType: "alert",
+    priority: 10,
+    ttlSeconds: options.ttlSeconds ?? DEFAULT_TTL_SECONDS,
+    collapseId: options.topic,
+  });
+}
+
+/**
+ * ライブアクティビティの更新を送る（issue #971）。
+ *
+ * `apns-push-type: liveactivity` と、Bundle IDに `.push-type.liveactivity` を付けた `apns-topic` が要る。
+ * `sendApns` の `options.topic` は collapse-id のため、ここへは渡さない。
+ */
+export async function sendLiveActivity(
+  device: { token: string; environment: ApnsEnvironment },
+  payload: object,
+  options: { ttlSeconds?: number } = {},
+): Promise<ApnsResult> {
+  return postToApns(device, JSON.stringify(payload), {
+    pushType: "liveactivity",
+    priority: 10,
+    ttlSeconds: options.ttlSeconds ?? 60 * 5,
+  });
+}
+
+export type ApnsHeaderInput = {
+  token: string;
+  jwt: string;
+  /** Bundle ID（`apns-topic` の元）。 */
+  bundleId: string;
+  pushType: "alert" | "liveactivity";
+  priority: 5 | 10;
+  expiresAt: number;
+  collapseId?: string;
+};
+
+/** APNsへ送るヘッダー。純粋関数（topic と push-type の取り違えを単体で確かめるため export）。 */
+export function buildApnsHeaders(input: ApnsHeaderInput): Record<string, string | number> {
+  const headers: Record<string, string | number> = {
+    [constants.HTTP2_HEADER_METHOD]: "POST",
+    [constants.HTTP2_HEADER_PATH]: `/3/device/${input.token}`,
+    authorization: `bearer ${input.jwt}`,
+    "apns-topic":
+      input.pushType === "liveactivity" ? `${input.bundleId}.push-type.liveactivity` : input.bundleId,
+    "apns-push-type": input.pushType,
+    "apns-priority": String(input.priority),
+    "apns-expiration": String(input.expiresAt),
+  };
+  // 同じ collapse-id の通知は、まだ届いていないものが置き換わる（Web Pushの Topic と同じ用途）。
+  if (input.collapseId) headers["apns-collapse-id"] = input.collapseId.slice(0, 64);
+  return headers;
+}
+
+async function postToApns(
+  device: { token: string; environment: ApnsEnvironment },
+  body: string,
+  options: {
+    pushType: "alert" | "liveactivity";
+    priority: 5 | 10;
+    ttlSeconds: number;
+    collapseId?: string;
+  },
+): Promise<ApnsResult> {
   let jwt: string;
-  let topic: string;
+  let bundleId: string;
   try {
     jwt = providerToken(Date.now());
-    topic = getApnsConfig().topic;
+    bundleId = getApnsConfig().topic;
   } catch (error) {
     return { status: "failed", reason: error instanceof Error ? error.message : String(error) };
   }
-
-  const body = JSON.stringify(buildApnsPayload(input));
-  const ttl = options.ttlSeconds ?? DEFAULT_TTL_SECONDS;
 
   return new Promise<ApnsResult>((resolve) => {
     let session: ClientHttp2Session;
@@ -84,17 +145,15 @@ export async function sendApns(
     session.setTimeout(15_000, () => finish({ status: "failed", reason: "apns timeout" }));
     session.on("error", (error) => finish({ status: "failed", reason: error.message }));
 
-    const headers: Record<string, string | number> = {
-      [constants.HTTP2_HEADER_METHOD]: "POST",
-      [constants.HTTP2_HEADER_PATH]: `/3/device/${device.token}`,
-      authorization: `bearer ${jwt}`,
-      "apns-topic": topic,
-      "apns-push-type": "alert",
-      "apns-priority": "10",
-      "apns-expiration": String(Math.floor(Date.now() / 1000) + ttl),
-    };
-    // 同じ collapse-id の通知は、まだ届いていないものが置き換わる（Web Pushの Topic と同じ用途）。
-    if (options.topic) headers["apns-collapse-id"] = options.topic.slice(0, 64);
+    const headers = buildApnsHeaders({
+      token: device.token,
+      jwt,
+      bundleId,
+      pushType: options.pushType,
+      priority: options.priority,
+      expiresAt: Math.floor(Date.now() / 1000) + options.ttlSeconds,
+      collapseId: options.collapseId,
+    });
 
     const request = session.request(headers);
     let status = 0;

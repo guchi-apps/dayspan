@@ -1,3 +1,5 @@
+import { after } from "next/server";
+
 import {
   getShortcutTimeZone,
   rangeLabel,
@@ -9,6 +11,7 @@ import {
 } from "@/app/api/shortcuts/shared";
 import { getRunningActivity, stopRunningActivity } from "@/services/activity/running";
 import { getSleepSettings } from "@/services/activity/settings";
+import { notifyLiveActivity } from "@/services/live-activity/notify";
 
 type Body = {
   /** 起床時刻（ISO 8601）。オートメーションから走る場合は送らなくてよい。 */
@@ -67,6 +70,8 @@ export async function POST(request: Request) {
 
   try {
     const result = await stopRunningActivity(userId, endedAt);
+    // ライブアクティビティ（#971）。応答を待たせない
+    after(() => notifyLiveActivity(userId, { type: "stopped" }));
 
     // 直前の getRunningActivity では記録中だった。ここへ来るのは、その間に別の端末から
     // 止められた場合だけで、結果としては「止まっている」で正しい。

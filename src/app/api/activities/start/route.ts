@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 
 import { externalApiError } from "@/lib/api-error";
 import { notifyActivityStarted } from "@/services/notifications/activity";
+import { notifyLiveActivity } from "@/services/live-activity/notify";
 import { requireUserId } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { ACTIVITY_NAME_MAX_LENGTH } from "@/services/activity/presets";
@@ -76,6 +77,12 @@ export async function POST(request: Request) {
       } catch (error) {
         console.error("[dayspan] activity notification failed:", error);
       }
+      // ライブアクティビティ（#971）。切り替えは既存のアクティビティへの更新1通にする
+      await notifyLiveActivity(userId, {
+        type: "started",
+        running: result.running,
+        switched: result.saved !== null,
+      });
     });
 
     return NextResponse.json(result);
