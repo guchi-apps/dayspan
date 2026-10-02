@@ -47,7 +47,7 @@ Mac につながなくても、iPhone の TestFlight アプリからインスト
 ### 初回だけ（手作業）
 
 1. [App Store Connect](https://appstoreconnect.apple.com/) → マイApp → 「+」→ 新規App。プラットフォーム iOS・名前 YoteiFlow・プライマリ言語 日本語・Bundle ID `com.gucchii.yoteiflow`・SKU は任意（例 `yoteiflow`）
-2. App Store Connect API キーは**新しく作らず、kurashio と共用**する（APIキーはチーム単位のため YoteiFlow にもそのまま使える）。1Password の項目 `apps/MyRoom` の `asc-key-id`・`asc-issuer-id`・`asc-key-p8`（`.p8` の中身をbase64の1行にした値）を `ios/asc.env.tpl` が参照している。**キーの発行・登録は不要**
+2. App Store Connect API キーは**新しく作らず、kurashio と共用**する（APIキーはチーム単位のため YoteiFlow にもそのまま使える）。1Password の項目 `apps/AppStoreConnect` の `key-id`・`issuer-id`・`key-p8`（`.p8` の中身をbase64の1行にした値）を `ios/asc.env.tpl` が参照している。**キーの発行・登録は不要**
 3. スクリプトは `asc-key-p8` を復号して Mac 上の一時ファイル（権限600）へ書き出し、`xcodebuild` に渡して、終了時（失敗時も）に消す。鍵の中身・パスはログに出さない
 4. TestFlight →「内部テスト」にグループを作り、自分（App Store Connect のユーザー）を追加。ビルドの暗号化の質問が出た場合は「いいえ（標準の暗号化のみ）」
 
@@ -57,7 +57,7 @@ kurashio の `remote-install.sh` と同じ形で、subpc から Tailscale 越し
 
 ```bash
 node ios/scripts/sync-version.mjs          # 版番号の確認（通常はリリースで同期済みで差分は出ない）
-ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、TestFlight へ上げる
+ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、TestFlight へ上げる（手動。自動配信は下の「自動配信」）
 ```
 
 - Mac 側の前提: チェックアウトが `$HOME/apps/yoteiflow` にある（別の場所なら `MAC_REPO_DIR='$HOME/x'`。チルダ付きで渡さない）・Xcode・1Password CLI（`op`）にサインイン済み・ログインキーチェーンが開いている（codesign が失敗したら Mac で `security unlock-keychain ~/Library/Keychains/login.keychain-db` を一度）
@@ -75,9 +75,15 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 
 > 開発用に Xcode から入れたアプリと TestFlight 版は Bundle ID が同じため上書きされます。入れ替える前にどちらか一方を削除すると確実です。
 
-### 自動化について
+### 自動配信（GitHub Actions・#961）
 
-`xcodebuild` + App Store Connect API キーでスクリプト化し、subpc から Mac へSSHして1コマンドで上げられます（上記・#929）。CI（GitHub Actions の macOS ランナー）からの自動アップロードは、Mac ランナーの費用・署名証明書の扱いが絡むため、kurashio と同じく見送っています。
+`main` へのデプロイ（`Deploy to Production`）が成功すると、`ios-testflight-trigger.yml` が `ios-testflight.yml`（`iOS TestFlight`）を起動します。kurashio（#591）と同じ構成で、issue-deck のブランチ画面の「iOS配布（TestFlight）の結果」がこのワークフローの段階（判定・署名・ビルド・アップロード・処理待ち・内部グループ配布）を読んで表示します。
+
+- 判定は `ios/scripts/ios-changes.mjs`。配布物（`YoteiFlow/`・`YoteiFlowWidget/`・`Shared/`・`Config/`・`AppInfo.plist`・`YoteiFlow.xcodeproj/`。README・scripts・版番号の行だけの差分は除く）に、最後の配布印（タグ `ios-testflight/<ビルド番号>`）以降の変更があるときだけ配布する。印は配布し終えたときだけ進むので、失敗した配布の変更は次の判定にも残る
+- ビルド番号は `run_number*100+run_attempt`。**手動の `upload-testflight.sh`（日時 `YYYYMMDDHHMM`）より小さくなる**ため、同じ版番号で手動のあとに自動配信すると App Store Connect が「ビルド番号が小さい」として拒否する。自動配信へ移したあとは手動アップロードを使わないか、`IOS_BUILD_NUMBER` で自動側より大きい値を指定する
+- 手動実行: `gh workflow run ios-testflight.yml -f sha=<main上のコミット> [-f dry_run=true]`。`dry_run` は判定だけ行いビルドしない
+- 署名は App Store Connect APIキー（クラウド署名）。キーは GitHub Secrets の `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_P8`（正は 1Password の `op://apps/AppStoreConnect/*`。手動用の `asc.env.tpl` も同じ参照先）。内部グループが複数あるときだけ GitHub の variable `TESTFLIGHT_GROUP` にグループ名を置く
+- ビルドは GitHub ホストの `xcode-27` ランナー。**subpc には Xcode が無く、ワークフローの実行・署名・App Store Connect との疎通は未確認**。初回は `dry_run` → 本番の順に確かめてください
 
 ## 開発環境と本番の切り替え
 
