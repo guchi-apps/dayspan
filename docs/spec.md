@@ -2140,7 +2140,7 @@ Android・PCのブラウザでも同じ経路で届く。
 iOSアプリ（`ios/`・SwiftUI + WKWebView）はWeb Pushが動かないため、APNsで同じ通知を受ける（#925）。
 文面・時刻・バッジの件数・通知を押したときの行き先はWeb Pushと共通で、送り先だけが増える
 （`ApnsDevice`・`sendToUser()`）。同じ端末のPWAとの二重通知は、アプリが届いている端末の系統
-（iPhone / iPad）のWeb Pushへは送らないことで避ける。詳細は `docs/notifications.md`「iOSアプリ（APNs）」。
+（iPhone / iPad）のWeb Pushへは送らないことで避ける。詳細は `docs/notifications.md`「iOSアプリ（APNs）」。設定 ▸ 通知の「この端末で受け取る」はアプリではブリッジ経由でAPNsの登録・解除を行う（#968）。
 
 ### iOS側の制約
 

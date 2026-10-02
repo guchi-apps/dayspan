@@ -24,6 +24,13 @@ export function checkConsistency() {
     problems.push(`戻り先スキームが一致しません: Swift=${swiftScheme} / TS=${tsScheme}`);
   }
 
+  // 通知の設定画面とのブリッジ名（#968）
+  const swiftBridge = webViewModel.match(/pushBridgeName = "([^"]+)"/)?.[1];
+  const tsBridge = nativeApp.match(/NATIVE_PUSH_BRIDGE = "([^"]+)"/)?.[1];
+  if (!swiftBridge || swiftBridge !== tsBridge) {
+    problems.push(`通知ブリッジ名が一致しません: Swift=${swiftBridge} / TS=${tsBridge}`);
+  }
+
   // 戻り先のホスト（auth-callback / google-connected）
   for (const host of ["auth-callback", "google-connected"]) {
     if (!nativeApp.includes(`://${host}`)) problems.push(`native-app.ts に ${host} がありません`);

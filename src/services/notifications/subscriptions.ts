@@ -4,6 +4,7 @@ import { isApnsConfigured } from "@/lib/apns/config";
 import { sendApns } from "@/lib/apns/send";
 import { db } from "@/lib/db";
 import { isPushConfigured } from "@/lib/web-push/keys";
+import { countApnsDevices } from "@/services/notifications/apns-devices";
 import { dropWebSubscriptionsCoveredByApp } from "@/services/notifications/delivery";
 import { buildPushPayload, type PushNotificationInput } from "@/lib/web-push/payload";
 import { sendWebPush } from "@/lib/web-push/send";
@@ -93,6 +94,12 @@ export async function listSubscriptions(userId: string): Promise<SubscriptionSum
 
 export async function countSubscriptions(userId: string): Promise<number> {
   return db.pushSubscription.count({ where: { userId } });
+}
+
+/** 登録済みの端末の数（Web Push＋iOSアプリのAPNs）。通知画面と設定一覧で同じ数を出すため1か所で数える。 */
+export async function countNotificationDevices(userId: string): Promise<number> {
+  const [web, apns] = await Promise.all([countSubscriptions(userId), countApnsDevices(userId)]);
+  return web + apns;
 }
 
 export type SendSummary = {
