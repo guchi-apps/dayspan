@@ -24,6 +24,7 @@ export function NotificationSection({
   settings,
   publicKey,
   deviceCount,
+  apnsConfigured,
   timeZone,
 }: {
   settings: NotificationSettings;
@@ -31,6 +32,8 @@ export function NotificationSection({
   publicKey: string | null;
   /** 登録済みの端末の数。この端末を含む。 */
   deviceCount: number;
+  /** APNsの認証キーが設定されているか。iOSアプリの端末が登録できるかを決める。 */
+  apnsConfigured: boolean;
   timeZone: string;
 }) {
   const router = useRouter();
@@ -91,9 +94,15 @@ export function NotificationSection({
 
   return (
     <div className="flex flex-col gap-6">
-      {publicKey === null && (
+      {publicKey === null && !state.native && (
         <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
           サーバーで通知の鍵（VAPID）が設定されていません。設定するまで、どの端末でも通知は届きません。
+        </p>
+      )}
+
+      {state.native && !apnsConfigured && (
+        <p className="type-body-medium rounded-lg bg-error-container/70 px-3 py-2 text-on-error-container">
+          サーバーでAPNsの認証キーが設定されていません。設定するまで、アプリには通知が届きません。
         </p>
       )}
 
@@ -126,7 +135,7 @@ export function NotificationSection({
             <Switch
               id="push-enabled"
               checked={state.subscribed}
-              disabled={!state.ready || !state.supported || state.busy || publicKey === null}
+              disabled={!state.ready || !state.supported || state.busy || (publicKey === null && !state.native)}
               onCheckedChange={(checked) => {
                 // 登録した端末の数は、この画面をサーバーで描いた時点の値。取り直さないと
                 // 「登録済み（ほかに1台）」の数が押した直後だけ合わなくなる。

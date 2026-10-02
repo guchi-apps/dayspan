@@ -29,6 +29,77 @@ final class PushCoordinator {
 
     private var didRequestThisLaunch = false
 
+    /// 通知の設定画面でオフにされたか（#968）。立っている間は、起動・画面の読み込みのたびの自動の
+    /// 許可要求とトークン登録をしない。オンにされたとき（`registerNow`の前）に外す
+    var isOptedOut: Bool {
+        get { UserDefaults.standard.bool(forKey: "pushOptOut") }
+        set { UserDefaults.standard.set(newValue, forKey: "pushOptOut") }
+    }
+
+    /// トークンの到着を待つ呼び出し。トークンが届く・登録に失敗する・時間切れのいずれかで1回だけ再開する
+    enum Outcome {
+        case denied
+        case token(String)
+        case failed(String)
+        case timeout
+    }
+
+    private let waiterLock = NSLock()
+    private var waiters: [UUID: CheckedContinuation<Outcome, Never>] = [:]
+
+    /// 通知の許可の状態。画面（Web）へは `notDetermined` / `denied` / `granted` の3値で返す
+    func authorizationState() async -> String {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        switch settings.authorizationStatus {
+        case .notDetermined: return "notDetermined"
+        case .denied: return "denied"
+        default: return "granted"
+        }
+    }
+
+    /// 通知の設定画面から「この端末で受け取る」をオンにされたときの経路。
+    /// `requestAuthorizationIfNeeded()` の起動1回きりの guard を通らず、許可の確認（未決定なら尋ねる）→
+    /// APNsへの登録→トークン到着待ち、を毎回行う。失敗・時間切れでも必ず返す（画面が固まらないように）
+    func registerNow(timeout: TimeInterval = 10) async -> Outcome {
+        var state = await authorizationState()
+        if state == "notDetermined" {
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
+            state = await authorizationState()
+        }
+        guard state == "granted" else { return .denied }
+        didRequestThisLaunch = true
+
+        let id = UUID()
+        return await withCheckedContinuation { continuation in
+            waiterLock.lock()
+            waiters[id] = continuation
+            waiterLock.unlock()
+
+            // すでにトークンがあっても登録は呼び直す（届いたトークンが最新か確かめる）。
+            // 届けば didRegister が全ての待ちを再開する
+            if let token = deviceToken { resolve(id: id, with: .token(token)) }
+            DispatchQueue.main.async { UIApplication.shared.registerForRemoteNotifications() }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
+                self?.resolve(id: id, with: .timeout)
+            }
+        }
+    }
+
+    private func resolve(id: UUID, with outcome: Outcome) {
+        waiterLock.lock()
+        let continuation = waiters.removeValue(forKey: id)
+        waiterLock.unlock()
+        continuation?.resume(returning: outcome)
+    }
+
+    private func resolveAll(with outcome: Outcome) {
+        waiterLock.lock()
+        let pending = waiters
+        waiters.removeAll()
+        waiterLock.unlock()
+        pending.values.forEach { $0.resume(returning: outcome) }
+    }
+
     /// 開発用ビルド（Xcodeから入れたもの）のトークンはsandbox、TestFlight・App Storeはproduction。
     /// サーバーはこの値で送り先のホストを切り替える
     var environment: String {
@@ -43,7 +114,7 @@ final class PushCoordinator {
     /// （ログイン前に許可を求めても、トークンを結び付けるユーザーがまだ居ない）。
     /// 一度拒否された場合、システムは再度は尋ねず、ここは何もしない（設定アプリから変える）
     func requestAuthorizationIfNeeded() {
-        guard !didRequestThisLaunch else { return }
+        guard !didRequestThisLaunch, !isOptedOut else { return }
         didRequestThisLaunch = true
 
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
@@ -54,7 +125,12 @@ final class PushCoordinator {
 
     func didRegister(deviceToken data: Data) {
         deviceToken = data.map { String(format: "%02x", $0) }.joined()
+        resolveAll(with: .token(deviceToken ?? ""))
         onTokenChanged?()
+    }
+
+    func didFail(_ error: Error) {
+        resolveAll(with: .failed(error.localizedDescription))
     }
 
     func open(path: String) {
@@ -82,7 +158,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        // 機内モード・シミュレータなどで起きる。次の起動でやり直すので、ここでは何もしない
+        // 機内モード・シミュレータなどで起きる。自動の登録は次の起動でやり直す。
+        // 設定画面から待っている呼び出しがあれば、失敗として返す
+        PushCoordinator.shared.didFail(error)
     }
 
     /// アプリを開いている間も通知を出す（予定の直前に気付けるように）

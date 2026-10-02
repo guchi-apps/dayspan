@@ -4,9 +4,10 @@ import { NotificationSection } from "@/components/settings/notification-section"
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
+import { isApnsConfigured } from "@/lib/apns/config";
 import { getVapidKeys, isPushConfigured } from "@/lib/web-push/keys";
 import { getNotificationSettings } from "@/services/notifications/settings";
-import { countSubscriptions } from "@/services/notifications/subscriptions";
+import { countNotificationDevices } from "@/services/notifications/subscriptions";
 
 /**
  * 通知の設定（docs/spec.md §32）。
@@ -20,7 +21,7 @@ export default async function NotificationSettingsPage() {
 
   const [settings, deviceCount, uiSetting] = await Promise.all([
     getNotificationSettings(user.id),
-    countSubscriptions(user.id),
+    countNotificationDevices(user.id),
     db.uiSetting.findUnique({ where: { userId: user.id }, select: { timeZone: true } }),
   ]);
 
@@ -35,6 +36,7 @@ export default async function NotificationSettingsPage() {
         settings={settings}
         publicKey={publicKey()}
         deviceCount={deviceCount}
+        apnsConfigured={isApnsConfigured()}
         timeZone={uiSetting?.timeZone ?? "Asia/Tokyo"}
       />
     </SettingsShell>

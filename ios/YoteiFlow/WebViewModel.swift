@@ -22,6 +22,11 @@ final class WebViewModel: NSObject, ObservableObject {
     /// 今のデバイストークンをサーバーへ登録し終えたか。ログイン前（401）は登録できないので、
     /// 次の画面の読み込みで続きをやる
     private var registeredToken: String?
+    /// サーバーへ登録できた（200）トークン。`registeredToken` は401以外の失敗でも立つ
+    /// 「繰り返さない」印で、画面へ「登録済み」と答える根拠にはならないため分ける（#968）
+    private var serverRegisteredToken: String?
+    /// 直近のトークン登録のHTTPステータス（通信の失敗は nil）
+    private var lastPushHTTPStatus: Int?
     /// ウィジェット用トークンをこの起動で共有済みか（#926）
     private var hasSyncedWidgetToken = false
     /// 起動前（WebViewがまだ何も開いていない間）にウィジェットから渡された開き先
@@ -39,6 +44,12 @@ final class WebViewModel: NSObject, ObservableObject {
 
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
+
+        // 通知の設定画面（Web）から、この端末の通知（APNs）をオン・オフするためのブリッジ（#968）
+        // （WKWebViewは生成時に設定を複製するため、生成後は webView 側の設定へ足す）
+        webView.configuration.userContentController.addScriptMessageHandler(
+            PushBridgeHandler(model: self), contentWorld: .page, name: Self.pushBridgeName
+        )
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -143,12 +154,14 @@ final class WebViewModel: NSObject, ObservableObject {
 extension WebViewModel {
     /// デバイストークンを、ログイン済みのWebViewからサーバーへ渡す。
     /// 未ログイン（401）・通信失敗のときは印を付けず、次の画面の読み込みでやり直す
-    fileprivate func registerPushTokenIfPossible() async {
+    @discardableResult
+    fileprivate func registerPushTokenIfPossible(force: Bool = false) async -> Int? {
         guard
+            !PushCoordinator.shared.isOptedOut,
             let token = PushCoordinator.shared.deviceToken,
-            token != registeredToken,
+            force || token != registeredToken,
             let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login")
-        else { return }
+        else { return nil }
 
         let script = """
         const response = await fetch('/api/notifications/apns', {
@@ -165,7 +178,117 @@ extension WebViewModel {
             contentWorld: .page
         )
         // 登録できた（200）か、サーバー側で受けられない（鍵が未設定の503など）ときは繰り返さない
-        if let status = value as? Int, status != 401 { registeredToken = token }
+        let status = value as? Int
+        lastPushHTTPStatus = status
+        if let status, status != 401 { registeredToken = token }
+        if status == 200 { serverRegisteredToken = token }
+        return status
+    }
+}
+
+// MARK: - 通知の設定画面とのブリッジ（#968）
+
+extension WebViewModel {
+    /// Web側の `NATIVE_PUSH_BRIDGE`（src/lib/native-auth/native-app.ts）と揃える
+    static let pushBridgeName = "yoteiflowPush"
+
+    /// 画面（Web）からの `status` / `enable` / `disable`。返事は必ず返す（スイッチが固まらないように）
+    fileprivate func handlePushBridge(_ body: Any) async -> [String: Any] {
+        let action = (body as? [String: Any])?["action"] as? String ?? "status"
+        let coordinator = PushCoordinator.shared
+
+        switch action {
+        case "enable":
+            coordinator.isOptedOut = false
+            switch await coordinator.registerNow() {
+            case .denied:
+                break
+            case .failed(let message):
+                return await pushReply(error: "通知の登録に失敗しました（\(message)）")
+            case .timeout:
+                return await pushReply(error: "APNsからの応答がありませんでした。通信状況を確認してもう一度試してください。")
+            case .token:
+                // 起動時の自動登録で503などを受けていても、押された時点で必ず送り直す
+                await registerPushTokenIfPossible(force: true)
+            }
+            return await pushReply()
+
+        case "disable":
+            coordinator.isOptedOut = true
+            if let token = serverRegisteredToken ?? coordinator.deviceToken {
+                let status = await deletePushToken(token)
+                // 404（すでに解除済み・失効で消えていた）も解除できた扱い
+                guard status == 200 || status == 404 else {
+                    coordinator.isOptedOut = false
+                    return await pushReply(error: "解除できませんでした。通信状況を確認してください。")
+                }
+            }
+            serverRegisteredToken = nil
+            registeredToken = nil
+            return await pushReply()
+
+        default:
+            // 起動直後は自動の登録がまだ終わっていないことがある。許可済みなら、済むまで（上限5秒）待つ
+            if !coordinator.isOptedOut, serverRegisteredToken == nil,
+               await coordinator.authorizationState() == "granted" {
+                if case .token = await coordinator.registerNow(timeout: 5) {
+                    await registerPushTokenIfPossible()
+                }
+            }
+            return await pushReply()
+        }
+    }
+
+    private func pushReply(error: String? = nil) async -> [String: Any] {
+        let coordinator = PushCoordinator.shared
+        let registered = !coordinator.isOptedOut
+            && serverRegisteredToken != nil
+            && serverRegisteredToken == coordinator.deviceToken
+        var reply: [String: Any] = [
+            "permission": await coordinator.authorizationState(),
+            "registered": registered,
+        ]
+        if let lastPushHTTPStatus { reply["httpStatus"] = lastPushHTTPStatus }
+        if let error { reply["error"] = error }
+        return reply
+    }
+
+    private func deletePushToken(_ token: String) async -> Int? {
+        let script = """
+        const response = await fetch('/api/notifications/apns', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ token: token })
+        });
+        return response.status;
+        """
+        let value = try? await webView.callAsyncJavaScript(
+            script, arguments: ["token": token], contentWorld: .page
+        )
+        return value as? Int
+    }
+}
+
+/// WKUserContentController は登録したハンドラを強く持つため、モデルとの循環を避ける薄い入れ物
+private final class PushBridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
+    weak var model: WebViewModel?
+
+    init(model: WebViewModel) {
+        self.model = model
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) async -> (Any?, String?) {
+        // アプリのWeb版（自分のオリジンのメインフレーム）からの呼び出しだけ受ける
+        guard message.frameInfo.isMainFrame,
+              let url = message.frameInfo.request.url, AppConfig.isAppURL(url),
+              let model else {
+            return (nil, "unavailable")
+        }
+        return (await model.handlePushBridge(message.body), nil)
     }
 }
 
