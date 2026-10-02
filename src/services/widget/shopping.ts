@@ -6,8 +6,8 @@ import { readWidgetCache, writeWidgetCache } from "@/services/widget/cache";
 import { sortShoppingItems, type ShoppingItem } from "@/types/shopping";
 import type { WidgetShoppingPayload } from "@/types/widget";
 
-/** 大きい枠に入る行数。残りは件数にだけ含める。 */
-const MAX_ITEMS = 8;
+/** 返す最大件数。ネイティブ版が枠の高さに入るだけ並べるための上限で、残りは件数にだけ含める（#969）。 */
+const MAX_ITEMS = 30;
 
 /**
  * iPhoneウィジェットの「買い物リスト」（docs/spec.md §28・§36）。

@@ -125,15 +125,15 @@ struct TodayWidgetView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         case .systemMedium:
             HStack(alignment: .top, spacing: 12) {
-                column(title: "今日の予定") { scheduleRows(limit: 3) }
+                column(title: "今日の予定") { scheduleRows() }
                 Divider()
-                column(title: "タスク") { taskRows(limit: 3) }
+                column(title: "タスク") { taskRows() }
             }
         case .systemLarge:
             VStack(alignment: .leading, spacing: 10) {
-                column(title: "今日の予定") { scheduleRows(limit: 5) }
+                column(title: "今日の予定") { scheduleRows() }
                 Divider()
-                column(title: "タスク") { taskRows(limit: 5) }
+                column(title: "タスク") { taskRows() }
             }
         default: // systemSmall: 次の予定1件とタスクの件数
             VStack(alignment: .leading, spacing: 4) {
@@ -192,7 +192,7 @@ struct TodayWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    @ViewBuilder private func scheduleRows(limit: Int) -> some View {
+    @ViewBuilder private func scheduleRows() -> some View {
         switch scheduleResult {
         case .failure(let f):
             Text(f.text).font(.caption).foregroundStyle(.secondary)
@@ -200,7 +200,8 @@ struct TodayWidgetView: View {
             if items.isEmpty {
                 Text("予定はありません").font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach(Array(items.prefix(limit).enumerated()), id: \.offset) { _, item in
+                FittedRowList(count: items.count, total: items.count) { index in
+                    let item = items[index]
                     HStack(spacing: 6) {
                         Text(when(item)).monospacedDigit().foregroundStyle(.secondary)
                         Text(item.title).lineLimit(1).strikethrough(item.outcome != nil)
@@ -208,14 +209,11 @@ struct TodayWidgetView: View {
                     .font(.caption)
                     .opacity(item.past || item.outcome != nil ? 0.5 : 1)
                 }
-                if items.count > limit {
-                    Text("ほか \(items.count - limit)件").font(.caption2).foregroundStyle(.secondary)
-                }
             }
         }
     }
 
-    @ViewBuilder private func taskRows(limit: Int) -> some View {
+    @ViewBuilder private func taskRows() -> some View {
         switch tasksResult {
         case .failure(let f):
             Text(f.text).font(.caption).foregroundStyle(.secondary)
@@ -223,7 +221,8 @@ struct TodayWidgetView: View {
             if p.items.isEmpty {
                 Text("期限のタスクはありません").font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach(Array(p.items.prefix(limit).enumerated()), id: \.offset) { _, item in
+                FittedRowList(count: p.items.count, total: p.total) { index in
+                    let item = p.items[index]
                     HStack(spacing: 6) {
                         Text(item.title).lineLimit(1)
                         Spacer(minLength: 4)
@@ -231,9 +230,6 @@ struct TodayWidgetView: View {
                             .foregroundStyle(item.bucket == "overdue" ? Color.red : Color.secondary)
                     }
                     .font(.caption)
-                }
-                if p.total > limit {
-                    Text("ほか \(p.total - limit)件").font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }
