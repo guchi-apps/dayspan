@@ -10,7 +10,6 @@ import { formatElapsed } from "@/components/calendar/activity-format";
 import { readErrorMessage } from "@/components/calendar/response-error";
 import { useNowIso } from "@/components/calendar/use-clock";
 import { stopRunningActivityNow } from "@/components/nav/stop-running-activity";
-import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { submitActivityOp } from "@/lib/activity-queue/flush";
+import { useEffectiveRunning } from "@/lib/activity-queue/use-effective-running";
 import type { ActivityPresetItem, RunningActivityItem } from "@/types/activity";
 
 /**
@@ -41,7 +42,9 @@ export function ActivityQuickSheet({
   const offline = useOffline();
 
   const [presets, setPresets] = useState<ActivityPresetItem[] | null>(null);
-  const [running, setRunning] = useState<RunningActivityItem | null>(null);
+  const [serverRunning, setRunning] = useState<RunningActivityItem | null>(null);
+  // まだ届いていない操作（オフライン中の開始・停止）を重ねた見かけの記録（issue #974）。
+  const running = useEffectiveRunning(serverRunning);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,41 +89,27 @@ export function ActivityQuickSheet({
     };
   }, [open]);
 
-  const send = async (path: string, init: RequestInit, fallback: string): Promise<boolean> => {
-    if (offline) {
-      setError(OFFLINE_WRITE_MESSAGE);
-      return false;
-    }
-
+  /** 記録を始める。すでに記録中なら、そこまでを予定にしてから切り替わる（サーバー側で行う）。 */
+  const start = async (preset: ActivityPresetItem) => {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch(path, init);
-      if (!response.ok) {
-        setError(await readErrorMessage(response, fallback));
-        return false;
+      // オフラインなら端末にため、通信が戻ったときに同期する（issue #974）。
+      const result = await submitActivityOp(
+        { kind: "start", presetId: preset.id, title: preset.name },
+        serverRunning,
+        offline,
+      );
+      if (result.status === "error") {
+        setError(result.message);
+        return;
       }
-      return true;
     } catch {
-      setError(fallback);
-      return false;
+      setError("記録を開始できませんでした。");
+      return;
     } finally {
       setBusy(false);
     }
-  };
-
-  /** 記録を始める。すでに記録中なら、そこまでを予定にしてから切り替わる（サーバー側で行う）。 */
-  const start = async (preset: ActivityPresetItem) => {
-    const ok = await send(
-      "/api/activities/start",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presetId: preset.id }),
-      },
-      "記録を開始できませんでした。",
-    );
-    if (!ok) return;
 
     onOpenChange(false);
     // ナビの印と、いま見ている画面（記録から作られた予定が増えることがある）を取り直させる。
@@ -130,14 +119,9 @@ export function ActivityQuickSheet({
   // 記録中バー（running-activity-bar.tsx・issue #629）と同じ最短経路（stopRunningActivityNow）
   // を使う。どの画面からでも「押した時点で止める」の意味を1か所にまとめておくため。
   const stop = async () => {
-    if (offline) {
-      setError(OFFLINE_WRITE_MESSAGE);
-      return;
-    }
-
     setBusy(true);
     setError(null);
-    const result = await stopRunningActivityNow();
+    const result = await stopRunningActivityNow(serverRunning, offline);
     setBusy(false);
     if (!result.ok) {
       setError(result.message);
@@ -148,7 +132,7 @@ export function ActivityQuickSheet({
     startTransition(() => router.refresh());
   };
 
-  const disabled = busy || offline;
+  const disabled = busy;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

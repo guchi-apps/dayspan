@@ -2,6 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import {
+  disableNativePush,
+  enableNativePush,
+  isNativeApp,
+  nativePushErrorMessage,
+  nativePushStatus,
+  type NativePushStatus,
+} from "@/lib/native-push";
+
 /**
  * この端末で通知を受け取れるようにする（docs/spec.md §32）。
  *
@@ -18,6 +27,8 @@ export type PushState = {
   /** iPhone・iPadで、ホーム画面に追加していない状態。追加を促す理由になる。 */
   needsInstall: boolean;
   permission: NotificationPermission | null;
+  /** iOSアプリ（WKWebView）の中。Push APIは無く、許可・登録はアプリ経由（APNs）で行う。 */
+  native: boolean;
   subscribed: boolean;
   busy: boolean;
   error: string | null;
@@ -28,6 +39,7 @@ const INITIAL: PushState = {
   supported: false,
   needsInstall: false,
   permission: null,
+  native: false,
   subscribed: false,
   busy: false,
   error: null,
@@ -40,6 +52,23 @@ export function usePushSubscription(publicKey: string | null) {
     let cancelled = false;
 
     const detect = async () => {
+      if (isNativeApp()) {
+        // 起動直後の自動登録が進行中なら、アプリが済むまで待ってから返す。
+        const status = await nativePushStatus().catch(() => null);
+        if (cancelled) return;
+        setState((previous) => ({
+          ...previous,
+          ready: true,
+          supported: status !== null,
+          native: true,
+          needsInstall: false,
+          permission: status ? toPermission(status) : null,
+          subscribed: status?.registered ?? false,
+          error: status ? nativePushErrorMessage(status) : null,
+        }));
+        return;
+      }
+
       const supported =
         typeof window !== "undefined" &&
         "serviceWorker" in navigator &&
@@ -78,6 +107,27 @@ export function usePushSubscription(publicKey: string | null) {
   }, []);
 
   const subscribe = useCallback(async () => {
+    if (isNativeApp()) {
+      setState((previous) => ({ ...previous, busy: true, error: null }));
+      try {
+        const status = await enableNativePush();
+        setState((previous) => ({
+          ...previous,
+          busy: false,
+          permission: toPermission(status),
+          subscribed: status.registered,
+          error: nativePushErrorMessage(status) ?? (status.registered ? null : "この端末を登録できませんでした。"),
+        }));
+      } catch (error) {
+        setState((previous) => ({
+          ...previous,
+          busy: false,
+          error: error instanceof Error ? error.message : "この端末を登録できませんでした。",
+        }));
+      }
+      return;
+    }
+
     if (!publicKey) {
       setState((previous) => ({
         ...previous,
@@ -160,6 +210,21 @@ export function usePushSubscription(publicKey: string | null) {
   }, [publicKey]);
 
   const unsubscribe = useCallback(async () => {
+    if (isNativeApp()) {
+      setState((previous) => ({ ...previous, busy: true, error: null }));
+      try {
+        const status = await disableNativePush();
+        setState((previous) => ({ ...previous, busy: false, subscribed: status.registered }));
+      } catch (error) {
+        setState((previous) => ({
+          ...previous,
+          busy: false,
+          error: error instanceof Error ? error.message : "解除できませんでした。",
+        }));
+      }
+      return;
+    }
+
     setState((previous) => ({ ...previous, busy: true, error: null }));
 
     try {
@@ -190,6 +255,10 @@ export function usePushSubscription(publicKey: string | null) {
   }, []);
 
   return { state, subscribe, unsubscribe };
+}
+
+function toPermission(status: NativePushStatus): NotificationPermission {
+  return status.permission === "notDetermined" ? "default" : status.permission;
 }
 
 /**

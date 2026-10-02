@@ -29,6 +29,7 @@ import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
 import { resolveInternalPath, START_PATH_COOKIE, startPathLabel } from "@/lib/home-path";
 import { getNotificationSettings } from "@/services/notifications/settings";
+import { countNotificationDevices } from "@/services/notifications/subscriptions";
 import { weekStartLabel } from "@/lib/week-start";
 import { TRAVEL_MODE_LABELS } from "@/types/calendar";
 
@@ -56,7 +57,7 @@ export default async function SettingsPage() {
     // 発行の有無だけを見る。復号は開いてからで足りる。
     db.widgetToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
     db.shortcutToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
-    db.pushSubscription.count({ where: { userId: user.id } }),
+    countNotificationDevices(user.id),
     getNotificationSettings(user.id),
     cookies(),
   ]);

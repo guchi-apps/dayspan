@@ -85,6 +85,22 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 - 署名は App Store Connect APIキー（クラウド署名）。キーは GitHub Secrets の `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_P8`（正は 1Password の `op://apps/AppStoreConnect/*`。手動用の `asc.env.tpl` も同じ参照先）。内部グループが複数あるときだけ GitHub の variable `TESTFLIGHT_GROUP` にグループ名を置く
 - ビルドは GitHub ホストの `xcode-27` ランナー。**subpc には Xcode が無く、ワークフローの実行・署名・App Store Connect との疎通は未確認**。初回は `dry_run` → 本番の順に確かめてください
 
+### 署名と証明書（#975）
+
+- 自動署名（`-allowProvisioningUpdates`）は、実行のたびに Development 証明書を「Created via API」として Apple 側へ新規に作る。使い捨てのランナーに秘密鍵は残らないため、掃除しないとアカウントの証明書数の上限に達する（#966で実際に失敗した）。
+- 対応として `asc-api.mjs revoke-api-dev-certs` が、**名前が「Created via API」の Development 証明書だけ**を失効させる。署名の前（前回の失敗の残り）と後（`always()`）に実行する。Mac の Xcode が作った自分用の証明書・Distribution 証明書は対象外。配布（エクスポート）は Apple のクラウド管理の Distribution 証明書で署名されるため、失効させても影響しない。
+- 手動確認: `ASC_*` を環境に置き `node ios/scripts/asc-api.mjs revoke-api-dev-certs --dry-run true` で対象だけ一覧できる。
+- 同じ `apps/AppStoreConnect` のキーで同じ証明書枠を使う kurashio にも同じ掃除が要る（別Issue）。同時に両方のビルドが走ると、片方の掃除が他方の署名中の証明書を失効させる可能性がある（まれ。失敗したら再実行）。
+- 採らなかった方式: 手動署名（Distribution 証明書・プロファイルを 1Password から取り込む）。証明書は増えないが、.p12・プロファイルの発行と更新（1年）の運用が要る。この掃除で再発しなくなるため見送り、再発したら再検討する。
+
+### App ID・App Group の事前登録（手動）
+
+APIキーの自動署名は App ID・App Group を**作れない**（既存のものへ紐付けるだけ）ため、初回の前に Apple Developer の Identifiers で手動登録する。
+
+1. App ID `com.gucchii.yoteiflow`（アプリ本体）と `com.gucchii.yoteiflow.widget`（Widget）を作る
+2. App Group `group.com.gucchii.yoteiflow` を作り、両方の App ID の App Groups capability に紐付ける
+3. アプリ本体の App ID には Push Notifications も有効にする（APNs・#925）
+
 ## 開発環境と本番の切り替え
 
 `Shared/SharedConfig.swift` の `baseURL` だけを変えます（アプリとウィジェット拡張が同じ値を読みます）。**LAN IP の `http://` のままではSupabase Authのリダイレクトが戻れない**ため、sslip.io などでホスト名にし、そのURLをSupabaseの許可リダイレクトURLに入れます（`sslip-io-lan-dev` の手順）。**戻すのを忘れてコミットしないこと**（`node ios/scripts/check-consistency.mjs` と `pnpm test:unit` が本番URLかを確かめます）。
@@ -141,8 +157,8 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 
 | 項目 | 内容 |
 |---|---|
-| 面 | 活動記録（`YoteiFlowActivity`）・今日の予定・タスク・買い物リストの4種類。ウィジェットギャラリーから選ぶ（Scriptableの `Parameter` のような切り替えは不要） |
-| 枠 | systemSmall / Medium / Large、accessoryRectangular / Circular / Inline。行数・文言はScriptable版に揃える |
+| 面 | 活動記録（`YoteiFlowActivity`）・今日の予定・タスク・買い物リストの4種類に加え、今日の予定とタスクを1枠に並べる「今日の予定とタスク」（`YoteiFlowToday`・#970。`/api/widget/schedule` と `/tasks` を並行して読み、片方が失敗・未設定でももう片方は出す。small=次の予定1件＋期限件数、medium=2列、large=縦2段）。ウィジェットギャラリーから選ぶ（Scriptableの `Parameter` のような切り替えは不要） |
+| 枠 | systemSmall / Medium / Large、accessoryRectangular / Circular / Inline。文言はScriptable版に揃える。行数はネイティブ版が枠の高さに入るだけ並べる（Scriptable版は固定行数・#969） |
 | 取得 | 既存の `/api/widget/*` を `Authorization: Bearer`（ウィジェット用トークン）で読む。**新しい取得APIは無い**。サーバー側の3分キャッシュはそのまま効く。15分ごとに更新を要求（iOSは目安として扱う） |
 | 経過時間 | `Text(timerInterval:)`。端末が数えるので、更新を待たずに進み続ける |
 | タップ | `yoteiflow://open?path=/tasks` などでアプリの該当画面（`/activity`・`/calendar`・`/tasks`・`/shopping`）を開く。許可した4パスだけ受ける |
@@ -151,7 +167,15 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 
 **更新の合図**: 記録の開始・停止はWebの中で行われアプリへ伝わらないため、アプリが前面になったとき・トークンを保存したときに `WidgetCenter.reloadAllTimelines()` を呼ぶ。
 
-**Live Activity は入れない**: 記録の開始・停止はWeb（WebView）の中で起き、アプリを閉じていても別の端末（PWA・ショートカット）から変わりうる。Live Activity を現状に追従させるには、サーバーからAPNs（ActivityKitのプッシュ更新）で送るしかなく、APNsキーの管理・端末のpush tokenの登録・送信基盤が要る。Web Pushと別の基盤を足す割に、ロック画面の経過時間は accessory ウィジェットの `timerInterval` で代替できるため見送る。必要なら別Issueで扱う。
+**Live Activity（#971）**: 記録中の項目・経過時間・停止ボタンをロック画面・Dynamic Islandに出す。記録の開始・停止はWebの中や他端末でも起きるため、サーバーがAPNs（liveactivity）で追従させる（push-to-start で始め、activity push token へ update / end）。停止ボタンは `ios/Shared/` の `StopRecordingIntent`（LiveActivityIntent）が、Keychainの停止専用トークンで `/api/shortcuts/activity/stop` を呼ぶ。詳細は `docs/spec.md` §43。
+
+実機確認の手順（Xcode・iOS 17.2以降の実機。ライブアクティビティはシミュレータの push に制限がある）:
+1. Xcodeでビルドして実機へ入れ、ログインして1度アプリを開く（停止専用トークンとpush-to-startトークンが登録される）
+2. 設定 ▸ iPhoneで「ライブアクティビティ」が許可されていることを確かめる
+3. アプリを閉じた状態で、Web（PCのブラウザ）から記録を始める → ロック画面に項目名と経過時間が出る
+4. ロック画面の「停止」を押す → 記録が止まり、表示が消える（Webでも止まっている）
+5. 記録中にWeb側で別の項目へ切り替える → 表示が項目名だけ入れ替わる（2つ並ばない）
+6. アプリのログアウト後、表示が消えることを確かめる
 
 ## 実機確認手順
 
@@ -163,6 +187,7 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 - [ ] 設定 ▸ Google Calendar で接続・再接続でき、予定の読み書きができる
 - [ ] 外部リンクがSafariで開く／一度開いた画面が機内モードでも保存済みで開く（未保存の画面は再試行画面が出て、戻すと自動で読み込む）／低速回線で「保存済みを表示中」が出る／`confirm`（削除の確認）が出る／ノッチ・ホームバー周りが崩れない
 - [ ] Safari・PWA・PCの既存ログイン、Calendar連携が今までどおり動く（アプリでログインしてもSafari側がログアウトされない）
+- [ ] （#970）ウィジェットギャラリーの「今日の予定とタスク」を small / medium / large とロック画面に追加でき、予定とタスクが並ぶ。Notion未設定などで片方が出せなくても、もう片方は出る
 - [ ] （#926）ログイン後にホーム画面へ「YoteiFlow」のウィジェット（活動記録・今日の予定・タスク・買い物リスト）を追加でき、中身が出る。ロック画面の枠でも出る
 - [ ] （#926）記録中は経過時間が進み続け、タップでアプリの記録画面が開く（アプリが終了していても開く）
 - [ ] （#926）ログアウトするとウィジェットが「アプリを開いてログインすると表示されます」に変わる。Scriptableのウィジェットは引き続き動く
@@ -170,4 +195,4 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 
 ## 初回スコープ外（後続Issue）
 
-TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ Live Activity（WidgetKitのウィジェットは #926 で追加。既存のScriptableウィジェットも維持）/ App Store公開 / ネイティブ画面への置き換え。
+TestFlight配布のCI（macOSランナー）自動化 / APNsによるネイティブ通知（既存のWeb PushはPWA向けとして維持）/ （WidgetKitのウィジェットは #926、Live Activity は #971 で追加。既存のScriptableウィジェットも維持）/ App Store公開 / ネイティブ画面への置き換え。

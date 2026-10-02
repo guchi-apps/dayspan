@@ -39,7 +39,11 @@ struct ContentView: View {
             if phase == .active, model.failure != nil { model.retry() }
             // 記録の開始・停止はWebの中で行われ、アプリへは伝わらない。開いたとき・戻ったときに
             // ウィジェットを取り直させて、古い値が残らないようにする
-            if phase == .active { WidgetCenter.shared.reloadAllTimelines() }
+            if phase == .active {
+                WidgetCenter.shared.reloadAllTimelines()
+                // 食い違うライブアクティビティの片付け・取り残しの表示（#971）
+                Task { await LiveActivityCoordinator.shared.reconcile() }
+            }
         }
     }
 }

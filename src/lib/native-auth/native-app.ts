@@ -24,3 +24,15 @@ export function nativeLoginCodeUrl(code: string): string {
 export function nativeGoogleResultUrl(result: string): string {
   return `${NATIVE_GOOGLE_CALLBACK}?result=${encodeURIComponent(result)}`;
 }
+
+/**
+ * 通知の設定画面がiOSアプリへ頼むためのブリッジ（WKScriptMessageHandler）の名前。
+ * `ios/YoteiFlow/WebViewModel.swift` の `pushBridgeName` と揃える（check-consistency.mjs が照合する）。
+ */
+export const NATIVE_PUSH_BRIDGE = "yoteiflowPush";
+
+/**
+ * 睡眠をHealthKitへ書くブリッジ（issue #976）。`ios/YoteiFlow/WebViewModel.swift` の
+ * `healthBridgeName` と揃える（check-consistency.mjs が照合する）。
+ */
+export const NATIVE_HEALTH_BRIDGE = "yoteiflowHealth";

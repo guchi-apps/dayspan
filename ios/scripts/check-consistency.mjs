@@ -24,6 +24,20 @@ export function checkConsistency() {
     problems.push(`戻り先スキームが一致しません: Swift=${swiftScheme} / TS=${tsScheme}`);
   }
 
+  // 通知の設定画面とのブリッジ名（#968）
+  const swiftBridge = webViewModel.match(/pushBridgeName = "([^"]+)"/)?.[1];
+  const tsBridge = nativeApp.match(/NATIVE_PUSH_BRIDGE = "([^"]+)"/)?.[1];
+  if (!swiftBridge || swiftBridge !== tsBridge) {
+    problems.push(`通知ブリッジ名が一致しません: Swift=${swiftBridge} / TS=${tsBridge}`);
+  }
+
+  // 睡眠をHealthKitへ書くブリッジ名（#976）
+  const swiftHealthBridge = webViewModel.match(/healthBridgeName = "([^"]+)"/)?.[1];
+  const tsHealthBridge = nativeApp.match(/NATIVE_HEALTH_BRIDGE = "([^"]+)"/)?.[1];
+  if (!swiftHealthBridge || swiftHealthBridge !== tsHealthBridge) {
+    problems.push(`ヘルスブリッジ名が一致しません: Swift=${swiftHealthBridge} / TS=${tsHealthBridge}`);
+  }
+
   // 戻り先のホスト（auth-callback / google-connected）
   for (const host of ["auth-callback", "google-connected"]) {
     if (!nativeApp.includes(`://${host}`)) problems.push(`native-app.ts に ${host} がありません`);
@@ -89,6 +103,23 @@ export function checkConsistency() {
   const widgetApi = read("ios/YoteiFlowWidget/WidgetAPI.swift");
   if (!widgetApi.includes('"api/widget/\\(surface)"')) problems.push("WidgetAPI.swift が /api/widget/* を読んでいません");
   if (!webViewModel.includes("/api/settings/widget/native")) problems.push("WebViewModel.swift がウィジェット用トークンを受け取っていません");
+
+  // ライブアクティビティ（#971）。停止ボタンの Intent は両ターゲットに入る Shared/ に置く
+  let liveActivityClient = "";
+  try {
+    liveActivityClient = read("ios/Shared/LiveActivityClient.swift");
+  } catch {
+    // 無ければ下で指摘する
+  }
+  if (!liveActivityClient.includes("struct StopRecordingIntent: LiveActivityIntent")) {
+    problems.push("StopRecordingIntent が ios/Shared/ にありません（アプリ本体のターゲットに型が入らず停止が動かない）");
+  }
+  if (!read("ios/AppInfo.plist").includes("<key>NSSupportsLiveActivities</key>")) {
+    problems.push("AppInfo.plist に NSSupportsLiveActivities がありません");
+  }
+  if (!read("ios/YoteiFlowWidget/YoteiFlowWidgetBundle.swift").includes("RecordingLiveActivity()")) {
+    problems.push("ウィジェットバンドルに RecordingLiveActivity がありません");
+  }
 
   // App-Bound Domains（Service Worker）。宣言のホストが baseURL と一致し、WebView側で有効にしている
   const plist = read("ios/AppInfo.plist");

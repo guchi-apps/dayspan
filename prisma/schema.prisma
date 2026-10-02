@@ -34,6 +34,7 @@ model User {
   widgetToken          WidgetToken?
   shortcutToken        ShortcutToken?
   sleepHealthSent      SleepHealthSent[]
+  sleepHealthExport    SleepHealthExport?
   travelPlans          TravelPlan[]
   taskEventLinks       TaskEventLink[]
   eventOutcomes        EventOutcome[]
@@ -41,6 +42,9 @@ model User {
 
   pushSubscriptions         PushSubscription[]
   apnsDevices               ApnsDevice[]
+  liveActivityDevices       LiveActivityDevice[]
+  liveActivityTokens        LiveActivityToken[]
+  activityStopToken         ActivityStopToken?
   notificationSetting       NotificationSetting?
   notificationJobs          NotificationJob[]
   eventNotificationSettings EventNotificationSetting[]
@@ -411,15 +415,29 @@ model ShortcutToken {
   // 最後に使われた日時。オートメーションが効いているかを設定画面から読めるようにする。
   lastUsedAt DateTime?
 
-  // ヘルスケアへ送り終えた睡眠の終わり（docs/spec.md §40「ヘルスケアへ送る」）。
-  // これより後に終わった睡眠だけを次に返す。ショートカットが書き終えたあとの
-  // POST でだけ進める（取得した時点で進めると、途中で止まった夜が二度と返らない）。
-  sleepHealthExportedUntil DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ヘルスケアへ送った位置の印と控え（docs/spec.md §40「ヘルスケアへ送る」）。ユーザーに1行。
+//
+// 以前は ShortcutToken にあったが、ショートカットを設定していないiOSアプリ利用者では行が無く、
+// 印も控えも保存されないため毎回同じ睡眠を送り直してしまう。送った履歴（SleepHealthSent）は
+// ユーザー単位なので、印も同じ単位にし、ショートカットとアプリのどちらが進めても
+// 他方は同じ夜を返さない。トークンの生死とは無関係に持つ。
+model SleepHealthExport {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // これより後に終わった睡眠だけを次に返す。書き終えたあとの POST でだけ進める
+  // （取得した時点で進めると、途中で止まった夜が二度と返らない）。
+  exportedUntil DateTime?
 
   // 直近のGETが返した内容の控え（docs/spec.md §40「送ったあとの変更」）。POSTが `until` の一致を
-  // 確かめてから SleepHealthSent へ反映する。GETの時点で反映すると、ショートカットが途中で
-  // 止まったときに「送っていないのに送った」ことになる。
-  sleepHealthPending Json?
+  // 確かめてから SleepHealthSent へ反映する。
+  pending Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -598,6 +616,60 @@ model ApnsDevice {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// iOSアプリのライブアクティビティを「始める」ためのトークン（push-to-start・iOS 17.2以降・issue #971）。
+/// アプリが動いていない間にWeb・他の端末・ショートカットで記録が始まったとき、サーバーが
+/// これ宛にAPNsを送ってロック画面にアクティビティを出す。ApnsDevice（通常の通知）とは別の値。
+model LiveActivityDevice {
+  id     String @id @default(cuid())
+  userId String
+
+  token       String @unique @db.VarChar(200)
+  /// トークンを発行したAPNsの環境（sandbox / production）。環境をまたいでは使えない。
+  environment String @db.VarChar(16)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// 表示中のライブアクティビティを更新・終了するためのトークン（activity push token・issue #971）。
+/// アクティビティごとにOSが発行する。1端末に1つずつ持つため、ユーザーに複数ありうる。
+model LiveActivityToken {
+  id     String @id @default(cuid())
+  userId String
+
+  token       String @unique @db.VarChar(200)
+  environment String @db.VarChar(16)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// ライブアクティビティの停止ボタン用トークン（issue #971）。アプリのKeychain（App Group）に置かれ、
+/// ロック画面の停止ボタン（AppIntent）が使う。WidgetToken（読み取り専用）・ShortcutToken（睡眠）とは
+/// 分け、できるのは「記録の停止」と「自分のアクティビティのトークン登録」だけ。
+model ActivityStopToken {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  tokenHash String @unique @db.VarChar(64) // SHA-256（hex）
+  token     String @db.Text // secret-cipher.ts でAES-256-GCM暗号化
+
+  lastUsedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /// 何を知らせるか（アカウントにつき1つ）。

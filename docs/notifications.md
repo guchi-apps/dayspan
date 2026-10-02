@@ -163,6 +163,27 @@ App IDの Push Notifications capability はXcodeの自動署名が有効にす�
 その系統のWeb Pushへ自動で戻る。副作用として、iPhoneのアプリを入れている間はiPhoneのPWAへは届かない
 （アプリを消すか、トークンが失効すればPWAが再び受ける）。
 
+### 設定画面からのオン・オフ（#968）
+
+WKWebViewにはPush APIが無く、設定 ▸ 通知の `usePushSubscription` は `PushManager` が無いと
+「この端末では通知を扱えません」になっていた。アプリの中（ブリッジのハンドラがある）ときは、スイッチを
+`WKScriptMessageHandlerWithReply`（名前 `yoteiflowPush`・`src/lib/native-push.ts`）経由でアプリへ頼む。
+
+- `status`: 許可の状態（`notDetermined` / `denied` / `granted`）と、サーバーへ登録できているか（200のときだけ）。
+  起動直後で自動登録が済んでいなければ、許可済みのときだけ済むまで（上限5秒）待ってから返す
+- `enable`: 起動1回きりの guard を通らず、許可の確認（未決定なら尋ねる）→ `registerForRemoteNotifications` →
+  トークン到着待ち（失敗・10秒で返事）→ POST を毎回行う。拒否済みなら `denied` を返し、画面は「設定 > 通知」へ案内する
+- `disable`: `DELETE /api/notifications/apns`（404は解除済みとして成功）。`unregisterForRemoteNotifications` は呼ばない
+  （サーバーの行を消せば送信は止まる）。UserDefaultsの `pushOptOut` を立て、起動・画面の読み込みのたびの自動の許可要求と
+  トークン登録を止める（オンにすると外れる）
+
+「繰り返さない」印（`registeredToken`・401以外で立つ）と「サーバーに登録できた」印（`serverRegisteredToken`・200のみ）は分けている。
+前者を「登録済み」の根拠にすると、鍵が未設定（503）でも登録済みと答えてしまうため。
+
+アプリでオフにしてApnsDeviceの行が消えると、同じ系統（iPhone / iPad）のWeb Pushを外す理由（上記）も無くなる。
+同じ端末のPWAの購読が生きていれば、そちらへ通知が届く（許容した挙動。止めるにはPWAの画面で別にオフにする）。
+通知画面・設定一覧の登録端末数は `countNotificationDevices()`（Web Push＋APNs）で数える。
+
 ### バッジ・取り消し
 
 バッジの件数は `aps.badge` で同じ値（期限が今日以前のタスク＋買い物）を送る。アプリ（WKWebView）では
