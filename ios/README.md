@@ -85,6 +85,22 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 - 署名は App Store Connect APIキー（クラウド署名）。キーは GitHub Secrets の `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_P8`（正は 1Password の `op://apps/AppStoreConnect/*`。手動用の `asc.env.tpl` も同じ参照先）。内部グループが複数あるときだけ GitHub の variable `TESTFLIGHT_GROUP` にグループ名を置く
 - ビルドは GitHub ホストの `xcode-27` ランナー。**subpc には Xcode が無く、ワークフローの実行・署名・App Store Connect との疎通は未確認**。初回は `dry_run` → 本番の順に確かめてください
 
+### 署名と証明書（#975）
+
+- 自動署名（`-allowProvisioningUpdates`）は、実行のたびに Development 証明書を「Created via API」として Apple 側へ新規に作る。使い捨てのランナーに秘密鍵は残らないため、掃除しないとアカウントの証明書数の上限に達する（#966で実際に失敗した）。
+- 対応として `asc-api.mjs revoke-api-dev-certs` が、**名前が「Created via API」の Development 証明書だけ**を失効させる。署名の前（前回の失敗の残り）と後（`always()`）に実行する。Mac の Xcode が作った自分用の証明書・Distribution 証明書は対象外。配布（エクスポート）は Apple のクラウド管理の Distribution 証明書で署名されるため、失効させても影響しない。
+- 手動確認: `ASC_*` を環境に置き `node ios/scripts/asc-api.mjs revoke-api-dev-certs --dry-run true` で対象だけ一覧できる。
+- 同じ `apps/AppStoreConnect` のキーで同じ証明書枠を使う kurashio にも同じ掃除が要る（別Issue）。同時に両方のビルドが走ると、片方の掃除が他方の署名中の証明書を失効させる可能性がある（まれ。失敗したら再実行）。
+- 採らなかった方式: 手動署名（Distribution 証明書・プロファイルを 1Password から取り込む）。証明書は増えないが、.p12・プロファイルの発行と更新（1年）の運用が要る。この掃除で再発しなくなるため見送り、再発したら再検討する。
+
+### App ID・App Group の事前登録（手動）
+
+APIキーの自動署名は App ID・App Group を**作れない**（既存のものへ紐付けるだけ）ため、初回の前に Apple Developer の Identifiers で手動登録する。
+
+1. App ID `com.gucchii.yoteiflow`（アプリ本体）と `com.gucchii.yoteiflow.widget`（Widget）を作る
+2. App Group `group.com.gucchii.yoteiflow` を作り、両方の App ID の App Groups capability に紐付ける
+3. アプリ本体の App ID には Push Notifications も有効にする（APNs・#925）
+
 ## 開発環境と本番の切り替え
 
 `Shared/SharedConfig.swift` の `baseURL` だけを変えます（アプリとウィジェット拡張が同じ値を読みます）。**LAN IP の `http://` のままではSupabase Authのリダイレクトが戻れない**ため、sslip.io などでホスト名にし、そのURLをSupabaseの許可リダイレクトURLに入れます（`sslip-io-lan-dev` の手順）。**戻すのを忘れてコミットしないこと**（`node ios/scripts/check-consistency.mjs` と `pnpm test:unit` が本番URLかを確かめます）。
