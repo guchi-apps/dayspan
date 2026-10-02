@@ -34,6 +34,12 @@ test("startの本文は属性の型名・content-state・alertを持つ", () => 
   assert.equal(payload.aps["attributes-type"], "RecordingActivityAttributes");
   assert.deepEqual(payload.aps["content-state"], toContentState(running));
   assert.ok(payload.aps.alert);
+  assert.equal(payload.aps.timestamp, 1000);
+});
+
+test("updateにもtimestampが入る（古い更新が表示に残らない）", () => {
+  const payload = buildLiveActivityPayload("update", running, 2000) as { aps: Record<string, unknown> };
+  assert.equal(payload.aps.timestamp, 2000);
 });
 
 test("endは即時に消す", () => {

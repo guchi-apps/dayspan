@@ -46,7 +46,7 @@ final class LiveActivityCoordinator {
         }
     }
 
-    /// サーバーの記録中（読み取り専用のウィジェット用トークンで `/api/widget/activity` を読む）と、
+    /// サーバーの記録中（停止専用トークンで `/api/shortcuts/activity/running` を読む。DBの1行だけで済む）と、
     /// 手元のアクティビティを突き合わせる。食い違うものは終わらせ、1つも無いときだけ表示する
     func reconcile() async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled,
@@ -85,9 +85,9 @@ final class LiveActivityCoordinator {
     }
 
     private func fetchRunning() async -> Fetched {
-        guard let token = WidgetCredentials.load() else { return .failed }
+        guard let token = ActivityStopCredentials.load() else { return .failed }
 
-        var request = URLRequest(url: SharedConfig.baseURL.appending(path: "api/widget/activity"))
+        var request = URLRequest(url: SharedConfig.baseURL.appending(path: "api/shortcuts/activity/running"))
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 15
 
