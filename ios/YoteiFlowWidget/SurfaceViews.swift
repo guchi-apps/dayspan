@@ -72,6 +72,14 @@ struct FittedRowList<Row: View>: View {
     let total: Int
     let row: (Int) -> Row
 
+    /// 行は `@ViewBuilder` で受ける。付けないと `let item = …` を挟んだ複数文のクロージャが
+    /// `()` を返すものと推論され、`Row: View` を満たせずビルドが落ちる（#989）
+    init(count: Int, total: Int, @ViewBuilder row: @escaping (Int) -> Row) {
+        self.count = count
+        self.total = total
+        self.row = row
+    }
+
     @ScaledMetric(relativeTo: .caption) private var rowHeight: CGFloat = 19
     @ScaledMetric(relativeTo: .caption2) private var footerHeight: CGFloat = 16
 

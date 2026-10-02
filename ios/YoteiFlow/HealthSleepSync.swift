@@ -89,8 +89,9 @@ final class HealthSleepSync {
         // 書き終えたあとに印と履歴を進める。失敗しても書いたぶんは残るが、次回その夜をもう一度
         // 返してしまうため、理由を伝える
         if let until {
-            let committed = await fetch("POST", ["until": until])
-            guard let committed, committed.status == 200 else {
+            // 同じスコープで `guard let committed` と再宣言するとビルドが落ちるため名前を分ける（#989）
+            let commit = await fetch("POST", ["until": until])
+            guard let committed = commit, committed.status == 200 else {
                 return reply(
                     permission: "granted", sent: items.count, removed: removed, staleLeft: staleLeft,
                     error: "ヘルスケアへは送りましたが、送った記録をサーバーへ残せませんでした。次回もう一度送られる場合があります。"
