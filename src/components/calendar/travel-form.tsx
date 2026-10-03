@@ -19,6 +19,7 @@ import {
 } from "@/lib/yahoo-transit-link";
 import { googleMapsDirectionsLink, resolveGoogleMapsPlace } from "@/lib/google-maps-directions-link";
 import { parseGoogleMapsDuration } from "@/lib/google-maps-duration";
+import type { GoogleMapsRoute } from "@/lib/google-maps-route";
 import {
   parseYahooTransitRoute,
   yahooRouteFields,
@@ -122,6 +123,8 @@ export function TravelForm({
   const [googleNotice, setGoogleNotice] = useState<string | null>(null);
   const [googlePasteOpen, setGooglePasteOpen] = useState(false);
   const [googlePasteText, setGooglePasteText] = useState("");
+  const [googleRouteUrl, setGoogleRouteUrl] = useState("");
+  const [resolvingGoogleRoute, setResolvingGoogleRoute] = useState(false);
 
   const offline = useOffline();
 
@@ -324,6 +327,54 @@ export function TravelForm({
     }
   };
 
+  /** Googleマップの共有URLを貼り付けたとき、読めた経路だけを入力欄へ反映する。 */
+  const applyGoogleMapsRoute = (route: GoogleMapsRoute) => {
+    setOrigin(route.origin);
+    setDestination(route.destination);
+    setMode(route.mode);
+    setEstimates(null);
+    setEstimateSource("MANUAL");
+
+    if (route.departAt) {
+      const imported = isoToLocalInput(route.departAt, timeZone);
+      // 予定に紐づく移動は予定の日を動かさない。単独の新規移動は、Googleマップで選んだ日も採用する。
+      const depart = draft.linkedEvent ? `${departAt.slice(0, 10)}${imported.slice(10)}` : imported;
+      const duration = new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime();
+      setDepartAt(depart);
+      if (Number.isFinite(duration) && duration > 0) {
+        setArriveAt(new Date(new Date(`${depart}:00Z`).getTime() + duration).toISOString().slice(0, 16));
+      }
+    }
+
+    setError(null);
+    setGoogleNotice(
+      `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[route.mode]}${route.departAt ? "・出発時刻" : ""}）。`,
+    );
+  };
+
+  const importGoogleMapsRoute = async (value: string) => {
+    setResolvingGoogleRoute(true);
+    setGoogleNotice(null);
+    setError(null);
+    try {
+      const response = await fetch("/api/travels/google-maps-route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: value }),
+      });
+      if (!response.ok) {
+        setError(await readErrorMessage(response, "Googleマップの経路URLを読み取れませんでした。"));
+        return;
+      }
+      const body = (await response.json()) as { route: GoogleMapsRoute };
+      applyGoogleMapsRoute(body.route);
+    } catch {
+      setError("Googleマップの経路URLを読み取れませんでした。");
+    } finally {
+      setResolvingGoogleRoute(false);
+    }
+  };
+
   const googleMapsUrl = googleMapsDirectionsLink(
     resolveGoogleMapsPlace(origin, placeCatalog.places),
     resolveGoogleMapsPlace(destination, placeCatalog.places),
@@ -500,6 +551,30 @@ export function TravelForm({
           />
         </div>
 
+        {/* Googleマップの共有URLは、現在選んでいる交通手段によらず貼り付けられる。
+            読めた交通手段へ切り替えるため、公共交通から車の経路を貼る場合も入口を隠さない。 */}
+        <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+          <Textarea
+            id="travel-google-route-url"
+            label="Googleマップの経路URL"
+            rows={2}
+            placeholder="共有した経路URLを貼り付ける"
+            value={googleRouteUrl}
+            disabled={resolvingGoogleRoute || offline}
+            onChange={(e) => setGoogleRouteUrl(e.target.value)}
+            onPaste={(event) => {
+              const value = event.clipboardData.getData("text").trim();
+              if (!value) return;
+              event.preventDefault();
+              setGoogleRouteUrl(value);
+              void importGoogleMapsRoute(value);
+            }}
+            onClear={() => setGoogleRouteUrl("")}
+          />
+          {resolvingGoogleRoute && <p className="text-xs text-muted-foreground">経路を読み取っています…</p>}
+          {googleNotice && <p className="text-xs text-muted-foreground">{googleNotice}</p>}
+        </div>
+
         {/* 所要時間の調べ方は交通手段で分ける（docs/spec.md §29）。
 
             公共交通（電車・バス・飛行機）はYahoo!乗換案内から取り込む1本だけにする。実際の
@@ -633,8 +708,6 @@ export function TravelForm({
                 onClear={() => setGooglePasteText("")}
               />
             )}
-            {googleNotice && <p className="text-xs text-muted-foreground">{googleNotice}</p>}
-
             {estimates === null ? (
               <>
                 <p className="text-xs text-muted-foreground">
