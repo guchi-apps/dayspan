@@ -70,6 +70,37 @@ export function checkConsistency() {
   if (!pbxproj.includes("PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow;")) problems.push("Bundle ID が com.gucchii.yoteiflow ではありません");
   if (!pbxproj.includes("INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;")) problems.push("表示名が YoteiFlow ではありません");
 
+  // iPad で iPhone 互換表示へ戻さない。Web の幅別レイアウトはネイティブの端末指定が前提（#1060）。
+  const ipadOrientations = [
+    "UIInterfaceOrientationPortrait",
+    "UIInterfaceOrientationPortraitUpsideDown",
+    "UIInterfaceOrientationLandscapeLeft",
+    "UIInterfaceOrientationLandscapeRight",
+  ];
+  for (const target of ["YoteiFlow", "YoteiFlowWidget", "YoteiFlowShare"]) {
+    for (const configuration of ["Debug", "Release"]) {
+      const settings = pbxproj.match(new RegExp(`/\\* ${configuration} configuration for PBXNativeTarget "${target}" \\*/ = \\{([\\s\\S]*?)\\n\\t\\t\\};`))?.[1];
+      if (!settings?.includes('TARGETED_DEVICE_FAMILY = "1,2";')) {
+        problems.push(`${target} ${configuration} が iPhone・iPad の両方に対応していません`);
+      }
+      if (target === "YoteiFlow") {
+        const actualOrientations = settings?.match(/INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "([^"]+)";/)?.[1].split(/\s+/) ?? [];
+        if (new Set(actualOrientations).size !== ipadOrientations.length || actualOrientations.some((orientation) => !ipadOrientations.includes(orientation))) {
+          problems.push(`${target} ${configuration} が iPad の4方向に対応していません`);
+        }
+        if (!settings?.includes("INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;")) {
+          problems.push(`${target} ${configuration} の既定の縦向き指定がありません`);
+        }
+        if (!settings?.includes("INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;")) {
+          problems.push(`${target} ${configuration} の iPhone 縦向き指定がありません`);
+        }
+      }
+    }
+  }
+  if (pbxproj.includes("INFOPLIST_KEY_UIRequiresFullScreen") || read("ios/AppInfo.plist").includes("<key>UIRequiresFullScreen</key>")) {
+    problems.push("iPad のウィンドウサイズ変更を妨げる UIRequiresFullScreen が有効です");
+  }
+
   // 開発用のURLをコミットしていない（アプリもウィジェットも Shared/SharedConfig.swift の値を読む）
   const sharedConfig = read("ios/Shared/SharedConfig.swift");
   if (!/baseURL = URL\(string: "https:\/\/dayspan\.gucchii\.com\/"\)!/.test(sharedConfig)) {

@@ -12,6 +12,7 @@ test("共有された経路URLから座標・交通手段・出発日時を読�
       origin: "34.841753,135.61853",
       destination: "34.552378,135.496285",
       mode: "CAR",
+      minutes: 0,
       departAt: "2026-10-04T08:45:00.000Z",
     },
   );
@@ -22,7 +23,7 @@ test("Google Maps URLs形式と交通手段を読む", () => {
     parseGoogleMapsRouteUrl(
       "https://www.google.com/maps/dir/?api=1&origin=東京駅&destination=新大阪駅&travelmode=transit",
     ),
-    { origin: "東京駅", destination: "新大阪駅", mode: "PUBLIC_TRANSIT", departAt: null },
+    { origin: "東京駅", destination: "新大阪駅", mode: "PUBLIC_TRANSIT", minutes: 0, departAt: null },
   );
 });
 

@@ -62,10 +62,7 @@ async function requireBearerKey(
  *
  * 対象は呼び出し元（AIDE）がヘッダー `X-Target-Email` で指定する（issue #1012）。ログインの
  * 許可はStatusHubが決めており、このAPIはログインを通らないため「誰の予定か」だけをここで決める。
- * ヘッダーがあるのに引けない場合は、別人を返さないよう互換へ落とさず null にする。
- *
- * 移行期の互換: ヘッダーが無いときだけ、DBの User がちょうど1件ならその人を対象にする。
- * 呼び出し元（別リポジトリ）の対応が済んだら外す。
+ * ヘッダーが無い・不正・引けない場合は、別人を返さないよう null にする。
  */
 export async function resolveInternalUserId(request: Request): Promise<string | null> {
   const target = parseTargetEmail(request.headers.get(TARGET_EMAIL_HEADER));
@@ -81,12 +78,8 @@ export async function resolveInternalUserId(request: Request): Promise<string | 
     return user?.id ?? null;
   }
 
-  const users = await db.user.findMany({ take: 2, select: { id: true } });
-  if (users.length !== 1) {
-    console.error(`[dayspan] internal target user: ambiguous (count=${users.length})`);
-    return null;
-  }
-  return users[0].id;
+  console.error("[dayspan] internal target user: missing header");
+  return null;
 }
 
 /** 応答は経路上に残さない。認証結果も内容も、その時点の値だけが意味を持つ。 */

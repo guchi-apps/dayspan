@@ -29,6 +29,15 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.3.0",
+    date: "2026-10-03",
+    changes: [
+      "iPadでもiOSアプリを画面の広さを活かして使えるようになりました。",
+      "Yahoo!乗換案内の経路を共有するとき、登録する前に内容を確認できるようになりました。",
+      "移動の入力が、Googleマップの経路から所要時間を取り込む形に整理されました。",
+    ],
+  },
+  {
     version: "4.2.1",
     date: "2026-10-03",
     changes: [
