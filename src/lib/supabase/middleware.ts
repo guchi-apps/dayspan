@@ -12,7 +12,7 @@ import { isPublicPath } from "@/lib/supabase/public-paths";
  * Supabaseのセッションではなく、それぞれ専用のトークン・APIキーで認証するAPI。
  *
  * - `/api/widget/` … iPhoneウィジェット用（docs/spec.md §28）
- * - `/api/shortcuts/` … iPhoneショートカット用（docs/spec.md §40）
+ * - `/api/shortcuts/` … ライブアクティビティの停止ボタン用（docs/spec.md §43）
  * - `/api/internal/` … サーバー間参照用（docs/internal-api.md）
  *
  * ここを通常の経路に通すと、呼ばれるたびにSupabase Authへ往復が1回増えるうえ、Supabaseへ

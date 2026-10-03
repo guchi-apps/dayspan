@@ -12,8 +12,7 @@ import {
  * iOSアプリがHealthKitへ睡眠を書くための取得と確定（docs/spec.md §40「iOSアプリから送る」）。
  *
  * ログイン済みのWebViewから、アプリ（Swift）が `fetch` で呼ぶ（通知の `/api/notifications/apns` と
- * 同じ形）。ショートカットのトークンは要らない。中身は `/api/shortcuts/sleep/health` と同じ
- * サービスで、印と送った履歴もユーザーに1つを共有する。範囲指定（`from` / `to`）は持たない。
+ * 同じ形）。
  *
  * 1. `GET` … 追加で送る睡眠（`items`）・HealthKitに残る古い時間帯（`stale`）・確定へ返す `until`
  * 2. `POST { until }` … HealthKitへ書き終えたあとに呼び、印と履歴を進める

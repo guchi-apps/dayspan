@@ -102,6 +102,103 @@ final class HealthSleepSync {
         return reply(permission: "granted", sent: items.count, removed: removed, staleLeft: staleLeft)
     }
 
+    // MARK: - ヘルスケアからの取り込み（#1001）
+
+    /// 取り込みの許可（読み取り）がすでに求め済みか。Appleはプライバシーのため読み取りの
+    /// 「許可/拒否」を返さない。分かるのは「まだ求めていない」か「求め済み」かだけ
+    func importPermission() async -> String {
+        guard HKHealthStore.isHealthDataAvailable() else { return "unavailable" }
+        let status = try? await store.statusForAuthorizationRequest(toShare: [], read: [sleepType])
+        return status == .shouldRequest ? "notDetermined" : "requested"
+    }
+
+    /// 取り込み済みの終わりを覚えておく場所（端末ごと。サーバーは重なる睡眠を作らないため、
+    /// 失われても同じ夜が2件になることはない）
+    private static let importedUntilKey = "healthSleepImportedUntil"
+
+    /// ヘルスケアの睡眠分析を読み、まとめた時間帯をサーバーへ送って睡眠の活動記録にする。
+    /// 自アプリが書いたサンプルは除く（YoteiFlowの睡眠をヘルスケアへ送ったものを取り込み直さない）
+    func importSleep(post: Fetch) async -> [String: Any] {
+        guard HKHealthStore.isHealthDataAvailable() else { return importReply(permission: "unavailable") }
+
+        do {
+            try await store.requestAuthorization(toShare: [], read: [sleepType])
+        } catch {
+            return importReply(permission: "requested", error: "ヘルスケアの許可を確認できませんでした。")
+        }
+
+        let defaults = UserDefaults.standard
+        let now = Date()
+        let floor = now.addingTimeInterval(-7 * 24 * 3600)
+        let since = max(
+            floor,
+            (defaults.object(forKey: Self.importedUntilKey) as? Date)?.addingTimeInterval(-12 * 3600) ?? now.addingTimeInterval(-3 * 24 * 3600)
+        )
+
+        let predicate = HKQuery.predicateForSamples(withStart: since, end: now, options: [])
+        let samples: [HKCategorySample] = await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+            ) { _, results, _ in
+                continuation.resume(returning: (results as? [HKCategorySample]) ?? [])
+            }
+            store.execute(query)
+        }
+
+        let ownBundle = Bundle.main.bundleIdentifier
+        let asleep: Set<Int> = [
+            HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
+            HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+            HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+            HKCategoryValueSleepAnalysis.asleepREM.rawValue,
+        ]
+        let spans = samples
+            .filter { asleep.contains($0.value) && $0.sourceRevision.source.bundleIdentifier != ownBundle }
+            .map { ($0.startDate, $0.endDate) }
+
+        // 睡眠ステージは細かく分かれて届くため、30分以内の隙間でつないで1回の睡眠にする。
+        // 30分に満たないものは取り込まない（うたた寝・誤検出）
+        var nights: [(Date, Date)] = []
+        for span in spans {
+            if let last = nights.last, span.0.timeIntervalSince(last.1) <= 30 * 60 {
+                nights[nights.count - 1].1 = max(last.1, span.1)
+            } else {
+                nights.append(span)
+            }
+        }
+        nights = nights.filter { $0.1.timeIntervalSince($0.0) >= 30 * 60 && $0.1 <= now }
+
+        if nights.isEmpty { return importReply(permission: "requested") }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let ranges = nights.map { ["start": formatter.string(from: $0.0), "end": formatter.string(from: $0.1)] }
+
+        guard let got = await post("POST", ["ranges": ranges]) else {
+            return importReply(permission: "requested", error: "サーバーに接続できませんでした。通信状況を確認してください。")
+        }
+        guard got.status == 200,
+              let json = (try? JSONSerialization.jsonObject(with: Data(got.text.utf8))) as? [String: Any]
+        else {
+            return importReply(permission: "requested", error: Self.serverMessage(got.text) ?? "睡眠を取り込めませんでした。")
+        }
+
+        // 送れたあとにだけ進める。失敗したら次回また同じ範囲を送る
+        if let latest = nights.map({ $0.1 }).max() { defaults.set(latest, forKey: Self.importedUntilKey) }
+        return importReply(
+            permission: "requested",
+            imported: json["saved"] as? Int ?? 0,
+            skipped: (json["overlapping"] as? Int ?? 0) + (json["rejected"] as? Int ?? 0)
+        )
+    }
+
+    private func importReply(permission: String, imported: Int = 0, skipped: Int = 0, error: String? = nil) -> [String: Any] {
+        var result: [String: Any] = ["permission": permission, "imported": imported, "skipped": skipped]
+        if let error { result["error"] = error }
+        return result
+    }
+
     /// 自分（このアプリ）が書いた睡眠のうち、時間帯が一致するものを消す。消した件数を返す。
     /// 他のアプリ・Apple Watch が書いたものは消せない（HealthKitの仕様）。秒の丸めの差を
     /// 吸収するため、前後1秒の幅で完全に収まるものを対象にする

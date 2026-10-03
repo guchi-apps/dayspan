@@ -90,3 +90,61 @@ export async function syncNativeHealth(): Promise<NativeHealthSyncResult> {
   if (!target) throw new Error("アプリのヘルスケア連携を呼べませんでした。アプリを最新にしてください。");
   return parseNativeHealthResult(await target.postMessage({ action: "sync" }));
 }
+
+export type NativeHealthStatus = {
+  /** 睡眠のヘルスケアへの書き込み許可。 */
+  permission: NativeHealthPermission;
+  /** 読み取り（取り込み）の許可を求め済みか。Appleは読み取りの許可/拒否を返さない。 */
+  importPermission: "unavailable" | "notDetermined" | "requested";
+};
+
+/** アプリからヘルスケアの許可の状態を読む（画面が開いたときに使う。許可の確認画面は出ない）。 */
+export async function statusNativeHealth(): Promise<NativeHealthStatus> {
+  const target = bridge();
+  if (!target) throw new Error("アプリのヘルスケア連携を呼べませんでした。アプリを最新にしてください。");
+
+  const value = (await target.postMessage({ action: "status" })) as Record<string, unknown> | null;
+  const record = value ?? {};
+  const permission = parseNativeHealthResult({ permission: record.permission }).permission;
+  const importPermission =
+    record.importPermission === "unavailable" || record.importPermission === "requested"
+      ? record.importPermission
+      : "notDetermined";
+
+  return { permission, importPermission };
+}
+
+export type NativeHealthImportResult = {
+  importPermission: NativeHealthStatus["importPermission"];
+  /** 睡眠の活動記録として新しく作った件数。 */
+  imported: number;
+  /** すでに同じ時間帯の睡眠があった等で作らなかった件数。 */
+  skipped: number;
+  error: string | null;
+};
+
+/** ヘルスケアの睡眠分析を読み、睡眠の活動記録として取り込む（読み取りの許可は初回にアプリが求める）。 */
+export async function importNativeHealth(): Promise<NativeHealthImportResult> {
+  const target = bridge();
+  if (!target) throw new Error("アプリのヘルスケア連携を呼べませんでした。アプリを最新にしてください。");
+
+  const value = (await target.postMessage({ action: "import" })) as Record<string, unknown> | null;
+  const record = value ?? {};
+  const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+
+  return {
+    importPermission:
+      record.permission === "unavailable" ? "unavailable" : record.permission === "requested" ? "requested" : "notDetermined",
+    imported: count(record.imported),
+    skipped: count(record.skipped),
+    error: typeof record.error === "string" ? record.error : null,
+  };
+}
+
+/** 取り込みの結果を画面に出す一文にする。 */
+export function nativeHealthImportSummary(result: NativeHealthImportResult, title: string): string {
+  if (result.error) return result.error;
+  if (result.importPermission === "unavailable") return "この端末ではヘルスケアを使えません。";
+  if (result.imported > 0) return `ヘルスケアから${title}を${result.imported}件取り込みました。`;
+  return `取り込む新しい${title}はありません。`;
+}
