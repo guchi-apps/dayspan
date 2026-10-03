@@ -47,7 +47,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ev
   const { eventId } = await params;
 
   try {
-    const userId = await resolveInternalUserId();
+    const userId = await resolveInternalUserId(request);
     if (!userId) return json({ error: "target_user_not_resolvable" }, 500);
 
     const target = await resolveGoogleAccountForCalendar(userId, calendarId);
@@ -104,7 +104,7 @@ export async function DELETE(
   const { eventId } = await params;
 
   try {
-    const userId = await resolveInternalUserId();
+    const userId = await resolveInternalUserId(request);
     if (!userId) return json({ error: "target_user_not_resolvable" }, 500);
 
     const target = await resolveGoogleAccountForCalendar(userId, calendarId);

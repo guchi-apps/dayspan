@@ -72,7 +72,6 @@ pnpm env:init        # .env.local.example を .env.local へコピー
 u() { bash scripts/update-env-file.sh .env.local "$1" "$2"; }
 u NEXT_PUBLIC_SUPABASE_URL "$(op read 'op://apps/Supabase/personal-apps-dev/dev-project-url')"
 u NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$(op read 'op://apps/Supabase/personal-apps-dev/dev-publishable-key')"
-u ALLOWED_GOOGLE_EMAILS "$(op read 'op://apps/dayspan/allowed-google-emails')"
 u TOKEN_ENCRYPTION_KEY "$(openssl rand -base64 32)"   # ローカル専用。本番の鍵は持ち込まない
 u INTERNAL_API_KEY "$(openssl rand -hex 32)"          # 同上
 chmod 600 .env.local
