@@ -8,7 +8,7 @@ export function CalendarSkeleton() {
   return (
     <AppFrameSkeleton>
       <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="h-8 w-8 rounded-full lg:hidden" />
+        <SkeletonBlock className="h-8 w-8 rounded-full md:hidden" />
         <SkeletonBlock className="h-8 w-8 rounded-full" />
         <SkeletonBlock className="h-6 w-32" />
         <span className="flex-1" />
@@ -46,7 +46,7 @@ function SidebarSkeleton() {
   return (
     <div
       aria-hidden
-      className="hidden w-56 shrink-0 flex-col gap-1 border-r border-outline-variant bg-surface-container-low px-3 pt-4 lg:flex"
+      className="hidden w-48 shrink-0 flex-col gap-1 border-r border-outline-variant bg-surface-container-low px-3 pt-4 md:flex lg:w-56"
     >
       <SkeletonBlock className="mx-3 mb-3 h-5 w-20" />
       {Array.from({ length: 9 }, (_, i) => (

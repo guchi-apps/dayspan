@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
  * カレンダーでは同じ帯に前へ・次へ・年月・今日・表示形式・再取得も乗るため、いま見ている期間が
  * 押しどころの列の中に埋もれていた。ヘッダーにはその画面の操作だけを残す。
  *
- * 1024px以上では同じ中身を左端に開いたまま置く（app-sidebar.tsx・issue #636）ため、
+ * 768px以上では同じ中身を左端に開いたまま置く（app-sidebar.tsx・issue #636）ため、
  * このボタンは出さない。中身は画面幅で変えない。同じアプリの中で、探す位置が幅によって
  * 入れ替わらないようにするため。
  */
@@ -51,7 +51,7 @@ export function AppMenuButton({
           variant="ghost"
           size="icon-sm"
           aria-label={activityRunning ? "メニュー（記録中）" : "メニュー"}
-          className={cn("relative shrink-0 lg:hidden", className)}
+          className={cn("relative shrink-0 md:hidden", className)}
         >
           <Menu />
           {/*
