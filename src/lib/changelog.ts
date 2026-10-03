@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.43.1",
+    date: "2026-10-03",
+    changes: [
+      "iPhoneアプリのロック画面にある活動記録ウィジェットで、丸い枠にも活動名が表示されるようになりました。また、記録中の横長の枠では合計の表示を外し、見やすくしました。",
+    ],
+  },
+  {
     version: "3.43.0",
     date: "2026-10-03",
     changes: [
