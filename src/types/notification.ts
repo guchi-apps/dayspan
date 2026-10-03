@@ -12,7 +12,6 @@ export type NotificationSettings = {
   taskEnabled: boolean;
   /** 時刻の無い期限をまとめて知らせる時刻（設定タイムゾーンでの HH:MM）。 */
   taskDigestTime: string;
-  activityEnabled: boolean;
 };
 
 /**
@@ -28,7 +27,6 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   eventLeadMinutes: 10,
   taskEnabled: true,
   taskDigestTime: "08:00",
-  activityEnabled: true,
 };
 
 /**
