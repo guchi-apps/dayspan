@@ -156,7 +156,7 @@ App-Bound Domains の制約と扱い:
 
 ### ウィジェット（WidgetKit・#926）
 
-Scriptableなしで、ホーム画面・ロック画面に活動記録・今日の予定・タスク・買い物リストを出します。**既存のScriptableウィジェット（`src/lib/scriptable-widget.ts`）はそのまま残り、並行して使えます。**
+Scriptableなしで、ホーム画面・ロック画面に活動記録・今日の予定・タスク・買い物リストを出します。Scriptable版（設定画面・台本）は issue #1000 で撤去しました。
 
 | 項目 | 内容 |
 |---|---|
