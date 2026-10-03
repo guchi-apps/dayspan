@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.2.1",
+    date: "2026-10-03",
+    changes: [
+      "iPadを縦向きで使うときの表示を見やすく整えました。カレンダーの上部は、期間と前後の移動、今日・表示形式・再取得を2段に分けて、年月が縮まず読めるようになりました。タスクや買い物リストの段組みも、画面の幅に合わせて自然に切り替わります。",
+    ],
+  },
+  {
     version: "4.2.0",
     date: "2026-10-03",
     changes: [
