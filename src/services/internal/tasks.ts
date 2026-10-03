@@ -18,6 +18,7 @@ import {
   INTERNAL_TASK_DATE_FIELDS,
   INTERNAL_TASK_STATUSES,
   InternalTaskInputError,
+  matchesInternalDate,
   parseInternalTaskWrite,
   parseTaskAction,
   type InternalTaskAction,
@@ -83,14 +84,11 @@ function toInternalTask(page: NotionTaskPage, propertyMap: PropertyMap): Interna
   };
 }
 
-function matchesDate(task: TaskItem, input: InternalTaskListInput): boolean {
-  if (input.dateField === "none") return task.due === null && task.planned === null;
-  const value = input.dateField === "due" ? task.due : task.planned;
-  if (!value) return false;
-  const key = value.slice(0, 10);
-  return (!input.from || key >= input.from) && (!input.to || key <= input.to);
-}
-
+/**
+ * Notionの1ページ（`limit` 件）を取得したあとにメモリ上で絞り込むため、
+ * 条件に合う件が0件でも `hasMore: true` になりうる。呼び出し側は `hasMore` が false になるまで
+ * `nextCursor` を辿る必要がある（docs/internal-api.md）。
+ */
 export async function listInternalTasks(
   notion: Client,
   connection: NotionConnection,
@@ -101,7 +99,7 @@ export async function listInternalTasks(
   const page = await queryTaskPage(notion, connection.taskDataSourceId, undefined, input.cursor, input.limit);
   const tasks = page.pages
     .map((page) => ({ page, task: normalizeTask(page, propertyMap) }))
-    .filter(({ task }) => taskStatus(task) === input.status && matchesDate(task, input));
+    .filter(({ task }) => taskStatus(task) === input.status && matchesInternalDate(task, input));
   return {
     tasks: tasks.map(({ page }) => toInternalTask(page, propertyMap)),
     nextCursor: page.nextCursor,

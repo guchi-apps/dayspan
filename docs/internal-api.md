@@ -38,8 +38,10 @@ Authorization: Bearer <INTERNAL_API_KEY>
 | `status` | `open` | `open` / `completed` / `skipped`。対応しないは完了と別に返す |
 | `dateField` | `due` | `due` / `planned` / `none`。期間比較に使う日付を明示する |
 | `from`, `to` | なし | `YYYY-MM-DD` の包含範囲。`dateField=none` では使わない |
-| `limit` | `50` | 1〜100。Notionの1ページに含まれる結果だけを返す |
+| `limit` | `50` | 1〜100。Notionの1ページ（`limit` 件）を取得してから絞り込むため、返る件数は `limit` 以下になる |
 | `cursor` | なし | 前回の `nextCursor`。途中結果では `hasMore: true` になる |
+
+**絞り込み（`status`・日付）はNotionから1ページ取得した後にメモリ上で行う。** 条件に合うタスクが0件でも `hasMore: true` と `nextCursor` が返りうるため、呼び出し側は `hasMore: false` になるまで `nextCursor` を辿ること（途中の空配列を「該当なし」と判断しない）。
 
 `dateField=none` は期限・予定日の両方が未設定のタスクだけを返す。Notion接続・タスクDBが未設定なら `source: "not_configured"` と空配列を返し、取得に失敗した場合は `502 notion_request_failed` とする。空配列かつ `source: "ready"` は該当タスクが無いことを表す。
 

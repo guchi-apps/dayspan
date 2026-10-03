@@ -51,3 +51,18 @@ export function parseTaskAction(value: unknown): InternalTaskAction {
   if (typeof value !== "string" || !(INTERNAL_TASK_ACTIONS as readonly string[]).includes(value)) throw new InternalTaskInputError("invalid_action");
   return value as InternalTaskAction;
 }
+
+/**
+ * 一覧の日付絞り込み。`none` は期限・予定日のどちらも無いタスク（from/to は無視）。
+ * `due` / `planned` は日付部分（先頭10文字）を from/to の両端を含めて比べ、値が無いタスクは除く。
+ */
+export function matchesInternalDate(
+  task: { due: string | null; planned: string | null },
+  input: { dateField: InternalTaskDateField; from?: string; to?: string },
+): boolean {
+  if (input.dateField === "none") return task.due === null && task.planned === null;
+  const value = input.dateField === "due" ? task.due : task.planned;
+  if (!value) return false;
+  const key = value.slice(0, 10);
+  return (!input.from || key >= input.from) && (!input.to || key <= input.to);
+}
