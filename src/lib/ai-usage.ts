@@ -18,7 +18,7 @@ export type AiFeature = (typeof AI_FEATURES)[number];
 /** ops-dashboard の画面に出す機能名。識別子を変えずにここだけ直せる。 */
 export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
   "place-suggest": "場所の候補の提案",
-  "travel-estimate": "移動の所要時間の見積もり",
+  "travel-estimate": "Googleマップ経路の解析",
   "shopping-category-suggest": "買い物のカテゴリの判定",
 };
 

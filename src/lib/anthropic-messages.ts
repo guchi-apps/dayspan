@@ -1,6 +1,6 @@
 // Anthropic の /v1/messages を呼ぶ共通部分（issue #680）。
 //
-// `ai-place-suggest.ts` と `ai-travel-estimate.ts` が同じ呼び方を写しで持っていたため、
+// `ai-place-suggest.ts` とGoogleマップ経路解析が同じ呼び方を写しで持っていたため、
 // AIの使用量を記録する場所を1か所にするためにここへ集めた。呼び出し元は `feature` を必ず渡す
 // （型で漏れない）。`CLAUDE_CODE_OAUTH_TOKEN`（user:inferenceスコープ）で直接呼ぶ点、
 // 新しい依存を増やさずSDKを使わない点は従来のまま。
