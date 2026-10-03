@@ -18,7 +18,7 @@ import type { RunningActivitySummary } from "@/types/activity";
  * 出す画面はナビの点と同じ範囲（カレンダー・タスク・勤務・買い物リスト）に揃える。
  * `/activity` 自体はすでに詳細な記録カードを表示済みのため対象外。
  *
- * 1024px以上ではサイドバーの下端に同じものを置くため、この帯は出さない（issue #636）。
+ * 768px以上ではサイドバーの下端に同じものを置くため、この帯は出さない（issue #636）。
  * 中身の下端を帯が塞がず、どの画面でも同じ位置に経過時間と停止が残る。
  */
 export function RunningActivityBar({ running }: { running: RunningActivitySummary | null }) {

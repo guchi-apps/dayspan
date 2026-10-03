@@ -12,7 +12,7 @@ import type { RunningActivitySummary } from "@/types/activity";
 /**
  * 記録中の1件を画面の端に出し、その場で止めるための状態（issue #629・#636）。
  *
- * 狭い画面では下部ナビの直上の帯（running-activity-bar.tsx）、1024px以上ではサイドバーの
+ * 狭い画面では下部ナビの直上の帯（running-activity-bar.tsx）、768px以上ではサイドバーの
  * 下端のカード（app-sidebar.tsx）が使う。両方とも同じ画面に描かれ（CSSで片方を隠す）、
  * 片方で止めると取り直しで届いた running が変わるため、もう片方もここで追随する。
  */
