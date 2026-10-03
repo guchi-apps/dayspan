@@ -358,6 +358,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "睡眠の記録をヘルスケアへ書き込むために使います。";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "ヘルスケアへ睡眠の記録を書き込む際の許可に使います。YoteiFlowがヘルスケアのデータを読み取ることはありません。";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -395,6 +396,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = YoteiFlow;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "睡眠の記録をヘルスケアへ書き込むために使います。";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "ヘルスケアへ睡眠の記録を書き込む際の許可に使います。YoteiFlowがヘルスケアのデータを読み取ることはありません。";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
