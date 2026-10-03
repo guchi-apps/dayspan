@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import { dayTone, weekdayLabel } from "@/lib/day-tone";
 import { cn } from "@/lib/utils";
@@ -232,6 +232,21 @@ export function TimeGridView({
     const minutes = utils.minutesFromMidnight(new Date().toISOString());
     element.scrollTop = (minutes / 60) * hourHeight - element.clientHeight / 2;
   }, [centerNowRequest, hourHeight, scrollRef, utils]);
+
+  // 表示形式を切り替えて開いたとき（月表示→1日・3日・週、1日→3日など）は、表示する日が
+  // 今日でなくても現在時刻を縦の中央へ合わせる（issue #1035）。前へ・次へ・スワイプで
+  // 日付だけ動いたときは日数が変わらないため、見ている時間帯をそのまま保つ。
+  const dayCount = days.length;
+  const centeredDayCountRef = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (centeredDayCountRef.current === dayCount) return;
+    centeredDayCountRef.current = dayCount;
+
+    const element = scrollRef.current;
+    if (!element) return;
+    const minutes = utils.minutesFromMidnight(new Date().toISOString());
+    element.scrollTop = (minutes / 60) * hourHeight - element.clientHeight / 2;
+  }, [dayCount, hourHeight, scrollRef, utils]);
 
   // 日付ヘッダーに添える勤務場所（docs/spec.md §34）。出張は期間の全ての日にかかるため、
   // 日付キーから引ける形にしておく。前後の期間ぶんも同じ表から引く。
