@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { db } from "@/lib/db";
+import { TARGET_EMAIL_HEADER, parseTargetEmail } from "@/lib/internal-target";
 import { getSharedToken } from "@/lib/shared-token";
 
 /**
@@ -59,21 +60,33 @@ async function requireBearerKey(
 /**
  * サーバー間参照APIが対象とするユーザーのIDを返す。引けなければ null。
  *
- * 利用者は1人で、そのメールアドレスは ALLOWED_GOOGLE_EMAILS として既に本番へ配布済みのため、
- * APIキーとユーザーの対応表は持たない。ただし ALLOWED_GOOGLE_EMAILS は複数を許す形式なので、
- * 2件以上あるときは「誰のデータを返すのか」が決まらない。黙って先頭を選ぶと、利用者を増やした
- * 瞬間に別人の予定を返しうるため、そのときは引けなかったものとして扱う。
+ * 対象は呼び出し元（AIDE）がヘッダー `X-Target-Email` で指定する（issue #1012）。ログインの
+ * 許可はStatusHubが決めており、このAPIはログインを通らないため「誰の予定か」だけをここで決める。
+ * ヘッダーがあるのに引けない場合は、別人を返さないよう互換へ落とさず null にする。
+ *
+ * 移行期の互換: ヘッダーが無いときだけ、DBの User がちょうど1件ならその人を対象にする。
+ * 呼び出し元（別リポジトリ）の対応が済んだら外す。
  */
-export async function resolveInternalUserId(): Promise<string | null> {
-  const emails = (process.env.ALLOWED_GOOGLE_EMAILS ?? "")
-    .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
+export async function resolveInternalUserId(request: Request): Promise<string | null> {
+  const target = parseTargetEmail(request.headers.get(TARGET_EMAIL_HEADER));
 
-  if (emails.length !== 1) return null;
+  if (target.kind === "invalid") {
+    console.error("[dayspan] internal target user: invalid header");
+    return null;
+  }
 
-  const user = await db.user.findUnique({ where: { email: emails[0] }, select: { id: true } });
-  return user?.id ?? null;
+  if (target.kind === "email") {
+    const user = await db.user.findUnique({ where: { email: target.email }, select: { id: true } });
+    if (!user) console.error("[dayspan] internal target user: not found");
+    return user?.id ?? null;
+  }
+
+  const users = await db.user.findMany({ take: 2, select: { id: true } });
+  if (users.length !== 1) {
+    console.error(`[dayspan] internal target user: ambiguous (count=${users.length})`);
+    return null;
+  }
+  return users[0].id;
 }
 
 /** 応答は経路上に残さない。認証結果も内容も、その時点の値だけが意味を持つ。 */

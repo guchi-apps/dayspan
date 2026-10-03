@@ -11,7 +11,6 @@ DaySpan を動かすために必要な、リポジトリ外の設定作業をま
 | `target-dir` | VPS上の配置先（例: `/apps/dayspan`） |
 | `port` | `3113` |
 | `db-name` | `app_dayspan` |
-| `allowed-google-emails` | 利用を許可するGoogleアカウント（カンマ区切り） |
 | `token-encryption-key` | `openssl rand -base64 32` で生成した32byte鍵 |
 | `google-calendar-client-id` | 本番用のDaySpan専用OAuthクライアントID |
 | `google-calendar-client-secret` | 同シークレット |
