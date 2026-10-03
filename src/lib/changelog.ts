@@ -29,6 +29,13 @@ export type ChangelogEntry = {
  */
 export const APP_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.0.2",
+    date: "2026-10-03",
+    changes: [
+      "iPadを縦向きで使っているときも、画面の左端にメニュー（サイドバー）が常に表示されるようになりました。",
+    ],
+  },
+  {
     version: "4.0.0",
     date: "2026-10-03",
     changes: [
