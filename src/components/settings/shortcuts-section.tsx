@@ -15,8 +15,7 @@ type CopyTarget = "authorization" | "startUrl" | "stopUrl" | "sleepUrl" | "healt
 /**
  * iPhoneショートカットの設定（docs/spec.md §40）。
  *
- * ウィジェット（`widget-section.tsx`）は台本を1本コピーさせれば終わるが、ショートカットは
- * 文字列として配れない。オートメーションは利用者が端末の画面でアクションを1つずつ並べる
+ * ショートカットは文字列として配れない。オートメーションは利用者が端末の画面でアクションを1つずつ並べる
  * ものなので、ここでは**入れる値をコピーさせ、手順をiOSの画面に出ているとおりの名前で並べる**。
  *
  * 打ち間違いに気付ける場所が実機のオートメーション（何も起きない）しかないため、URLと
@@ -282,7 +281,6 @@ export function ShortcutsSection({
 
             {/*
               iOSのショートカットAppのアクション名は日本語表記なので、そのまま日本語で並べる。
-              Scriptableの英語のままの画面（widget-section.tsx）と扱いが違うのはこのため。
             */}
             <span className="type-label-large text-on-surface-variant">
               就寝時に記録を始める（オートメーション）
@@ -654,7 +652,7 @@ export function ShortcutsSection({
  * ショートカットのアクションの1行（項目名と入れる値）。
  *
  * 狭い画面では項目名を値の上へ折り返す。URLは横並びのままだと数文字しか見えなくなる
- * （`widget-section.tsx` の SettingRow と同じ寸法）。
+ * 。
  */
 function SettingRow({ label, children }: { label: string; children: ReactNode }) {
   return (

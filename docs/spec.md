@@ -1440,6 +1440,11 @@ UIコンポーネントからGoogle Calendar / Notionを直接操作する構造
 
 ## 28. iPhoneウィジェット
 
+> **Scriptable版の撤去（issue #1000）**: 設定 ▸ iPhoneウィジェット（台本の配布・トークンの発行と作り直し・
+> `/open` 受け渡しページ）はiOSアプリのネイティブウィジェット（§43）で代替できるため撤去した。
+> 以下のScriptable・台本・受け渡しページ・設定画面に関する記述は撤去前の経緯として残す。
+> 取得API（`/api/widget/*`）・`WidgetToken`・`/api/settings/widget/native` はネイティブ版が使うため残している。
+
 活動記録・今日の予定・タスク・買い物リストを、iPhoneのホーム画面・ロック画面から見られるように
 する（Scriptable）。
 
