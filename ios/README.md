@@ -62,7 +62,7 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 ```
 
 - Mac 側の前提: チェックアウトが `$HOME/apps/yoteiflow` にある（別の場所なら `MAC_REPO_DIR='$HOME/x'`。チルダ付きで渡さない）・Xcode・1Password CLI（`op`）にサインイン済み・ログインキーチェーンが開いている（codesign が失敗したら Mac で `security unlock-keychain ~/Library/Keychains/login.keychain-db` を一度）
-- `MAC_HOST`・`MAC_REPO_DIR`・`IOS_BRANCH`（既定 main）・`IOS_SKIP_PULL=1`・`IOS_BUILD_NUMBER` を環境変数で上書きできる。作業ツリーに未コミットの変更があると中止する
+- `MAC_HOST`・`MAC_REPO_DIR`・`IOS_BRANCH`（既定 main）・`IOS_SKIP_PULL=1`・`IOS_BUILD_NUMBER` を環境変数で上書きできる。作業ツリーに未コミットの変更があると中止する。SSH経由のスクリプトは、1Passwordが `asc.env.tpl` を読む前にMac側の対象ブランチを取り込むため、古いチェックアウトでも現在の参照先を使える。`IOS_SKIP_PULL=1` を指定した場合は取り込みを省略し、Macにあるテンプレートをそのまま使う
 - Mac の前にいるなら、Mac のチェックアウトで直接 `op run --env-file=ios/asc.env.tpl -- ios/scripts/upload-testflight.sh`
 - **subpc からは実行結果を確かめられない**（Xcode が無い）。初回は Mac で1回通して確かめる
 
