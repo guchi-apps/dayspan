@@ -21,7 +21,6 @@ export async function PATCH(request: Request) {
   if (typeof body.eventLeadMinutes === "number") patch.eventLeadMinutes = body.eventLeadMinutes;
   if (typeof body.taskEnabled === "boolean") patch.taskEnabled = body.taskEnabled;
   if (typeof body.taskDigestTime === "string") patch.taskDigestTime = body.taskDigestTime;
-  if (typeof body.activityEnabled === "boolean") patch.activityEnabled = body.activityEnabled;
 
   try {
     const settings = await updateNotificationSettings(userId, patch);

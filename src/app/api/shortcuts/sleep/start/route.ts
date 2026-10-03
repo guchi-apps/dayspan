@@ -13,7 +13,6 @@ import {
 import { sleepNightKey } from "@/lib/sleep";
 import { getRunningActivity, startActivity } from "@/services/activity/running";
 import { getSleepSettings } from "@/services/activity/settings";
-import { notifyActivityStarted } from "@/services/notifications/activity";
 import { notifyLiveActivity } from "@/services/live-activity/notify";
 
 type Body = {
@@ -86,17 +85,9 @@ export async function POST(request: Request) {
   try {
     const result = await startActivity(userId, { title, startedAt });
 
-    // 記録中であることを通知として残す（docs/spec.md §32）。応答を待たせないのは、
+    // ライブアクティビティへ送る（#971）。応答を待たせないのは、
     // ショートカット側の待ちがそのままオートメーションの実行時間になるため。
     after(async () => {
-      try {
-        await notifyActivityStarted(userId, {
-          title: result.running.title,
-          startedAt: new Date(result.running.startedAt),
-        });
-      } catch (error) {
-        console.error("[dayspan] activity notification failed:", error);
-      }
       // ライブアクティビティ（#971）。切り替えは既存のアクティビティへの更新1通にする
       await notifyLiveActivity(userId, {
         type: "started",
