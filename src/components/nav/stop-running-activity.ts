@@ -1,4 +1,3 @@
-import { closeActivityNotification } from "@/components/notifications/activity-notification";
 import { submitActivityOp } from "@/lib/activity-queue/flush";
 
 /**
@@ -19,8 +18,6 @@ export async function stopRunningActivityNow(
     const result = await submitActivityOp({ kind: "stop" }, serverRunning, offline);
     if (result.status === "error") return { ok: false, message: result.message };
 
-    // 「記録中」の通知は止めた時点で事実と違う（docs/spec.md §32）。この端末のぶんを消す。
-    void closeActivityNotification();
     return { ok: true, queued: result.status === "queued" };
   } catch {
     return { ok: false, message: "記録を保存できませんでした。" };

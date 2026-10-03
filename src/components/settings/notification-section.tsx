@@ -242,22 +242,6 @@ export function NotificationSection({
               />
             </div>
           </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="activity-enabled">記録の開始</Label>
-              <p className="type-body-small text-on-surface-variant">
-                記録中であることを通知として残します。止めると消えます。
-              </p>
-            </div>
-
-            <Switch
-              id="activity-enabled"
-              checked={value.activityEnabled}
-              disabled={busy}
-              onCheckedChange={(checked) => void send({ activityEnabled: checked })}
-            />
-          </div>
         </CardContent>
       </Card>
 
