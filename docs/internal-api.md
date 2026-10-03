@@ -23,9 +23,37 @@ Authorization: Bearer <INTERNAL_API_KEY>
 
 **書き込み系（`POST` / `PATCH` / `DELETE /api/internal/events`）は読み取りとは別の鍵（`INTERNAL_EVENTS_API_KEY`）で守る。** 読み取り用の `INTERNAL_API_KEY` が漏れても予定を書き込まれないようにするため（起点: guchi-apps/aide-bot#184「読み取りとは別の資格情報」）。未設定・不一致のときの応答（503 / 401）は読み取り用とまったく同じ形。
 
+**タスクの作成・更新・状態変更はさらに別の `INTERNAL_TASKS_API_KEY` を使う。** 共有トークン名は `DAYSPAN_INTERNAL_TASKS_API_KEY` で、取得できない環境だけ同名の環境変数へフォールバックする。読み取り鍵・予定の書き込み鍵のいずれでもタスクは変更できない。1Passwordの正は `op://apps/dayspan/internal-tasks-api-key` とし、GitHub Secret、CI・deployの転送、VPSの`.env`へ同じ名前で配る。
+
 `/api/internal/` は `src/proxy.ts`（`src/lib/supabase/middleware.ts`）がSupabaseへ問い合わせずに素通しする。認証がキーで完結しており、呼ばれるたびにSupabase Authへ往復させる理由が無いため。matcherからは外さない（外すと詐称されたユーザーIDヘッダーが後段へ届く）。
 
 **対象ユーザーは呼び出し元がヘッダー `X-Target-Email`（メール1件）で指定する**（issue #1012・#1048。旧 `ALLOWED_GOOGLE_EMAILS` は撤去）。ヘッダーが無い、そのメールの `User` が無い（まだログインしていない）、またはカンマ区切りなど形が不正なときは `500`（`target_user_not_resolvable`）で、別人へは落とさない。理由はサーバーログ（`[dayspan] internal target user: ...`・メールは出さない）に残る。
+
+## `GET /api/internal/tasks`
+
+タスクだけをNotionから読み、カレンダー・移動・天気・勤務の取得やスケジュール組み立ては行わない。`Authorization: Bearer <INTERNAL_API_KEY>` と `X-Target-Email` が必須。
+
+| クエリ | 既定 | 内容 |
+| --- | --- | --- |
+| `status` | `open` | `open` / `completed` / `skipped`。対応しないは完了と別に返す |
+| `dateField` | `due` | `due` / `planned` / `none`。期間比較に使う日付を明示する |
+| `from`, `to` | なし | `YYYY-MM-DD` の包含範囲。`dateField=none` では使わない |
+| `limit` | `50` | 1〜100。Notionの1ページ（`limit` 件）を取得してから絞り込むため、返る件数は `limit` 以下になる |
+| `cursor` | なし | 前回の `nextCursor`。途中結果では `hasMore: true` になる |
+
+**絞り込み（`status`・日付）はNotionから1ページ取得した後にメモリ上で行う。** 条件に合うタスクが0件でも `hasMore: true` と `nextCursor` が返りうるため、呼び出し側は `hasMore: false` になるまで `nextCursor` を辿ること（途中の空配列を「該当なし」と判断しない）。
+
+`dateField=none` は期限・予定日の両方が未設定のタスクだけを返す。Notion接続・タスクDBが未設定なら `source: "not_configured"` と空配列を返し、取得に失敗した場合は `502 notion_request_failed` とする。空配列かつ `source: "ready"` は該当タスクが無いことを表す。
+
+各タスクにはID、名称、`status`、期限、予定日、進捗、優先度、タグ、メモ、繰り返し、URL、`version` を含める。`version` は更新・状態変更時に必須で、古い値なら `409 task_version_conflict` とする。
+
+## タスクの書き込み
+
+`POST /api/internal/tasks`（作成）、`PATCH /api/internal/tasks/:taskId`（許可項目の部分更新）、`POST /api/internal/tasks/:taskId/actions`（`complete` / `reopen` / `skip` / `unskip`）は `Authorization: Bearer <INTERNAL_TASKS_API_KEY>` と `X-Target-Email` を必須とする。作成と状態変更には `Idempotency-Key` も必須で、同じキー・同じ要求は保存済みの結果を返す。実行中は `409 operation_in_progress`、外部書き込み後に結果を確認できない場合は `409 result_unknown` を返すため、同じキーで再照会する。
+
+更新可能な項目は `title`、`due`、`planned`、`priority`、`memo`、`tags`、`recurrence`、`progress` だけである。`null` は期限・予定日・任意の選択肢・メモをクリアする。未知の項目・不正な日付・設定済みDBに対応プロパティが無い項目は `400` で拒否し、黙って成功とはしない。期限または予定日を直接変更したときは、その日付の紐づけだけを既存画面と同じ規則で外す。
+
+`complete` は既存の繰り返し規則で次回を作り、`skip`・`unskip`・`reopen` は作らない。同じ回の完了を再送しても次回を二重作成しない。
 
 ## `GET /api/internal/schedule`
 
@@ -442,8 +470,8 @@ curl -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:3113/api/internal/sch
 
 | 場所 | 設定 |
 | --- | --- |
-| 1Password | `apps/dayspan` の `internal-api-key`（読み取り用） / `internal-events-api-key`（書き込み用）フィールド（**正**）。`ai-usage` 用の `OPS_API_TOKEN` だけは `apps/ops-dashboard` の `ops-api-token`（ops-dashboard側が正） |
-| GitHub Secret | `INTERNAL_API_KEY` / `INTERNAL_EVENTS_API_KEY` / `OPS_API_TOKEN`。`scripts/sync-github-secrets.sh --only INTERNAL_API_KEY,INTERNAL_EVENTS_API_KEY,OPS_API_TOKEN` で1Passwordから同期する（`gh workflow run sync-secrets.yml -f only=OPS_API_TOKEN` でも可） |
+| 1Password | `apps/dayspan` の `internal-api-key`（読み取り用） / `internal-events-api-key`（予定書き込み用） / `internal-tasks-api-key`（タスク書き込み用）フィールド（**正**）。`ai-usage` 用の `OPS_API_TOKEN` だけは `apps/ops-dashboard` の `ops-api-token`（ops-dashboard側が正） |
+| GitHub Secret | `INTERNAL_API_KEY` / `INTERNAL_EVENTS_API_KEY` / `INTERNAL_TASKS_API_KEY` / `OPS_API_TOKEN`。`scripts/sync-github-secrets.sh --only INTERNAL_API_KEY,INTERNAL_EVENTS_API_KEY,INTERNAL_TASKS_API_KEY,OPS_API_TOKEN` で1Passwordから同期する |
 | 対応表 | `.github/secrets-manifest.tsv` |
 | 本番 `.env` | `.github/workflows/deploy.yml` が `update_env` で書き込む |
 
