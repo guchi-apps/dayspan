@@ -21,7 +21,6 @@ export async function getNotificationSettings(userId: string): Promise<Notificat
     eventLeadMinutes: row.eventLeadMinutes,
     taskEnabled: row.taskEnabled,
     taskDigestTime: row.taskDigestTime,
-    activityEnabled: row.activityEnabled,
   };
 }
 
@@ -62,6 +61,5 @@ export async function updateNotificationSettings(
     eventLeadMinutes: row.eventLeadMinutes,
     taskEnabled: row.taskEnabled,
     taskDigestTime: row.taskDigestTime,
-    activityEnabled: row.activityEnabled,
   };
 }

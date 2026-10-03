@@ -15,7 +15,6 @@ import {
   ListTodo,
   NotebookPen,
   ShoppingCart,
-  Smartphone,
   Timer,
   UserRound,
 } from "lucide-react";
@@ -44,7 +43,6 @@ export default async function SettingsPage() {
     notionConnection,
     uiSetting,
     activityPresetCount,
-    widgetToken,
     pushDeviceCount,
     notificationSettings,
     cookieStore,
@@ -53,8 +51,6 @@ export default async function SettingsPage() {
     db.notionConnection.findUnique({ where: { userId: user.id } }),
     db.uiSetting.findUnique({ where: { userId: user.id } }),
     db.activityPreset.count({ where: { userId: user.id } }),
-    // 発行の有無だけを見る。復号は開いてからで足りる。
-    db.widgetToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
     countNotificationDevices(user.id),
     getNotificationSettings(user.id),
     cookies(),
@@ -194,13 +190,6 @@ export default async function SettingsPage() {
                 ? `${uiSetting.travelDefaultOrigin}から / ${TRAVEL_MODE_LABELS[uiSetting.travelDefaultMode]}`
                 : `既定の交通手段: ${TRAVEL_MODE_LABELS[uiSetting?.travelDefaultMode ?? "PUBLIC_TRANSIT"]}`
             }
-          />
-          {/* 記録中の1件はGoogle未接続でも出せるため、Google接続の有無にかかわらず出す。 */}
-          <MenuItem
-            href="/settings/widget"
-            icon={Smartphone}
-            label="iPhoneウィジェット"
-            value={widgetToken ? "発行済み" : "未設定"}
           />
           {/* 連携はiOSアプリ（HealthKit）が行う。Webでは使えない旨を案内するだけで、常に出す。 */}
           <MenuItem
