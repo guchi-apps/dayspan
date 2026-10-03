@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { analyzeGoogleMapsRoute } from "@/lib/ai-google-maps-route";
 import { requireUserId } from "@/lib/auth-user";
 import { isGoogleMapsHost, parseGoogleMapsRouteUrl } from "@/lib/google-maps-route";
 
@@ -39,7 +40,17 @@ export async function POST(request: Request) {
   try {
     for (let count = 0; count <= MAX_REDIRECTS; count += 1) {
       const parsed = parseGoogleMapsRouteUrl(current.toString());
-      if (parsed) return NextResponse.json({ route: parsed });
+      if (parsed) {
+        const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+        if (!token) {
+          return NextResponse.json(
+            { error: "not_configured", message: "Googleマップ経路のAI解析が設定されていません。" },
+            { status: 503 },
+          );
+        }
+        const route = await analyzeGoogleMapsRoute(token, { ...parsed, url: current.toString() });
+        return NextResponse.json({ route: { ...parsed, ...route } });
+      }
 
       const response = await fetch(current, {
         redirect: "manual",
@@ -56,7 +67,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[dayspan] Google Maps route URL resolve failed:", error instanceof Error ? error.message : error);
     return NextResponse.json(
-      { error: "google_maps_request_failed", message: "Googleマップの経路URLを読み取れませんでした。時間をおいてもう一度試してください。" },
+      { error: "google_maps_request_failed", message: "Googleマップの経路を解析できませんでした。時間をおいてもう一度試してください。" },
       { status: 502 },
     );
   }
