@@ -69,7 +69,7 @@ export async function GET(request: Request) {
   try {
     const userId = await resolveInternalUserId(request);
     if (!userId) {
-      // X-Target-Email のユーザーがまだログインしていない・不正、または（ヘッダー無しで）ユーザーが1人に決まらない。
+      // X-Target-Email が無い・不正、または指定ユーザーがまだログインしていない。
       return json({ error: "target_user_not_resolvable" }, 500);
     }
 

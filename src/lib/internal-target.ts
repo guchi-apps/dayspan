@@ -5,7 +5,7 @@ export type TargetEmail = { kind: "none" } | { kind: "email"; email: string } | 
 
 /**
  * ヘッダー値を対象メールへ正規化する。DBに依存しない純粋関数。
- * 未指定・空は none（移行期の互換へ）、複数（カンマ）や形の崩れた値は invalid（別人を返さない）。
+ * 未指定・空は none、複数（カンマ）や形の崩れた値は invalid（いずれも別人を返さない）。
  */
 export function parseTargetEmail(value: string | null): TargetEmail {
   const trimmed = value?.trim() ?? "";

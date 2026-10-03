@@ -25,7 +25,7 @@ Authorization: Bearer <INTERNAL_API_KEY>
 
 `/api/internal/` は `src/proxy.ts`（`src/lib/supabase/middleware.ts`）がSupabaseへ問い合わせずに素通しする。認証がキーで完結しており、呼ばれるたびにSupabase Authへ往復させる理由が無いため。matcherからは外さない（外すと詐称されたユーザーIDヘッダーが後段へ届く）。
 
-**対象ユーザーは呼び出し元がヘッダー `X-Target-Email`（メール1件）で指定する**（issue #1012。旧 `ALLOWED_GOOGLE_EMAILS` は撤去）。そのメールの `User` が無い（まだログインしていない）、またはカンマ区切りなど形が不正なときは `500`（`target_user_not_resolvable`）で、別人へは落とさない。**移行期の互換として、ヘッダーが無いときだけ DB の `User` がちょうど1件ならその人を対象にする**（0件・2件以上は同じく `500`。StatusHubで許可を足して2人目がログインすると、ヘッダー無しの呼び出しは止まる）。呼び出し元（AIDE）の対応後に互換を外す。理由はサーバーログ（`[dayspan] internal target user: ...`・メールは出さない）に残る。
+**対象ユーザーは呼び出し元がヘッダー `X-Target-Email`（メール1件）で指定する**（issue #1012・#1048。旧 `ALLOWED_GOOGLE_EMAILS` は撤去）。ヘッダーが無い、そのメールの `User` が無い（まだログインしていない）、またはカンマ区切りなど形が不正なときは `500`（`target_user_not_resolvable`）で、別人へは落とさない。理由はサーバーログ（`[dayspan] internal target user: ...`・メールは出さない）に残る。
 
 ## `GET /api/internal/schedule`
 
@@ -237,7 +237,7 @@ DaySpan自身のDBを引けなかったときだけは、取れたぶんとい�
 | --- | --- |
 | 認証エラー | `401` / `503`（上記「認証」参照） |
 | 入力不正 | `400` |
-| 対象ユーザーを1人に決められない | `500`（`target_user_not_resolvable`。`X-Target-Email` のユーザーが無い・不正、またはヘッダー無しで `User` が1件でない） |
+| 対象ユーザーを1人に決められない | `500`（`target_user_not_resolvable`。`X-Target-Email` が無い・不正、または指定ユーザーが無い） |
 | 書き込めるカレンダーが無い（`calendarId` 省略時） | `404`（`no_writable_calendar`） |
 | 指定した `calendarId` が存在しない / 使用オフ | `404`（`calendar_not_found`） / `403`（`calendar_not_writable`） |
 | 指定した `calendarId` の「使用」がオフ | `403`（`calendar_not_writable`） |
