@@ -57,11 +57,13 @@ export function pickInternalGroup(groups, name) {
   );
 }
 
-/** API経由の自動署名が作った Development 証明書（名前が「Created via API」）だけを選ぶ。
- *  Mac の Xcode が作った自分用の証明書（名前が違う）・Distribution証明書は選ばない。 */
+/** API経由の自動署名が作った Development 証明書（表示名が「Created via API」）だけを選ぶ。
+ *  Mac の Xcode が作った自分用の証明書（表示名が利用者の名前）・Distribution証明書は選ばない。
+ *  API の `name` は種別の接頭辞付き（「Apple Development: Created via API」）で、素の名前は `displayName` にある。
+ *  `name` を完全一致で見ていたため1件も選ばれず、上限に達したまま署名が失敗した（#1010）。 */
 export function pickApiCreatedDevCertificates(certs) {
   return certs.filter(
-    (c) => /DEVELOPMENT$/.test(c.attributes?.certificateType ?? "") && c.attributes?.name === "Created via API"
+    (c) => /DEVELOPMENT$/.test(c.attributes?.certificateType ?? "") && c.attributes?.displayName === "Created via API"
   );
 }
 

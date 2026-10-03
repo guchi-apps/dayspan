@@ -41,15 +41,25 @@ describe("pickInternalGroup", () => {
 });
 
 describe("pickApiCreatedDevCertificates", () => {
-  const c = (id, name, certificateType) => ({ id, attributes: { name, certificateType } });
+  // 実際の応答の形: name は種別の接頭辞付き、displayName が素の名前（#1010 で実応答から確認）
+  const c = (id, displayName, certificateType, prefix = "Apple Development") => ({
+    id,
+    attributes: { name: `${prefix}: ${displayName}`, displayName, certificateType },
+  });
   it("API作成のDevelopment証明書だけを選ぶ（自分用・Distributionは残す）", () => {
     const picked = pickApiCreatedDevCertificates([
       c("1", "Created via API", "DEVELOPMENT"),
-      c("2", "Created via API", "IOS_DEVELOPMENT"),
+      c("2", "Created via API", "IOS_DEVELOPMENT", "iOS Development"),
       c("3", "Kazuki Guchi", "DEVELOPMENT"),
-      c("4", "Created via API", "DISTRIBUTION"),
-      c("5", "Created via API", "IOS_DISTRIBUTION"),
+      c("4", "Created via API", "DISTRIBUTION", "Apple Distribution"),
+      c("5", "Created via API", "IOS_DISTRIBUTION", "iPhone Distribution"),
     ]);
     assert.deepEqual(picked.map((x) => x.id), ["1", "2"]);
+  });
+  it("接頭辞付きの name だけでは選ばない（displayName で判定する）", () => {
+    const picked = pickApiCreatedDevCertificates([
+      { id: "6", attributes: { name: "Apple Development: Created via API", certificateType: "DEVELOPMENT" } },
+    ]);
+    assert.deepEqual(picked, []);
   });
 });
