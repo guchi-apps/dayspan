@@ -99,6 +99,19 @@ export function checkConsistency() {
   if (!pbxproj.includes("YoteiFlowWidget.appex in Embed Foundation Extensions")) {
     problems.push("ウィジェット拡張がアプリへ埋め込まれていません");
   }
+  // 共有拡張（#1026）: 埋め込み・App Group・呼び先のAPIが揃っている
+  if (!read("ios/Config/YoteiFlowShare.entitlements").includes(`<string>${appGroup}</string>`)) {
+    problems.push("ios/Config/YoteiFlowShare.entitlements の App Group が SharedConfig.appGroup と一致しません");
+  }
+  if (!pbxproj.includes("PRODUCT_BUNDLE_IDENTIFIER = com.gucchii.yoteiflow.share;")) {
+    problems.push("共有拡張の Bundle ID が com.gucchii.yoteiflow.share ではありません");
+  }
+  if (!pbxproj.includes("YoteiFlowShare.appex in Embed Foundation Extensions")) {
+    problems.push("共有拡張がアプリへ埋め込まれていません");
+  }
+  if (!read("ios/YoteiFlowShare/ShareViewController.swift").includes('"api/shortcuts/travel/import"')) {
+    problems.push("ShareViewController.swift が /api/shortcuts/travel/import を呼んでいません");
+  }
   // 取得はトークン付きの既存ウィジェットAPIだけ。新しいAPIは増やさない
   const widgetApi = read("ios/YoteiFlowWidget/WidgetAPI.swift");
   if (!widgetApi.includes('"api/widget/\\(surface)"')) problems.push("WidgetAPI.swift が /api/widget/* を読んでいません");

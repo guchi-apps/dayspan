@@ -165,6 +165,29 @@ export async function createTravel(
   return { travels, exports };
 }
 
+/**
+ * Yahoo!乗換案内の共有から取り込んだ移動を作る（issue #1026）。同じ経路を共有し直しても二重に
+ * 作らない。同一ユーザーで出発地・目的地・出発・到着が一致する移動があれば、作らずそれを返す。
+ */
+export async function importSharedTravel(
+  userId: string,
+  input: TravelWriteInput,
+): Promise<{ duplicate: boolean; result: TravelSaveResult | null }> {
+  const existing = await db.travelPlan.findFirst({
+    where: {
+      userId,
+      origin: input.origin,
+      destination: input.destination,
+      departAt: new Date(input.departAt),
+      arriveAt: new Date(input.arriveAt),
+    },
+    select: { id: true },
+  });
+  if (existing) return { duplicate: true, result: null };
+
+  return { duplicate: false, result: await createTravel(userId, input) };
+}
+
 /** 移動を書き換え、Google側の予定も同じ内容へ揃える。 */
 export async function updateTravel(
   userId: string,
@@ -258,7 +281,7 @@ function resolveEstimateSource(input: TravelWriteInput): TravelEstimateSource {
   return input.estimated ? "AI" : "MANUAL";
 }
 
-async function getTimeZone(userId: string): Promise<string> {
+export async function getTimeZone(userId: string): Promise<string> {
   const setting = await db.uiSetting.findUnique({
     where: { userId },
     select: { timeZone: true },
