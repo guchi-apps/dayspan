@@ -12,10 +12,12 @@ import {
 const TIMEOUT_MS = 5_000;
 
 const TOKEN_NAME = "YOTEIFLOW_ACCESS_APP_TOKEN";
+/** StatusHub の本番オリジン。`ACCESS_API_URL` は開発などで別の宛先へ向けるときだけ使う。 */
+const DEFAULT_ACCESS_API_URL = "https://admin.gucchii.com";
 
 /**
- * StatusHub の判定APIを呼ぶ。`ACCESS_API_URL`（StatusHubのオリジン）か、管理画面の「トークン発行」が
- * issue-deck の共有トークン `YOTEIFLOW_ACCESS_APP_TOKEN` へ自動で書き込んだアプリ別トークンのどちらかが
+ * StatusHub の判定APIを呼ぶ。管理画面の「トークン発行」が
+ * issue-deck の共有トークン `YOTEIFLOW_ACCESS_APP_TOKEN` へ自動で書き込んだアプリ別トークンが
  * 無ければ、通信せず失敗として扱う＝一度も判定できないので全員拒否になる（未設定が「誰でも通す」に化けない）。
  * トークンは issue-deck から読み、1Password・GitHub Secrets・デプロイを経由しない。
  * 再発行で古いトークンは即失効するため、401ならキャッシュを捨てて読み直し、1回だけ再試行する。
@@ -32,9 +34,9 @@ async function post(baseUrl: string, token: string, body: Parameters<AccessFetch
 }
 
 const fetcher: AccessFetcher = async (body) => {
-  const baseUrl = process.env.ACCESS_API_URL;
+  const baseUrl = process.env.ACCESS_API_URL || DEFAULT_ACCESS_API_URL;
   const token = await getSharedToken(TOKEN_NAME, "ACCESS_APP_TOKEN");
-  if (!baseUrl || !token) throw new Error(`ACCESS_API_URL / ${TOKEN_NAME} が未設定`);
+  if (!token) throw new Error(`${TOKEN_NAME} が未設定`);
 
   let response = await post(baseUrl, token, body);
   if (response.status === 401) {

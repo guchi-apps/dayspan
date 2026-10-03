@@ -54,7 +54,7 @@ pnpm dev             # http://localhost:3000
 
 暗号鍵は `openssl rand -base64 32` で生成します。
 
-Googleログインを通すには、共有Supabaseプロジェクトの Redirect URLs に `http://localhost:3000/auth/callback` を登録し、StatusHubの共通アクセス設定（`ACCESS_API_URL`。トークンは管理画面の「トークン発行」がissue-deckの共有トークン `YOTEIFLOW_ACCESS_APP_TOKEN` へ自動で書き込む。ローカルでは `ISSUE_DECK_URL`・`SHARED_TOKEN_API_SECRET` が無ければ環境変数 `ACCESS_APP_TOKEN` に直接入れる。管理画面でyoteiflowに自分のGoogleアカウントを許可する）が必要です（未設定だと全員拒否）。
+Googleログインを通すには、共有Supabaseプロジェクトの Redirect URLs に `http://localhost:3000/auth/callback` を登録し、StatusHubの共通アクセス設定（宛先は `https://admin.gucchii.com` が既定で、別の宛先へ向けるときだけ `ACCESS_API_URL`。トークンは管理画面の「トークン発行」がissue-deckの共有トークン `YOTEIFLOW_ACCESS_APP_TOKEN` へ自動で書き込む。ローカルでは `ISSUE_DECK_URL`・`SHARED_TOKEN_API_SECRET` が無ければ環境変数 `ACCESS_APP_TOKEN` に直接入れる。管理画面でyoteiflowに自分のGoogleアカウントを許可する）が必要です（未設定だと全員拒否）。
 
 ### 本体チェックアウトの `.env.local` は worktree の前提
 
