@@ -232,7 +232,7 @@ export function ShoppingScreen({
       running={runningActivity}
     >
       <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
-        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
             画面を移る（issue #636）。 */}
         <AppMenuButton current="shopping" activityRunning={runningActivity !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
@@ -337,7 +337,7 @@ export function ShoppingScreen({
         <div
           className={cn(
             activeKey === "all" &&
-              "@2xl/main:columns-2 @2xl/main:gap-3 @2xl/main:p-3 @5xl/main:columns-3",
+              "@xl/main:columns-2 @xl/main:gap-3 @xl/main:p-3 @5xl/main:columns-3",
           )}
         >
           {sections.map((section) => (
@@ -345,7 +345,7 @@ export function ShoppingScreen({
               key={section.key}
               className={cn(
                 activeKey === "all" &&
-                  cn(WIDE_SECTION_CARD_CLASS, "@2xl/main:mb-3 @2xl/main:break-inside-avoid"),
+                  cn(WIDE_SECTION_CARD_CLASS, "@xl/main:mb-3 @xl/main:break-inside-avoid"),
               )}
             >
               {/* カテゴリを選んでいるときは見出しを出さない。何のカテゴリかはタブが示している。 */}
@@ -354,7 +354,7 @@ export function ShoppingScreen({
                   className={cn(
                     "sticky top-0 z-10 flex items-center gap-2 border-b border-rule bg-background/95 px-3 py-1 text-[11px] tracking-widest text-muted-foreground backdrop-blur",
                     WIDE_SECTION_HEADING_CLASS,
-                    "@2xl/main:static",
+                    "@xl/main:static",
                   )}
                 >
                   {section.label}
@@ -366,7 +366,7 @@ export function ShoppingScreen({
                 className={
                   activeKey === "all"
                     ? WIDE_SECTION_LIST_CLASS
-                    : "@2xl/main:grid @2xl/main:grid-cols-2 @2xl/main:gap-x-3 @2xl/main:px-3"
+                    : "@xl/main:grid @xl/main:grid-cols-2 @xl/main:gap-x-3 @xl/main:px-3"
                 }
               >
                 {section.items.map((item) => (

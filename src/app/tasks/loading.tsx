@@ -20,7 +20,7 @@ export default function Loading() {
         <div className="h-full w-2/5 animate-[linear-progress_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden @2xl/main:grid @2xl/main:grid-cols-2 @2xl/main:content-start @2xl/main:items-start @2xl/main:gap-3 @2xl/main:p-3 @5xl/main:grid-cols-4">
+      <div className="min-h-0 flex-1 overflow-hidden @xl/main:grid @xl/main:grid-cols-2 @xl/main:content-start @xl/main:items-start @xl/main:gap-3 @xl/main:p-3 @5xl/main:grid-cols-4">
         {Array.from({ length: 4 }, (_, section) => (
           <div
             key={section}

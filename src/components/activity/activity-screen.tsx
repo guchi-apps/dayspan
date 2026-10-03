@@ -227,7 +227,7 @@ export function ActivityScreen({
     // 記録中のカードは本文にあるため、サイドバーの下端には出さない（記録中の帯を出さないのと同じ）。
     <AppFrame current="activity" activityRunning={running !== null}>
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
             画面を移る（issue #636）。 */}
         <AppMenuButton current="activity" activityRunning={running !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。

@@ -17,6 +17,7 @@ set -euo pipefail
 
 HOST="${MAC_HOST:-guchimac-mini}"
 REPO_DIR="${MAC_REPO_DIR:-\$HOME/apps/yoteiflow}"
+BRANCH="${IOS_BRANCH:-main}"
 
 pass=""
 for name in IOS_BRANCH IOS_SKIP_PULL IOS_BUILD_NUMBER; do
@@ -25,5 +26,18 @@ for name in IOS_BRANCH IOS_SKIP_PULL IOS_BUILD_NUMBER; do
   fi
 done
 
+# `op run` はMac上のテンプレートを先に読むため、upload-testflight.sh 内だけで
+# 取り込むと古いチェックアウトでは1Passwordの参照を解決できない（#1050）。
+# 同じ取り込みを先に行い、IOS_SKIP_PULL=1 のときだけ既存どおり両方省略する。
+PREPARE_COMMAND="if [ \"\${IOS_SKIP_PULL:-}\" != \"1\" ]; then
+  if [ -n \"\$(git status --porcelain)\" ]; then
+    echo \"作業ツリーに未コミットの変更があるため中止します。退避してから再実行するか、IOS_SKIP_PULL=1 を付けてください。\" >&2
+    exit 1
+  fi
+  git fetch origin $(printf '%q' "$BRANCH")
+  git checkout $(printf '%q' "$BRANCH")
+  git merge --ff-only $(printf '%q' "origin/$BRANCH")
+fi"
+
 # 終了コードをパイプで隠さない（| tee 等を付けない）。-t は op のサインイン要求・キーチェーンの入力用
-ssh -t "$HOST" "cd \"$REPO_DIR\" 2>/dev/null || { echo \"$REPO_DIR が Mac に無いため中止します。MAC_REPO_DIR で場所を指定してください。\" >&2; exit 1; }; ${pass}op run --env-file=ios/asc.env.tpl -- bash ios/scripts/upload-testflight.sh"
+ssh -t "$HOST" "cd \"$REPO_DIR\" 2>/dev/null || { echo \"$REPO_DIR が Mac に無いため中止します。MAC_REPO_DIR で場所を指定してください。\" >&2; exit 1; }; ${pass}bash -e -c $(printf '%q' "$PREPARE_COMMAND") && ${pass}op run --env-file=ios/asc.env.tpl -- bash ios/scripts/upload-testflight.sh"

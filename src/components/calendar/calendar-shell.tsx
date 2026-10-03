@@ -862,8 +862,8 @@ export function CalendarShell({
       activityRunning={initialRunningActivity !== null}
       running={initialRunningActivity}
     >
-      <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2">
-        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+      <header className="flex items-center gap-1 bg-surface-container-low px-1 py-1.5 md:gap-2 md:px-2 md:py-2 md:max-lg:flex-wrap md:max-lg:justify-end">
+        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
             画面を移る（issue #636）。 */}
         <AppMenuButton current="calendar" activityRunning={initialRunningActivity !== null} />
 
@@ -878,7 +878,7 @@ export function CalendarShell({
         <Button
           variant="ghost"
           onClick={goToday}
-          className="hidden shrink-0 px-2 py-1.5 font-semibold md:flex"
+          className="hidden shrink-0 px-2 py-1.5 font-semibold md:flex md:max-lg:size-10"
           aria-label="今日に飛ぶ"
         >
           <CalendarDays className="size-5" />
@@ -889,7 +889,7 @@ export function CalendarShell({
           <Button
             variant="ghost"
             size="icon"
-            className="size-10 md:size-9"
+            className="size-10 md:size-9 md:max-lg:size-10"
             onClick={() => move(-1)}
             aria-label="前へ"
           >
@@ -898,7 +898,7 @@ export function CalendarShell({
           <Button
             variant="ghost"
             size="icon"
-            className="size-10 md:size-9"
+            className="size-10 md:size-9 md:max-lg:size-10"
             onClick={() => move(1)}
             aria-label="次へ"
           >
@@ -945,8 +945,12 @@ export function CalendarShell({
           )}
         </h1>
 
+        {/* iPad縦向きではサイドバーを除くと本文が576pxまで狭まる。期間の見出しを
+            操作ボタンに押し潰させず、表示切替を次の段に置く（issue #1049）。 */}
+        <span aria-hidden className="hidden md:max-lg:block md:max-lg:basis-full" />
+
         {/* M3のタップ対象は最低48dp。狭い画面では見た目より当たり判定を優先して高さを取る。 */}
-        <Button variant="outline" size="xs" className="h-10 px-3 md:h-8 md:px-4" onClick={goToday}>
+        <Button variant="outline" size="xs" className="h-10 px-3 md:h-8 md:px-4 md:max-lg:h-10" onClick={goToday}>
           今日
         </Button>
 
@@ -958,7 +962,7 @@ export function CalendarShell({
               variant={nav.view === item.view ? "secondary" : "ghost"}
               size="xs"
               className={cn(
-                "type-label-medium h-10 rounded-none px-3 active:rounded-none md:type-label-large md:h-8",
+                "type-label-medium h-10 rounded-none px-3 active:rounded-none md:type-label-large md:h-8 md:max-lg:h-10",
                 nav.view === item.view && "text-on-secondary-container",
                 item.desktopOnly && "hidden md:inline-flex",
               )}
@@ -972,7 +976,7 @@ export function CalendarShell({
         <Button
           variant="ghost"
           size="icon"
-          className="size-10 md:size-9"
+          className="size-10 md:size-9 md:max-lg:size-10"
           // オフライン中に押しても、再接続まで終わらない読み込みが始まるだけになる。
           // 通信が戻った時点の取り直しは useReconnectRefresh が行う。
           disabled={pending || offline}
@@ -989,7 +993,7 @@ export function CalendarShell({
         <Button
           variant="ghost"
           size="icon"
-          className="hidden size-9 md:flex"
+          className="hidden size-9 md:flex md:max-lg:size-10"
           aria-label="キーボードショートカット"
           onClick={() => setShortcutsOpen(true)}
         >
