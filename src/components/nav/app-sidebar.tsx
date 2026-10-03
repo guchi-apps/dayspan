@@ -41,7 +41,7 @@ export function AppSidebar({
   return (
     <aside
       aria-label="画面の切り替え"
-      className="hidden w-56 shrink-0 flex-col border-r border-outline-variant bg-surface-container-low pt-4 pb-3 lg:flex"
+      className="hidden w-48 shrink-0 flex-col border-r border-outline-variant bg-surface-container-low pt-4 pb-3 md:flex lg:w-56"
       onPointerEnter={() => setTouched(true)}
       onFocus={() => setTouched(true)}
     >
