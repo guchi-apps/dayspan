@@ -65,6 +65,7 @@ function estimateSuffix(source: TravelEstimateSource): string {
   if (source === "TRANSIT") return "（経路検索の平均）";
   // Yahoo!乗換案内は実際のダイヤ上の列車なので、「目安」「平均」とは書かない。
   if (source === "YAHOO") return "（Yahoo!乗換案内）";
+  if (source === "GOOGLE_MAPS") return "（Googleマップ）";
   return "";
 }
 
