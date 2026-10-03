@@ -24,6 +24,10 @@ on:
         description: "判定だけ行い、ビルドしない"
         type: boolean
         default: false
+      force:
+        description: "iOS更新不要と判定された版でも配布する（手動配布。dry_run が真ならビルドしない）"
+        type: boolean
+        default: false
 
 concurrency:
   group: ios-testflight
@@ -68,6 +72,12 @@ jobs:
           RESULT=$(node ios/scripts/ios-changes.mjs --json)
           NEEDED=$(printf '%s' "$RESULT" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).needed")
           REASON=$(printf '%s' "$RESULT" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).reason")
+          if [ "${{ inputs.force }}" = "true" ] && [ "$NEEDED" != "true" ]; then
+            NEEDED=true
+            REASON="手動配布（force）— 判定は更新不要: ${REASON}"
+          elif [ "${{ inputs.force }}" = "true" ]; then
+            REASON="${REASON}（手動配布 force 指定あり）"
+          fi
           FILES=$(printf '%s' "$RESULT" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).changedFiles.map(f => '- \`' + f + '\`').join('\n')")
           {
             echo "needed=$NEEDED"; echo "sha=$SHA"; echo "version=$VERSION"; echo "build=$BUILD"
