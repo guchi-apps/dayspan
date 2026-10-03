@@ -287,10 +287,12 @@ export function isTravelMode(value: unknown): value is TravelMode {
  * TRANSIT は旧trainroute経由で引いた経路検索の結果（撤去済み。issue #591）。既存の移動に
  * 残る過去データとして値は残しているが、新しくこの値が付く移動は今後作られない。
  *
+ * GOOGLE_MAPS は、利用者がGoogleマップで調べてコピーした車ルートの所要時間（普段の所要時間・issue #1025）。
+ *
  * YAHOO は、利用者がYahoo!乗換案内で選んでコピーした経路（docs/spec.md §29）。**これだけは
  * 実際のダイヤ上の列車**で、他の3つのように「目安」「平均」と断る値ではない。
  */
-export const TRAVEL_ESTIMATE_SOURCES = ["MANUAL", "AI", "TRANSIT", "YAHOO"] as const;
+export const TRAVEL_ESTIMATE_SOURCES = ["MANUAL", "AI", "TRANSIT", "YAHOO", "GOOGLE_MAPS"] as const;
 
 export type TravelEstimateSource = (typeof TRAVEL_ESTIMATE_SOURCES)[number];
 

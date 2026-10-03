@@ -5,7 +5,7 @@ import Security
 ///
 /// 停止ボタン（AppIntent）と、push-to-start で裏起動されたアプリは、WebViewのCookieを使えない。
 /// そのためログイン済みのWebViewが受け取ったトークンを、App Group の Keychain へ置く。
-/// 許可されるのは記録の停止と自分のアクティビティのトークン登録だけ。端末間には同期しない。
+/// 許可されるのは記録の停止・自分のアクティビティのトークン登録・記録中の読み取りと、共有拡張（#1026）のYahoo!乗換案内の取り込みだけ。端末間には同期しない。
 enum ActivityStopCredentials {
     private static let service = "com.gucchii.yoteiflow.activity-stop-token"
 

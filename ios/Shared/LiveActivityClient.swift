@@ -3,7 +3,7 @@ import AppIntents
 import Foundation
 
 /// ライブアクティビティ（#971）が使うサーバーへの呼び出し。停止専用トークンのBearerで
-/// `/api/shortcuts/activity/*` だけを呼ぶ（WebViewのCookieは使えない）。
+/// `/api/shortcuts/activity/*` を呼ぶ（共有拡張の取り込みもこのトークンを使う・#1026）（WebViewのCookieは使えない）。
 enum LiveActivityClient {
     /// 開発用ビルド（Xcodeから入れたもの）のトークンは sandbox、TestFlight・App Store は production
     static var environment: String {

@@ -931,7 +931,7 @@ Notion側の一覧でも片付いたものとして並ぶ。戻すと両方を�
 
 認証にはSupabase Auth + Google OAuthを使用する。NextAuth/Auth.jsは使用しない。
 
-初期版では許可されたユーザーのみログイン後に利用可能とする。許可の判定（`ALLOWED_GOOGLE_EMAILS`）は
+初期版では許可されたユーザーのみログイン後に利用可能とする。許可の判定（StatusHubの共通アクセス設定・#941）は
 ログイン時だけでなく、リクエストごと（`src/lib/supabase/middleware.ts` と `getCurrentUser()`）でも
 行う。許可リストからメールアドレスを外すと、そのユーザーのSupabaseセッションがrefresh tokenで
 有効なままでも、次のリクエストからDaySpanを使えなくなる（issue #842）。
@@ -1751,6 +1751,16 @@ Notionの各DB（タスク・日付リマインド・場所）は利用者が手
 - メモ
 - 所要時間の出どころ（手入力 / AIの見積もり / 経路検索 / Yahoo!乗換案内）
 
+### Yahoo!乗換案内の共有からの自動登録（issue #1026）
+
+iOSアプリの共有拡張（`YoteiFlowShare`）へ、Yahoo!乗換案内の共有で経路のテキストを渡すと、貼り付けなしで
+**予定に紐づかない新規の移動**が登録される。拡張はKeychain（App Group）の停止専用トークンで
+`POST /api/shortcuts/travel/import`（本文 `{ text }`）を呼ぶ。読み取りは移動の入力欄への貼り付けと同じ規則
+（日付は検索日・駅名は `(都道府県)` を落として出発地・目的地・メモは案内文を除いた生テキスト・交通手段は公共交通・
+出どころはYahoo!乗換案内）で、時刻は設定タイムゾーンの壁時計としてISOへ直す。検索日・発着時刻・駅名のどれかが
+読めなければ作らずに理由を返す。同じ出発地・目的地・出発・到着の移動が既にあれば二重に作らず「登録済み」を返す。
+共有シートが渡す項目（テキストかURLか）は実機未確認で、URLだけのときは「コピーして貼り付けてください」と案内する。
+
 ### 移動への紐づけ（issue #914）
 
 タスクは予定だけでなく**移動にも**紐づけられる。出発前に確かめるタスクなどを置くため。
@@ -2008,6 +2018,15 @@ trainrouteでの経路検索を検討していた当時の記録。同じ検討�
 所要時間の見積もりが地点を特定できないため、**住所付きで持てる入口をここに置く**。
 場所DBが未設定のときは候補も登録も出ないが、「AIに聞く」から選んだ住所は欄へ入る
 （登録先が無くても、この欄に住所を入れる目的は果たせる）。
+### Googleマップの所要時間の取り込み（車など公共交通以外・issue #1025）
+
+公共交通以外の移動では、AIの「所要時間を調べる」に加えて、Googleマップで調べた**普段の所要時間**を取り込める。「Googleマップで調べる」（出発地・目的地・車ルートを渡す素の `<a>`。座標 → 住所 → 入力のままの順）で開き、画面の「25 分」「1 時間 5 分」をコピーして「コピーした所要時間を取り込む」を押す。クリップボードを読めない環境は貼り付け欄へ落ちる（Yahoo!乗換案内の取り込みと同じ）。
+
+- **DaySpanはGoogleマップを取得しない。** Yahoo!乗換案内と同じく、読むのは利用者がコピーした文字列だけ（`parseGoogleMapsDuration`）。複数あれば先頭の値、24時間超・0分は読めなかったことにする。
+- **時刻はURLで指定できない**（Google Maps URLsに項目が無い）ため、リンクには含めない。取り込みは到着時刻を動かさず出発時刻を逆算する（到着が空なら出発に足して到着を入れる）。
+- 出どころは `TravelEstimateSource.GOOGLE_MAPS`。注記は「普段の所要時間」と断り、渋滞を見込んだ値とは言わない。手で時刻を直せば `MANUAL` へ戻る。
+- 実機のクリップボード取り込みは未確認。
+
 
 ## 30. サーバー間参照用API
 
@@ -2019,8 +2038,8 @@ trainrouteでの経路検索を検討していた当時の記録。同じ検討�
 localhostからしか来ないため外部公開はしない。**キーが未設定のときは素通しではなく503**とし、
 設定漏れが認証なしの公開に化けないようにする。
 
-対象ユーザーは `ALLOWED_GOOGLE_EMAILS` から引く。この値が複数を含むときは「誰宛か」が決まらない
-ため500で断る。
+対象ユーザーは呼び出し元がヘッダー `X-Target-Email` で指定する（#1012）。引けないときは「誰宛か」が
+決まらないため500で断る。ヘッダー無しは移行期の互換で、`User` が1件のときだけその人を対象にする。
 
 日付の解釈は他の画面と同じく `UiSetting.timeZone` で行う。基準日を呼び出し元に作らせない
 （サーバーのローカル時刻はUTCで、渡させると日本時間の 00:00〜09:00 が前日になる事故が
@@ -3745,7 +3764,7 @@ Google Calendarの `Event.status`（`tentative`）フィールドをそのまま
 
 - 同期: 記録の開始・切り替え・停止・開始時刻の修正・取り消しは、Web・PWA・ショートカット・他端末のどこで起きても、サーバーが `notifyLiveActivity()` からAPNs（liveactivity）で送る。アプリが動いていなくても **push-to-start**（iOS 17.2以降）で始められ、表示中のものへは activity push token 宛に update / end を送る。切り替えは `update` 1通（end と start を別々に送らない）
 - 経過時間は端末の `Text(timerInterval:)` が数える。ContentState の時刻はUnix秒の数値（`startedAtEpoch`）
-- 停止ボタン: Keychain（App Group）の停止専用トークン（`ActivityStopToken`）で `POST /api/shortcuts/activity/stop`。許可は停止・`POST /api/shortcuts/activity/token`（activity push tokenの登録）・`GET /api/shortcuts/activity/running`（記録中の読み取り。起動時の突き合わせ用）の3つだけ
+- 停止ボタン: Keychain（App Group）の停止専用トークン（`ActivityStopToken`）で `POST /api/shortcuts/activity/stop`。許可は停止・`POST /api/shortcuts/activity/token`（activity push tokenの登録）・`GET /api/shortcuts/activity/running`（記録中の読み取り。起動時の突き合わせ用）と、Yahoo!乗換案内の共有取り込み（`POST /api/shortcuts/travel/import`・§29）の4つだけ
 - 登録: push-to-start トークンは `POST /api/live-activity/register`（ログイン済みのWebViewから）、停止専用トークンの受け渡しは `POST /api/settings/live-activity/native`
 - 起動時・前面に戻ったとき、手元のアクティビティとサーバーの記録中を突き合わせて片付ける（二重表示・取り残しを防ぐ）
 - ログアウトで停止専用トークンを消し、表示中のアクティビティを終わらせる。サーバー側のトークン行は残す（失効は410で自然に消える）

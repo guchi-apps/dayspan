@@ -21,7 +21,7 @@ export function TravelEntryHint({ onOpen }: { onOpen: () => void }) {
     <div className="flex flex-col gap-1">
       <Button type="button" variant="outline" size="sm" className="w-fit" onClick={onOpen}>
         <Route className="size-4" />
-        移動として入力（乗換案内を貼り付け）
+        移動として入力
       </Button>
       <p className="text-xs text-muted-foreground">
         移動の入力に移ります。ここで入れたタイトルは引き継がれません。
