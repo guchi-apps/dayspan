@@ -14,7 +14,7 @@ export default function Loading() {
   return (
     <AppFrameSkeleton>
       <div className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        <SkeletonBlock className="size-8 rounded-full lg:hidden" />
+        <SkeletonBlock className="size-8 rounded-full md:hidden" />
         <SkeletonBlock className="h-6 w-20" />
         <span className="flex-1" />
         <SkeletonBlock className="h-8 w-24 rounded-full" />
