@@ -338,6 +338,7 @@ enum TravelEstimateSource {
   AI
   TRANSIT
   YAHOO
+  GOOGLE_MAPS
 }
 
 model TravelPlan {
