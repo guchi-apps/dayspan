@@ -305,6 +305,8 @@ export function CalendarShell({
 
   // キーボードショートカット一覧（issue #635）。`?` キーとヘッダーのアイコンの両方から開く。
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // 「今日」を押すたびに増やし、時間グリッドが現在時刻を縦の中央へ合わせる契機にする（issue #1020）。
+  const [centerNowRequest, setCenterNowRequest] = useState(0);
 
   /**
    * 記録中の帯を押したとき。開始・停止は記録の画面で行う（docs/spec.md §27）。
@@ -754,6 +756,7 @@ export function CalendarShell({
       return;
     }
 
+    setCenterNowRequest((count) => count + 1);
     navigate(nav.view, utils.todayKey());
   };
 
@@ -1084,6 +1087,7 @@ export function CalendarShell({
         onOpenActivity={openActivity}
         work={work}
         onGoToday={goToday}
+        centerNowRequest={centerNowRequest}
         onMove={move}
         onSwitchView={switchView}
         onOpenShortcuts={() => setShortcutsOpen(true)}
@@ -1191,6 +1195,7 @@ function CalendarBody({
   onOpenActivity,
   work,
   onGoToday,
+  centerNowRequest,
   onMove,
   onSwitchView,
   onOpenShortcuts,
@@ -1289,6 +1294,7 @@ function CalendarBody({
   work: CalendarWorkContext;
   /** キーボードショートカット（issue #635）。 */
   onGoToday: () => void;
+  centerNowRequest: number;
   onMove: (direction: 1 | -1) => void;
   onSwitchView: (view: CalendarView) => void;
   onOpenShortcuts: () => void;
@@ -1572,6 +1578,7 @@ function CalendarBody({
           onAllDayDragCommit={onAllDayDragCommit}
           onSwipe={onSwipe}
           readOnly={offline}
+          centerNowRequest={centerNowRequest}
         />
       )}
 

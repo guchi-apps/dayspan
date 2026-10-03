@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 
 import { dayTone, weekdayLabel } from "@/lib/day-tone";
 import { cn } from "@/lib/utils";
@@ -119,6 +119,7 @@ export function TimeGridView({
   onAllDayDragCommit,
   onSwipe,
   readOnly = false,
+  centerNowRequest = 0,
 }: {
   days: string[];
   events: CalendarEventItem[];
@@ -167,6 +168,8 @@ export function TimeGridView({
    * 動かせたのに戻る、という見え方をさせないため。
    */
   readOnly?: boolean;
+  /** 「今日」を押すたびに増える連番。変わったら現在時刻を縦の中央へ合わせる。 */
+  centerNowRequest?: number;
 }) {
   const todayKey = utils.todayKey();
   const {
@@ -216,6 +219,19 @@ export function TimeGridView({
   // 場所を取るため、同じ幅を右へ空けないと下の時間グリッドと列の境目がずれる（issue #136）。
   const scrollbarGutter = useScrollbarGutter(scrollRef);
   const gridHeight = hourHeight * 24;
+
+  // 「今日」を押されたら、現在時刻を縦の中央へ合わせる（issue #1020）。
+  // 初回マウントと、押されていない再描画では動かさない。
+  const handledCenterRef = useRef(centerNowRequest);
+  useEffect(() => {
+    if (handledCenterRef.current === centerNowRequest) return;
+    handledCenterRef.current = centerNowRequest;
+
+    const element = scrollRef.current;
+    if (!element) return;
+    const minutes = utils.minutesFromMidnight(new Date().toISOString());
+    element.scrollTop = (minutes / 60) * hourHeight - element.clientHeight / 2;
+  }, [centerNowRequest, hourHeight, scrollRef, utils]);
 
   // 日付ヘッダーに添える勤務場所（docs/spec.md §34）。出張は期間の全ての日にかかるため、
   // 日付キーから引ける形にしておく。前後の期間ぶんも同じ表から引く。
