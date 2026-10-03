@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { isAllowedEmail } from "@/lib/allowed-users";
+import { isUserAllowed } from "@/lib/access/client";
 import { CALENDAR_VIEW_COOKIE } from "@/lib/calendar-view-memory";
 import { encryptSecret } from "@/lib/crypto/secret-cipher";
 import { db } from "@/lib/db";
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
 
   // 初期リリースは許可されたユーザーのみ利用可能（docs/spec.md §3）。
   // 許可外のアカウントはDaySpan側のユーザーを作らず、Supabaseのセッションも破棄する。
-  if (!isAllowedEmail(user.email)) {
+  if (!(await isUserAllowed(user))) {
     await signOutThisApp(supabase);
     return NextResponse.redirect(
       native ? nativeLoginErrorUrl("not_allowed") : `${origin}/login?error=not_allowed`,

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { isAllowedEmail } from "@/lib/allowed-users";
 import {
   consumeHandoff,
   HANDOFF_PURPOSE_LOGIN,
@@ -111,22 +110,9 @@ test("PKCEの形式検証", () => {
   assert.equal(HANDOFF_PURPOSE_LOGIN, "login");
 });
 
-test("許可メールアドレス外は許可判定で拒否される", () => {
-  const original = process.env.ALLOWED_GOOGLE_EMAILS;
-  process.env.ALLOWED_GOOGLE_EMAILS = "me@example.com";
-  try {
-    assert.equal(isAllowedEmail("me@example.com"), true);
-    assert.equal(isAllowedEmail("other@example.com"), false);
-    assert.equal(isAllowedEmail(null), false);
-  } finally {
-    if (original === undefined) delete process.env.ALLOWED_GOOGLE_EMAILS;
-    else process.env.ALLOWED_GOOGLE_EMAILS = original;
-  }
-});
-
 test("/auth/callback は許可判定を通ったあとでしか引き継ぎコードを発行しない", () => {
   const source = readFileSync(new URL("../../app/auth/callback/route.ts", import.meta.url), "utf-8");
-  const allowed = source.indexOf("isAllowedEmail(user.email)");
+  const allowed = source.indexOf("isUserAllowed(user)");
   const issued = source.indexOf("issueHandoff(");
   assert.ok(allowed > 0 && issued > allowed);
   // 許可外はアプリへコードではなく not_allowed を返す
