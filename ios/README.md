@@ -1,6 +1,6 @@
 # YoteiFlow iOSアプリ
 
-本番YoteiFlow（`https://dayspan.gucchii.com/`）をiPhoneのアプリとして開くための、SwiftUI + WKWebView の薄い殻です（#908）。
+本番YoteiFlow（`https://dayspan.gucchii.com/`）をiPhone・iPadのアプリとして開くための、SwiftUI + WKWebView の薄い殻です（#908・#1060）。
 **画面と機能はすべてWeb版が正本**で、ここには「Web版を開く・Googleログインと Calendar 連携を認証シートで往復させる・通信できないときに再試行させる」ことしか書いていません。既存のWeb/PWA版はそのまま残り、挙動は変えていません。
 
 | 項目 | 値 |
@@ -8,7 +8,7 @@
 | 表示名 | YoteiFlow |
 | Bundle ID | `com.gucchii.yoteiflow` |
 | 署名 | Automatic（Apple Developer Program のチーム `6AA3WFTR94`。kurashioと同じチーム） |
-| 対応 | iPhone・縦向き・iOS 18以上 |
+| 対応 | iPhoneは縦向き、iPadは縦・横向きとウィンドウサイズ変更に対応。iOS / iPadOS 18以上 |
 | 認証シートの戻り先 | `yoteiflow://auth-callback`（ログイン）・`yoteiflow://google-connected`（Calendar連携） |
 | App Group | `group.com.gucchii.yoteiflow`（アプリとウィジェットでトークンを共有する Keychain のアクセスグループ。#926） |
 | ウィジェット拡張 | `YoteiFlowWidget`（Bundle ID `com.gucchii.yoteiflow.widget`） |
@@ -28,8 +28,18 @@
 
 1. Xcode 27系を使う（`project.pbxproj` は Xcode 27 で保存すると `objectVersion = 110`。それより古いXcodeは「新しすぎるプロジェクト形式」で開けない。kurashio #606 と同じ）
 2. `open ios/YoteiFlow.xcodeproj`
-3. スキーム `YoteiFlow`・実行先を自分のiPhoneにし、Signing & Capabilities の Team が Apple Developer Program のチームになっていることを確かめて ⌘R
-4. 初回は iPhone の 設定 → プライバシーとセキュリティ → デベロッパモード をオンにし、設定 → 一般 → VPNとデバイス管理 で開発者証明書を信頼する
+3. スキーム `YoteiFlow`・実行先を自分のiPhoneまたはiPadにし、Signing & Capabilities の Team が Apple Developer Program のチームになっていることを確かめて ⌘R
+4. 実機への初回インストールでは、端末の 設定 → プライバシーとセキュリティ → デベロッパモード をオンにし、設定 → 一般 → VPNとデバイス管理 で開発者証明書を信頼する
+
+### iPad の表示確認（#1060）
+
+`TARGETED_DEVICE_FAMILY` はアプリ本体・Widget拡張・共有拡張の Debug／Release で `1,2` に揃える。アプリ本体は iPhone の縦向き指定を保ち、iPad では4方向を許可する。Web の `AppFrame` は実際に渡された表示幅でサイドバーと本文を切り替えるため、アプリ本体が iPhone 専用のままだと、Web 側のレスポンシブ表示を直しても iPad では縦長の互換表示から抜けられない。`node ios/scripts/check-consistency.mjs` でこれらの設定を検査する。
+
+1. Xcode の iPad シミュレーターまたは実機へ **新しいビルド**を入れ、`/calendar` を開く。Safari・PWAではなく YoteiFlow アプリで確認する。
+2. 縦向きでは左に192pxのサイドバー、右にカレンダーが表示され、期間と操作が2段に分かれることを確認する。
+3. 横向きでは左に224pxのサイドバー、右に全幅のカレンダーが表示され、期間と操作が1段になることを確認する。
+4. Split View またはウィンドウサイズ変更で幅を狭め、768px未満では下部ナビ、768px以上ではサイドバーに切り替わり、画面の左右が余らないことを確認する。タスク・記録・勤務・買い物も開き、本文の列が幅に応じて変わることを確認する。
+5. iPhone では従来どおり縦向き・下部ナビで表示されることを確認する。
 
 署名・App Store Connect APIキー・シェルの注意（終了コードをパイプで隠さない等）は kurashio の `ios/README.md`（`guchi-apps/myroom`）と `guchi-apps/docs#176` を参照してください。Widget拡張と App Group（#926）を持つため、初回は Xcode の Signing & Capabilities で両ターゲット（YoteiFlow・YoteiFlowWidget）の Team が正しいことを確かめてください（App Group と拡張の App ID は自動署名＋`-allowProvisioningUpdates` で登録されます）。
 
@@ -73,6 +83,7 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 - [ ] iPhone の TestFlight アプリに YoteiFlow が出て、インストールできる
 - [ ] 起動してログイン（上の「実機確認手順」と同じ）でき、再起動してもログインしたまま
 - [ ] 新しいビルドを上げると TestFlight から更新できる
+- [ ] iPad の TestFlight アプリから入れ、上の「iPad の表示確認」の縦向き・横向き・ウィンドウサイズ変更を確かめる
 
 > 開発用に Xcode から入れたアプリと TestFlight 版は Bundle ID が同じため上書きされます。入れ替える前にどちらか一方を削除すると確実です。
 

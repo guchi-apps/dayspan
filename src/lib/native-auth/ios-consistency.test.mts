@@ -3,6 +3,6 @@ import test from "node:test";
 
 import { checkConsistency } from "../../../ios/scripts/check-consistency.mjs";
 
-test("iOSアプリ（Swift）とサーバー（TS）で、戻り先スキーム・横取りするパス・同一オリジン判定・エフェメラルが揃っている", () => {
+test("iOSアプリの端末対応と、Swift・TS の認証・通知・連携設定が揃っている", () => {
   assert.deepEqual(checkConsistency(), []);
 });
