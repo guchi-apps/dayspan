@@ -86,12 +86,6 @@ export async function resolveUserIdByWidgetToken(token: string): Promise<string 
   return row.userId;
 }
 
-/** トークンを削除する。以後どの端末のウィジェットからも読めなくなる。 */
-export async function deleteWidgetToken(userId: string): Promise<boolean> {
-  const result = await db.widgetToken.deleteMany({ where: { userId } });
-  return result.count > 0;
-}
-
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }

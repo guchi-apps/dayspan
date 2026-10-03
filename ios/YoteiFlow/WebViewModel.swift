@@ -317,19 +317,31 @@ extension WebViewModel {
     /// 画面（Web）からの `sync`。返事は必ず返す（画面が固まらないように）
     fileprivate func handleHealthBridge(_ body: Any) async -> [String: Any] {
         let action = (body as? [String: Any])?["action"] as? String ?? "sync"
-        guard action == "sync" else { return ["permission": healthSync.permission()] }
-
-        return await healthSync.sync { [weak self] method, payload in
-            await self?.callSleepHealthAPI(method: method, payload: payload)
+        switch action {
+        case "status":
+            return [
+                "permission": healthSync.permission(),
+                "importPermission": await healthSync.importPermission(),
+            ]
+        case "import":
+            return await healthSync.importSleep { [weak self] method, payload in
+                await self?.callSleepHealthAPI(path: "/api/sleep/health/import", method: method, payload: payload)
+            }
+        case "sync":
+            return await healthSync.sync { [weak self] method, payload in
+                await self?.callSleepHealthAPI(path: "/api/sleep/health", method: method, payload: payload)
+            }
+        default:
+            return ["permission": healthSync.permission()]
         }
     }
 
-    /// `/api/sleep/health` をログイン済みのWebViewのセッションで呼ぶ（通知の登録と同じ形）
-    private func callSleepHealthAPI(method: String, payload: [String: Any]?) async -> (status: Int, text: String)? {
+    /// `/api/sleep/health`（と取り込みの `/import`）をログイン済みのWebViewのセッションで呼ぶ（通知の登録と同じ形）
+    private func callSleepHealthAPI(path: String, method: String, payload: [String: Any]?) async -> (status: Int, text: String)? {
         guard let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login") else { return nil }
 
         let script = """
-        const response = await fetch('/api/sleep/health', {
+        const response = await fetch(path, {
           method: method,
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -339,7 +351,7 @@ extension WebViewModel {
         """
         let value = try? await webView.callAsyncJavaScript(
             script,
-            arguments: ["method": method, "payload": payload ?? [:]],
+            arguments: ["path": path, "method": method, "payload": payload ?? [:]],
             contentWorld: .page
         )
         guard let dict = value as? [String: Any], let status = dict["status"] as? Int,

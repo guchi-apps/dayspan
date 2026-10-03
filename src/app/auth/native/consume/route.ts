@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { isAllowedEmail } from "@/lib/allowed-users";
+import { isUserAllowed } from "@/lib/access/client";
 import { CALENDAR_VIEW_COOKIE } from "@/lib/calendar-view-memory";
 import { decryptSecret } from "@/lib/crypto/secret-cipher";
 import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   if (error || !data.user) return rejected();
 
   // 発行後に許可リストから外れた場合に備え、ここでも確かめる。
-  if (!isAllowedEmail(data.user.email)) {
+  if (!(await isUserAllowed(data.user))) {
     await signOutThisApp(supabase);
     return NextResponse.json({ error: "not_allowed" }, { status: 403 });
   }

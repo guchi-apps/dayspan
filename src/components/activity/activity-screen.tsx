@@ -14,7 +14,6 @@ import { useNowIso } from "@/components/calendar/use-clock";
 import { AppMenuButton } from "@/components/nav/app-drawer";
 import { AppFrame } from "@/components/nav/app-frame";
 import { BottomNav } from "@/components/nav/main-nav";
-import { closeActivityNotification } from "@/components/notifications/activity-notification";
 import { OfflineNotice } from "@/components/offline/offline-notice";
 import { useWarmOfflinePage } from "@/components/offline/offline-page-cache";
 import { useReconnectRefresh } from "@/components/offline/use-reconnect-refresh";
@@ -154,8 +153,6 @@ export function ActivityScreen({
 
     if (result.status === "done") setRunning(null);
     setEditingEnd(false);
-    // 「記録中」の通知は止めた時点で事実と違う（docs/spec.md §32）。この端末のぶんを消す。
-    void closeActivityNotification();
     startTransition(() => router.refresh());
   };
 
@@ -170,7 +167,6 @@ export function ActivityScreen({
     if (!result) return;
 
     if (result.status === "done") setRunning(null);
-    void closeActivityNotification();
     startTransition(() => router.refresh());
   };
 

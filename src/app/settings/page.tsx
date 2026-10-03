@@ -9,15 +9,14 @@ import {
   CalendarDays,
   ChevronRight,
   Diamond,
+  HeartPulse,
   History,
   LayoutGrid,
   ListTodo,
   NotebookPen,
   ShoppingCart,
-  Smartphone,
   Timer,
   UserRound,
-  Zap,
 } from "lucide-react";
 
 import { SettingsShell } from "@/components/settings/settings-shell";
@@ -44,8 +43,6 @@ export default async function SettingsPage() {
     notionConnection,
     uiSetting,
     activityPresetCount,
-    widgetToken,
-    shortcutToken,
     pushDeviceCount,
     notificationSettings,
     cookieStore,
@@ -54,9 +51,6 @@ export default async function SettingsPage() {
     db.notionConnection.findUnique({ where: { userId: user.id } }),
     db.uiSetting.findUnique({ where: { userId: user.id } }),
     db.activityPreset.count({ where: { userId: user.id } }),
-    // 発行の有無だけを見る。復号は開いてからで足りる。
-    db.widgetToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
-    db.shortcutToken.findUnique({ where: { userId: user.id }, select: { id: true } }),
     countNotificationDevices(user.id),
     getNotificationSettings(user.id),
     cookies(),
@@ -197,20 +191,12 @@ export default async function SettingsPage() {
                 : `既定の交通手段: ${TRAVEL_MODE_LABELS[uiSetting?.travelDefaultMode ?? "PUBLIC_TRANSIT"]}`
             }
           />
-          {/* 記録中の1件はGoogle未接続でも出せるため、Google接続の有無にかかわらず出す。 */}
+          {/* 連携はiOSアプリ（HealthKit）が行う。Webでは使えない旨を案内するだけで、常に出す。 */}
           <MenuItem
-            href="/settings/widget"
-            icon={Smartphone}
-            label="iPhoneウィジェット"
-            value={widgetToken ? "発行済み" : "未設定"}
-          />
-          {/* 睡眠の記録先はGoogle Calendar。ただしトークンの発行そのものは連携に依らず、
-              未接続でも先に手順を読める。ウィジェットと同じく常に出す。 */}
-          <MenuItem
-            href="/settings/shortcuts"
-            icon={Zap}
-            label="iPhoneショートカット"
-            value={shortcutToken ? "発行済み" : "未設定"}
+            href="/settings/health"
+            icon={HeartPulse}
+            label="ヘルスケア"
+            value="睡眠をiPhoneのヘルスケアと連携"
           />
         </Card>
       </SettingsSection>

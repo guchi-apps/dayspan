@@ -25,7 +25,6 @@ import {
   syncNativeHealth,
   type NativeHealthRange,
 } from "@/lib/native-health";
-import { SLEEP_HEALTH_SHORTCUT_NAME } from "@/lib/sleep-health";
 import { cn } from "@/lib/utils";
 
 /**
@@ -41,7 +40,6 @@ export function SleepScreen({
   todayKey,
   days,
   activityTitle,
-  healthOutdated = 0,
   timeZone,
   loadError = null,
 }: {
@@ -52,11 +50,6 @@ export function SleepScreen({
   days: number;
   /** 睡眠として数えている項目名。1件も無いときに何を探しているのかを示すために使う。 */
   activityTitle: string;
-  /**
-   * ヘルスケアへ送ったあとに時刻を直した・消した睡眠の数。ヘルスケアの記録とずれているもので、
-   * 0 なら何も出さない（送っていない・ヘルスケアへ送る設定をしていないときも 0）。
-   */
-  healthOutdated?: number;
   /** 利用者のタイムゾーン。ヘルスケアに残る古い時間帯の日時を出すために使う。 */
   timeZone: string;
   /** Googleから読めなかったときの理由。画面は開いたまま、何が起きたかだけを伝える。 */
@@ -65,9 +58,6 @@ export function SleepScreen({
   useReconnectRefresh();
   // オフラインでもこの画面を開けるよう、表示中にHTMLを保存しておく（issue #321）。
   useWarmOfflinePage("/activity/sleep");
-
-  // アプリ内ではブリッジでその場で反映できるため、ショートカットの案内は出さない。
-  const inApp = useNativeHealthAvailable();
 
   const summary = summarizeSleepNights(nights, targetMinutes);
 
@@ -95,26 +85,6 @@ export function SleepScreen({
       )}
 
       <NativeHealthSync title={activityTitle} timeZone={timeZone} />
-
-      {healthOutdated > 0 && !inApp && (
-        // ショートカットを走らせるきっかけ。素の <a> にするのは、スクリプトから開くとアプリが
-        // 入っていても開けないことがあるため（Yahoo!乗換案内のリンクと同じ・CLAUDE.md）。
-        <div className="type-body-medium flex flex-col gap-2 rounded-lg bg-secondary-container px-3 py-2 text-on-secondary-container sm:flex-row sm:items-center sm:justify-between">
-          <p className="flex items-start gap-2">
-            <HeartPulse className="mt-0.5 size-4 shrink-0" aria-hidden />
-            <span>
-              ヘルスケアへ送ったあとに直した{activityTitle}が{healthOutdated}件あります。
-              ショートカット「{SLEEP_HEALTH_SHORTCUT_NAME}」を実行すると変更後を送り、ヘルスケアに
-              残る古い時間帯を案内します（別の名前を付けているときは、そのショートカットを実行してください）。
-            </span>
-          </p>
-          <Button variant="outline" size="sm" asChild className="shrink-0">
-            <a href={`shortcuts://run-shortcut?name=${encodeURIComponent(SLEEP_HEALTH_SHORTCUT_NAME)}`}>
-              ヘルスケアへ反映
-            </a>
-          </Button>
-        </div>
-      )}
 
       <Card>
         {/* 広い画面では平均と3つの数字を横1段に並べ、グラフを上へ詰める（issue #636）。 */}

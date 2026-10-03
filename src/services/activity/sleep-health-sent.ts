@@ -116,3 +116,37 @@ export async function commitPendingSleepHealth(userId: string, until: Date): Pro
 
   return true;
 }
+
+/**
+ * ヘルスケアへ送り終えた睡眠の終わり（docs/spec.md §40「ヘルスケアへ送る」）。未送信なら null。
+ *
+ * ユーザーに1つ。取得した時点では進めず、書き終えたあとの確定でだけ進める。
+ */
+export async function getSleepHealthExportedUntil(userId: string): Promise<Date | null> {
+  const row = await db.sleepHealthExport.findUnique({
+    where: { userId },
+    select: { exportedUntil: true },
+  });
+
+  return row?.exportedUntil ?? null;
+}
+
+/**
+ * 送り終えた印を進める。戻しはしない（`until` が今の印より前なら何もしない）。
+ *
+ * 同じ取得の結果で確定が2回走った・古い取得の結果が後から届いた、のどちらでも、
+ * 印が戻って送り済みの睡眠がもう一度返ることを避ける。
+ */
+export async function markSleepHealthExported(userId: string, until: Date): Promise<Date | null> {
+  await db.sleepHealthExport.upsert({
+    where: { userId },
+    create: { userId, exportedUntil: until },
+    update: {},
+  });
+  await db.sleepHealthExport.updateMany({
+    where: { userId, OR: [{ exportedUntil: null }, { exportedUntil: { lt: until } }] },
+    data: { exportedUntil: until },
+  });
+
+  return getSleepHealthExportedUntil(userId);
+}

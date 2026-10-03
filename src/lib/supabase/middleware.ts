@@ -1,19 +1,18 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { isAllowedEmail } from "@/lib/allowed-users";
+import { isUserAllowed } from "@/lib/access/client";
 import { SUPABASE_USER_ID_HEADER } from "@/lib/auth-header";
 import { resolveInternalPath, START_PATH_COOKIE } from "@/lib/home-path";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { isPublicPath } from "@/lib/supabase/public-paths";
-import { WIDGET_OPEN_BRIDGE_PATH } from "@/lib/widget-open-bridge";
 
 
 /**
  * Supabaseのセッションではなく、それぞれ専用のトークン・APIキーで認証するAPI。
  *
  * - `/api/widget/` … iPhoneウィジェット用（docs/spec.md §28）
- * - `/api/shortcuts/` … iPhoneショートカット用（docs/spec.md §40）
+ * - `/api/shortcuts/` … ライブアクティビティの停止ボタン用（docs/spec.md §43）
  * - `/api/internal/` … サーバー間参照用（docs/internal-api.md）
  *
  * ここを通常の経路に通すと、呼ばれるたびにSupabase Authへ往復が1回増えるうえ、Supabaseへ
@@ -28,22 +27,8 @@ function isTokenAuthApiPath(pathname: string): boolean {
   );
 }
 
-/**
- * 認証をまったく通さないパス。
- *
- * いまのところ iPhoneウィジェットの受け渡しページ（docs/spec.md §28）だけ。あの面が返すのは
- * 「ホーム画面のDaySpanへ渡す」ためのHTMLだけで、利用者に紐づく値を持たない。
- *
- * `publicPaths` へ足すのではなくここで分けるのは、あちらの判定が `supabase.auth.getUser()` の
- * あとに来るため。ウィジェットを押すたびにSupabase Authへの往復が1回増え、その待ちがそのまま
- * 「押しても開かない」に見える。Supabaseが応答しない間も同じだけ待たされる。
- */
-function isNoAuthPath(pathname: string): boolean {
-  return pathname === WIDGET_OPEN_BRIDGE_PATH;
-}
-
 export async function updateSession(request: NextRequest) {
-  if (isTokenAuthApiPath(request.nextUrl.pathname) || isNoAuthPath(request.nextUrl.pathname)) {
+  if (isTokenAuthApiPath(request.nextUrl.pathname)) {
     // 詐称されたユーザーIDヘッダーを後段へ届かせない。認証を通さない経路ほど、ここで消しておく。
     const unauthenticatedHeaders = new Headers(request.headers);
     unauthenticatedHeaders.delete(SUPABASE_USER_ID_HEADER);
@@ -86,14 +71,14 @@ export async function updateSession(request: NextRequest) {
     );
   }
 
-  // 許可リスト（ALLOWED_GOOGLE_EMAILS）から外れたメールアドレスは、Supabaseのセッションが
+  // StatusHubの共通アクセス設定（src/lib/access）で許可されなくなったメールアドレスは、Supabaseのセッションが
   // refresh tokenで有効なままでも未ログインと同じに扱う。ここで弾かないと、下の
   // 「/login をログイン済みユーザーが開いたら戻す」判定が生のSupabaseユーザーだけを見て
   // 元の画面へ送り返し、そちらは getCurrentUser() 側の許可判定（auth-user.ts）で /login へ
   // 差し戻されるため、/login と保護ページの間で無限リダイレクトになる（issue #842）。
   // メールアドレスは getUser() の応答に既に載っているため、往復は増えない。
   const user =
-    authenticatedUser && isAllowedEmail(authenticatedUser.email) ? authenticatedUser : null;
+    authenticatedUser && (await isUserAllowed(authenticatedUser)) ? authenticatedUser : null;
 
   // 検証済みのユーザーIDを後段へ渡し、ページ側が同じ検証を繰り返さずに済むようにする。
   // auth.getUser()は毎回Supabaseへ往復するため、1リクエストで2回叩くと待ち時間がそのまま倍になる。

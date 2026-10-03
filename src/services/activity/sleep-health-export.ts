@@ -2,24 +2,20 @@ import { isoToLocalInput } from "@/components/calendar/datetime-fields";
 import { db } from "@/lib/db";
 import {
   parseSleepHealthUntil,
-  SLEEP_HEALTH_UNTIL_SKIP,
   toOffsetIso,
-  type SleepHealthRange,
 } from "@/lib/sleep-health";
 import { getSleepSettings } from "@/services/activity/settings";
-import { markSleepHealthExported } from "@/services/activity/shortcut-token";
 import { listSleepForHealth } from "@/services/activity/sleep";
 import {
   commitPendingSleepHealth,
+  markSleepHealthExported,
   savePendingSleepHealth,
 } from "@/services/activity/sleep-health-sent";
 
 /**
  * 睡眠をヘルスケアへ送るための取得と確定（docs/spec.md §40「ヘルスケアへ送る」）。
  *
- * ショートカット経路（`/api/shortcuts/sleep/health`・トークン認証）とiOSアプリの経路
- * （`/api/sleep/health`・セッション認証）が共有する。違うのは認証と応答の包み方だけで、
- * 何を送るか・印と履歴をいつ進めるかはここに1つだけ持つ。
+ * iOSアプリの経路（`/api/sleep/health`・セッション認証）が使う。何を送るか・印と履歴をいつ進めるかはここに1つだけ持つ。
  *
  * 取得（`loadSleepHealthExport`）では印も履歴も進めない。書き終えたあとの確定
  * （`commitSleepHealthExport`）でだけ進める。取得の時点で進めると、ヘルスケアの書き込みを
@@ -46,21 +42,15 @@ function clockLabel(iso: string, timeZone: string): string {
   return isoToLocalInput(iso, timeZone).slice(11);
 }
 
-/**
- * 追加で送る睡眠・ヘルスケアに残る古い時間帯・送り終えたら返してほしい `until` を返す。
- *
- * `range`（過去の日を指定して送る一時的な機能・issue #665）はショートカット経路だけが渡す。
- * この場合の `until` は `SLEEP_HEALTH_UNTIL_SKIP` で、確定は印に触れない。
- */
+/** 追加で送る睡眠・ヘルスケアに残る古い時間帯・送り終えたら返してほしい `until` を返す。 */
 export async function loadSleepHealthExport(
   userId: string,
-  input: { now: Date; timeZone: string; range?: SleepHealthRange | null },
+  input: { now: Date; timeZone: string },
 ): Promise<SleepHealthExportResult> {
   const { now, timeZone } = input;
-  const range = input.range ?? null;
   const { title } = await getSleepSettings(userId);
 
-  const result = await listSleepForHealth(userId, { now, timeZone, range: range ?? undefined });
+  const result = await listSleepForHealth(userId, { now, timeZone });
 
   if (!result.ok) {
     if (result.reason === "calendar_not_selected") {
@@ -82,41 +72,6 @@ export async function loadSleepHealthExport(
 
   const items = result.items.map(({ start, end }) => ({ start, end }));
   const last = result.items[result.items.length - 1];
-
-  if (range) {
-    const label = range.from === range.to ? range.from : `${range.from}〜${range.to}`;
-    // 印は動かさない（`until` の説明は `SLEEP_HEALTH_UNTIL_SKIP`）。
-    const until = SLEEP_HEALTH_UNTIL_SKIP;
-
-    if (!last) {
-      return {
-        ok: true,
-        body: {
-          ok: true,
-          status: "none",
-          count: 0,
-          items: [],
-          stale: [],
-          until,
-          message: `${label}に終わった${title}はありません。`,
-        },
-      };
-    }
-
-    return {
-      ok: true,
-      body: {
-        ok: true,
-        status: "pending",
-        count: items.length,
-        items,
-        stale: [],
-        until,
-        // 最大31件になるため、通常の送信のように時間帯は並べない。
-        message: `${label}に終わった${title}を${items.length}件ヘルスケアへ送ります。`,
-      },
-    };
-  }
 
   const plan = result.plan;
   // 時刻を直した睡眠が混ざるため、最後の要素の終わりが印より前のこともある。印は戻らないので
@@ -202,19 +157,6 @@ export async function commitSleepHealthExport(
   untilValue: unknown,
   timeZone: string,
 ): Promise<SleepHealthExportResult> {
-  // 範囲を指定して送ったときの応答（取得）が返した合図。印は動かさない。
-  if (untilValue === SLEEP_HEALTH_UNTIL_SKIP) {
-    return {
-      ok: true,
-      body: {
-        ok: true,
-        status: "skipped",
-        exportedUntil: null,
-        message: "範囲を指定して送ったため、送り終えた印は動かしていません。",
-      },
-    };
-  }
-
   const parsed = parseSleepHealthUntil(untilValue, new Date());
   if (!parsed.ok) {
     return { ok: false, status: 400, error: "invalid_until", message: parsed.message };
