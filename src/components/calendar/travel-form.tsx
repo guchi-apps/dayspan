@@ -17,6 +17,8 @@ import {
   yahooTransitLink,
   type YahooTransitBasis,
 } from "@/lib/yahoo-transit-link";
+import { googleMapsDirectionsLink, resolveGoogleMapsPlace } from "@/lib/google-maps-directions-link";
+import { parseGoogleMapsDuration } from "@/lib/google-maps-duration";
 import {
   parseYahooTransitRoute,
   yahooRouteFields,
@@ -115,6 +117,11 @@ export function TravelForm({
   // クリップボードを読めなかった・読めても経路ではなかったときの受け皿。
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
+
+  // Googleマップから取り込んだ結果の報せと、クリップボードを読めなかったときの受け皿。
+  const [googleNotice, setGoogleNotice] = useState<string | null>(null);
+  const [googlePasteOpen, setGooglePasteOpen] = useState(false);
+  const [googlePasteText, setGooglePasteText] = useState("");
 
   const offline = useOffline();
 
@@ -269,6 +276,58 @@ export function TravelForm({
       "コピーされているものが経路として読めませんでした。Yahoo!乗換案内で経路を選び、共有 ▸ コピーしてからもう一度押してください。",
     );
   };
+
+  /**
+   * Googleマップからコピーした所要時間を取り込む（issue #1025）。読めなければ何も書き換えない。
+   *
+   * 到着時刻は動かさず、そこから分数を引いて出発時刻を決める（`applyEstimate` のAI見積もりと
+   * 同じ）。到着が空なら出発時刻から足して到着を入れる。
+   */
+  const applyGoogleMapsDuration = (text: string): boolean => {
+    const minutes = parseGoogleMapsDuration(text);
+    if (minutes === null) return false;
+
+    const anchor = arriveAt || departAt;
+    const base = new Date(`${anchor}:00Z`);
+    if (!anchor || Number.isNaN(base.getTime())) return false;
+
+    if (arriveAt) {
+      setDepartAt(new Date(base.getTime() - minutes * 60_000).toISOString().slice(0, 16));
+    } else {
+      setArriveAt(new Date(base.getTime() + minutes * 60_000).toISOString().slice(0, 16));
+    }
+    setEstimateSource("GOOGLE_MAPS");
+    setEstimates(null);
+    setGooglePasteOpen(false);
+    setGooglePasteText("");
+    setError(null);
+    setGoogleNotice(
+      `Googleマップの所要時間（${minutes}分）を${arriveAt ? "到着時刻から逆算して出発時刻" : "到着時刻"}へ入れました。`,
+    );
+    return true;
+  };
+
+  const importGoogleMapsFromClipboard = async () => {
+    setGoogleNotice(null);
+    try {
+      const text = await navigator.clipboard.readText();
+      if (applyGoogleMapsDuration(text)) return;
+      setGooglePasteOpen(true);
+      setError(
+        "コピーされているものから所要時間を読めませんでした。Googleマップで「25 分」などの所要時間をコピーしてからもう一度押してください。",
+      );
+    } catch {
+      setGooglePasteOpen(true);
+      setError(
+        "クリップボードを読み取れませんでした（許可されていないか、対応していない環境です）。所要時間を下の欄へ貼り付けてください。",
+      );
+    }
+  };
+
+  const googleMapsUrl = googleMapsDirectionsLink(
+    resolveGoogleMapsPlace(origin, placeCatalog.places),
+    resolveGoogleMapsPlace(destination, placeCatalog.places),
+  );
 
   const askEstimate = async () => {
     setEstimating(true);
@@ -539,6 +598,43 @@ export function TravelForm({
           </div>
         ) : (
           <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
+            {/* 車などの所要時間はGoogleマップで調べた普段の所要時間を取り込める（issue #1025）。
+                何も取得せず、利用者がコピーした文字列だけを読む（Yahoo!乗換案内と同じ）。 */}
+            <div className="flex flex-wrap gap-2">
+              {!offline && googleMapsUrl && (
+                <Button asChild variant="outline" size="sm" className="w-fit">
+                  <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="size-4" />
+                    Googleマップで調べる
+                  </a>
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-fit"
+                onClick={importGoogleMapsFromClipboard}
+              >
+                <ClipboardPaste className="size-4" />
+                コピーした所要時間を取り込む
+              </Button>
+            </div>
+            {googlePasteOpen && (
+              <Textarea
+                id="travel-google-paste"
+                label="コピーした所要時間"
+                rows={2}
+                value={googlePasteText}
+                onChange={(e) => {
+                  setGooglePasteText(e.target.value);
+                  applyGoogleMapsDuration(e.target.value);
+                }}
+                onClear={() => setGooglePasteText("")}
+              />
+            )}
+            {googleNotice && <p className="text-xs text-muted-foreground">{googleNotice}</p>}
+
             {estimates === null ? (
               <>
                 <p className="text-xs text-muted-foreground">

@@ -22,6 +22,12 @@ export const AI_NOTE = "所要時間はAIによる目安です。時刻表や道
  */
 export const YAHOO_NOTE = "Yahoo!乗換案内で選んだ経路の時刻です。";
 
+/**
+ * Googleマップで調べた所要時間を取り込んだときの注記（issue #1025）。
+ * 利用者がGoogleマップで見た「普段の所要時間」で、その日の渋滞を見込んだ値ではない。
+ */
+export const GOOGLE_MAPS_NOTE = "Googleマップで調べた所要時間です（普段の所要時間）。";
+
 /** 公共交通で、まだ何も取り込んでいないときの案内。押す前に手順が分かるようにする。 */
 export const YAHOO_HOW_TO =
   "Yahoo!乗換案内で経路を選び、共有 ▸ コピーしてから取り込みます。";
@@ -40,6 +46,7 @@ export function estimateNote(
   attribution: EstimateAttribution | null,
 ): string {
   if (source === "YAHOO") return YAHOO_NOTE;
+  if (source === "GOOGLE_MAPS") return GOOGLE_MAPS_NOTE;
   if (source === "TRANSIT") return transitNote(attribution);
   if (source === "AI") return AI_NOTE;
   // 公共交通（電車・バス・飛行機）は経路検索・AIを出さず、Yahoo!乗換案内から取り込む
@@ -94,6 +101,7 @@ export function transitDetail(transit: NonNullable<TravelEstimate["transit"]>): 
  */
 export function estimateSourceLabel(source: TravelEstimateSource): string {
   if (source === "YAHOO") return "（Yahoo!乗換案内）";
+  if (source === "GOOGLE_MAPS") return "（Googleマップ）";
   if (source === "TRANSIT") return "（経路検索の平均）";
   return "（AIによる目安）";
 }

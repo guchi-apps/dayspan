@@ -123,7 +123,7 @@ APIキーの自動署名は App ID・App Group を**作れない**（既存の�
 
 1. Web の `/login` の「Googleでログイン」（素の `<a href="/auth/signin?next=…">`）を、アプリが `decidePolicyFor` で捕まえてWebView内では開かない
 2. アプリが PKCE の `verifier`（乱数）と `challenge`（S256）を作り、認証シートで `/auth/native/start?challenge=…&next=…` を開く
-3. Google → Supabase → サーバーの `/auth/callback?native=1&…`。**許可メールアドレス（`ALLOWED_GOOGLE_EMAILS`）の確認とユーザー作成は Web版と同じ箇所**で行い、許可外は `yoteiflow://auth-callback?error=not_allowed`
+3. Google → Supabase → サーバーの `/auth/callback?native=1&…`。**許可の確認（StatusHubの共通アクセス設定）とユーザー作成は Web版と同じ箇所**で行い、許可外は `yoteiflow://auth-callback?error=not_allowed`
 4. サーバーはセッションのトークンを暗号化して60秒だけDBへ置き、**トークンではなく一度限りのコード**だけを `yoteiflow://auth-callback?code=…` で返す
 5. アプリはWebViewの中から `POST /auth/native/consume`（本文に `code` と `verifier`）を呼び、通常の Supabase SSR Cookie を受け取ってから `next`（起動画面の設定込み）を開く
 

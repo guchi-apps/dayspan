@@ -67,9 +67,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const userId = await resolveInternalUserId();
+    const userId = await resolveInternalUserId(request);
     if (!userId) {
-      // ALLOWED_GOOGLE_EMAILS が未設定・複数、あるいはそのメールのユーザーがまだログインしていない。
+      // X-Target-Email のユーザーがまだログインしていない・不正、または（ヘッダー無しで）ユーザーが1人に決まらない。
       return json({ error: "target_user_not_resolvable" }, 500);
     }
 
