@@ -12,7 +12,7 @@
 | 認証シートの戻り先 | `yoteiflow://auth-callback`（ログイン）・`yoteiflow://google-connected`（Calendar連携） |
 | App Group | `group.com.gucchii.yoteiflow`（アプリとウィジェットでトークンを共有する Keychain のアクセスグループ。#926） |
 | ウィジェット拡張 | `YoteiFlowWidget`（Bundle ID `com.gucchii.yoteiflow.widget`） |
-| 共有拡張 | `YoteiFlowShare`（Bundle ID `com.gucchii.yoteiflow.share`）。Yahoo!乗換案内の共有 ▸ YoteiFlow で移動を登録する（#1026）。停止専用トークンのBearerで `/api/shortcuts/travel/import` を呼ぶ。**共有シートが渡す項目（テキストかURLか）は実機未確認。Xcodeが無い環境で作ったためpbxproj・Swiftは未ビルド** |
+| 共有拡張 | `YoteiFlowShare`（Bundle ID `com.gucchii.yoteiflow.share`）。Yahoo!乗換案内の共有 ▸ YoteiFlow で、経路を確認してから移動を登録する（#1026・#1054）。停止専用トークンのBearerで `/api/shortcuts/travel/preview` を呼び、登録を押したときだけ `/import` を呼ぶ。**共有シートが渡す項目（テキストかURLか）は実機未確認。Xcodeが無い環境で作ったためpbxproj・Swiftは未ビルド** |
 | Associated Domains / Push | 使わない（初回スコープ外） |
 
 ## 更新が要る場所

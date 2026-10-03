@@ -9,9 +9,10 @@ import { resolveUserIdByActivityStopToken } from "@/services/live-activity/devic
 
 /**
  * ライブアクティビティの停止ボタン用トークンで本人を特定する（issue #971）。
- * 許可するのは4経路だけ: `/api/shortcuts/activity/` の停止・activity tokenの登録・記録中の読み取りと、
- * Yahoo!乗換案内の共有拡張が使う `/api/shortcuts/travel/import`（issue #1026。漏れると任意の移動を
- * 作れる。新しいトークンを足さず、マイグレーションを避けるためここへ相乗りさせた）。
+ * 許可するのは5経路だけ: `/api/shortcuts/activity/` の停止・activity tokenの登録・記録中の読み取りと、
+ * Yahoo!乗換案内の共有拡張が使う `/api/shortcuts/travel/preview`・`/import`（issue #1026/#1054）。
+ * preview は共有内容を読むだけ、import は任意の移動を作れる。新しいトークンを足さず、
+ * マイグレーションを避けるためここへ相乗りさせた。
  */
 export async function resolveActivityStopUserId(
   request: Request,
