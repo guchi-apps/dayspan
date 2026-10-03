@@ -91,7 +91,7 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 ### 署名と証明書（#975）
 
 - 自動署名（`-allowProvisioningUpdates`）は、実行のたびに Development 証明書を「Created via API」として Apple 側へ新規に作る。使い捨てのランナーに秘密鍵は残らないため、掃除しないとアカウントの証明書数の上限に達する（#966で実際に失敗した）。
-- 対応として `asc-api.mjs revoke-api-dev-certs` が、**名前が「Created via API」の Development 証明書だけ**を失効させる。署名の前（前回の失敗の残り）と後（`always()`）に実行する。Mac の Xcode が作った自分用の証明書・Distribution 証明書は対象外。配布（エクスポート）は Apple のクラウド管理の Distribution 証明書で署名されるため、失効させても影響しない。
+- 対応として `asc-api.mjs revoke-api-dev-certs` が、**表示名（APIの `displayName`）が「Created via API」の Development 証明書だけ**を失効させる（APIの `name` は「Apple Development: Created via API」と種別の接頭辞が付くため、`name` の完全一致では1件も選ばれず、#1010で再び上限に達した）。署名の前（前回の失敗の残り）と後（`always()`）に実行する。Mac の Xcode が作った自分用の証明書・Distribution 証明書は対象外。配布（エクスポート）は Apple のクラウド管理の Distribution 証明書で署名されるため、失効させても影響しない。
 - 手動確認: `ASC_*` を環境に置き `node ios/scripts/asc-api.mjs revoke-api-dev-certs --dry-run true` で対象だけ一覧できる。
 - 同じ `apps/AppStoreConnect` のキーで同じ証明書枠を使う kurashio にも同じ掃除が要る（別Issue）。同時に両方のビルドが走ると、片方の掃除が他方の署名中の証明書を失効させる可能性がある（まれ。失敗したら再実行）。
 - 採らなかった方式: 手動署名（Distribution 証明書・プロファイルを 1Password から取り込む）。証明書は増えないが、.p12・プロファイルの発行と更新（1年）の運用が要る。この掃除で再発しなくなるため見送り、再発したら再検討する。
