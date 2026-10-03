@@ -72,11 +72,14 @@ final class WebViewModel: NSObject, ObservableObject {
         PushCoordinator.shared.onTokenChanged = { [weak self] in
             Task { await self?.registerPushTokenIfPossible() }
         }
-        // ライブアクティビティ（#971）。push-to-start トークンはログイン済みのWebViewから登録する
-        LiveActivityCoordinator.shared.onPushToStartToken = { [weak self] in
-            Task { await self?.registerLiveActivityStartToken() }
+        // ライブアクティビティ（#971）。push-to-start トークンはログイン済みのWebViewから登録する。
+        // LiveActivityCoordinator は @MainActor で、この init はアクター外のためメインアクターへ渡す（#989）
+        Task { @MainActor in
+            LiveActivityCoordinator.shared.onPushToStartToken = { [weak self] in
+                Task { await self?.registerLiveActivityStartToken() }
+            }
+            LiveActivityCoordinator.shared.startObserving()
         }
-        LiveActivityCoordinator.shared.startObserving()
     }
 
     deinit {
@@ -590,7 +593,7 @@ extension WebViewModel {
             WidgetCredentials.clear()
             // 停止ボタン用トークンも消し、表示中のアクティビティを終わらせる（ログアウト後に
             // 前のアカウントの記録を出し続けたり、止められたりしないように。#971）
-            LiveActivityCoordinator.shared.signOut()
+            Task { @MainActor in LiveActivityCoordinator.shared.signOut() }
             registeredLiveActivityStartToken = nil
             WidgetCenter.shared.reloadAllTimelines()
             return
@@ -650,9 +653,10 @@ extension WebViewModel {
 
     /// push-to-start トークンをログイン済みのWebViewからサーバーへ渡す。通知を切っている（`pushOptOut`）間は登録しない
     fileprivate func registerLiveActivityStartToken() async {
+        let startToken = await LiveActivityCoordinator.shared.pushToStartToken
         guard
             !PushCoordinator.shared.isOptedOut,
-            let token = LiveActivityCoordinator.shared.pushToStartToken,
+            let token = startToken,
             token != registeredLiveActivityStartToken,
             let url = webView.url, AppConfig.isAppURL(url), !url.path.hasPrefix("/login")
         else { return }

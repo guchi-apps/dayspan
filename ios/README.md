@@ -84,6 +84,9 @@ ios/scripts/remote-upload-testflight.sh    # Mac で main を取り込み、Test
 - 手動実行: `gh workflow run ios-testflight.yml -f sha=<main上のコミット> [-f dry_run=true]`。`dry_run` は判定だけ行いビルドしない
 - 署名は App Store Connect APIキー（クラウド署名）。キーは GitHub Secrets の `ASC_KEY_ID`・`ASC_ISSUER_ID`・`ASC_KEY_P8`（正は 1Password の `op://apps/AppStoreConnect/*`。手動用の `asc.env.tpl` も同じ参照先）。内部グループが複数あるときだけ GitHub の variable `TESTFLIGHT_GROUP` にグループ名を置く
 - ビルドは GitHub ホストの `xcode-27` ランナー。**subpc には Xcode が無く、ワークフローの実行・署名・App Store Connect との疎通は未確認**。初回は `dry_run` → 本番の順に確かめてください
+- **Swiftのコンパイルエラーに気付けるのはこのワークフローだけ**（PRのCIはSwiftをビルドしない・`dry_run` もビルドしない・main 以外のコミットは配布できない）。アプリ本体はWidget拡張を埋め込むため、**Widget が先にビルドされ、そこで落ちると本体はコンパイルすら始まらない**。ログにWidgetのエラーしか出ていなくても、本体側に別のエラーが隠れていることがある（#989 で、Widget を直したあとに本体の未コンパイルの変更〔#968・#971・#976〕も目視で直した）。Xcodeの無い環境でSwiftを書くときは、特に次の2つを見落としやすい
+  - `@MainActor` の型（`LiveActivityCoordinator` など）を、アクター指定の無い型（`WebViewModel`）の同期の関数から呼ばない（Swift 5 モードでもエラー）。`Task { @MainActor in … }` で渡すか、async 関数なら `await` を付ける
+  - ジェネリックな `View` を返すクロージャを受ける引数には `@ViewBuilder` を付ける（付けないと `let x = …` を挟んだ複数文のクロージャが `()` と推論される）
 
 ### 署名と証明書（#975）
 
@@ -176,6 +179,11 @@ Scriptableなしで、ホーム画面・ロック画面に活動記録・今日�
 4. ロック画面の「停止」を押す → 記録が止まり、表示が消える（Webでも止まっている）
 5. 記録中にWeb側で別の項目へ切り替える → 表示が項目名だけ入れ替わる（2つ並ばない）
 6. アプリのログアウト後、表示が消えることを確かめる
+
+ロック画面ウィジェット（活動記録の accessory 枠・#979）の確認手順:
+1. ロック画面を長押し ▸ カスタマイズ ▸ ロック画面 ▸ 時計の下の枠 / 時計の上の1行から「活動記録」を追加する
+2. 記録中: 丸い枠に項目名の先頭2文字と経過時間、横長の枠に項目名と経過時間、1行の枠に項目名と経過時間が出る（経過時間が進み続ける）
+3. 停止中: 丸い枠に「停止」と今日の合計、横長の枠に「記録していません」と今日の合計が出る
 
 ## 実機確認手順
 

@@ -72,6 +72,14 @@ struct FittedRowList<Row: View>: View {
     let total: Int
     let row: (Int) -> Row
 
+    /// 行は `@ViewBuilder` で受ける。付けないと `let item = …` を挟んだ複数文のクロージャが
+    /// `()` を返すものと推論され、`Row: View` を満たせずビルドが落ちる（#989）
+    init(count: Int, total: Int, @ViewBuilder row: @escaping (Int) -> Row) {
+        self.count = count
+        self.total = total
+        self.row = row
+    }
+
     @ScaledMetric(relativeTo: .caption) private var rowHeight: CGFloat = 19
     @ScaledMetric(relativeTo: .caption2) private var footerHeight: CGFloat = 16
 
@@ -122,13 +130,20 @@ struct ActivityWidgetView: View {
             case .accessoryInline:
                 Text("\(running.title) ") + timer
             case .accessoryCircular:
-                VStack(spacing: 0) {
-                    Image(systemName: "record.circle")
-                    timer.font(.caption2).monospacedDigit().multilineTextAlignment(.center)
+                // 何の記録かを項目名の先頭2文字で示す。単色描画でも読めるよう、色やアイコンの違いに頼らない
+                ZStack {
+                    AccessoryWidgetBackground()
+                    VStack(spacing: 0) {
+                        Text(String(running.title.prefix(2))).font(.caption.bold()).lineLimit(1)
+                        timer.font(.caption2).monospacedDigit().multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.6)
+                    }
+                    .padding(2)
                 }
             case .accessoryRectangular:
+                // 今日の合計は出さない。取得時点の値で止まり、進み続けるタイマーより小さく見えることがある
                 VStack(alignment: .leading) {
-                    Text(running.title).font(.headline).lineLimit(1)
+                    Label(running.title, systemImage: "record.circle").font(.headline).lineLimit(1)
                     timer.font(.title3).monospacedDigit()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -147,9 +162,14 @@ struct ActivityWidgetView: View {
             case .accessoryInline:
                 Text(payload.today.map { "今日 \(MinutesLabel.text($0.totalMinutes))" } ?? "記録していません")
             case .accessoryCircular:
-                VStack(spacing: 0) {
-                    Image(systemName: "stop.circle")
-                    Text(payload.today.map { MinutesLabel.text($0.totalMinutes) } ?? "−").font(.caption2)
+                ZStack {
+                    AccessoryWidgetBackground()
+                    VStack(spacing: 0) {
+                        Text("停止").font(.caption.bold())
+                        Text(payload.today.map { MinutesLabel.text($0.totalMinutes) } ?? "−")
+                            .font(.caption2).minimumScaleFactor(0.6).lineLimit(1)
+                    }
+                    .padding(2)
                 }
             case .accessoryRectangular:
                 VStack(alignment: .leading) {
