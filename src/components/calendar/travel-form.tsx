@@ -3,29 +3,12 @@
 import { useOffline } from "next/offline";
 import { useState } from "react";
 
-import { ClipboardPaste, ExternalLink, Route } from "lucide-react";
-
 import { OFFLINE_WRITE_MESSAGE } from "@/components/offline/offline-notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { TravelEstimate } from "@/lib/ai-travel-estimate";
-import {
-  resolveYahooPlace,
-  resolveYahooTransitBasis,
-  yahooTransitLink,
-  type YahooTransitBasis,
-} from "@/lib/yahoo-transit-link";
-import { googleMapsDirectionsLink, resolveGoogleMapsPlace } from "@/lib/google-maps-directions-link";
-import { parseGoogleMapsDuration } from "@/lib/google-maps-duration";
 import type { GoogleMapsRoute } from "@/lib/google-maps-route";
-import {
-  parseYahooTransitRoute,
-  yahooRouteFields,
-  yahooSearchedDateKey,
-  yahooStationName,
-} from "@/lib/yahoo-transit-route";
 import type { PlaceCatalog } from "@/services/notion/places";
 import {
   TRAVEL_MODES,
@@ -39,9 +22,8 @@ import { DateTimeInput } from "./date-time-input";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { isoToLocalInput, localInputToIso } from "./datetime-fields";
 import { ItemFormActions } from "./item-form-actions";
-import { LocationInput, withPlaceAddress } from "./location-input";
+import { LocationInput } from "./location-input";
 import { readErrorMessage } from "./response-error";
-import { estimateNote, resultNote, transitDetail, yahooImportNote } from "./travel-estimate-notes";
 import type { TouchedRange } from "./use-calendar-chunks";
 
 export type TravelDraft = {
@@ -61,12 +43,6 @@ export type TravelDraft = {
   /** 往復を作るかの初期値。設定の既定値が入る。 */
   roundTrip?: boolean;
 };
-
-/** Yahoo!乗換案内で探す基準の選択肢。並びは入力欄（出発 → 到着）と揃える。 */
-const SEARCH_BASIS_OPTIONS: { value: YahooTransitBasis; label: string }[] = [
-  { value: "depart", label: "出発時刻で探す" },
-  { value: "arrive", label: "到着時刻で探す" },
-];
 
 /**
  * 移動の入力欄（docs/spec.md §29）。ダイアログの枠と種類の切り替えは ItemDialog が持つ。
@@ -100,8 +76,6 @@ export function TravelForm({
   );
   const [roundTrip, setRoundTrip] = useState(Boolean(draft.roundTrip && draft.linkedEvent));
 
-  const [estimates, setEstimates] = useState<TravelEstimate[] | null>(null);
-  const [estimating, setEstimating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 保存はできたが、Googleカレンダーへ書き出せなかったとき。黙って閉じると気付けない。
@@ -110,19 +84,8 @@ export function TravelForm({
   );
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  // Yahoo!乗換案内をどちらの時刻で開くか（issue #444）。既定は到着時刻で、移動は
-  // 「予定の開始までに着く」ために作るため。出発時刻が決まっている移動ではチップで切り替える。
-  const [searchBasis, setSearchBasis] = useState<YahooTransitBasis>("arrive");
-  // Yahoo!乗換案内から取り込んだ結果の報せ。何が入ったのかを押した場所で示す。
-  const [yahooNotice, setYahooNotice] = useState<string | null>(null);
-  // クリップボードを読めなかった・読めても経路ではなかったときの受け皿。
-  const [pasteOpen, setPasteOpen] = useState(false);
-  const [pasteText, setPasteText] = useState("");
-
-  // Googleマップから取り込んだ結果の報せと、クリップボードを読めなかったときの受け皿。
+  // Googleマップから取り込んだ結果の報せ。
   const [googleNotice, setGoogleNotice] = useState<string | null>(null);
-  const [googlePasteOpen, setGooglePasteOpen] = useState(false);
-  const [googlePasteText, setGooglePasteText] = useState("");
   const [googleRouteUrl, setGoogleRouteUrl] = useState("");
   const [resolvingGoogleRoute, setResolvingGoogleRoute] = useState(false);
 
@@ -136,29 +99,6 @@ export function TravelForm({
   const inputError =
     rangeError ??
     (origin.trim() && destination.trim() ? null : "出発地と目的地を入力してください。");
-
-  /**
-   * 所要時間の候補を選んだとき。
-   *
-   * 経路検索の候補は経路そのものの出発時刻を持っているので、引き算をせずその値を入れる。
-   * AIの見積もりは分数しか持たないため、到着時刻は動かさずそこから逆算する。
-   */
-  const applyEstimate = (estimate: TravelEstimate) => {
-    setMode(estimate.mode);
-    setEstimateSource(estimate.source === "transit" ? "TRANSIT" : "AI");
-    setEstimates(null);
-
-    if (estimate.departAt) {
-      setDepartAt(isoToLocalInput(estimate.departAt, timeZone));
-      if (estimate.arriveAt) setArriveAt(isoToLocalInput(estimate.arriveAt, timeZone));
-      return;
-    }
-
-    if (!arriveAt) return;
-    const arrive = new Date(`${arriveAt}:00Z`);
-    if (Number.isNaN(arrive.getTime())) return;
-    setDepartAt(new Date(arrive.getTime() - estimate.minutes * 60_000).toISOString().slice(0, 16));
-  };
 
   /**
    * 時刻を手で直したとき。出どころを手入力へ戻す。
@@ -178,177 +118,25 @@ export function TravelForm({
     setEstimateSource("MANUAL");
   };
 
-  /**
-   * Yahoo!乗換案内を開くURL（docs/spec.md §29）。
-   *
-   * 発着地は場所DBから引く（最寄り駅 → 座標 → 住所の順。`resolveYahooPlace`）。サーバー側で
-   * 引き直すと、押すたびにNotionの全件取得が増える（経路検索へ座標を渡しているのと同じ理由）。
-   */
-  const yahooOrigin = resolveYahooPlace(origin, placeCatalog.places);
-  const yahooDestination = resolveYahooPlace(destination, placeCatalog.places);
-  const yahooUrl = yahooTransitLink({
-    origin: yahooOrigin,
-    destination: yahooDestination,
-    departAt,
-    arriveAt,
-    basis: searchBasis,
-  });
-  // 地点が両方揃っているときだけ、基準チップに意味を持つ。地点未指定のときは
-  // 地点未指定のトップページを開くだけで、日時パラメータを受け取らないため。
-  const yahooHasPlaces = Boolean(yahooOrigin && yahooDestination);
-
-  /**
-   * 実際に開く基準。選んだ側の時刻が空なら、もう一方へ落ちる（`resolveYahooTransitBasis`）。
-   * チップの押されている側もこれで決め、押した見た目とURLが食い違わないようにする。
-   */
-  const activeBasis = resolveYahooTransitBasis({ departAt, arriveAt, basis: searchBasis });
-
-  /**
-   * コピーされた経路を取り込む。読めなければ何も書き換えない。
-   *
-   * **日付は基本的に動かさない。** 入れるのは時刻だけで、日は入力欄（＝紐づく予定の日）の
-   * まま。Yahoo!側で「今から」検索した結果をそのまま入れると、来週の予定の移動が今日へ飛び、
-   * カレンダーを閉じたあとでは気付けない。検索日が違っていたことは報せに添える。
-   *
-   * **例外は、予定に紐づかない新規の移動（`standalone`）だけ。** 動いて困る予定の日が
-   * そもそも無いため、検索した日をそのまま移動の日として採用する（issue #490）。
-   *
-   * **出発地・目的地欄は、貼り付けるたびに読み取れた乗車駅・降車駅で上書きする。** 新規の
-   * 移動では設定の既定の出発地（例:「自宅…」）が最初から入っており、「欄が空のときだけ」
-   * では実質発火しない。貼り付けは実際に選んだ経路という意思表示なので、既定値やそれまでの
-   * 値より優先してよい（issue #498）。メモは自由記述の可能性があるため、従来どおり
-   * 空のときだけ入れる。
-   */
-  const applyYahooRoute = (text: string): boolean => {
-    const route = parseYahooTransitRoute(text);
-    if (!route) return false;
-
-    // 予定に紐づかない新規の移動だけ、検索した日を採用する。編集中の移動・予定から
-    // 作った移動では、これまでどおり入力欄の日付のまま動かさない（動いて困る予定の日が
-    // 無いのは、紐づかない新規の移動だけのため）。
-    const standalone = !editing && !draft.linkedEvent;
-    const searchedDate = standalone ? yahooSearchedDateKey(route) : null;
-    const baseDate = searchedDate ?? (departAt || arriveAt).slice(0, 10);
-    const fields = yahooRouteFields(route, baseDate);
-    if (!fields) return false;
-
-    setDepartAt(fields.departAt);
-    setArriveAt(fields.arriveAt);
-    setEstimateSource("YAHOO");
-    // メモは利用者が書いた値を上書きしない（空のときだけ埋める）。出発地・目的地は
-    // 貼り付けた経路の実際の乗車駅・降車駅なので、既定値やそれまでの値によらず常に上書きする。
-    if (!note.trim()) setNote(route.noteText);
-    if (route.fromStation) setOrigin(yahooStationName(route.fromStation));
-    if (route.toStation) setDestination(yahooStationName(route.toStation));
-
-    setPasteOpen(false);
-    setPasteText("");
-    setError(null);
-    setYahooNotice(yahooImportNote(route, fields.departAt, fields.arriveAt, baseDate));
-    return true;
-  };
-
-  /**
-   * 「コピーした経路を取り込む」を押したとき。
-   *
-   * 押した時点が取り込む意思表示なので、確認のボタンをもう1つ挟まずその場で反映する。
-   *
-   * **クリップボードを読めないことがある。** `navigator.clipboard` はセキュアコンテキスト
-   * （https / localhost）でしか生えず、平文HTTPで開いた開発サーバーでは `undefined` になる。
-   * 利用者が許可しなかったときも読めない。そのときは同じ文字列を貼り付けられる欄へ落とす。
-   * 読み取りの規則はどちらも同じものを通すので、入る値は変わらない。
-   */
-  const importFromClipboard = async () => {
-    setYahooNotice(null);
-
-    let text: string;
-    try {
-      text = await navigator.clipboard.readText();
-    } catch {
-      setPasteOpen(true);
-      setError(
-        "クリップボードを読み取れませんでした（許可されていないか、対応していない環境です）。コピーした経路を下の欄へ貼り付けてください。",
-      );
-      return;
-    }
-
-    if (applyYahooRoute(text)) return;
-
-    setPasteOpen(true);
-    setError(
-      "コピーされているものが経路として読めませんでした。Yahoo!乗換案内で経路を選び、共有 ▸ コピーしてからもう一度押してください。",
-    );
-  };
-
-  /**
-   * Googleマップからコピーした所要時間を取り込む（issue #1025）。読めなければ何も書き換えない。
-   *
-   * 到着時刻は動かさず、そこから分数を引いて出発時刻を決める（`applyEstimate` のAI見積もりと
-   * 同じ）。到着が空なら出発時刻から足して到着を入れる。
-   */
-  const applyGoogleMapsDuration = (text: string): boolean => {
-    const minutes = parseGoogleMapsDuration(text);
-    if (minutes === null) return false;
-
-    const anchor = arriveAt || departAt;
-    const base = new Date(`${anchor}:00Z`);
-    if (!anchor || Number.isNaN(base.getTime())) return false;
-
-    if (arriveAt) {
-      setDepartAt(new Date(base.getTime() - minutes * 60_000).toISOString().slice(0, 16));
-    } else {
-      setArriveAt(new Date(base.getTime() + minutes * 60_000).toISOString().slice(0, 16));
-    }
-    setEstimateSource("GOOGLE_MAPS");
-    setEstimates(null);
-    setGooglePasteOpen(false);
-    setGooglePasteText("");
-    setError(null);
-    setGoogleNotice(
-      `Googleマップの所要時間（${minutes}分）を${arriveAt ? "到着時刻から逆算して出発時刻" : "到着時刻"}へ入れました。`,
-    );
-    return true;
-  };
-
-  const importGoogleMapsFromClipboard = async () => {
-    setGoogleNotice(null);
-    try {
-      const text = await navigator.clipboard.readText();
-      if (applyGoogleMapsDuration(text)) return;
-      setGooglePasteOpen(true);
-      setError(
-        "コピーされているものから所要時間を読めませんでした。Googleマップで「25 分」などの所要時間をコピーしてからもう一度押してください。",
-      );
-    } catch {
-      setGooglePasteOpen(true);
-      setError(
-        "クリップボードを読み取れませんでした（許可されていないか、対応していない環境です）。所要時間を下の欄へ貼り付けてください。",
-      );
-    }
-  };
-
   /** Googleマップの共有URLを貼り付けたとき、読めた経路だけを入力欄へ反映する。 */
   const applyGoogleMapsRoute = (route: GoogleMapsRoute) => {
     setOrigin(route.origin);
     setDestination(route.destination);
     setMode(route.mode);
-    setEstimates(null);
-    setEstimateSource("MANUAL");
+    setEstimateSource("GOOGLE_MAPS");
 
-    if (route.departAt) {
-      const imported = isoToLocalInput(route.departAt, timeZone);
-      // 予定に紐づく移動は予定の日を動かさない。単独の新規移動は、Googleマップで選んだ日も採用する。
-      const depart = draft.linkedEvent ? `${departAt.slice(0, 10)}${imported.slice(10)}` : imported;
-      const duration = new Date(`${arriveAt}:00Z`).getTime() - new Date(`${departAt}:00Z`).getTime();
+    const imported = route.departAt ? isoToLocalInput(route.departAt, timeZone) : departAt;
+    // 予定に紐づく移動は予定の日を動かさない。単独の新規移動は、Googleマップで選んだ日も採用する。
+    const depart = route.departAt && draft.linkedEvent ? `${departAt.slice(0, 10)}${imported.slice(10)}` : imported;
+    const base = new Date(`${depart}:00Z`);
+    if (depart && !Number.isNaN(base.getTime())) {
       setDepartAt(depart);
-      if (Number.isFinite(duration) && duration > 0) {
-        setArriveAt(new Date(new Date(`${depart}:00Z`).getTime() + duration).toISOString().slice(0, 16));
-      }
+      setArriveAt(new Date(base.getTime() + route.minutes * 60_000).toISOString().slice(0, 16));
     }
 
     setError(null);
     setGoogleNotice(
-      `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[route.mode]}${route.departAt ? "・出発時刻" : ""}）。`,
+      `Googleマップの経路を反映しました（${TRAVEL_MODE_LABELS[route.mode]}・所要時間${route.minutes}分）。`,
     );
   };
 
@@ -372,39 +160,6 @@ export function TravelForm({
       setError("Googleマップの経路URLを読み取れませんでした。");
     } finally {
       setResolvingGoogleRoute(false);
-    }
-  };
-
-  const googleMapsUrl = googleMapsDirectionsLink(
-    resolveGoogleMapsPlace(origin, placeCatalog.places),
-    resolveGoogleMapsPlace(destination, placeCatalog.places),
-  );
-
-  const askEstimate = async () => {
-    setEstimating(true);
-    setError(null);
-    try {
-      // AIへは住所まで添えて渡す。「自宅」のような名前だけでは地点が定まらず、
-      // 見積もりが常に0件になる。場所DBは既に手元にあるため往復は増えない。
-      const response = await fetch("/api/travels/estimate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          origin: withPlaceAddress(origin, placeCatalog.places),
-          destination: withPlaceAddress(destination, placeCatalog.places),
-          mode,
-        }),
-      });
-      if (!response.ok) {
-        setError(await readErrorMessage(response, "所要時間を調べられませんでした。"));
-        return;
-      }
-      const body = (await response.json()) as { estimates: TravelEstimate[] };
-      setEstimates(body.estimates);
-    } catch {
-      setError("所要時間を調べられませんでした。");
-    } finally {
-      setEstimating(false);
     }
   };
 
@@ -571,217 +326,9 @@ export function TravelForm({
             }}
             onClear={() => setGoogleRouteUrl("")}
           />
-          {resolvingGoogleRoute && <p className="text-xs text-muted-foreground">経路を読み取っています…</p>}
+          {resolvingGoogleRoute && <p className="text-xs text-muted-foreground">経路を解析しています…</p>}
           {googleNotice && <p className="text-xs text-muted-foreground">{googleNotice}</p>}
         </div>
-
-        {/* 所要時間の調べ方は交通手段で分ける（docs/spec.md §29）。
-
-            公共交通（電車・バス・飛行機）はYahoo!乗換案内から取り込む1本だけにする。実際の
-            ダイヤ上の列車・便が入るのに、平均（経路検索）や目安（AI）を出す経路を並べても、
-            どちらを押すか決める材料が利用者に無い。公共交通以外はYahoo!乗換案内が経路を
-            持たないため、従来どおりAIで調べる。どちらも押したときだけ動く（入力のたびに
-            呼ぶと、打っている途中の文字列で何度も問い合わせることになる。場所の「AIに聞く」と
-            同じ扱い）。 */}
-        {mode === "PUBLIC_TRANSIT" ? (
-          <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
-            <p className="text-xs text-muted-foreground">{estimateNote(estimateSource, mode, null)}</p>
-
-            {/* どちらの時刻で探すか（issue #444）。時刻の有無だけで決めると、予定から足した
-                移動では出発時刻に仮の値（開始30分前）が必ず入っているぶん、その値で探すことに
-                なる。押した側と実際に開く基準が食い違わないよう、選択の見た目は
-                `activeBasis`（空の側は落ちる）で出し、空のほうのチップは押せなくする。
-                リンクを出さないとき（オフライン・地点が揃っていない・時刻が無い）は、
-                選んでも行き先が無いためチップごと出さない。 */}
-            {yahooHasPlaces && !offline && activeBasis && (
-              <div
-                role="group"
-                aria-label="Yahoo!乗換案内で探す基準"
-                className="flex flex-wrap gap-2"
-              >
-                {SEARCH_BASIS_OPTIONS.map((option) => {
-                  const selected = option.value === activeBasis;
-                  // 選んでもその側にならない＝そちらの時刻が入っていない、ということ。
-                  // 判定を「欄が空か」で書き直さないのは、基準の規則を2か所に置かないため。
-                  const unavailable =
-                    resolveYahooTransitBasis({ departAt, arriveAt, basis: option.value }) !==
-                    option.value;
-
-                  return (
-                    <Button
-                      key={option.value}
-                      type="button"
-                      aria-pressed={selected}
-                      disabled={unavailable}
-                      variant={selected ? "secondary" : "outline"}
-                      size="sm"
-                      className={cn(
-                        "rounded-full",
-                        selected && "bg-travel-container text-on-travel-container",
-                      )}
-                      onClick={() => setSearchBasis(option.value)}
-                    >
-                      {option.label}
-                    </Button>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              {/* 素の <a> にするのは、iOSがUniversal Linkでアプリを開けるようにするため。
-                  スクリプトから開くと、アプリが入っていてもブラウザへ落ちることがある。
-                  オフライン中は出さない（開いた先が読めない。予定の場所のリンクと同じ扱い）。
-                  地点が未入力でも、地点未指定のトップページ（`yahooUrl`）を開けるため常に出す。 */}
-              {!offline && (
-                <Button asChild variant="outline" size="sm" className="w-fit">
-                  <a href={yahooUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="size-4" />
-                    Yahoo!乗換案内で調べる
-                  </a>
-                </Button>
-              )}
-              {/* 取り込みはオフラインでも押せる。読むのはクリップボードだけで通信が要らない。 */}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-fit"
-                onClick={importFromClipboard}
-              >
-                <ClipboardPaste className="size-4" />
-                コピーした経路を取り込む
-              </Button>
-            </div>
-
-            {/* クリップボードを読めなかったときの受け皿。貼られた時点で読めれば入れる。 */}
-            {pasteOpen && (
-              <Textarea
-                id="travel-yahoo-paste"
-                label="コピーした経路"
-                rows={4}
-                value={pasteText}
-                onChange={(e) => {
-                  setPasteText(e.target.value);
-                  applyYahooRoute(e.target.value);
-                }}
-                onClear={() => setPasteText("")}
-              />
-            )}
-
-            {yahooNotice && <p className="text-xs text-muted-foreground">{yahooNotice}</p>}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-3">
-            {/* 車などの所要時間はGoogleマップで調べた普段の所要時間を取り込める（issue #1025）。
-                何も取得せず、利用者がコピーした文字列だけを読む（Yahoo!乗換案内と同じ）。 */}
-            <div className="flex flex-wrap gap-2">
-              {!offline && googleMapsUrl && (
-                <Button asChild variant="outline" size="sm" className="w-fit">
-                  <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="size-4" />
-                    Googleマップで調べる
-                  </a>
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-fit"
-                onClick={importGoogleMapsFromClipboard}
-              >
-                <ClipboardPaste className="size-4" />
-                コピーした所要時間を取り込む
-              </Button>
-            </div>
-            {googlePasteOpen && (
-              <Textarea
-                id="travel-google-paste"
-                label="コピーした所要時間"
-                rows={2}
-                value={googlePasteText}
-                onChange={(e) => {
-                  setGooglePasteText(e.target.value);
-                  applyGoogleMapsDuration(e.target.value);
-                }}
-                onClear={() => setGooglePasteText("")}
-              />
-            )}
-            {estimates === null ? (
-              <>
-                <p className="text-xs text-muted-foreground">
-                  {estimateNote(estimateSource, mode, null)}
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-fit"
-                  disabled={estimating || !origin.trim() || !destination.trim()}
-                  onClick={askEstimate}
-                >
-                  <Route className="size-4" />
-                  {estimating
-                    ? "調べています…"
-                    : estimateSource === "MANUAL"
-                      ? "所要時間を調べる"
-                      : "調べ直す"}
-                </Button>
-              </>
-            ) : estimates.length === 0 ? (
-              <>
-                <p className="text-xs text-muted-foreground">
-                  この区間の所要時間は分かりませんでした。時刻を直接入力してください。
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-fit"
-                  onClick={() => setEstimates(null)}
-                >
-                  戻る
-                </Button>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground">{resultNote(estimates, null)}</p>
-                <ul className="flex flex-col gap-1">
-                  {estimates.map((estimate, index) => (
-                    // 経路検索では同じ「公共交通」の候補が複数並ぶ。交通手段は一意にならない。
-                    <li key={`${estimate.source}-${estimate.mode}-${index}`}>
-                      <button
-                        type="button"
-                        className="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted"
-                        onClick={() => applyEstimate(estimate)}
-                      >
-                        <span className="mt-0.5 shrink-0 rounded-full bg-travel-container px-2 py-0.5 text-[11px] font-semibold text-on-travel-container">
-                          {TRAVEL_MODE_LABELS[estimate.mode]}
-                        </span>
-                        <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="min-w-0 truncate text-xs text-muted-foreground">
-                            {estimate.detail ?? `${origin.trim()} → ${destination.trim()}`}
-                          </span>
-                          {/* 渡しているのは座標なので、ずれていれば別の駅が選ばれる。
-                              使われた駅と徒歩の分数が出ていれば、数字を信じる前に気付ける。 */}
-                          {estimate.transit && (
-                            <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-                              {transitDetail(estimate.transit)}
-                            </span>
-                          )}
-                        </span>
-                        <span className="shrink-0 self-center text-sm font-semibold">
-                          {estimate.minutes}分
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-        )}
 
         {/* 往復は元になった予定があるときだけ。単独の移動では帰りの起点が決まらない。 */}
         {!editing && draft.linkedEvent && (

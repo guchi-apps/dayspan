@@ -600,7 +600,7 @@ export function CalendarShell({
    * 目的地はその予定の場所、到着時刻は予定の開始時刻を初期値にする。出発地は設定の既定の
    * 出発地（自宅など）から入れる。押した時点では所要時間が分からないが、出発と到着を同じ時刻に
    * すると開いた瞬間に「到着が出発より後になるように」と出る。仮の長さを置いてから、
-   * 「所要時間を調べる」か手入力で直してもらう。
+   * Googleマップの共有経路URLを貼るか、手入力で直してもらう。
    */
   const addTravelForEvent = (event: CalendarEventItem) => {
     if (offline) return;

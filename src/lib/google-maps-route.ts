@@ -13,6 +13,8 @@ export type GoogleMapsRoute = {
   origin: string;
   destination: string;
   mode: TravelMode;
+  /** AIが共有経路の情報から補完した所要時間（分）。 */
+  minutes: number;
   /** Googleマップで指定された出発日時。指定が無いときはnull。 */
   departAt: string | null;
 };
@@ -95,6 +97,8 @@ export function parseGoogleMapsRouteUrl(input: string): GoogleMapsRoute | null {
     origin,
     destination,
     mode: dataMode(data) ?? routeMode(url.searchParams.get("travelmode")),
+    // URL自身には所要時間が無いため、APIルートでAI解析後に入れる。
+    minutes: 0,
     departAt: dataDepartAt(data),
   };
 }
