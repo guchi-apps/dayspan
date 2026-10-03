@@ -9,7 +9,9 @@ import { resolveUserIdByActivityStopToken } from "@/services/live-activity/devic
 
 /**
  * ライブアクティビティの停止ボタン用トークンで本人を特定する（issue #971）。
- * 許可するのは `/api/shortcuts/activity/` の2経路（停止・activity tokenの登録）だけ。
+ * 許可するのは4経路だけ: `/api/shortcuts/activity/` の停止・activity tokenの登録・記録中の読み取りと、
+ * Yahoo!乗換案内の共有拡張が使う `/api/shortcuts/travel/import`（issue #1026。漏れると任意の移動を
+ * 作れる。新しいトークンを足さず、マイグレーションを避けるためここへ相乗りさせた）。
  */
 export async function resolveActivityStopUserId(
   request: Request,
