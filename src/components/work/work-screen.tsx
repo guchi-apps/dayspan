@@ -283,7 +283,7 @@ function WorkMonthScreen({
   return (
     <AppFrame current="work" activityRunning={runningActivity !== null} running={runningActivity}>
       <header className="flex items-center gap-2 bg-surface-container-low px-2 py-2">
-        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
             画面を移る（issue #636）。 */}
         <AppMenuButton current="work" activityRunning={runningActivity !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。

@@ -271,7 +271,7 @@ export function TaskList({
       running={runningActivity}
     >
       <header className="flex items-center gap-1 bg-surface-container-low px-2 py-2">
-        {/* 1024px未満は左上をメニューにする（issue #328・#463）。1024px以上は左端のサイドバーから
+        {/* 768px未満は左上をメニューにする（issue #328・#463）。768px以上は左端のサイドバーから
             画面を移る（issue #636）。 */}
         <AppMenuButton current="tasks" activityRunning={runningActivity !== null} />
         {/* いまどの画面にいるかは、ヘッダーのナビが無くなったぶんここで示す（issue #463）。
@@ -340,7 +340,7 @@ export function TaskList({
           「今後」が長い日は、その下の「期限未設定」までスクロールしないと何件あるかが読めない。
           列の数は画面幅ではなく本文の幅（AppFrame の @container/main）で決める。
         */}
-        <div className="@2xl/main:grid @2xl/main:grid-cols-2 @2xl/main:items-start @2xl/main:gap-3 @2xl/main:p-3 @5xl/main:grid-cols-4">
+        <div className="@xl/main:grid @xl/main:grid-cols-2 @xl/main:items-start @xl/main:gap-3 @xl/main:p-3 @5xl/main:grid-cols-4">
           {sections.map((section) => {
             if (section.tasks.length === 0) return null;
 
@@ -419,7 +419,7 @@ export function TaskList({
           {data === null && !loadError && <TaskListSkeleton />}
 
           {data !== null && tasks.length === 0 && !loadError && (
-            <p className="p-6 text-center text-sm text-muted-foreground @2xl/main:col-span-full">
+            <p className="p-6 text-center text-sm text-muted-foreground @xl/main:col-span-full">
               タスクがありません。
             </p>
           )}
@@ -503,7 +503,7 @@ function CollapsibleTaskSection({
   if (tasks.length === 0) return null;
 
   return (
-    <section className={cn(WIDE_SECTION_CARD_CLASS, "@2xl/main:col-span-full")}>
+    <section className={cn(WIDE_SECTION_CARD_CLASS, "@xl/main:col-span-full")}>
       <h2
         className={cn(
           "sticky top-0 z-10 border-b border-rule bg-background/95 backdrop-blur",
@@ -537,7 +537,7 @@ function CollapsibleTaskSection({
 /** 一覧の取得が済むまでの行の骨組み。追加ボタンとナビは待たずに使える（issue #724）。 */
 function TaskListSkeleton() {
   return (
-    <div role="status" aria-label="タスクを読み込み中" className="animate-pulse @2xl/main:col-span-full">
+    <div role="status" aria-label="タスクを読み込み中" className="animate-pulse @xl/main:col-span-full">
       {Array.from({ length: 6 }, (_, row) => (
         <div key={row} className="flex items-center gap-2 py-3 pr-3 pl-3">
           <div className="size-[18px] rounded-xs bg-on-surface/10" />

@@ -30,12 +30,12 @@ export default function Loading() {
         <SkeletonBlock className="h-7 w-24 rounded-full" />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden @2xl/main:columns-2 @2xl/main:gap-3 @2xl/main:p-3 @5xl/main:columns-3">
+      <div className="min-h-0 flex-1 overflow-hidden @xl/main:columns-2 @xl/main:gap-3 @xl/main:p-3 @5xl/main:columns-3">
         {/* カテゴリの見出しと、その下に並ぶ項目。件数はカテゴリによって違う。 */}
         {Array.from({ length: 3 }, (_, section) => (
           <div
             key={section}
-            className={cn(WIDE_SECTION_CARD_CLASS, "@2xl/main:mb-3 @2xl/main:break-inside-avoid")}
+            className={cn(WIDE_SECTION_CARD_CLASS, "@xl/main:mb-3 @xl/main:break-inside-avoid")}
           >
             <div className="border-b border-rule px-3 py-1.5">
               <SkeletonBlock className="h-3 w-16" />
