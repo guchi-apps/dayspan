@@ -8,11 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth-user";
 import { db } from "@/lib/db";
-import { localInputToIso } from "@/components/calendar/datetime-fields";
 import { SLEEP_RANGE_DAYS, buildSleepNights } from "@/lib/sleep";
 import { getRunningActivity } from "@/services/activity/running";
 import { getSleepSettings } from "@/services/activity/settings";
-import { countSleepHealthOutdated, loadSleepEvents, sleepNightKeys } from "@/services/activity/sleep";
+import { loadSleepEvents, sleepNightKeys } from "@/services/activity/sleep";
 
 /** 既定で並べる夜の数。 */
 const DEFAULT_DAYS = SLEEP_RANGE_DAYS[0];
@@ -64,18 +63,6 @@ export default async function SleepPage({
     now,
   });
 
-  // ヘルスケアへ送ったあとに直した睡眠の数（docs/spec.md §40「送ったあとの変更」）。読めなかった
-  // ときは数えない（予定が無いのか読めていないのか区別できず、全部が「消えた」ことになる）。
-  const healthOutdated = loaded.ok
-    ? await countSleepHealthOutdated(user.id, {
-        events: loaded.events,
-        title: sleep.title,
-        since: new Date(localInputToIso(`${nightKeys[0]}T12:00`, timeZone)),
-        now,
-        timeZone,
-      })
-    : 0;
-
   return (
     <SleepScreen
       nights={nights}
@@ -83,7 +70,6 @@ export default async function SleepPage({
       todayKey={todayKey}
       days={days}
       activityTitle={sleep.title}
-      healthOutdated={healthOutdated}
       timeZone={timeZone}
       loadError={
         loaded.ok
